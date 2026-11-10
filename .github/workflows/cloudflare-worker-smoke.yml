@@ -53,6 +53,13 @@ jobs:
             exit 1
           fi
           grep -q '"service":"nova-core-api"' /tmp/nova-health.json
+          curl --max-time 5 --silent --show-error --fail -i \
+            -X OPTIONS \
+            -H 'Origin: https://nova-os-pied.vercel.app' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type' \
+            http://127.0.0.1:8787/api/v1/recommendations/run > /tmp/nova-cors.txt
+          grep -qi 'access-control-allow-origin: https://nova-os-pied.vercel.app' /tmp/nova-cors.txt
           curl --max-time 5 --silent --show-error --fail \
             -X POST -H 'Content-Type: application/json' \
             -d '{}' http://127.0.0.1:8787/api/v1/recommendations/run > /tmp/nova-recommendation.json
