@@ -36,7 +36,32 @@ function makeAccessFixture(issuer) {
   return { audience, token, jwk };
 }
 
-function envFor(issuer, audience, grants = '{"neoagro-ingestor":{"neoagro":["source-weather-01"]}}') {
+
+function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceModule = "neoagro",
+  sourceStatus = "unverified", assetSiteId = "site-001", assetStatus = "active" } = {}) {
+  return {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              if (sql.includes("FROM sites")) return { id: values[0], status: siteStatus };
+              if (sql.includes("FROM sources")) return {
+                id: values[0], site_id: sourceSiteId, module: sourceModule,
+                verification_status: sourceStatus,
+              };
+              if (sql.includes("FROM assets")) return {
+                id: values[0], site_id: assetSiteId, status: assetStatus,
+              };
+              throw new Error("unexpected_query");
+            },
+          };
+        },
+      };
+    },
+  };
+}
+\nfunction envFor(issuer, audience, grants = '{"neoagro-ingestor":{"neoagro":["source-weather-01"]}}') {
   return {
     ACCESS_ISSUER: issuer,
     ACCESS_AUDIENCE: audience,
@@ -121,7 +146,52 @@ test("valid Access service identity and exact source grant reach the storage gat
   });
 });
 
-test("valid service identity cannot submit a source outside its exact grant", async () => {
+
+test("valid service identity and D1 ownership checks still do not persist observations", async () => {
+  const issuer = "https://owned-records.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify({
+      site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+      source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+      unit: "degC", observed_at: new Date().toISOString(),
+      idempotency_key: "test-observation-owned-001",
+      provenance: { provider: "test station", acquisition_method: "sensor" },
+    }),
+  }), { ...envFor(issuer, fixture.audience), DB: ownershipDb() });
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "persistence_not_enabled",
+    status: "ownership_validated_but_not_accepted",
+  });
+});
+
+test("D1 ownership mismatch is denied without revealing which record failed", async () => {
+  const issuer = "https://ownership-denied.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify({
+      site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+      source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+      unit: "degC", observed_at: new Date().toISOString(),
+      idempotency_key: "test-observation-owned-002",
+      provenance: { provider: "test station", acquisition_method: "sensor" },
+    }),
+  }), { ...envFor(issuer, fixture.audience), DB: ownershipDb({ assetSiteId: "site-elsewhere" }) });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "request_not_authorized" });
+});
+\ntest("valid service identity cannot submit a source outside its exact grant", async () => {
   const issuer = "https://wrong-grant.cloudflareaccess.com";
   const fixture = makeAccessFixture(issuer);
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
