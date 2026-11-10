@@ -43,6 +43,14 @@ Tests cover strict observation payloads, exact grants, unknown identities, incom
 
 **None of these modules is wired to HTTP headers or a route. No request is currently authenticated.** They do not prove site/asset ownership, enforce HTTP payload byte limits, or write to D1.
 
+## Public API versus protected ingestion topology
+
+The currently deployed `nova-core-api.neohaven.workers.dev` serves public read-only health and NASA POWER retrieval used by browser-facing module dashboards. Protecting that entire Worker with a service-token-only Access policy would also block those legitimate public reads.
+
+Cloudflare documents Worker-level Access protection for a specific Worker, including its `workers.dev` hostname, routes, and previews. Therefore the safer V1 topology is to keep the existing public read-only API separate and create a dedicated ingestion Worker (for example, `nova-core-ingest-api`) whose Worker-level Access policy permits only the approved Service Auth identities. This also avoids relying on CORS as an authentication control. CORS is browser policy, not server-to-server authorization.
+
+Do not create or deploy that second Worker until the Access application, Service Auth policy, free-plan/billing implications, and required secrets are reviewed. No such Worker or Access policy currently exists. See [Cloudflare Workers Access protection](https://developers.cloudflare.com/workers/configuration/cloudflare-access/).
+
 ## Authorization rules
 
 - Authenticate before parsing or writing a request body beyond safe request-size enforcement.
