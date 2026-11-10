@@ -58,18 +58,28 @@ export default {
       return json({ error: "ingestion_auth_not_configured" }, 503);
     }
 
-    let principal;
     let grants;
+    try {
+      grants = parseServiceGrants(grantsJson);
+    } catch {
+      return json({ error: "ingestion_configuration_invalid" }, 503);
+    }
+
+    let principal;
     try {
       principal = await verifyAccessServiceToken(
         request.headers.get("Cf-Access-Jwt-Assertion"),
         { issuer, audience },
       );
-      grants = parseServiceGrants(grantsJson);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "";
-      const status = reason.startsWith("access_jwks_") ? 503 : 401;
-      return json({ error: "request_not_authorized" }, status);
+      if (reason.startsWith("access_jwks_")) {
+        return json({ error: "identity_provider_unavailable" }, 503);
+      }
+      if (reason === "invalid_access_issuer") {
+        return json({ error: "ingestion_configuration_invalid" }, 503);
+      }
+      return json({ error: "request_not_authorized" }, 401);
     }
 
     let bytes;
