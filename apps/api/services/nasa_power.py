@@ -96,7 +96,7 @@ async def fetch_daily_point_async(
         "time-standard": "UTC",
     }
     url = f"{NASA_POWER_URL}?{urlencode(query)}"
-    headers = {"User-Agent": "NOVA-Core/0.2 (NeoHaven Urban Labs)"}
+    headers = {"Accept": "application/json"}
 
     try:
         from js import Object, fetch
