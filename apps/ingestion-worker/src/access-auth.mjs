@@ -54,6 +54,14 @@ async function fetchJwks(issuer, forceRefresh = false) {
   return document.keys;
 }
 
+function isSigningKey(candidate, keyId) {
+  return candidate && candidate.kid === keyId && candidate.kty === "RSA" &&
+    (candidate.use === undefined || candidate.use === "sig") &&
+    (candidate.alg === undefined || candidate.alg === "RS256") &&
+    (candidate.key_ops === undefined ||
+      (Array.isArray(candidate.key_ops) && candidate.key_ops.includes("verify")));
+}
+
 async function verifySignature(signingInput, signature, jwk) {
   const key = await crypto.subtle.importKey(
     "jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"],
@@ -101,7 +109,7 @@ export async function verifyAccessServiceToken(token, config, nowSeconds = Math.
   }
 
   let keys = await fetchJwks(issuer);
-  let jwk = keys.find((candidate) => candidate.kid === header.kid && candidate.kty === "RSA" && candidate.use !== "enc");
+  let jwk = keys.find((candidate) => isSigningKey(candidate, header.kid));
   if (!jwk) {
     keys = await fetchJwks(issuer, true);
     jwk = keys.find((candidate) => candidate.kid === header.kid && candidate.kty === "RSA" && candidate.use !== "enc");
