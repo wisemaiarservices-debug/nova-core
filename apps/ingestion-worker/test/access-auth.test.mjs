@@ -99,7 +99,7 @@ for (const [name, metadata] of [
   ["JWK without verify operation", { use: "sig", alg: "RS256", key_ops: ["sign"] }],
 ]) {
   test("rejects " + name, async () => {
-    const isolatedIssuer = "https://" + name.replaceAll(" ", "-") + ".cloudflareaccess.com";
+    const isolatedIssuer = "https://" + name.toLowerCase().replaceAll(" ", "-") + ".cloudflareaccess.com";
     const unusable = { ...jwk, ...metadata };
     globalThis.fetch = async () => new Response(JSON.stringify({ keys: [unusable] }), {
       status: 200, headers: { "content-type": "application/json" },
