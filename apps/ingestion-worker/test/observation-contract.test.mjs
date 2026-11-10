@@ -1,0 +1,58 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { validateObservationPayload } from "../src/observation-contract.mjs";
+
+const now = Date.parse("2026-11-10T15:00:00.000Z");
+const valid = {
+  site_id: "site-001",
+  asset_id: "asset-001",
+  source_id: "source-weather-01",
+  module: "neoagro",
+  metric: "air_temperature",
+  value: 18.5,
+  unit: "degC",
+  observed_at: "2026-11-10T14:55:00+00:00",
+  idempotency_key: "neoagro:site-001:weather:001",
+  provenance: { provider: "Example station", acquisition_method: "sensor", source_record_ref: "record-001" },
+  quality_flags: [],
+};
+
+test("accepts a complete scalar observation and normalizes its timestamp", () => {
+  const result = validateObservationPayload(valid, now);
+  assert.equal(result.observed_at, "2026-11-10T14:55:00.000Z");
+  assert.equal(result.value, 18.5);
+  assert.deepEqual(result.quality_flags, []);
+});
+
+for (const [name, mutate] of [
+  ["unknown top-level field", (p) => { p.verified = true; }],
+  ["unknown provenance field", (p) => { p.provenance.actor = "caller"; }],
+  ["unsupported module", (p) => { p.module = "unknown"; }],
+  ["blank site", (p) => { p.site_id = " "; }],
+  ["numeric string value", (p) => { p.value = "18.5"; }],
+  ["boolean value", (p) => { p.value = true; }],
+  ["infinite value", (p) => { p.value = 1e400; }],
+  ["invalid metric", (p) => { p.metric = "Air Temperature"; }],
+  ["invalid unit", (p) => { p.unit = ""; }],
+  ["timezone-free timestamp", (p) => { p.observed_at = "2026-11-10T14:55:00"; }],
+  ["invalid timestamp", (p) => { p.observed_at = "not-a-date"; }],
+  ["future timestamp", (p) => { p.observed_at = "2026-11-10T15:06:00Z"; }],
+  ["unsupported acquisition method", (p) => { p.provenance.acquisition_method = "unverified_by_client"; }],
+  ["duplicate quality flag", (p) => { p.quality_flags = ["estimated", "estimated"]; }],
+  ["unknown quality flag", (p) => { p.quality_flags = ["trusted"]; }],
+]) {
+  test("rejects " + name, () => {
+    const payload = structuredClone(valid);
+    mutate(payload);
+    assert.throws(() => validateObservationPayload(payload, now));
+  });
+}
+
+test("allows optional asset and quality flags to be omitted", () => {
+  const payload = structuredClone(valid);
+  delete payload.asset_id;
+  delete payload.quality_flags;
+  const result = validateObservationPayload(payload, now);
+  assert.equal(result.asset_id, undefined);
+  assert.deepEqual(result.quality_flags, []);
+});
