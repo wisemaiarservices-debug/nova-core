@@ -61,7 +61,8 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
     },
   };
 }
-\nfunction envFor(issuer, audience, grants = '{"neoagro-ingestor":{"neoagro":["source-weather-01"]}}') {
+
+function envFor(issuer, audience, grants = '{"neoagro-ingestor":{"neoagro":["source-weather-01"]}}') {
   return {
     ACCESS_ISSUER: issuer,
     ACCESS_AUDIENCE: audience,
@@ -191,7 +192,8 @@ test("D1 ownership mismatch is denied without revealing which record failed", as
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "request_not_authorized" });
 });
-\ntest("valid service identity cannot submit a source outside its exact grant", async () => {
+
+test("valid service identity cannot submit a source outside its exact grant", async () => {
   const issuer = "https://wrong-grant.cloudflareaccess.com";
   const fixture = makeAccessFixture(issuer);
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
