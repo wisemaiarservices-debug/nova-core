@@ -69,7 +69,8 @@ export async function verifyAccessServiceToken(token, config, nowSeconds = Math.
   if (!Array.isArray(audiences) || !audiences.includes(config.audience)) {
     throw new Error("unexpected_access_audience");
   }
-  if (claims.type !== "app" || claims.service_token_status !== true) {
+  if (claims.type !== "app" || claims.sub !== "" ||
+      (claims.service_token_status !== undefined && claims.service_token_status !== true)) {
     throw new Error("service_token_required");
   }
   if (typeof claims.common_name !== "string" || !claims.common_name.trim()) {
@@ -80,6 +81,10 @@ export async function verifyAccessServiceToken(token, config, nowSeconds = Math.
   }
   if (!Number.isInteger(claims.iat) || claims.iat > nowSeconds + CLOCK_SKEW_SECONDS) {
     throw new Error("access_token_issue_time_invalid");
+  }
+  if (claims.nbf !== undefined &&
+      (!Number.isInteger(claims.nbf) || claims.nbf > nowSeconds + CLOCK_SKEW_SECONDS)) {
+    throw new Error("access_token_not_yet_valid");
   }
 
   let keys = await fetchJwks(issuer);
