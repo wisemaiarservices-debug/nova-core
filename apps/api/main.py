@@ -8,7 +8,10 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.api.services.nasa_power import fetch_daily_point
+try:
+    from .services.nasa_power import fetch_daily_point_async
+except ImportError:
+    from services.nasa_power import fetch_daily_point_async
 
 
 class SiteState(BaseModel):
@@ -40,7 +43,7 @@ ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "NOVA_CORE_ALLOWED_ORIGINS",
-        "http://localhost:3000,http://localhost:5173,http://localhost:8400,http://localhost:8504,http://localhost:8508",
+        "http://localhost:3000,http://localhost:5173,http://localhost:8400,http://localhost:8504,http://localhost:8508,https://nova-os-pied.vercel.app,https://neoagro-six.vercel.app,https://neocell-ebon.vercel.app,https://neogrid-sigma.vercel.app,https://neohaven-nova-os-website.vercel.app",
     ).split(",")
     if origin.strip()
 ]
@@ -219,7 +222,7 @@ def explain(state: SiteState) -> dict[str, Any]:
 
 
 @app.get("/api/v1/data/weather/nasa-power/daily")
-def nasa_power_daily(
+async def nasa_power_daily(
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
     start_date: date = Query(...),
@@ -230,7 +233,7 @@ def nasa_power_daily(
     if (end_date - start_date).days > 366:
         raise HTTPException(status_code=422, detail="Date range must not exceed 367 calendar days")
     try:
-        data = fetch_daily_point(latitude, longitude, start_date, end_date)
+        data = await fetch_daily_point_async(latitude, longitude, start_date, end_date)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
