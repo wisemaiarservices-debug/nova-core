@@ -86,7 +86,8 @@ export async function persistObservation(database, observation, principal, reque
     "WHERE EXISTS (SELECT 1 FROM observations WHERE id = ?)",
   ).bind(auditId, principal.serviceId, observationId, requestId, detailsJson, observationId);
 
-  await database.batch([insertObservation, insertAudit]);
+  const batchResults = await database.batch([insertObservation, insertAudit]);
+  const inserted = Number(batchResults?.[0]?.meta?.changes ?? 0) > 0;
 
   const existing = await database.prepare(
     "SELECT id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
@@ -100,10 +101,10 @@ export async function persistObservation(database, observation, principal, reque
   }
 
   return {
-    status: existing.id === observationId ? "accepted" : "already_accepted",
+    status: inserted ? "accepted" : "already_accepted",
     accepted: true,
     observation_id: existing.id,
     verification_status: existing.verification_status,
-    idempotent: existing.id !== observationId,
+    idempotent: !inserted,
   };
 }
