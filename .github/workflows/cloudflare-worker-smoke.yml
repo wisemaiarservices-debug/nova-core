@@ -1,0 +1,57 @@
+name: NOVA Core Cloudflare Worker smoke test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/cloudflare-worker-smoke.yml"
+  push:
+    branches:
+      - main
+      - feat/nova-core-v1-provenance-and-honest-impact
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/cloudflare-worker-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  worker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - name: Install Python Worker dependencies
+        run: uv sync --project apps/api --all-groups
+      - name: Run Worker locally and smoke-test FastAPI routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/api
+          uv run pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nova-worker.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 60); do
+            if curl --silent --show-error --fail http://127.0.0.1:8787/health > /tmp/nova-health.json; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/nova-worker.log
+            exit 1
+          fi
+          grep -q '"service":"nova-core-api"' /tmp/nova-health.json
+          curl --silent --show-error --fail \
+            -X POST -H 'Content-Type: application/json' \
+            -d '{}' http://127.0.0.1:8787/api/v1/recommendations/run > /tmp/nova-recommendation.json
+          grep -q '"status":"review_required"' /tmp/nova-recommendation.json
+          curl --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
+          grep -q 'nasa-power/daily' /tmp/nova-openapi.json
