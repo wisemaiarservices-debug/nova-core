@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.api.services.nasa_power import fetch_daily_point
@@ -33,6 +35,22 @@ class Recommendation(BaseModel):
 
 
 app = FastAPI(title="NOVA Core API", version="0.2.0")
+
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "NOVA_CORE_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://localhost:8400,http://localhost:8504,http://localhost:8508",
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type"],
+)
 
 
 def now_iso() -> str:
