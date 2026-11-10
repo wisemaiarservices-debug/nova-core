@@ -32,7 +32,7 @@ jobs:
           response="$(curl --fail --silent --show-error --retry 2 --retry-delay 5 \
             'https://nova-core-api.neohaven.workers.dev/api/v1/data/weather/nasa-power/daily?latitude=36.8&longitude=10.2&start_date=2025-01-01&end_date=2025-01-07')"
           echo "$response" | jq '{status, data_source, data_product, data_interpretation, requested_location, requested_period}'
-          echo "$response" | jq -e '.status == "retrieved" and .data_source == "NASA POWER Daily API" and .data_interpretation | contains("not a local ground-station measurement")'
+          echo "$response" | jq -e '.status == "retrieved" and .data_source == "NASA POWER Daily API" and (.data_interpretation | contains("not a local ground-station measurement"))'
 
       - name: Check NeoAgro CORS preflight
         run: |
