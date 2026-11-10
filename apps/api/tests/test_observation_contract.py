@@ -40,6 +40,8 @@ def test_valid_observation_contract_normalizes_timestamp_to_utc():
     ("unit", "°C<script>"),
     ("value", float("nan")),
     ("value", float("inf")),
+    ("value", "24.5"),
+    ("value", True),
     ("idempotency_key", ""),
 ])
 def test_rejects_invalid_core_fields(field, value):
