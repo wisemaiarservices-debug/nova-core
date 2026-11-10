@@ -1,6 +1,7 @@
 import { authorizeServiceSource, parseServiceGrants, verifyAccessServiceToken } from "./access-auth.mjs";
 import { validateObservationPayload } from "./observation-contract.mjs";
 import { resolveObservationOwnership } from "./observation-ownership.mjs";
+import { persistObservation } from "./observation-persistence.mjs";
 
 const MAX_BODY_BYTES = 32 * 1024;
 
@@ -127,8 +128,20 @@ export default {
       return json({ error: "storage_unavailable" }, 503);
     }
 
-    // Ownership is checked, but persistence remains deliberately disabled pending
-    // transaction/idempotency integration tests against the actual D1 runtime.
-    return json({ error: "persistence_not_enabled", status: "ownership_validated_but_not_accepted" }, 503);
+    try {
+      const result = await persistObservation(
+        env.DB,
+        observation,
+        principal,
+        crypto.randomUUID(),
+      );
+      if (result.status === "idempotency_conflict") {
+        return json({ error: "idempotency_key_conflict", accepted: false }, 409);
+      }
+      return json(result, result.idempotent ? 200 : 201);
+    } catch {
+      // Fail closed. Do not reveal SQL, D1 binding details, or service identity.
+      return json({ error: "storage_unavailable", accepted: false }, 503);
+    }
   },
 };
