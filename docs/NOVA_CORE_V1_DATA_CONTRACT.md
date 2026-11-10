@@ -76,3 +76,6 @@ NOVA_CORE_ALLOWED_ORIGINS=https://nova-os-pied.vercel.app,https://neoagro-six.ve
 ```
 
 Preview deployments use changing hostnames and should be added explicitly only when required for testing; do not use a wildcard origin.
+
+
+For the current NOVA OS feature-branch preview, the exact origin `https://neohaven-nova-os-website-git-feat-n-4294c9-neo-haven-urban-labs.vercel.app` is also allowlisted. Preview hostnames can change when the branch or Vercel project changes; remove stale preview origins and add the current exact origin rather than widening CORS.
