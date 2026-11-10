@@ -1,0 +1,17 @@
+[project]
+name = "nova-core-api"
+version = "0.2.0"
+description = "NOVA Core V1 API for transparent, provenance-aware infrastructure screening"
+requires-python = ">=3.13"
+dependencies = [
+  "fastapi==0.115.6",
+  "pydantic==2.10.4",
+]
+
+[dependency-groups]
+dev = [
+  "workers-py",
+  "workers-runtime-sdk",
+  "pytest",
+  "httpx",
+]
