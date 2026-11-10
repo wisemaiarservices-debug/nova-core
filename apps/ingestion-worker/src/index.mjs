@@ -52,11 +52,6 @@ export default {
     if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
       return json({ error: "payload_too_large" }, 413);
     }
-    const contentType = request.headers.get("content-type") || "";
-    if (!/^application\\/json(?:\\s*;|\\s*$)/i.test(contentType)) {
-      return json({ error: "application_json_required" }, 415);
-    }
-
     const issuer = env.ACCESS_ISSUER;
     const audience = env.ACCESS_AUDIENCE;
     const grantsJson = env.NOVA_SERVICE_GRANTS_JSON;
@@ -86,6 +81,11 @@ export default {
         return json({ error: "ingestion_configuration_invalid" }, 503);
       }
       return json({ error: "request_not_authorized" }, 401);
+    }
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!/^application\\/json(?:\\s*;|\\s*$)/i.test(contentType)) {
+      return json({ error: "application_json_required" }, 415);
     }
 
     let bytes;
