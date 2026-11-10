@@ -4,14 +4,16 @@ import os
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 try:
     from .services.nasa_power import fetch_daily_point_async
+    from .services.d1_storage import inspect_d1_binding
 except ImportError:
     from services.nasa_power import fetch_daily_point_async
+    from services.d1_storage import inspect_d1_binding
 
 
 class SiteState(BaseModel):
@@ -191,6 +193,12 @@ def recommend(state: SiteState) -> Recommendation:
         expected_impact=impact_score(state),
         requires_operator_review=True,
     )
+
+
+@app.get("/api/v1/storage/status")
+async def storage_status(request: Request) -> dict[str, Any]:
+    """Read-only D1 readiness; API health remains independent of persistence."""
+    return await inspect_d1_binding(request.scope.get("env"))
 
 
 @app.get("/health")
