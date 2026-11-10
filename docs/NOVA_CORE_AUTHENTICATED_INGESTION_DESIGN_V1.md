@@ -39,9 +39,11 @@ The branch also includes `apps/api/services/cloudflare_access_identity.py`, whic
 - [Cloudflare — Validate JWTs](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
 - [Cloudflare — Application token claims](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/)
 
-Tests cover strict observation payloads, exact grants, unknown identities, incomplete principals, cross-module attempts, unlisted sources, malformed grant configuration, wrong issuer/audience, expired tokens, and non-service-token identities.
+The branch also includes `apps/api/services/observation_ownership.py`, a pure policy for already-resolved D1 records. It requires an active matching site, a source with the exact source ID and module that is either global or scoped to that site, and (when supplied) an active asset belonging to the same site. Disabled sources are denied. An unverified source may submit an observation, but this does not upgrade the observation's verification status. The module performs no database reads itself; the future route must resolve rows using parameterized D1 queries.
 
-**None of these modules is wired to HTTP headers or a route. No request is currently authenticated.** They do not prove site/asset ownership, enforce HTTP payload byte limits, or write to D1.
+Tests cover strict observation payloads, exact grants, unknown identities, incomplete principals, cross-module attempts, unlisted sources, malformed grant configuration, wrong issuer/audience, expired tokens, non-service-token identities, inactive sites/assets, disabled sources, and cross-site ownership mismatches.
+
+**None of these modules is wired to HTTP headers or a route. No request is currently authenticated.** They do not enforce HTTP payload byte limits or write to D1.
 
 ## Public API versus protected ingestion topology
 
