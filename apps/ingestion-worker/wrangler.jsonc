@@ -1,0 +1,8 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nova-core-ingest-api",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-11-10",
+  "workers_dev": true,
+  "observability": { "enabled": true }
+}
