@@ -40,7 +40,7 @@ function isValidCalendarTimestamp(value) {
   const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const monthDays = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   if (day < 1 || day > monthDays[month - 1]) return false;
-  const zone = value.match(/(Z|[+-]\\d{2}:\\d{2})$/)?.[1];
+  const zone = value.match(/(Z|[+-]\d{2}:\d{2})$/)?.[1];
   if (!zone) return false;
   if (zone !== "Z") {
     const offsetHour = Number(zone.slice(1, 3));
