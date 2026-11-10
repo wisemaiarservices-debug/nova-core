@@ -60,3 +60,10 @@ Endpoint query parameters: latitude, longitude, start_date, and end_date. The ad
 NASA POWER states that there are no restrictions on use, access, or download of its data and requests citation of the NASA POWER Project. Attribution is included in the API response. Users must still inspect dataset-specific terms for any additional third-party datasets introduced later.
 
 Source documentation: https://power.larc.nasa.gov/docs/services/api/temporal/daily/
+
+
+## Browser integration and CORS
+
+The API exposes a configurable exact-origin allowlist through `NOVA_CORE_ALLOWED_ORIGINS`, a comma-separated server-side environment variable. Local development defaults include the NeoAgro, NOVA OS, NeoGrid and NeoCell development ports. Production deployments must replace or extend this value with the exact HTTPS origins of the deployed clients.
+
+Credentials are disabled in CORS. Only the required GET, POST and OPTIONS methods and Accept / Content-Type headers are allowed. Do not use wildcard origins with credentialed requests. The health endpoint confirms API reachability only; it does not certify telemetry availability or data quality.
