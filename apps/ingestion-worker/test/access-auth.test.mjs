@@ -92,7 +92,25 @@ test("maps malformed JWKS responses to a controlled validation error", async () 
   );
 });
 
-test("rejects unsupported JWT algorithm", async () => {
+
+for (const [name, metadata] of [
+  ["encryption-only JWK", { use: "enc", alg: "RS256" }],
+  ["wrong JWK algorithm", { use: "sig", alg: "PS256" }],
+  ["JWK without verify operation", { use: "sig", alg: "RS256", key_ops: ["sign"] }],
+]) {
+  test("rejects " + name, async () => {
+    const isolatedIssuer = "https://" + name.replaceAll(" ", "-") + ".cloudflareaccess.com";
+    const unusable = { ...jwk, ...metadata };
+    globalThis.fetch = async () => new Response(JSON.stringify({ keys: [unusable] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+    await assert.rejects(
+      () => verifyAccessServiceToken(makeToken({ iss: isolatedIssuer }), { issuer: isolatedIssuer, audience }, now),
+      /access_signing_key_not_found/,
+    );
+  });
+}
+\ntest("rejects unsupported JWT algorithm", async () => {
   const header = b64url(JSON.stringify({ alg: "none", kid: "test-key-1" }));
   const payload = b64url(JSON.stringify({ iss: issuer, aud: audience }));
   await assert.rejects(() => verifyAccessServiceToken(header + "." + payload + ".x", { issuer, audience }, now));
