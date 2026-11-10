@@ -100,10 +100,17 @@ test("valid Access service identity and exact source grant reach the storage gat
     method: "POST",
     headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
     body: JSON.stringify({
+      site_id: "site-001",
+      asset_id: "asset-001",
       module: "neoagro",
       source_id: "source-weather-01",
+      metric: "air_temperature",
       value: 18.5,
       unit: "degC",
+      observed_at: new Date().toISOString(),
+      idempotency_key: "test-observation-001",
+      provenance: { provider: "test station", acquisition_method: "sensor" },
+      quality_flags: [],
     }),
   }), envFor(issuer, fixture.audience));
 
@@ -125,7 +132,12 @@ test("valid service identity cannot submit a source outside its exact grant", as
   const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
     method: "POST",
     headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
-    body: JSON.stringify({ module: "neoagro", source_id: "source-unapproved" }),
+    body: JSON.stringify({
+      site_id: "site-001", module: "neoagro", source_id: "source-unapproved",
+      metric: "air_temperature", value: 18.5, unit: "degC",
+      observed_at: new Date().toISOString(), idempotency_key: "test-observation-002",
+      provenance: { provider: "test station", acquisition_method: "sensor" },
+    }),
   }), envFor(issuer, fixture.audience));
 
   assert.equal(response.status, 403);
@@ -157,7 +169,37 @@ test("invalid server-side source grants are reported as configuration failures",
   assert.deepEqual(await response.json(), { error: "ingestion_configuration_invalid" });
 });
 
-test("valid service token with malformed JSON is rejected before storage", async () => {
+
+test("authenticated request rejects non-JSON media types", async () => {
+  const issuer = "https://wrong-media-type.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "text/plain" },
+    body: "{}",
+  }), envFor(issuer, fixture.audience));
+  assert.equal(response.status, 415);
+  assert.deepEqual(await response.json(), { error: "application_json_required" });
+});
+
+test("authenticated request rejects incomplete observation fields before storage", async () => {
+  const issuer = "https://incomplete-payload.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify({ module: "neoagro", source_id: "source-weather-01" }),
+  }), envFor(issuer, fixture.audience));
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "invalid_observation_payload" });
+});
+\ntest("valid service token with malformed JSON is rejected before storage", async () => {
   const issuer = "https://malformed-body.cloudflareaccess.com";
   const fixture = makeAccessFixture(issuer);
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
