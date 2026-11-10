@@ -38,7 +38,7 @@ jobs:
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
           for attempt in $(seq 1 45); do
-            if curl --silent --show-error --fail http://127.0.0.1:8787/health > /tmp/nova-health.json; then
+            if curl --max-time 3 --silent --show-error --fail http://127.0.0.1:8787/health > /tmp/nova-health.json; then
               READY=1
               break
             fi
@@ -53,9 +53,9 @@ jobs:
             exit 1
           fi
           grep -q '"service":"nova-core-api"' /tmp/nova-health.json
-          curl --silent --show-error --fail \
+          curl --max-time 5 --silent --show-error --fail \
             -X POST -H 'Content-Type: application/json' \
             -d '{}' http://127.0.0.1:8787/api/v1/recommendations/run > /tmp/nova-recommendation.json
           grep -q '"status":"review_required"' /tmp/nova-recommendation.json
-          curl --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
+          curl --max-time 5 --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
           grep -q 'nasa-power/daily' /tmp/nova-openapi.json
