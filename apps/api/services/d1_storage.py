@@ -13,7 +13,7 @@ async def inspect_d1_binding(database: Any) -> dict[str, Any]:
     result = await database.prepare(
         "SELECT name FROM sqlite_master WHERE type = ? ORDER BY name"
     ).bind("table").run()
-    rows = result.results.to_py()
+    rows = list(result.results)
     present = sorted(
         str(row["name"]) for row in rows
         if isinstance(row, dict) and row.get("name") in EXPECTED_TABLES
