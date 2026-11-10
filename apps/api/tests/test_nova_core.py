@@ -1,7 +1,8 @@
 import pytest
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
-from apps.api.main import SiteState, explain, forecast, impact_score, input_provenance, recommend, run_recommendation, simulate
+from apps.api.main import ALLOWED_ORIGINS, SiteState, app, explain, forecast, impact_score, input_provenance, recommend, run_recommendation, simulate
 
 
 def test_forecast_flags_high_heat_and_low_moisture_for_review():
@@ -97,3 +98,13 @@ def test_nasa_power_parser_rejects_empty_parameter_payload():
 
     with pytest.raises(ValueError):
         parse_daily_response({"properties": {"parameter": {}}})
+
+
+def test_cors_is_configurable_and_disallows_credentials():
+    middleware = [item for item in app.user_middleware if item.cls is CORSMiddleware]
+    assert middleware
+    config = middleware[0].kwargs
+    assert "http://localhost:3000" in ALLOWED_ORIGINS
+    assert "http://localhost:8504" in config["allow_origins"]
+    assert config["allow_credentials"] is False
+    assert "OPTIONS" in config["allow_methods"]
