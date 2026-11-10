@@ -34,3 +34,28 @@ The schema stores provenance and quality metadata as validated JSON. It does not
 ## Not included
 
 No autonomous device control, actuator command endpoint, model-training pipeline, authentication system, production database, or live telemetry ingestion is introduced here. No production resources or billing settings are changed. D1 free-tier quotas and limits must be checked in the Cloudflare account before provisioning; do not assume zero cost from the existence of a free tier.
+
+## Read-only storage status endpoint
+
+The current follow-on implementation adds:
+
+- `GET /api/v1/storage/status`
+- `unconfigured` when the Worker request has no `DB` binding
+- `unavailable` when the binding exists but its metadata query fails
+- `schema_incomplete` when one or more required tables are absent
+- `ready` only when all five required tables are found
+
+The endpoint uses the request-scoped Worker environment (`request.scope["env"]`) so it can access bindings attached to the ASGI-hosted FastAPI request. It executes only a parameterized `SELECT` against SQLite's table metadata. It never creates or mutates records. `/health` remains an independent API-process check.
+
+## Cloudflare D1 binding activation (operator step)
+
+After the migration and adapter PRs are reviewed:
+
+1. In Cloudflare Dashboard, open **Storage & databases → D1 SQL Database** and create a database named `nova-core-db` in the intended account/region. Review the current D1 Free plan quotas and account billing before creating it.
+2. Copy the database UUID from the D1 database overview. Do not paste credentials or account tokens into GitHub issues or chat.
+3. Add a `d1_databases` entry to `apps/api/wrangler.jsonc` with binding `DB`, database name `nova-core-db`, and the actual database UUID. Do not commit a placeholder UUID.
+4. Ensure the GitHub Actions Cloudflare token has the minimum D1 permission needed for migrations as well as the existing Workers deployment permission.
+5. Apply `apps/api/migrations/0001_initial.sql` to the intended database using Wrangler's D1 migration workflow. Verify the migration history and tables before deploying a Worker build that contains the binding.
+6. Deploy only after the binding is configured. Then check `/api/v1/storage/status`; expected status is `ready` only when all five tables are present.
+
+Until those operator steps are completed, the live API must continue to report storage as unconfigured. No D1 database is created by this repository change.
