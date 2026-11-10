@@ -107,3 +107,20 @@ The isolated Worker now includes `apps/ingestion-worker/src/observation-persiste
 Observation and audit IDs are stable SHA-256-derived identifiers from the source ID and idempotency key. The database unique index on `(source_id, idempotency_key)` remains the concurrency-safe constraint. The adapter reads back the stored observation and compares the measurement/provenance payload: identical retries return the existing observation, while changed content under the same key returns HTTP 409. D1 errors fail closed with a generic 503.
 
 The Node test suite covers the persistence adapter, atomic batch shape, server-owned actor and unverified status, idempotent retries, idempotency conflicts, missing D1 capabilities, and the authenticated Worker route. These are mocked-binding tests. **No D1 database has been provisioned or bound, no Access application/service token has been configured, and this Worker has not been deployed.** The existing public NOVA Core Worker remains unchanged.
+
+
+## Module-side adapter implementation status (2026-11-10)
+
+Each module repository now has a draft, CI-tested server-side transport helper for the protected \`POST /api/v1/observations\` contract:
+
+| Module | Draft PR | Current scope |
+|---|---|---|
+| NeoAgro | https://github.com/wisemaiarservices-debug/neoagro-platform/pull/18 | Python server-only transport helper, mock tests, env template and runbook |
+| NeoGrid | https://github.com/wisemaiarservices-debug/neogrid-platform/pull/6 | Python server-only transport helper, mock tests, env template and runbook |
+| NeoCell | https://github.com/wisemaiarservices-debug/neocell-platform/pull/7 | Python server-only transport helper, mock tests, env template and runbook |
+
+All three adapter PRs remain draft and unmerged. Their CI suites passed on their recorded head commits. These helpers are not yet invoked by module API routes, background producers or device gateways. They do not create or infer real site/source/asset identities, and their service-token environment variables are intentionally blank.
+
+This milestone proves that each module has a tested, server-only transport boundary compatible with the NOVA Core observation envelope. It does **not** prove module connectivity or live telemetry. The only accepted ingestion state remains **none** until the dedicated ingestion Worker, Cloudflare Access Service Auth policy, D1 database/binding, registered ownership records, exact service grants and live acceptance tests are provisioned.
+
+Do not forward synthetic demo values, NASA POWER gridded/model-derived records, or arbitrary caller-supplied dashboard inputs as verified sensor observations. Each producer must preserve its actual acquisition method and source provenance; NOVA Core must continue assigning \`verification_status='unverified'\` until an independent verification process exists.
