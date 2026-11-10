@@ -21,7 +21,8 @@ function decodeJsonSegment(segment) {
 function issuerUrl(value) {
   let parsed;
   try { parsed = new URL(value); } catch { throw new Error("invalid_access_issuer"); }
-  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password ||
+      parsed.search || parsed.hash || (parsed.pathname !== "" && parsed.pathname !== "/")) {
     throw new Error("invalid_access_issuer");
   }
   return parsed.origin;
@@ -30,12 +31,22 @@ function issuerUrl(value) {
 async function fetchJwks(issuer, forceRefresh = false) {
   const cached = jwksCache.get(issuer);
   if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.keys;
-  const response = await fetch(issuer + "/cdn-cgi/access/certs", {
-    headers: { Accept: "application/json" },
-    cf: { cacheTtl: 300, cacheEverything: true },
-  });
+  let response;
+  try {
+    response = await fetch(issuer + "/cdn-cgi/access/certs", {
+      headers: { Accept: "application/json" },
+      cf: { cacheTtl: 300, cacheEverything: true },
+    });
+  } catch {
+    throw new Error("access_jwks_unavailable");
+  }
   if (!response.ok) throw new Error("access_jwks_unavailable");
-  const document = await response.json();
+  let document;
+  try {
+    document = await response.json();
+  } catch {
+    throw new Error("access_jwks_invalid");
+  }
   if (!document || !Array.isArray(document.keys) || document.keys.length === 0) {
     throw new Error("access_jwks_invalid");
   }
@@ -79,11 +90,13 @@ export async function verifyAccessServiceToken(token, config, nowSeconds = Math.
   if (!Number.isInteger(claims.exp) || claims.exp <= nowSeconds - CLOCK_SKEW_SECONDS) {
     throw new Error("access_token_expired");
   }
-  if (!Number.isInteger(claims.iat) || claims.iat > nowSeconds + CLOCK_SKEW_SECONDS) {
+  if (!Number.isInteger(claims.iat) || claims.iat > nowSeconds + CLOCK_SKEW_SECONDS ||
+      claims.exp <= claims.iat) {
     throw new Error("access_token_issue_time_invalid");
   }
   if (claims.nbf !== undefined &&
-      (!Number.isInteger(claims.nbf) || claims.nbf > nowSeconds + CLOCK_SKEW_SECONDS)) {
+      (!Number.isInteger(claims.nbf) || claims.nbf > nowSeconds + CLOCK_SKEW_SECONDS ||
+       claims.nbf >= claims.exp)) {
     throw new Error("access_token_not_yet_valid");
   }
 
@@ -118,7 +131,9 @@ export function parseServiceGrants(raw) {
   const allowedModules = new Set(["nova-core", "neoagro", "neogrid", "neocell"]);
   const grants = new Map();
   for (const [serviceId, moduleMap] of Object.entries(parsed)) {
-    if (!serviceId.trim() || !moduleMap || typeof moduleMap !== "object" || Array.isArray(moduleMap)) {
+    if (!serviceId.trim() || serviceId.trim() !== serviceId ||
+        !moduleMap || typeof moduleMap !== "object" || Array.isArray(moduleMap) ||
+        Object.keys(moduleMap).length === 0) {
       throw new Error("service_grant_invalid");
     }
     const normalized = new Map();
@@ -126,7 +141,8 @@ export function parseServiceGrants(raw) {
       if (!allowedModules.has(module) || !Array.isArray(sourceIds) || sourceIds.length === 0) {
         throw new Error("module_grant_invalid");
       }
-      if (sourceIds.some((source) => typeof source !== "string" || !source.trim() || source === "*")) {
+      if (sourceIds.some((source) => typeof source !== "string" ||
+          !source.trim() || source.trim() !== source || source === "*")) {
         throw new Error("source_grant_invalid");
       }
       if (new Set(sourceIds).size !== sourceIds.length) throw new Error("duplicate_source_grant");
