@@ -9,6 +9,34 @@ function json(data, status = 200) {
   });
 }
 
+async function readBoundedBody(request) {
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_BODY_BYTES) {
+        await reader.cancel();
+        throw new Error("payload_too_large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -26,32 +54,50 @@ export default {
     const issuer = env.ACCESS_ISSUER;
     const audience = env.ACCESS_AUDIENCE;
     const grantsJson = env.NOVA_SERVICE_GRANTS_JSON;
-    if (!issuer || !audience || !grantsJson) return json({ error: "ingestion_auth_not_configured" }, 503);
-
-    try {
-      const token = request.headers.get("Cf-Access-Jwt-Assertion");
-      const principal = await verifyAccessServiceToken(token, { issuer, audience });
-      const grants = parseServiceGrants(grantsJson);
-      const body = await request.arrayBuffer();
-      if (body.byteLength > MAX_BODY_BYTES) return json({ error: "payload_too_large" }, 413);
-
-      let payload;
-      try { payload = JSON.parse(new TextDecoder().decode(body)); } catch {
-        return json({ error: "invalid_json" }, 400);
-      }
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-        return json({ error: "invalid_payload" }, 400);
-      }
-      authorizeServiceSource(principal, payload.module, payload.source_id, grants);
-
-      // Deliberately no persistence until D1 is provisioned and ownership checks are wired.
-      return json({
-        error: "storage_not_configured",
-        status: "authenticated_but_not_accepted",
-        service_id: principal.serviceId,
-      }, 503);
-    } catch {
-      return json({ error: "request_not_authorized" }, 401);
+    if (!issuer || !audience || !grantsJson) {
+      return json({ error: "ingestion_auth_not_configured" }, 503);
     }
+
+    let principal;
+    let grants;
+    try {
+      principal = await verifyAccessServiceToken(
+        request.headers.get("Cf-Access-Jwt-Assertion"),
+        { issuer, audience },
+      );
+      grants = parseServiceGrants(grantsJson);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "";
+      const status = reason.startsWith("access_jwks_") ? 503 : 401;
+      return json({ error: "request_not_authorized" }, status);
+    }
+
+    let bytes;
+    try {
+      bytes = await readBoundedBody(request);
+    } catch (error) {
+      if (error instanceof Error && error.message === "payload_too_large") {
+        return json({ error: "payload_too_large" }, 413);
+      }
+      return json({ error: "invalid_request_body" }, 400);
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      return json({ error: "invalid_json" }, 400);
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return json({ error: "invalid_payload" }, 400);
+    }
+    try {
+      authorizeServiceSource(principal, payload.module, payload.source_id, grants);
+    } catch {
+      return json({ error: "request_not_authorized" }, 403);
+    }
+
+    // Deliberately no persistence until D1 is provisioned and ownership checks are wired.
+    return json({ error: "storage_not_configured", status: "authenticated_but_not_accepted" }, 503);
   },
 };
