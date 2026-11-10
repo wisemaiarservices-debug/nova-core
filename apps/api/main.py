@@ -204,8 +204,8 @@ def explain(state: SiteState) -> dict[str, Any]:
 def nasa_power_daily(
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
-    start_date: date,
-    end_date: date,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
 ) -> dict[str, Any]:
     if end_date < start_date:
         raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
