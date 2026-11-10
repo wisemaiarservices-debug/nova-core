@@ -109,6 +109,9 @@ def test_cors_is_configurable_and_disallows_credentials():
     assert "http://localhost:8504" in config["allow_origins"]
     assert "https://nova-os-pied.vercel.app" in config["allow_origins"]
     assert "https://neohaven-nova-os-website-git-feat-n-4294c9-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://neoagro-git-fix-neoagro-provenance-56a89b-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://neocell-git-fix-neocell-api-health-52be8d-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://neogrid-git-fix-neogrid-provenance-43da6f-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
     assert config["allow_credentials"] is False
     assert "OPTIONS" in config["allow_methods"]
 
