@@ -75,17 +75,19 @@ test("rejects issuer configuration containing a path", async () => {
 });
 
 test("maps JWKS network failures to a controlled availability error", async () => {
+  const isolatedIssuer = "https://network-failure.cloudflareaccess.com";
   globalThis.fetch = async () => { throw new Error("network details must not escape"); };
   await assert.rejects(
-    () => verifyAccessServiceToken(makeToken(), { issuer, audience }, now),
+    () => verifyAccessServiceToken(makeToken({ iss: isolatedIssuer }), { issuer: isolatedIssuer, audience }, now),
     /access_jwks_unavailable/,
   );
 });
 
 test("maps malformed JWKS responses to a controlled validation error", async () => {
+  const isolatedIssuer = "https://malformed-jwks.cloudflareaccess.com";
   globalThis.fetch = async () => new Response("not-json", { status: 200 });
   await assert.rejects(
-    () => verifyAccessServiceToken(makeToken(), { issuer, audience }, now),
+    () => verifyAccessServiceToken(makeToken({ iss: isolatedIssuer }), { issuer: isolatedIssuer, audience }, now),
     /access_jwks_invalid/,
   );
 });
