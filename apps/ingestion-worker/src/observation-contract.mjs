@@ -27,6 +27,28 @@ function requiredString(value, max, field) {
   }
 }
 
+function isValidCalendarTimestamp(value) {
+  const match = RFC3339_PATTERN.exec(value);
+  if (!match) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const hour = Number(value.slice(11, 13));
+  const minute = Number(value.slice(14, 16));
+  const second = Number(value.slice(17, 19));
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (day < 1 || day > monthDays[month - 1]) return false;
+  const zone = value.slice(19);
+  if (zone !== "Z") {
+    const offsetHour = Number(zone.slice(1, 3));
+    const offsetMinute = Number(zone.slice(4, 6));
+    if (offsetHour > 23 || offsetMinute > 59) return false;
+  }
+  return true;
+}
+
 export function validateObservationPayload(payload, nowMs = Date.now()) {
   if (!isRecord(payload) || !hasOnlyKeys(payload, TOP_LEVEL_KEYS)) throw new Error("invalid_payload_shape");
 
@@ -39,7 +61,7 @@ export function validateObservationPayload(payload, nowMs = Date.now()) {
   if (typeof payload.unit !== "string" || !UNIT_PATTERN.test(payload.unit)) throw new Error("invalid_unit");
   requiredString(payload.idempotency_key, 200, "idempotency_key");
 
-  if (typeof payload.observed_at !== "string" || !RFC3339_PATTERN.test(payload.observed_at)) {
+  if (typeof payload.observed_at !== "string" || !isValidCalendarTimestamp(payload.observed_at)) {
     throw new Error("invalid_observed_at");
   }
   const observedAt = Date.parse(payload.observed_at);
