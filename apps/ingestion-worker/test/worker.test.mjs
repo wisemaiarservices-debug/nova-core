@@ -1,6 +1,52 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createPublicKey, generateKeyPairSync, sign, webcrypto } from "node:crypto";
 import worker from "../src/index.mjs";
+
+globalThis.crypto ??= webcrypto;
+const originalFetch = globalThis.fetch;
+
+function b64url(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function makeAccessFixture(issuer) {
+  const audience = "nova-ingestion-audience";
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  });
+  const jwk = createPublicKey(publicKey).export({ format: "jwk" });
+  Object.assign(jwk, { kid: "worker-route-test-key", use: "sig", alg: "RS256" });
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT", kid: jwk.kid }));
+  const claims = b64url(JSON.stringify({
+    iss: issuer,
+    aud: [audience],
+    type: "app",
+    sub: "",
+    common_name: "neoagro-ingestor",
+    iat: now - 5,
+    exp: now + 300,
+    jti: "worker-route-test",
+  }));
+  const input = header + "." + claims;
+  const token = input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
+  return { audience, token, jwk };
+}
+
+function envFor(issuer, audience, grants = '{"neoagro-ingestor":{"neoagro":["source-weather-01"]}}') {
+  return {
+    ACCESS_ISSUER: issuer,
+    ACCESS_AUDIENCE: audience,
+    NOVA_SERVICE_GRANTS_JSON: grants,
+  };
+}
+
+test.after(() => {
+  globalThis.fetch = originalFetch;
+});
 
 test("health identifies the separate ingestion Worker and disabled state", async () => {
   const response = await worker.fetch(new Request("https://ingest.example/health"), {});
@@ -13,7 +59,7 @@ test("health identifies the separate ingestion Worker and disabled state", async
 test("observation route fails closed when server auth configuration is absent", async () => {
   const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
     method: "POST",
-    body: JSON.stringify({ module: "neoagro", source_id: "source-1" }),
+    body: JSON.stringify({ module: "neoagro", source_id: "source-weather-01" }),
   }), {});
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "ingestion_auth_not_configured" });
@@ -30,14 +76,91 @@ test("oversized declared payload is rejected before authentication or body parsi
 });
 
 test("observation route rejects absent Access JWT", async () => {
+  const issuer = "https://missing-token.cloudflareaccess.com";
   const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
     method: "POST",
-    body: JSON.stringify({ module: "neoagro", source_id: "source-1" }),
-  }), {
-    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
-    ACCESS_AUDIENCE: "nova-ingestion-audience",
-    NOVA_SERVICE_GRANTS_JSON: '{"neoagro-ingestor":{"neoagro":["source-1"]}}',
-  });
+    body: JSON.stringify({ module: "neoagro", source_id: "source-weather-01" }),
+  }), envFor(issuer, "nova-ingestion-audience"));
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: "request_not_authorized" });
+});
+
+test("valid Access service identity and exact source grant reach the storage gate but are not accepted", async () => {
+  const issuer = "https://valid-route.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async (url) => {
+    assert.equal(String(url), issuer + "/cdn-cgi/access/certs");
+    return new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify({
+      module: "neoagro",
+      source_id: "source-weather-01",
+      value: 18.5,
+      unit: "degC",
+    }),
+  }), envFor(issuer, fixture.audience));
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "storage_not_configured",
+    status: "authenticated_but_not_accepted",
+  });
+});
+
+test("valid service identity cannot submit a source outside its exact grant", async () => {
+  const issuer = "https://wrong-grant.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify({ module: "neoagro", source_id: "source-unapproved" }),
+  }), envFor(issuer, fixture.audience));
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "request_not_authorized" });
+});
+
+test("JWKS outage fails closed with a service-unavailable response", async () => {
+  const issuer = "https://jwks-outage.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response("unavailable", { status: 503 });
+
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify({ module: "neoagro", source_id: "source-weather-01" }),
+  }), envFor(issuer, fixture.audience));
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "request_not_authorized" });
+});
+
+test("valid service token with malformed JSON is rejected before storage", async () => {
+  const issuer = "https://malformed-body.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: "{not-json",
+  }), envFor(issuer, fixture.audience));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "invalid_json" });
 });
