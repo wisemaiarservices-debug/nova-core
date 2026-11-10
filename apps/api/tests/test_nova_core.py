@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
@@ -108,3 +109,17 @@ def test_cors_is_configurable_and_disallows_credentials():
     assert "http://localhost:8504" in config["allow_origins"]
     assert config["allow_credentials"] is False
     assert "OPTIONS" in config["allow_methods"]
+
+
+def test_nasa_power_async_adapter_uses_local_fallback(monkeypatch):
+    from apps.api.services import nasa_power
+    from datetime import date
+
+    expected = {"records": [{"date": "20260101", "values": {"T2M": 18.5}}]}
+    monkeypatch.setattr(nasa_power, "fetch_daily_point", lambda *args: expected)
+    result = asyncio.run(
+        nasa_power.fetch_daily_point_async(
+            36.8, 10.2, date(2026, 1, 1), date(2026, 1, 1)
+        )
+    )
+    assert result == expected
