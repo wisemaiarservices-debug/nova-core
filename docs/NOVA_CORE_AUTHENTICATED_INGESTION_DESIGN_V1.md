@@ -29,7 +29,21 @@ A future `POST /api/v1/observations` request should contain:
 
 The server must assign `ingested_at`, authenticated actor/service identity, verification state, and audit metadata. Client-supplied actor identity, verified status, or audit fields must be rejected or ignored; they are never authoritative.
 
-## Validation foundation now added\n\nThe branch now includes `apps/api/services/observation_contract.py`, a side-effect-free Pydantic contract that rejects unknown fields, unsupported modules, malformed metric/unit identifiers, non-finite values, timezone-naive timestamps, timestamps more than five minutes in the future, duplicate or unknown quality flags, and client attempts to set server-owned trust fields. It normalizes timestamps to UTC. This is input-shape validation only: it does not authenticate or authorize a caller, prove source/site ownership, enforce payload byte limits, or write to D1.\n\n## Authorization rules
+## Validation and authorization foundations
+
+The branch includes `apps/api/services/observation_contract.py`, a side-effect-free Pydantic contract that rejects unknown fields, unsupported modules, malformed metric/unit identifiers, non-numeric and non-finite values, timezone-naive timestamps, timestamps more than five minutes in the future, duplicate or unknown quality flags, and client attempts to set server-owned trust fields. It normalizes timestamps to UTC. This validates input shape only.
+
+The branch includes `apps/api/services/service_authorization.py`, a pure deny-by-default policy. It accepts only a typed `VerifiedServicePrincipal` supplied by a future signature-verifying authentication adapter and an exact server-side service-to-module-to-source allowlist. Wildcard grants are rejected.
+
+The branch also includes `apps/api/services/cloudflare_access_identity.py`, which maps already-verified Cloudflare Access JWT claims into that principal. It requires the expected issuer and audience, `type=app`, `service_token_status=true`, a non-empty `common_name` service-token ID, and valid `iat`/`exp` claims. **It does not verify JWT signatures.** The caller must first verify RS256 and the signing key against the Access JWKS; decoded/unverified claims must never reach this adapter. Cloudflare documents the `Cf-Access-Jwt-Assertion` header, JWKS endpoint, RS256 signing, issuer/audience checks, and service-token `common_name`/`service_token_status` claims:
+- [Cloudflare — Validate JWTs](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
+- [Cloudflare — Application token claims](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/)
+
+Tests cover strict observation payloads, exact grants, unknown identities, incomplete principals, cross-module attempts, unlisted sources, malformed grant configuration, wrong issuer/audience, expired tokens, and non-service-token identities.
+
+**None of these modules is wired to HTTP headers or a route. No request is currently authenticated.** They do not prove site/asset ownership, enforce HTTP payload byte limits, or write to D1.
+
+## Authorization rules
 
 - Authenticate before parsing or writing a request body beyond safe request-size enforcement.
 - Map each Access service identity to allowed modules and source identities.
