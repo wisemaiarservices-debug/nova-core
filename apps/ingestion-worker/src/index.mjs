@@ -44,7 +44,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ status: "ok", service: "nova-core-ingest-api", mode: "authenticated-ingestion-disabled" });
+      return json({ status: "ok", service: "nova-core-ingest-api", mode: "guarded-auth-required" });
     }
     if (request.method !== "POST" || url.pathname !== "/api/v1/observations") {
       return json({ error: "not_found" }, 404);
