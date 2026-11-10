@@ -53,3 +53,6 @@ GitHub Actions runs a local Worker smoke test for the health route, review-only 
 - NASA POWER data remain gridded/model-derived data, not local station telemetry.
 - Health checks prove service reachability only.
 - No training runner, durable site database, autonomous dispatch or critical infrastructure control is included.
+
+
+A manual GitHub Actions workflow is available at `.github/workflows/cloudflare-worker-deploy.yml`. After configuring the two repository secrets and reviewing the `nova-core-api` GitHub Environment protection rules, use **Actions → Deploy NOVA Core API to Cloudflare Workers → Run workflow**. The workflow is manual-only; it is not triggered by pushes or pull requests.
