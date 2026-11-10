@@ -45,6 +45,7 @@ function mockD1(existing = null) {
       assert.match(audit.sql, /INSERT OR IGNORE INTO audit_events/);
       assert.match(audit.sql, /WHERE EXISTS/);
       const v = insert.values;
+      let inserted = false;
       if (!state.observation) {
         state.observation = {
           id: v[0], site_id: v[1], asset_id: v[2], source_id: v[3],
@@ -54,10 +55,11 @@ function mockD1(existing = null) {
           quality_flags_json: v[11],
         };
         state.audit.push({ id: audit.values[0], actor_id: audit.values[1] });
+        inserted = true;
       } else if (state.observation.id === v[0]) {
         // A retry is ignored by the unique key and does not create a second audit event.
       }
-      return [{ success: true, meta: { changes: state.observation.id === v[0] ? 1 : 0 } }, { success: true }];
+      return [{ success: true, meta: { changes: inserted ? 1 : 0 } }, { success: true }];
     },
   };
   return db;
@@ -79,7 +81,8 @@ test("retries return the original observation without duplicating the audit even
   const first = await persistObservation(db, observation, principal);
   const second = await persistObservation(db, observation, principal);
   assert.equal(first.observation_id, second.observation_id);
-  assert.equal(second.status, "accepted");
+  assert.equal(second.status, "already_accepted");
+  assert.equal(second.idempotent, true);
   assert.equal(db.state.batches, 2);
   assert.equal(db.state.audit.length, 1);
 });
