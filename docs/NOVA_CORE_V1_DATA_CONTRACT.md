@@ -48,3 +48,15 @@ Recommendations are screening prompts for human review. The API does not issue i
 ## Compatibility note
 
 Existing endpoint paths and core response keys are retained where meaningful. Numeric impact claims and fabricated optimized scenario values are intentionally removed. Consumers must handle null values and inspect the status, methodology, and input_provenance fields.
+
+## First external data adapter: NASA POWER
+
+The V1 API includes a daily point-data retrieval endpoint at /api/v1/data/weather/nasa-power/daily. It requests daily temperature, relative humidity, precipitation, wind speed, and all-sky surface shortwave radiation from the NASA POWER Daily API.
+
+NASA POWER documents daily meteorological and solar time series from 1981 to near real time, supports UTC time standard, and provides JSON responses. The adapter preserves units and source metadata when supplied, converts the provider fill value to null, and identifies the result as gridded/model-derived rather than a local station measurement.
+
+Endpoint query parameters: latitude, longitude, start_date, and end_date. The adapter limits requests to 367 calendar days and uses a 20-second network timeout. Provider failures return HTTP 502; invalid date ranges return HTTP 422.
+
+NASA POWER states that there are no restrictions on use, access, or download of its data and requests citation of the NASA POWER Project. Attribution is included in the API response. Users must still inspect dataset-specific terms for any additional third-party datasets introduced later.
+
+Source documentation: https://power.larc.nasa.gov/docs/services/api/temporal/daily/
