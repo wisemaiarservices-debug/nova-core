@@ -128,3 +128,61 @@ def test_nasa_power_async_adapter_uses_local_fallback(monkeypatch):
         )
     )
     assert result == expected
+
+
+def test_storage_status_is_explicitly_unconfigured_without_binding():
+    from apps.api.services.d1_storage import storage_status, EXPECTED_TABLES
+
+    result = asyncio.run(storage_status())
+    assert result["status"] == "unconfigured"
+    assert result["engine"] == "cloudflare_d1"
+    assert result["read_only"] is True
+    assert set(result["missing_tables"]) == EXPECTED_TABLES
+    assert result["writes_performed"] is False
+
+
+def test_storage_status_reports_complete_schema_from_read_only_binding():
+    from types import SimpleNamespace
+    from apps.api.services.d1_storage import storage_status, EXPECTED_TABLES
+
+    class FakeStatement:
+        def bind(self, *args):
+            return self
+
+        async def run(self):
+            return SimpleNamespace(
+                results=SimpleNamespace(
+                    to_py=lambda: [{"name": name} for name in sorted(EXPECTED_TABLES)]
+                )
+            )
+
+    class FakeDatabase:
+        def prepare(self, query):
+            assert "SELECT name FROM sqlite_master" in query
+            return FakeStatement()
+
+    result = asyncio.run(storage_status(FakeDatabase()))
+    assert result["status"] == "ready"
+    assert result["present_tables"] == sorted(EXPECTED_TABLES)
+    assert result["missing_tables"] == []
+    assert result["writes_performed"] is False
+
+
+def test_storage_status_reports_incomplete_schema():
+    from apps.api.services.d1_storage import storage_status
+
+    class FakeStatement:
+        def bind(self, *args):
+            return self
+
+        async def run(self):
+            return type("Result", (), {"results": type("Rows", (), {"to_py": lambda self: [{"name": "sites"}]})()})()
+
+    class FakeDatabase:
+        def prepare(self, query):
+            return FakeStatement()
+
+    result = asyncio.run(storage_status(FakeDatabase()))
+    assert result["status"] == "schema_incomplete"
+    assert result["present_tables"] == ["sites"]
+    assert "observations" in result["missing_tables"]
