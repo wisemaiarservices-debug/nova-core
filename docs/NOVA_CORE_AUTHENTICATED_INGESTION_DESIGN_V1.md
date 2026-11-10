@@ -43,7 +43,11 @@ The branch also includes `apps/api/services/observation_ownership.py`, a pure po
 
 Tests cover strict observation payloads, exact grants, unknown identities, incomplete principals, cross-module attempts, unlisted sources, malformed grant configuration, wrong issuer/audience, expired tokens, non-service-token identities, inactive sites/assets, disabled sources, and cross-site ownership mismatches.
 
-**None of these modules is wired to HTTP headers or a route. No request is currently authenticated.** They do not enforce HTTP payload byte limits or write to D1.
+The isolated Worker prototype now lives in `apps/ingestion-worker/`. Unlike the Python claims-only adapter above, its `src/access-auth.mjs` verifies the RS256 signature with Cloudflare Access JWKS using the Workers Web Crypto API, refreshes JWKS when a key ID is not found, and validates issuer, audience, service-token claims, and token times. It then applies exact service/module/source grants. The HTTP handler reads the Access assertion from `Cf-Access-Jwt-Assertion`, authenticates before reading the request body, enforces a 32 KiB streaming body limit, and fails closed. Its observation route intentionally returns `storage_not_configured` (503) after successful authentication and authorization: it does not accept or persist observations. No site/source/asset D1 lookup or write is wired.
+
+CI now runs the Node.js security tests alongside the Python API suite. These tests use a locally generated RSA keypair and a mocked JWKS response; they verify real RS256 signatures in the test runtime, invalid claims/signatures, exact grants, and fail-closed HTTP behavior. They are not a live Cloudflare Access integration test.
+
+**The prototype code is present, but no Access application/policy, service token, secret, D1 binding, or deployment exists.** The deployed public API remains unchanged.
 
 ## Public API versus protected ingestion topology
 
@@ -81,14 +85,14 @@ Before implementation, add tests for:
 
 ## Rollout gates
 
-1. Confirm Cloudflare Access service-token support and route protection for the deployed Worker/API path.
+1. Create a separate Cloudflare Worker project and protect its Worker hostname with a Cloudflare Access Service Auth policy; keep the public read-only API separate.
 2. Configure service identities and secrets only in server-side environments; never expose them to browsers.
 3. Add an integration test against the real Workers runtime or a faithful D1/Workers test environment.
 4. Provision D1 only after reviewing the account's current free quotas and billing settings. A free tier is not a guarantee of zero charges.
 5. Apply migrations and verify `GET /api/v1/storage/status` reports `ready`.
-6. Deploy the authenticated write route disabled by default; enable it only after security tests pass.
+6. Deploy the isolated ingestion Worker with no D1 binding; verify Access blocks requests without a valid service token and that the authenticated route still returns storage-not-configured. Do not enable writes until the D1 integration and ownership tests pass.
 7. Start with one non-production source and a small, reversible observation batch. Keep all recommendations human-reviewed and do not connect actuator controls.
 
 ## Current implementation status
 
-This document is a design and acceptance contract, not an implemented ingestion endpoint. The deployed NOVA Core Worker remains stateless for observations. D1 has not been provisioned or bound. No observation write route, Access policy, service token, or training pipeline is active.
+This document is a design and acceptance contract plus an isolated, non-persistent Worker prototype. The deployed public NOVA Core Worker remains stateless for observations. D1 has not been provisioned or bound. The isolated Worker code is not deployed, no Access policy or service token is active, and no observation write is accepted. No training pipeline is active.
