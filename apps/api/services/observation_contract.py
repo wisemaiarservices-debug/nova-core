@@ -63,6 +63,13 @@ class ObservationSubmission(BaseModel):
             raise ValueError("unit contains unsupported characters")
         return value
 
+    @field_validator("value", mode="before")
+    @classmethod
+    def require_numeric_value(cls, value: Any) -> Any:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("value must be a JSON number")
+        return value
+
     @field_validator("value")
     @classmethod
     def validate_finite_value(cls, value: float) -> float:
