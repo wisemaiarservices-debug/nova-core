@@ -57,12 +57,38 @@ for (const [name, overrides] of [
   ["non-empty subject", { sub: "user-subject" }],
   ["expired token", { exp: now - 120 }],
   ["future issue time", { iat: now + 120 }],
+  ["expiry before issue time", { iat: now + 10, exp: now }],
+  ["not-before after expiry", { nbf: now + 700 }],
   ["missing service identity", { common_name: "" }],
 ]) {
   test("rejects " + name, async () => {
     await assert.rejects(() => verifyAccessServiceToken(makeToken(overrides), { issuer, audience }, now));
   });
 }
+
+test("rejects issuer configuration containing a path", async () => {
+  await assert.rejects(() => verifyAccessServiceToken(
+    makeToken(),
+    { issuer: issuer + "/unexpected-path", audience },
+    now,
+  ), /invalid_access_issuer/);
+});
+
+test("maps JWKS network failures to a controlled availability error", async () => {
+  globalThis.fetch = async () => { throw new Error("network details must not escape"); };
+  await assert.rejects(
+    () => verifyAccessServiceToken(makeToken(), { issuer, audience }, now),
+    /access_jwks_unavailable/,
+  );
+});
+
+test("maps malformed JWKS responses to a controlled validation error", async () => {
+  globalThis.fetch = async () => new Response("not-json", { status: 200 });
+  await assert.rejects(
+    () => verifyAccessServiceToken(makeToken(), { issuer, audience }, now),
+    /access_jwks_invalid/,
+  );
+});
 
 test("rejects unsupported JWT algorithm", async () => {
   const header = b64url(JSON.stringify({ alg: "none", kid: "test-key-1" }));
@@ -86,6 +112,9 @@ for (const invalid of [
   '{"service": {"neoagro": []}}',
   '{"service": {"unknown": ["source-1"]}}',
   '{"service": {"neoagro": ["source-1", "source-1"]}}',
+  '{"service": {"neoagro": [" * "]}}',
+  '{" service ": {"neoagro": ["source-1"]}}',
+  '{"service": {}}',
   '[]',
 ]) {
   test("rejects unsafe service grant configuration", () => {
