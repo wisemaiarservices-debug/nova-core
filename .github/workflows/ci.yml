@@ -7,6 +7,7 @@ on:
       - main
       - feat/nova-core-v1-provenance-and-honest-impact
       - feat/nova-core-d1-persistence-foundation
+      - feat/nova-d1-readiness-probe
 
 jobs:
   api-tests:
