@@ -39,13 +39,29 @@ class Recommendation(BaseModel):
 
 app = FastAPI(title="NOVA Core API", version="0.2.0")
 
+try:
+    from workers import env as worker_env
+except ImportError:
+    worker_env = None
+
+DEFAULT_ALLOWED_ORIGINS = (
+    "http://localhost:3000,http://localhost:5173,http://localhost:8400,"
+    "http://localhost:8504,http://localhost:8508,"
+    "https://nova-os-pied.vercel.app,https://neoagro-six.vercel.app,"
+    "https://neocell-ebon.vercel.app,https://neogrid-sigma.vercel.app,"
+    "https://neohaven-nova-os-website.vercel.app,"
+    "https://neohaven-nova-os-website-git-feat-n-4294c9-neo-haven-urban-labs.vercel.app,"
+    "https://neoagro-git-fix-neoagro-provenance-56a89b-neo-haven-urban-labs.vercel.app,"
+    "https://neocell-git-fix-neocell-api-health-52be8d-neo-haven-urban-labs.vercel.app,"
+    "https://neogrid-git-fix-neogrid-provenance-43da6f-neo-haven-urban-labs.vercel.app"
+)
+configured_origins = (
+    os.getenv("NOVA_CORE_ALLOWED_ORIGINS")
+    or getattr(worker_env, "NOVA_CORE_ALLOWED_ORIGINS", None)
+    or DEFAULT_ALLOWED_ORIGINS
+)
 ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv(
-        "NOVA_CORE_ALLOWED_ORIGINS",
-        "http://localhost:3000,http://localhost:5173,http://localhost:8400,http://localhost:8504,http://localhost:8508,https://nova-os-pied.vercel.app,https://neoagro-six.vercel.app,https://neocell-ebon.vercel.app,https://neogrid-sigma.vercel.app,https://neohaven-nova-os-website.vercel.app,https://neohaven-nova-os-website-git-feat-n-4294c9-neo-haven-urban-labs.vercel.app,https://neoagro-git-fix-neoagro-provenance-56a89b-neo-haven-urban-labs.vercel.app,https://neocell-git-fix-neocell-api-health-52be8d-neo-haven-urban-labs.vercel.app,https://neogrid-git-fix-neogrid-provenance-43da6f-neo-haven-urban-labs.vercel.app",
-    ).split(",")
-    if origin.strip()
+    origin.strip() for origin in configured_origins.split(",") if origin.strip()
 ]
 app.add_middleware(
     CORSMiddleware,
