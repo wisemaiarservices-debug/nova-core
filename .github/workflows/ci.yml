@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feat/nova-core-v1-provenance-and-honest-impact
+      - feat/nova-core-d1-persistence-foundation
 
 jobs:
   api-tests:
