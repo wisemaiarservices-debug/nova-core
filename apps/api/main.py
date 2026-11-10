@@ -10,8 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 try:
     from .services.nasa_power import fetch_daily_point_async
+    from .services.d1_storage import storage_status
 except ImportError:
     from services.nasa_power import fetch_daily_point_async
+    from services.d1_storage import storage_status
 
 
 class SiteState(BaseModel):
@@ -196,6 +198,13 @@ def recommend(state: SiteState) -> Recommendation:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "nova-core-api", "time": now_iso()}
+
+
+@app.get("/api/v1/storage/status")
+async def read_storage_status() -> dict[str, Any]:
+    """Read-only D1 binding/schema check; never creates or mutates data."""
+    database = getattr(worker_env, "DB", None) if worker_env is not None else None
+    return await storage_status(database)
 
 
 @app.post("/api/v1/forecast/run")
