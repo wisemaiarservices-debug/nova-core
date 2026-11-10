@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign, webcrypto } from "node:crypto";
+import { createPublicKey, generateKeyPairSync, sign, webcrypto } from "node:crypto";
 import { authorizeServiceSource, parseServiceGrants, verifyAccessServiceToken } from "../src/access-auth.mjs";
 
 globalThis.crypto ??= webcrypto;
@@ -12,7 +12,7 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   publicKeyEncoding: { type: "spki", format: "pem" },
   privateKeyEncoding: { type: "pkcs8", format: "pem" },
 });
-const jwk = publicKey.export({ format: "jwk" });
+const jwk = createPublicKey(publicKey).export({ format: "jwk" });
 Object.assign(jwk, { kid: "test-key-1", use: "sig", alg: "RS256" });
 const originalFetch = globalThis.fetch;
 
