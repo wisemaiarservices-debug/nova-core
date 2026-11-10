@@ -84,7 +84,7 @@ export default {
     }
 
     const contentType = request.headers.get("content-type") || "";
-    if (!/^application\\/json(?:\\s*;|\\s*$)/i.test(contentType)) {
+    if (!/^application\/json(?:\s*;|\s*$)/i.test(contentType)) {
       return json({ error: "application_json_required" }, 415);
     }
 
