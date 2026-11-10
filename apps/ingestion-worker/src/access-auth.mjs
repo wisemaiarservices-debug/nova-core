@@ -112,7 +112,7 @@ export async function verifyAccessServiceToken(token, config, nowSeconds = Math.
   let jwk = keys.find((candidate) => isSigningKey(candidate, header.kid));
   if (!jwk) {
     keys = await fetchJwks(issuer, true);
-    jwk = keys.find((candidate) => candidate.kid === header.kid && candidate.kty === "RSA" && candidate.use !== "enc");
+    jwk = keys.find((candidate) => isSigningKey(candidate, header.kid));
   }
   if (!jwk) throw new Error("access_signing_key_not_found");
 
