@@ -37,10 +37,14 @@ jobs:
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
-          for attempt in $(seq 1 60); do
+          for attempt in $(seq 1 45); do
             if curl --silent --show-error --fail http://127.0.0.1:8787/health > /tmp/nova-health.json; then
               READY=1
               break
+            fi
+            if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+              cat /tmp/nova-worker.log
+              exit 1
             fi
             sleep 2
           done
