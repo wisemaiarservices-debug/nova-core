@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date
 from typing import Any
@@ -77,4 +78,45 @@ def fetch_daily_point(
         raise RuntimeError(f"NASA POWER request failed: {exc}") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("NASA POWER returned an invalid JSON response") from exc
+    return parse_daily_response(payload)
+
+
+async def fetch_daily_point_async(
+    latitude: float, longitude: float, start_date: date, end_date: date
+) -> dict[str, Any]:
+    """Fetch NASA POWER through Workers fetch on Pyodide, or urllib locally."""
+    query = {
+        "parameters": NASA_POWER_PARAMETERS,
+        "community": "AG",
+        "longitude": longitude,
+        "latitude": latitude,
+        "start": start_date.strftime("%Y%m%d"),
+        "end": end_date.strftime("%Y%m%d"),
+        "format": "JSON",
+        "time-standard": "UTC",
+    }
+    url = f"{NASA_POWER_URL}?{urlencode(query)}"
+    headers = {"User-Agent": "NOVA-Core/0.2 (NeoHaven Urban Labs)"}
+
+    try:
+        from js import Object, fetch
+        from pyodide.ffi import to_js
+    except ImportError:
+        return await asyncio.to_thread(
+            fetch_daily_point, latitude, longitude, start_date, end_date
+        )
+
+    try:
+        options = to_js(
+            {"method": "GET", "headers": headers},
+            dict_converter=Object.fromEntries,
+        )
+        response = await asyncio.wait_for(fetch(url, options), timeout=20)
+        if not response.ok:
+            raise RuntimeError(f"NASA POWER request failed with HTTP {response.status}")
+        payload_proxy = await response.json()
+        payload = payload_proxy.to_py()
+    except Exception as exc:
+        raise RuntimeError(f"NASA POWER request failed: {exc}") from exc
+
     return parse_daily_response(payload)
