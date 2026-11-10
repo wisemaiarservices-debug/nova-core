@@ -67,3 +67,12 @@ Source documentation: https://power.larc.nasa.gov/docs/services/api/temporal/dai
 The API exposes a configurable exact-origin allowlist through `NOVA_CORE_ALLOWED_ORIGINS`, a comma-separated server-side environment variable. Local development defaults include the NeoAgro, NOVA OS, NeoGrid and NeoCell development ports. Production deployments must replace or extend this value with the exact HTTPS origins of the deployed clients.
 
 Credentials are disabled in CORS. Only the required GET, POST and OPTIONS methods and Accept / Content-Type headers are allowed. Do not use wildcard origins with credentialed requests. The health endpoint confirms API reachability only; it does not certify telemetry availability or data quality.
+
+
+Example production allowlist (use only the domains that actually need browser access):
+
+```bash
+NOVA_CORE_ALLOWED_ORIGINS=https://nova-os-pied.vercel.app,https://neoagro-six.vercel.app,https://neocell-ebon.vercel.app,https://neogrid-sigma.vercel.app
+```
+
+Preview deployments use changing hostnames and should be added explicitly only when required for testing; do not use a wildcard origin.
