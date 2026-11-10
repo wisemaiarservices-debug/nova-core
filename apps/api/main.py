@@ -4,7 +4,7 @@ import os
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -201,9 +201,10 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/v1/storage/status")
-async def read_storage_status() -> dict[str, Any]:
+async def read_storage_status(request: Request) -> dict[str, Any]:
     """Read-only D1 binding/schema check; never creates or mutates data."""
-    database = getattr(worker_env, "DB", None) if worker_env is not None else None
+    runtime_env = request.scope.get("env")
+    database = getattr(runtime_env, "DB", None) if runtime_env is not None else None
     return await storage_status(database)
 
 
