@@ -20,7 +20,7 @@ function b64url(value) { return Buffer.from(value).toString("base64url"); }
 function makeToken(overrides = {}) {
   const header = { alg: "RS256", typ: "JWT", kid: "test-key-1" };
   const claims = {
-    iss: issuer, aud: [audience], type: "app", service_token_status: true,
+    iss: issuer, aud: [audience], type: "app", sub: "",
     common_name: "neoagro-ingestor", iat: now - 10, exp: now + 600, jti: "test-jti",
     ...overrides,
   };
@@ -54,6 +54,7 @@ for (const [name, overrides] of [
   ["wrong audience", { aud: ["another-audience"] }],
   ["non-service token", { type: "user" }],
   ["service token status false", { service_token_status: false }],
+  ["non-empty subject", { sub: "user-subject" }],
   ["expired token", { exp: now - 120 }],
   ["future issue time", { iat: now + 120 }],
   ["missing service identity", { common_name: "" }],
