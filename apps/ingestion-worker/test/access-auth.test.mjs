@@ -110,7 +110,7 @@ for (const [name, metadata] of [
     );
   });
 }
-\ntest("rejects unsupported JWT algorithm", async () => {
+test("rejects unsupported JWT algorithm", async () => {
   const header = b64url(JSON.stringify({ alg: "none", kid: "test-key-1" }));
   const payload = b64url(JSON.stringify({ iss: issuer, aud: audience }));
   await assert.rejects(() => verifyAccessServiceToken(header + "." + payload + ".x", { issuer, audience }, now));
