@@ -38,7 +38,11 @@ def principal_from_verified_access_claims(
     if not isinstance(audiences, list) or expected_audience not in audiences:
         raise AccessIdentityError("unexpected Access token audience")
 
-    if claims.get("type") != "app" or claims.get("service_token_status") is not True:
+    if (
+        claims.get("type") != "app"
+        or claims.get("sub") != ""
+        or claims.get("service_token_status", True) is not True
+    ):
         raise AccessIdentityError("an authenticated Access service token is required")
 
     service_id = claims.get("common_name")
@@ -51,6 +55,11 @@ def principal_from_verified_access_claims(
         raise AccessIdentityError("Access service token is expired or has invalid expiry")
     if not isinstance(issued_at, int) or isinstance(issued_at, bool) or issued_at > now + 300:
         raise AccessIdentityError("Access service token has invalid issue time")
+    not_before = claims.get("nbf")
+    if not_before is not None and (
+        not isinstance(not_before, int) or isinstance(not_before, bool) or not_before > now + 60
+    ):
+        raise AccessIdentityError("Access service token is not yet valid")
 
     token_id = claims.get("jti")
     if token_id is not None and not isinstance(token_id, str):
