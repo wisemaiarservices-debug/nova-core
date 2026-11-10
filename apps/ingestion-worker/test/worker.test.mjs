@@ -39,25 +39,44 @@ function makeAccessFixture(issuer) {
 
 function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceModule = "neoagro",
   sourceStatus = "unverified", assetSiteId = "site-001", assetStatus = "active" } = {}) {
+  const state = { observation: null, audit: [] };
   return {
+    state,
     prepare(sql) {
       return {
-        bind(...values) {
-          return {
-            async first() {
-              if (sql.includes("FROM sites")) return { id: values[0], status: siteStatus };
-              if (sql.includes("FROM sources")) return {
-                id: values[0], site_id: sourceSiteId, module: sourceModule,
-                verification_status: sourceStatus,
-              };
-              if (sql.includes("FROM assets")) return {
-                id: values[0], site_id: assetSiteId, status: assetStatus,
-              };
-              throw new Error("unexpected_query");
-            },
+        sql,
+        values: [],
+        bind(...values) { this.values = values; return this; },
+        async first() {
+          if (sql.includes("FROM sites")) return { id: this.values[0], status: siteStatus };
+          if (sql.includes("FROM sources")) return {
+            id: this.values[0], site_id: sourceSiteId, module: sourceModule,
+            verification_status: sourceStatus,
           };
+          if (sql.includes("FROM assets")) return {
+            id: this.values[0], site_id: assetSiteId, status: assetStatus,
+          };
+          if (sql.includes("FROM observations WHERE source_id")) return state.observation;
+          throw new Error("unexpected_query");
         },
       };
+    },
+    async batch(statements) {
+      assert.equal(statements.length, 2);
+      const v = statements[0].values;
+      let inserted = false;
+      if (!state.observation) {
+        state.observation = {
+          id: v[0], site_id: v[1], asset_id: v[2], source_id: v[3],
+          module: v[4], metric: v[5], value: v[6], unit: v[7],
+          observed_at: v[8], idempotency_key: v[9],
+          verification_status: "unverified", provenance_json: v[10],
+          quality_flags_json: v[11],
+        };
+        state.audit.push({ id: statements[1].values[0], actor_id: statements[1].values[1] });
+        inserted = true;
+      }
+      return [{ success: true, meta: { changes: inserted ? 1 : 0 } }, { success: true }];
     },
   };
 }
@@ -79,7 +98,7 @@ test("health identifies the separate ingestion Worker and disabled state", async
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.service, "nova-core-ingest-api");
-  assert.equal(body.mode, "authenticated-ingestion-disabled");
+  assert.equal(body.mode, "guarded-auth-required");
 });
 
 test("observation route fails closed when server auth configuration is absent", async () => {
@@ -148,7 +167,7 @@ test("valid Access service identity and exact source grant reach the storage gat
 });
 
 
-test("valid service identity and D1 ownership checks still do not persist observations", async () => {
+test("valid service identity and D1 ownership checks persist an unverified observation and audit event", async () => {
   const issuer = "https://owned-records.cloudflareaccess.com";
   const fixture = makeAccessFixture(issuer);
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
@@ -165,11 +184,12 @@ test("valid service identity and D1 ownership checks still do not persist observ
       provenance: { provider: "test station", acquisition_method: "sensor" },
     }),
   }), { ...envFor(issuer, fixture.audience), DB: ownershipDb() });
-  assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), {
-    error: "persistence_not_enabled",
-    status: "ownership_validated_but_not_accepted",
-  });
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.status, "accepted");
+  assert.equal(body.accepted, true);
+  assert.equal(body.verification_status, "unverified");
+  assert.equal(body.idempotent, false);
 });
 
 test("D1 ownership mismatch is denied without revealing which record failed", async () => {
