@@ -1,4 +1,5 @@
 import { authorizeServiceSource, parseServiceGrants, verifyAccessServiceToken } from "./access-auth.mjs";
+import { validateObservationPayload } from "./observation-contract.mjs";
 
 const MAX_BODY_BYTES = 32 * 1024;
 
@@ -51,6 +52,11 @@ export default {
     if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
       return json({ error: "payload_too_large" }, 413);
     }
+    const contentType = request.headers.get("content-type") || "";
+    if (!/^application\\/json(?:\\s*;|\\s*$)/i.test(contentType)) {
+      return json({ error: "application_json_required" }, 415);
+    }
+
     const issuer = env.ACCESS_ISSUER;
     const audience = env.ACCESS_AUDIENCE;
     const grantsJson = env.NOVA_SERVICE_GRANTS_JSON;
@@ -98,11 +104,14 @@ export default {
     } catch {
       return json({ error: "invalid_json" }, 400);
     }
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      return json({ error: "invalid_payload" }, 400);
+    let observation;
+    try {
+      observation = validateObservationPayload(payload);
+    } catch {
+      return json({ error: "invalid_observation_payload" }, 400);
     }
     try {
-      authorizeServiceSource(principal, payload.module, payload.source_id, grants);
+      authorizeServiceSource(principal, observation.module, observation.source_id, grants);
     } catch {
       return json({ error: "request_not_authorized" }, 403);
     }
