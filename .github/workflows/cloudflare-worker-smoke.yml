@@ -27,13 +27,13 @@ jobs:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.13 --project apps/api --all-groups
+        run: uv sync --python 3.14 --project apps/api --all-groups
       - name: Run Worker locally and smoke-test FastAPI routes
         shell: bash
         run: |
           set -euo pipefail
           cd apps/api
-          uv run --python 3.13 pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nova-worker.log 2>&1 &
+          uv run --python 3.14 pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nova-worker.log 2>&1 &
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
