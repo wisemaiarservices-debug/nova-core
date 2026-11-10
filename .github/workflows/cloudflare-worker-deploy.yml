@@ -26,4 +26,5 @@ jobs:
       - name: Install Python Worker dependencies
         run: uv sync --python 3.14 --project apps/api --all-groups
       - name: Deploy NOVA Core API
-        run: uv run --python 3.14 --project apps/api pywrangler deploy
+        working-directory: apps/api
+        run: uv run --python 3.14 pywrangler deploy
