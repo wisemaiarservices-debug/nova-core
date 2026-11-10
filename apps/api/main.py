@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
+
+from apps.api.services.nasa_power import fetch_daily_point
 
 
 class SiteState(BaseModel):
@@ -195,4 +197,34 @@ def explain(state: SiteState) -> dict[str, Any]:
         "requires_operator_review": True,
         "generated_at": now_iso(),
         **response_metadata(state),
+    }
+
+
+@app.get("/api/v1/data/weather/nasa-power/daily")
+def nasa_power_daily(
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+    start_date: date,
+    end_date: date,
+) -> dict[str, Any]:
+    if end_date < start_date:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
+    if (end_date - start_date).days > 366:
+        raise HTTPException(status_code=422, detail="Date range must not exceed 367 calendar days")
+    try:
+        data = fetch_daily_point(latitude, longitude, start_date, end_date)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "status": "retrieved",
+        "data_source": "NASA POWER Daily API",
+        "data_product": "daily gridded meteorological and solar parameters",
+        "data_interpretation": "gridded model and satellite-derived data; not a local ground-station measurement",
+        "attribution": "NASA POWER Project",
+        "attribution_url": "https://power.larc.nasa.gov/",
+        "license_note": "NASA POWER states there are no restrictions on data use, access, or download; cite NASA POWER.",
+        "requested_location": {"latitude": latitude, "longitude": longitude},
+        "requested_period": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+        "methodology": {"type": "external_observation_and_reanalysis_data_retrieval", "derived_forecast": False},
+        **data,
     }
