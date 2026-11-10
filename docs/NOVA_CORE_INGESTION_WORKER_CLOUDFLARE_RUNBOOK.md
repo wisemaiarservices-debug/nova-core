@@ -1,47 +1,76 @@
 # NOVA Core isolated ingestion Worker — Cloudflare setup runbook
 
-## Current status
+## Current implementation and deployment status
 
-The Worker source is in `apps/ingestion-worker/`, but it has not been deployed. No Cloudflare Access application, Service Auth policy, service token, environment variables, or D1 binding has been created. The existing public NOVA Core API is not changed by this runbook.
+The isolated Worker source is in `apps/ingestion-worker/`. It now contains:
+- Cloudflare Access RS256/JWKS verification and exact service/module/source grants.
+- Strict observation payload validation.
+- Active site/source/asset ownership checks.
+- Transactional D1 observation + audit writes, stable idempotency, and server-owned `unverified` status.
+
+**None of this is deployed or live-integrated yet.** No D1 database/binding, Access application/policy, service token, Worker variables, or ingestion Worker deployment has been created. Tests use mocked D1 bindings. The existing public NOVA Core API remains unchanged.
 
 Do not attach the existing `nova-core-api` Worker to a service-token-only Access application. Its public health and NASA POWER read endpoints are used by browser dashboards.
 
-## Intended free-tier deployment shape
+## Free-tier quota assessment (checked 2026-11-10)
 
-- Worker name: `nova-core-ingest-api`
-- Expected workers.dev hostname after deployment: `nova-core-ingest-api.neohaven.workers.dev` (verify the actual hostname in Cloudflare)
+Cloudflare's current official D1 documentation lists the following Workers Free allowances:
+- **5 million rows read per day**
+- **100,000 rows written per day**
+- **5 GB total storage across the account**
+- **500 MB maximum size per D1 database**
+- **10 D1 databases per Free account**
+- **50 D1 read subrequests per Worker invocation**
+
+The D1 daily read/write limits reset at 00:00 UTC. If daily read/write quotas are exceeded, D1 queries fail until the reset; the Free plan does not automatically provide paid overage capacity. Storage exhaustion prevents additional inserts and schema changes until data is cleaned up or databases are removed. D1 usage counts rows read/written, including index effects; creating indexes can increase writes while reducing reads.
+
+Cloudflare Zero Trust account limits currently list up to 50 custom applications on Zero Trust Free and 50 service tokens per account. Confirm the account's actual plan and dashboard quota before creating resources.
+
+Official references:
+- https://developers.cloudflare.com/d1/platform/pricing/
+- https://developers.cloudflare.com/d1/platform/limits/
+- https://developers.cloudflare.com/d1/reference/faq/
+- https://developers.cloudflare.com/cloudflare-one/account-limits/
+- https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/
+
+**Cost decision:** D1 is available on the Free plan and can remain $0 if usage stays within these limits and the account remains on Workers Free. This is not a guarantee against unrelated account charges or a later plan change. Do not upgrade, enable paid features, or accept a usage commitment. If the dashboard asks for payment details or an upgrade, stop.
+
+## Intended deployment shape
+
+- Ingestion Worker name: `nova-core-ingest-api`
+- Expected workers.dev hostname: `nova-core-ingest-api.neohaven.workers.dev` (verify the actual hostname after deployment)
 - Public read-only API remains: `nova-core-api.neohaven.workers.dev`
-- No D1 binding in this first deployment.
-- The ingestion POST route returns `503 storage_not_configured` even after successful authentication. It does not accept or store data.
+- D1 binding name expected by the Worker: `DB`
+- Migration: `apps/api/migrations/0001_initial.sql`
 
-Cloudflare Access and Workers have free-plan limits. Check the account's current plan, quotas, and billing settings before creating resources. Do not enable paid features, upgrades, or usage commitments.
+The dedicated ingestion hostname is separate so Access can require Service Auth without blocking browser-facing read endpoints.
 
-## Deploy the isolated Worker
+## Deployment and provisioning sequence — do not skip gates
 
-1. In the repository, open `apps/ingestion-worker/`.
-2. Deploy with Wrangler using the existing Cloudflare account and an API token restricted to the required Workers deployment permissions. The deployment config is `wrangler.jsonc`.
-3. Confirm the deployment output's actual `workers.dev` hostname. Do not assume the example hostname if Cloudflare assigns a different one.
-4. Test only `GET /health`. It should identify `nova-core-ingest-api` and report `authenticated-ingestion-disabled`.
-5. Do not expose this endpoint to module frontends or register it as an operational API yet.
+### Gate 1 — verify account plan and quotas
 
-## Protect the dedicated hostname with Cloudflare Access
+1. Confirm Cloudflare Workers is still on the Free plan.
+2. Check D1 availability, the remaining database count, storage, and daily read/write usage.
+3. Confirm Zero Trust Free is active and a custom Access application and service token can be created without payment.
+4. Stop if a payment method, upgrade, paid feature, or non-zero usage commitment is required.
 
-1. In Cloudflare Zero Trust, open **Access controls → Applications** and add a self-hosted application for the exact ingestion Worker hostname from the deployment output.
-2. Create a policy with action **Service Auth**. Include only the intended service token identities. Do not add broad Everyone, email-domain, or bypass rules.
-3. Confirm there is no overlapping Allow or Bypass policy that admits ordinary users.
-4. Keep the existing public NOVA Core API hostname outside this Access application.
-5. Test the Worker hostname without service-token credentials: Access must deny the request before the Worker handles it.
+### Gate 2 — create and protect the isolated Worker
 
-## Configure Worker-side verification variables
+1. Deploy `apps/ingestion-worker/` with Wrangler using a narrowly scoped Cloudflare API token.
+2. Confirm the actual `workers.dev` hostname in deployment output.
+3. Create a self-hosted Access application for that exact hostname.
+4. Create a policy with action **Service Auth** and include only the intended service-token identity. Do not add Everyone, broad Allow, or Bypass rules.
+5. Confirm unauthenticated requests are denied by Access.
+6. Keep the public NOVA Core API hostname outside this Access application.
 
-In the ingestion Worker settings, add server-side variables (not browser variables):
+### Gate 3 — configure server-side identity and grants
 
-- `ACCESS_ISSUER`: exact Cloudflare Access team issuer, for example `https://<team-name>.cloudflareaccess.com`.
-- `ACCESS_AUDIENCE`: the Access application's exact AUD tag.
-- `NOVA_SERVICE_GRANTS_JSON`: exact service-token client ID to module/source allowlist.
+Set these Worker-side variables:
+- `ACCESS_ISSUER`: exact Access team issuer, e.g. `https://<team-name>.cloudflareaccess.com`.
+- `ACCESS_AUDIENCE`: exact AUD tag for the Access application.
+- `NOVA_SERVICE_GRANTS_JSON`: exact service-token client ID mapped to explicitly approved module/source IDs.
 
-Example allowlist shape (replace every placeholder with a real source ID before use):
-
+Example allowlist shape (replace placeholders with actual registered identities):
 ```json
 {
   "REPLACE_WITH_SERVICE_TOKEN_CLIENT_ID": {
@@ -50,19 +79,34 @@ Example allowlist shape (replace every placeholder with a real source ID before 
 }
 ```
 
-These are Worker-side configuration values. The Client Secret is never stored in this Worker: the calling module backend sends the Client ID and Client Secret to Cloudflare Access, and Access sends a signed JWT assertion to the Worker. Never place a service-token secret in a browser, `NEXT_PUBLIC_*` variable, repository, logs, or NOVA OS local storage.
+The Client Secret belongs only in the trusted calling module backend, where it is sent to Cloudflare Access. Access sends a signed JWT assertion to the Worker. Never put the secret in a browser, `NEXT_PUBLIC_*`, repository, logs, or NOVA OS local storage.
 
-## Acceptance tests before any database integration
+### Gate 4 — create D1 and bind only after plan/quota approval
 
-- Request without service-token credentials is denied by Access.
-- Request with a valid service token reaches the Worker and is still rejected with `503 storage_not_configured`.
-- Wrong issuer, audience, signature, expiry, or service-token claims are rejected by the Worker.
-- An authenticated service with the wrong module/source grant is rejected with `403`.
-- The existing public NOVA Core API health and NASA POWER endpoints remain publicly readable.
-- No observation row is created; there is no D1 binding in this phase.
+1. Create one D1 database for the shared NOVA Core registry; do not create separate databases per module.
+2. Bind it to the ingestion Worker as `DB`.
+3. Apply `apps/api/migrations/0001_initial.sql` to that database.
+4. Verify all five required tables and indexes exist.
+5. Check database size and usage immediately after migration.
+6. Do not seed fictitious sites, coordinates, assets, sources, or observations. Register only real, approved records.
+
+### Gate 5 — live integration tests before enabling module callers
+
+- No Access credentials: Access denies before Worker execution.
+- Wrong JWT issuer, audience, signature, expiry, or service-token claims: rejected.
+- Authenticated service with wrong module/source grant: HTTP 403.
+- Unknown/inactive site, disabled/mismatched source, or cross-site asset: HTTP 403.
+- Valid authorized observation: HTTP 201, persisted once with `verification_status=unverified` and a service-attributed audit event.
+- Identical retry with same source/idempotency key: HTTP 200 and original observation returned, no duplicate audit.
+- Reuse of idempotency key with changed payload: HTTP 409.
+- D1 outage/quota exhaustion: generic HTTP 503; no false success.
+- Existing public NOVA Core health and NASA POWER endpoints remain readable.
+- Verify row counts, audit records, `rows_read`, `rows_written`, and storage in Cloudflare dashboard.
+
+Do not connect module backends until these live tests pass. Website reachability and API health do not prove field telemetry validity.
 
 ## Stop conditions
 
-Stop before creating any D1 database or binding. Stop if Cloudflare indicates a paid feature, account upgrade, or non-zero usage commitment is required. Do not create a real service token until the Access application and policy are reviewed and the calling backend is ready to store its secret securely.
+Stop before provisioning if the account is not on the expected free plans, quotas are unavailable, a payment/upgrade prompt appears, or any permission is broader than required. Do not create service tokens until the Access app/policy and the calling backend's secret storage are ready.
 
-The next implementation gate after this runbook is a live Cloudflare Access integration test, followed by D1 adapter tests and verified atomic observation-plus-audit persistence. Only then should a write route be considered.
+The implementation is branch-only until the user explicitly approves deployment and provisioning. No database, Access policy, service token, or ingestion Worker has been created by this runbook.
