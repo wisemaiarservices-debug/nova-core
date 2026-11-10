@@ -144,7 +144,17 @@ test("JWKS outage fails closed with a service-unavailable response", async () =>
   }), envFor(issuer, fixture.audience));
 
   assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: "request_not_authorized" });
+  assert.deepEqual(await response.json(), { error: "identity_provider_unavailable" });
+});
+
+test("invalid server-side source grants are reported as configuration failures", async () => {
+  const issuer = "https://invalid-grants.cloudflareaccess.com";
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    body: JSON.stringify({ module: "neoagro", source_id: "source-weather-01" }),
+  }), envFor(issuer, "nova-ingestion-audience", '{"neoagro-ingestor":{"neoagro":["*"]}}'));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "ingestion_configuration_invalid" });
 });
 
 test("valid service token with malformed JSON is rejected before storage", async () => {
