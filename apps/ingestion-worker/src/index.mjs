@@ -1,5 +1,6 @@
 import { authorizeServiceSource, parseServiceGrants, verifyAccessServiceToken } from "./access-auth.mjs";
 import { validateObservationPayload } from "./observation-contract.mjs";
+import { resolveObservationOwnership } from "./observation-ownership.mjs";
 
 const MAX_BODY_BYTES = 32 * 1024;
 
@@ -116,7 +117,18 @@ export default {
       return json({ error: "request_not_authorized" }, 403);
     }
 
-    // Deliberately no persistence until D1 is provisioned and ownership checks are wired.
-    return json({ error: "storage_not_configured", status: "authenticated_but_not_accepted" }, 503);
+    if (!env.DB) {
+      return json({ error: "storage_not_configured", status: "authenticated_but_not_accepted" }, 503);
+    }
+    try {
+      const ownershipValid = await resolveObservationOwnership(env.DB, observation);
+      if (!ownershipValid) return json({ error: "request_not_authorized" }, 403);
+    } catch {
+      return json({ error: "storage_unavailable" }, 503);
+    }
+
+    // Ownership is checked, but persistence remains deliberately disabled pending
+    // transaction/idempotency integration tests against the actual D1 runtime.
+    return json({ error: "persistence_not_enabled", status: "ownership_validated_but_not_accepted" }, 503);
   },
 };
