@@ -2,10 +2,10 @@
 name = "nova-core-api"
 version = "0.2.0"
 description = "NOVA Core V1 API for transparent, provenance-aware infrastructure screening"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.14"
 dependencies = [
   "fastapi==0.115.6",
-  "pydantic==2.10.4",
+  "pydantic==2.12.4",
 ]
 
 [dependency-groups]
