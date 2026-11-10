@@ -74,3 +74,26 @@ def test_recommendation_endpoint_preserves_explicit_review_status():
     result = run_recommendation(SiteState())
     assert result["status"] == "review_required"
     assert result["recommendation"]["requires_operator_review"] is True
+
+
+def test_nasa_power_parser_normalizes_fill_values_and_keeps_metadata():
+    from apps.api.services.nasa_power import parse_daily_response
+
+    payload = {
+        "header": {"title": "NASA POWER Daily", "sources": ["MERRA2"], "time_standard": "UTC", "fill_value": -999, "latitude": 36.8, "longitude": 10.2},
+        "parameters": {"T2M": {"units": "C"}, "PRECTOTCORR": {"units": "mm/day"}},
+        "properties": {"parameter": {"T2M": {"20260101": 18.5, "20260102": -999}, "PRECTOTCORR": {"20260101": 0.0, "20260102": 2.4}}},
+    }
+    result = parse_daily_response(payload)
+    assert result["records"][0]["values"]["T2M"] == 18.5
+    assert result["records"][1]["values"]["T2M"] is None
+    assert result["records"][1]["values"]["PRECTOTCORR"] == 2.4
+    assert result["units"]["T2M"] == "C"
+    assert result["source_metadata"]["sources"] == ["MERRA2"]
+
+
+def test_nasa_power_parser_rejects_empty_parameter_payload():
+    from apps.api.services.nasa_power import parse_daily_response
+
+    with pytest.raises(ValueError):
+        parse_daily_response({"properties": {"parameter": {}}})
