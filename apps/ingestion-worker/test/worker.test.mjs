@@ -199,7 +199,7 @@ test("authenticated request rejects incomplete observation fields before storage
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid_observation_payload" });
 });
-\ntest("valid service token with malformed JSON is rejected before storage", async () => {
+test("valid service token with malformed JSON is rejected before storage", async () => {
   const issuer = "https://malformed-body.cloudflareaccess.com";
   const fixture = makeAccessFixture(issuer);
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
