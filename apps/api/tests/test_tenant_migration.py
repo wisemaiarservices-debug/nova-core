@@ -171,3 +171,28 @@ def test_tenant_audit_event_must_reference_existing_tenant():
         "(id, actor_type, action, entity_type, entity_id, tenant_id) "
         "VALUES ('event-a', 'operator', 'site.update', 'site', 'site-a', 'tenant-a')"
     )
+
+
+
+def test_suspended_tenant_blocks_updates_but_allows_membership_revocation():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_site(db, "tenant-a", "site-a")
+    db.execute(
+        "INSERT INTO assets (id, site_id, name, asset_type, tenant_id) "
+        "VALUES ('asset-a', 'site-a', 'Pump', 'pump', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('m-a', 'tenant-a', 'sub-a', 'viewer')"
+    )
+    db.execute("UPDATE tenants SET status='suspended' WHERE id='tenant-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE assets SET name='Changed' WHERE id='asset-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE tenant_memberships SET status='active' WHERE id='m-a'")
+    db.execute("UPDATE tenant_memberships SET status='revoked' WHERE id='m-a'")
+    status = db.execute(
+        "SELECT status FROM tenant_memberships WHERE id='m-a'"
+    ).fetchone()
+    assert status == ("revoked",)
