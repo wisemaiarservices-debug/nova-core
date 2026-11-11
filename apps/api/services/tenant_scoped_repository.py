@@ -17,23 +17,23 @@ ReadableResourceType = Literal["site", "asset", "source", "observation", "audit_
 
 RESOURCE_SELECTS: dict[ReadableResourceType, str] = {
     "site": """
-        SELECT id, name, description, latitude, longitude, timezone, status,
+        SELECT id, tenant_id, name, description, latitude, longitude, timezone, status,
                metadata_json, created_at, updated_at
         FROM sites WHERE tenant_id = ? AND id = ? LIMIT 1
     """,
     "asset": """
-        SELECT id, site_id, name, asset_type, external_ref, status,
+        SELECT id, tenant_id, site_id, name, asset_type, external_ref, status,
                metadata_json, created_at, updated_at
         FROM assets WHERE tenant_id = ? AND id = ? LIMIT 1
     """,
     "source": """
-        SELECT id, site_id, module, provider, source_type, display_name,
+        SELECT id, tenant_id, site_id, module, provider, source_type, display_name,
                verification_status, verification_method, license_reference,
                metadata_json, created_at, updated_at
         FROM sources WHERE tenant_id = ? AND id = ? LIMIT 1
     """,
     "observation": """
-        SELECT id, site_id, asset_id, source_id, module, metric, value, unit,
+        SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit,
                observed_at, ingested_at, verification_status, provenance_json,
                quality_flags_json, retention_until
         FROM observations WHERE tenant_id = ? AND id = ? LIMIT 1
