@@ -73,3 +73,9 @@ def test_normalization_aliases_and_whitespace_are_explicit():
     assert result.normalized_value == pytest.approx(20)
     assert result.normalized_unit == "K"
     assert math.isfinite(result.normalized_value)
+
+
+def test_temperature_normalization_returns_kelvin_base_value():
+    result = normalize_quantity(Quantity(value=20, unit="°C"))
+    assert result.normalized_unit == "K"
+    assert result.normalized_value == pytest.approx(293.15)
