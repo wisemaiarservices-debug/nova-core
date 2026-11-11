@@ -104,3 +104,32 @@ def build_research_run_lineage(
         aoi_bbox=bbox,
         raster_manifest=manifest,
     )
+
+
+def attach_lineage_to_experiment(experiment: BaseModel, lineage: ResearchRunLineage) -> BaseModel:
+    """Return a revalidated experiment manifest carrying this exact raster input.
+
+    The experiment type is supplied by the experiment-registry layer. Keeping this
+    adapter structurally typed avoids duplicating that registry's model here.
+    """
+    required = ("dataset_id", "dataset_version", "evidence_class", "raster_inputs")
+    if any(not hasattr(experiment, field) for field in required):
+        raise ValueError("experiment must be a validated NOVA ExperimentManifest")
+    raster = lineage.raster_manifest
+    if experiment.dataset_id != raster.dataset_id:
+        raise ValueError("experiment dataset_id does not match the research raster")
+    if experiment.dataset_version != raster.dataset_version:
+        raise ValueError("experiment dataset_version does not match the research raster")
+    if experiment.evidence_class != "satellite_derived":
+        raise ValueError("experiment evidence_class must be satellite_derived")
+    payload = experiment.model_dump(mode="python")
+    references = list(payload.get("raster_inputs") or [])
+    reference = lineage.raster_input_reference
+    if any(item.get("manifest_id") == reference["manifest_id"] for item in references):
+        raise ValueError("experiment already contains this raster manifest reference")
+    references.append(reference)
+    payload["raster_inputs"] = references
+    try:
+        return type(experiment).model_validate(payload)
+    except Exception as exc:
+        raise ValueError("experiment manifest rejected the research raster lineage") from exc
