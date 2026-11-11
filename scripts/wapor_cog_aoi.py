@@ -98,13 +98,12 @@ def _preflight_cog(url: str) -> int:
             method="GET",
         )
         with opener.open(range_request, timeout=20) as response:
-            if response.status not in (200, 206):
-                raise ResearchProcessingError("WaPOR COG byte-range preflight failed")
+            if response.status != 206:
+                raise ResearchProcessingError("WaPOR COG server did not honor the bounded byte-range request")
             prefix = response.read(4)
-            if response.status == 206:
-                content_range = response.headers.get("Content-Range", "")
-                if not content_range.startswith("bytes 0-3/"):
-                    raise ResearchProcessingError("WaPOR COG returned an invalid initial byte range")
+            content_range = response.headers.get("Content-Range", "")
+            if not content_range.startswith("bytes 0-3/"):
+                raise ResearchProcessingError("WaPOR COG returned an invalid initial byte range")
         if prefix not in (b"II*\x00", b"MM\x00*"):
             raise ResearchProcessingError("WaPOR COG does not begin with a classic TIFF signature")
         return size
@@ -278,10 +277,10 @@ def process_wapor_aoi(
         provider_period_start=period_start,
         provider_period_end=period_end,
         retrieved_at=datetime.now(timezone.utc),
-        content_sha256=processed_hash,
+        processed_window_sha256=processed_hash,
         provider_metadata_sha256=metadata_hash,
         processing_code_commit=processing_code_commit,
-        processing_method="nova-geotiff-strip-statistics-v1",
+        processing_method="nova-wapor-cog-aoi-v1",
         width=window_width,
         height=window_height,
         source_width=source_width,
