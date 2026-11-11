@@ -51,6 +51,13 @@ class ResourceGrant(BaseModel):
     resource_id: str = Field(min_length=1, max_length=160)
     actions: tuple[Action, ...] = Field(min_length=1)
 
+    @field_validator("resource_id")
+    @classmethod
+    def exact_resource_only(cls, value: str) -> str:
+        if value == "*" or any(char in value for char in "*?"):
+            raise ValueError("resource grants must identify one exact resource; wildcards are forbidden")
+        return value
+
     @field_validator("actions")
     @classmethod
     def unique_actions(cls, value: tuple[Action, ...]) -> tuple[Action, ...]:
@@ -93,9 +100,9 @@ def authorize_resource_action(
         item for item in memberships
         if item.subject == principal_subject and item.tenant_id == tenant_id
     )
-    if not matching:
-        # Deliberately do not distinguish an unknown tenant from another
-        # tenant's membership; callers should return a uniform denial response.
+    if len(matching) != 1:
+        # No membership, or conflicting duplicate membership rows, both deny.
+        # Deliberately do not distinguish another tenant's membership.
         return AuthorizationDecision(allowed=False, reason_code="missing_membership")
 
     active = tuple(item for item in matching if item.active)
