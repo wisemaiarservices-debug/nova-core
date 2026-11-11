@@ -13,11 +13,13 @@ try:
     from .services.d1_storage import storage_status
     from .services.dataset_catalogue import catalogue_summary, list_datasets
     from .services.pvgis import build_research_result, fetch_broadband_performance_async
+    from .services.wapor import list_mapsets_async, list_rasters_async
 except ImportError:
     from services.nasa_power import fetch_daily_point_async
     from services.d1_storage import storage_status
     from services.dataset_catalogue import catalogue_summary, list_datasets
     from services.pvgis import build_research_result, fetch_broadband_performance_async
+    from services.wapor import list_mapsets_async, list_rasters_async
 
 
 class SiteState(BaseModel):
@@ -223,6 +225,32 @@ def read_dataset_catalogue(domain: str | None = None) -> dict[str, Any]:
             "Dataset terms, endpoint schemas, coverage and versions must be verified at retrieval time.",
         ],
     }
+
+
+@app.get("/api/v1/data/water/wapor/mapsets")
+async def wapor_mapsets() -> dict[str, Any]:
+    """Discover current WaPOR v3 mapsets; metadata only, no raster downloads."""
+    try:
+        return await list_mapsets_async()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/data/water/wapor/rasters")
+async def wapor_rasters(
+    mapset_code: str = Query(..., min_length=3, max_length=40),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+) -> dict[str, Any]:
+    """List provider raster assets for one verified mapset; does not download pixels."""
+    if start_date and end_date and end_date < start_date:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
+    try:
+        return await list_rasters_async(mapset_code, start_date, end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/data/solar/pvgis/performance")
