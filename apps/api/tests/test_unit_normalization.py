@@ -70,7 +70,7 @@ def test_normalization_preserves_original_value_and_unit():
 
 def test_normalization_aliases_and_whitespace_are_explicit():
     result = normalize_quantity(Quantity(value=20, unit=" Celsius "))
-    assert result.normalized_value == pytest.approx(20)
+    assert result.normalized_value == pytest.approx(293.15)
     assert result.normalized_unit == "K"
     assert math.isfinite(result.normalized_value)
 
