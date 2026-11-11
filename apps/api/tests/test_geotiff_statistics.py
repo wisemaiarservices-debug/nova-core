@@ -19,7 +19,7 @@ def _strip_tiff(samples, *, compression=1, nodata="-9999", scale_xml=None):
     ifd_offset = 8
     ifd_size = 2 + len(tags) * 12 + 4
     external_size = sum(
-        len(value.encode("ascii") + b"\\x00")
+        len(value.encode("ascii") + b"\x00")
         for tag, kind, value in tags if kind == 2
     )
     external_offset = ifd_offset + ifd_size
