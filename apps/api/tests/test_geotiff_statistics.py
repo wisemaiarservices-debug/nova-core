@@ -18,7 +18,11 @@ def _strip_tiff(samples, *, compression=1, nodata="-9999", scale_xml=None):
         tags.append((42112, 2, scale_xml))
     ifd_offset = 8
     ifd_size = 2 + len(tags) * 12 + 4
-    pixel_offset = ifd_offset + ifd_size
+    external_size = sum(
+        len(value.encode("ascii") + b"\\x00")
+        for tag, kind, value in tags if kind == 2
+    )
+    pixel_offset = ifd_offset + ifd_size + external_size
     entries = []
     external = bytearray()
     for tag, kind, values in tags:
