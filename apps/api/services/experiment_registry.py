@@ -86,7 +86,8 @@ class RasterInputReference(BaseModel):
 
     manifest_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{2,79}$")
     dataset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,79}$")
-    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    processed_window_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_object_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     evidence_class: Literal["satellite_derived"] = "satellite_derived"
 
 
