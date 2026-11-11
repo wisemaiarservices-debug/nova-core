@@ -8,7 +8,7 @@ from apps.api.services.dataset_catalogue import (
 
 def test_catalogue_contains_integrated_and_candidate_sources():
     summary = catalogue_summary()
-    assert summary == {"total": 7, "integrated": 1, "candidate": 5, "reference_only": 1}
+    assert summary == {"total": 6, "integrated": 1, "candidate": 4, "reference_only": 1}
     records = list_datasets()
     assert all(isinstance(record, DatasetRecord) for record in records)
     assert {record.dataset_id for record in records} >= {
@@ -52,13 +52,13 @@ def test_api_exposes_catalogue_without_claiming_live_ingestion():
     response = read_dataset_catalogue()
     assert response["status"] == "catalogue_available"
     assert response["summary"]["integrated"] == 1
-    assert response["returned"] == 7
+    assert response["returned"] == 6
     assert any("not mean" in item for item in response["limitations"])
 
 
 def test_api_returns_filtered_catalogue_and_rejects_bad_domain():
     response = read_dataset_catalogue("energy")
-    assert response["returned"] == 3
+    assert response["returned"] == 4
     assert all("energy" in item["domains"] for item in response["records"])
     try:
         read_dataset_catalogue("unknown")
