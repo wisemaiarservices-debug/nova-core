@@ -134,9 +134,10 @@ def test_zero_error_baseline_has_undefined_skill_not_division_error():
         ([1, 2], [1, 2], [1, float("-inf")]),
         ([1, 2], [1], [1, 2]),
         ([1], [1], [1]),
+        ([True, 2], [1, 2], [1, 2]),
     ],
 )
-def test_evaluation_rejects_nonfinite_unpaired_or_too_small_inputs(actual, predicted, baseline):
+def test_evaluation_rejects_nonfinite_unpaired_boolean_or_too_small_inputs(actual, predicted, baseline):
     with pytest.raises(ValueError):
         evaluate_regression(
             actual,
@@ -145,6 +146,19 @@ def test_evaluation_rejects_nonfinite_unpaired_or_too_small_inputs(actual, predi
             test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
             test_period_end=datetime(2024, 1, 31, tzinfo=UTC),
         )
+
+
+def test_evaluated_manifest_accepts_metrics_inside_declared_test_window():
+    metrics = evaluate_regression(
+        [1, 2],
+        [1, 2],
+        [2, 3],
+        test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
+        test_period_end=datetime(2024, 1, 31, tzinfo=UTC),
+    )
+    manifest = _manifest(status="evaluated", metrics=metrics.model_dump())
+    assert manifest.status == "evaluated"
+    assert manifest.metrics.sample_count == 2
 
 
 def test_evaluated_manifest_metrics_must_fit_inside_test_window():
@@ -157,3 +171,14 @@ def test_evaluated_manifest_metrics_must_fit_inside_test_window():
     )
     with pytest.raises(ValidationError, match="before the declared test split"):
         _manifest(status="evaluated", metrics=metrics.model_dump())
+
+
+def test_metric_overflow_is_rejected_as_invalid_scientific_output():
+    with pytest.raises(ValueError, match="numeric range"):
+        evaluate_regression(
+            [-1e308, 1e308],
+            [1e308, -1e308],
+            [0, 0],
+            test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
+            test_period_end=datetime(2024, 1, 31, tzinfo=UTC),
+        )
