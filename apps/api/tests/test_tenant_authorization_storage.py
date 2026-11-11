@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import pytest
 
 from apps.api.services.tenant_authorization_storage import (
@@ -67,116 +68,109 @@ def grant(tenant="tenant-a", subject="subject-a", resource="site-a", action="rea
     }
 
 
-@pytest.mark.asyncio
-async def test_loads_membership_and_exact_resource_grants():
+def test_loads_membership_and_exact_resource_grants():
     db = FakeDatabase(memberships=[member()], grants=[grant()])
-    result = await authorize_tenant_resource_action(
+    result = asyncio.run(authorize_tenant_resource_action(
         db,
         principal_subject="subject-a",
         tenant_id="tenant-a",
         resource_type="site",
         resource_id="site-a",
         action="read",
-    )
+    ))
     assert result.allowed is True
     assert db.calls[0] == (MEMBERSHIP_SQL, ("subject-a", "tenant-a"))
     assert db.calls[1] == (RESOURCE_GRANTS_SQL, ("tenant-a", "subject-a", "site", "site-a"))
 
 
-@pytest.mark.asyncio
-async def test_cross_tenant_selector_cannot_reuse_other_tenant_membership():
+def test_cross_tenant_selector_cannot_reuse_other_tenant_membership():
     db = FakeDatabase(memberships=[member(tenant="tenant-a")], grants=[grant(tenant="tenant-a")])
-    result = await authorize_tenant_resource_action(
+    result = asyncio.run(authorize_tenant_resource_action(
         db,
         principal_subject="subject-a",
         tenant_id="tenant-b",
         resource_type="site",
         resource_id="site-a",
         action="read",
-    )
+    ))
     assert result.allowed is False
     assert result.reason_code == "missing_membership"
     assert len(db.calls) == 1
 
 
-@pytest.mark.asyncio
-async def test_suspended_tenant_is_denied_before_grant_lookup():
+def test_suspended_tenant_is_denied_before_grant_lookup():
     db = FakeDatabase(memberships=[member(tenant_status="suspended")], grants=[grant()])
-    result = await authorize_tenant_resource_action(
+    result = asyncio.run(authorize_tenant_resource_action(
         db,
         principal_subject="subject-a",
         tenant_id="tenant-a",
         resource_type="site",
         resource_id="site-a",
         action="read",
-    )
+    ))
     assert result.allowed is False
     assert result.reason_code == "inactive_membership"
     assert len(db.calls) == 1
 
 
-@pytest.mark.asyncio
-async def test_duplicate_membership_rows_fail_closed():
+def test_duplicate_membership_rows_fail_closed():
     db = FakeDatabase(memberships=[member(), member(role="tenant_owner")], grants=[grant()])
-    result = await authorize_tenant_resource_action(
+    result = asyncio.run(authorize_tenant_resource_action(
         db,
         principal_subject="subject-a",
         tenant_id="tenant-a",
         resource_type="site",
         resource_id="site-a",
         action="read",
-    )
+    ))
     assert result.allowed is False
     assert result.reason_code == "missing_membership"
     assert len(db.calls) == 1
 
 
-@pytest.mark.asyncio
-async def test_tenant_resource_requires_exact_tenant_identifier():
+def test_tenant_resource_requires_exact_tenant_identifier():
     db = FakeDatabase(memberships=[member()])
-    own = await authorize_tenant_resource_action(
+    own = asyncio.run(authorize_tenant_resource_action(
         db,
         principal_subject="subject-a",
         tenant_id="tenant-a",
         resource_type="tenant",
         resource_id="tenant-a",
         action="read",
-    )
-    other = await authorize_tenant_resource_action(
+    ))
+    other = asyncio.run(authorize_tenant_resource_action(
         db,
         principal_subject="subject-a",
         tenant_id="tenant-a",
         resource_type="tenant",
         resource_id="tenant-b",
         action="read",
-    )
+    ))
     assert own.allowed is True
     assert other.allowed is False
     assert len(db.calls) == 2
 
 
-@pytest.mark.asyncio
-async def test_database_failure_raises_generic_fail_closed_error():
+def test_database_failure_raises_generic_fail_closed_error():
     db = FakeDatabase(error=True)
     with pytest.raises(TenantAuthorizationStorageError, match="storage is unavailable"):
-        await authorize_tenant_resource_action(
+        asyncio.run(authorize_tenant_resource_action(
             db,
             principal_subject="subject-a",
             tenant_id="tenant-a",
             resource_type="site",
             resource_id="site-a",
             action="read",
-        )
+        ))
 
 
-@pytest.mark.asyncio
-async def test_missing_database_fails_closed():
+def test_missing_database_fails_closed():
     with pytest.raises(TenantAuthorizationStorageError):
-        await authorize_tenant_resource_action(
+        asyncio.run(authorize_tenant_resource_action(
             None,
             principal_subject="subject-a",
             tenant_id="tenant-a",
             resource_type="site",
             resource_id="site-a",
             action="read",
-        )
+        ))
