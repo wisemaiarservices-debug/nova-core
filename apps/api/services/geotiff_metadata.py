@@ -16,45 +16,9 @@ MAX_DIMENSION = 100_000
 MAX_PIXEL_COUNT = 100_000_000
 
 _TYPE_FORMATS = {
-    1: ("B", 1),  # BYTE
-    2: ("s", 1),  # ASCII
-    3: ("H", 2),  # SHORT
-    4: ("I", 4),  # LONG
-    5: ("II", 8), # RATIONAL
-    6: ("b", 1),  # SBYTE
-    7: ("B", 1),  # UNDEFINED
-    8: ("h", 2),  # SSHORT
-    9: ("i", 4),  # SLONG
-    10: ("ii", 8),# SRATIONAL
-    11: ("f", 4), # FLOAT
-    12: ("d", 8), # DOUBLE
-}
-
-_TAGS = {
-    256: "width",
-    257: "height",
-    258: "bits_per_sample",
-    259: "compression",
-    262: "photometric_interpretation",
-    273: "strip_offsets",
-    277: "samples_per_pixel",
-    278: "rows_per_strip",
-    279: "strip_byte_counts",
-    284: "planar_configuration",
-    317: "predictor",
-    322: "tile_width",
-    323: "tile_length",
-    324: "tile_offsets",
-    325: "tile_byte_counts",
-    339: "sample_format",
-    33550: "model_pixel_scale",
-    33922: "model_tiepoint",
-    34264: "model_transformation",
-    34735: "geo_key_directory",
-    34736: "geo_double_params",
-    34737: "geo_ascii_params",
-    42112: "gdal_metadata",
-    42113: "gdal_nodata",
+    1: ("B", 1), 2: ("s", 1), 3: ("H", 2), 4: ("I", 4),
+    5: ("II", 8), 6: ("b", 1), 7: ("B", 1), 8: ("h", 2),
+    9: ("i", 4), 10: ("ii", 8), 11: ("f", 4), 12: ("d", 8),
 }
 
 
@@ -79,13 +43,10 @@ def _read_values(data: bytes, endian: str, field_type: int, count: int, offset: 
             denominator = raw[index + 1]
             values.append(None if denominator == 0 else raw[index] / denominator)
         return values
-    return list(struct.unpack(endian + fmt * count, data[offset:offset + total]))
-
-
-def _format_value(value: Any) -> Any:
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    return value
+    values = list(struct.unpack(endian + fmt * count, data[offset:offset + total]))
+    if field_type in (11, 12) and not all(math.isfinite(value) for value in values):
+        raise GeoTiffError("TIFF floating-point metadata contains a non-finite value")
+    return values
 
 
 def _geo_keys(values: list[Any], doubles: list[Any], ascii_params: str) -> dict[str, Any]:
@@ -203,16 +164,14 @@ def inspect_geotiff(data: bytes) -> dict[str, Any]:
 
     geo_keys = None
     if 34735 in tags:
-        geo_keys = _geo_keys(
-            tags[34735], tags.get(34736, []), scalar(34737, "") or ""
-        )
+        geo_keys = _geo_keys(tags[34735], tags.get(34736, []), scalar(34737, "") or "")
 
     scale_offset = _gdal_scale_offset(scalar(42112))
     nodata = scalar(42113)
     if isinstance(nodata, str):
         nodata = nodata.strip()
 
-    metadata = {
+    return {
         "format": "TIFF/GeoTIFF",
         "byte_order": "little" if endian == "<" else "big",
         "width": width,
@@ -236,10 +195,9 @@ def inspect_geotiff(data: bytes) -> dict[str, Any]:
         "limitations": [
             "Metadata only: no raster pixels were decoded or sampled.",
             "CRS is reported only when the GeoKeyDirectory explicitly supplies an EPSG key.",
-            "Units must come from the authoritative WaPOR layer metadata, not inferred from TIFF tags or layer names.",
+            "Units must come from authoritative WaPOR layer metadata, not inferred from TIFF tags or layer names.",
             "Scale and offset are reported only when present in GDAL metadata; absence does not imply identity scaling.",
             "Bounds are not calculated unless a later geospatial transform implementation validates the full GeoTIFF georeferencing model.",
             "This parser supports classic TIFF only; BigTIFF and non-standard private tags are not interpreted.",
         ],
     }
-    return metadata
