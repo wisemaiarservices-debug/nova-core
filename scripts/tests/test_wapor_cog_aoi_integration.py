@@ -87,6 +87,8 @@ def test_processes_local_cog_window_and_emits_truthful_provenance(monkeypatch):
     assert manifest["raw_max"] == 3
     assert manifest["raw_mean"] == 2
     assert manifest["units"] == "mm/day"
+    assert manifest["source_dtype"] == "int16"
+    assert manifest["source_nodata"] == "-9999.0"
     assert manifest["evidence_class"] == "satellite_derived"
     assert manifest["site_id"] is None
     assert manifest["source_object_sha256"] is None
