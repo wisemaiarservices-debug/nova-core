@@ -1,0 +1,44 @@
+name: NOVA WaPOR AOI Research Processing
+
+on:
+  workflow_dispatch:
+    inputs:
+      mapset_code:
+        description: "FAO WaPOR v3 dekadal mapset code (for example L2-AETI-D)"
+        required: true
+        type: string
+      raster_code:
+        description: "Exact raster code from the selected mapset catalogue"
+        required: true
+        type: string
+      aoi_geojson:
+        description: "Caller-supplied GeoJSON Polygon or MultiPolygon in WGS84 longitude/latitude order"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nova-wapor-aoi-research
+  cancel-in-progress: false
+
+jobs:
+  process-research-aoi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NOVA_WAPOR_MAPSET_CODE: ${{ inputs.mapset_code }}
+      NOVA_WAPOR_RASTER_CODE: ${{ inputs.raster_code }}
+      NOVA_WAPOR_AOI_GEOJSON: ${{ inputs.aoi_geojson }}
+    steps:
+      - name: Checkout research code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install bounded research dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-research.txt
+      - name: Process one caller-supplied WaPOR AOI
+        run: python -m scripts.wapor_cog_aoi
