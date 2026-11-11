@@ -127,6 +127,15 @@ class SiteProfile(BaseModel):
             raise ValueError(f"boundary GeoJSON is structurally invalid: {exc}") from exc
         return value
 
+    @field_validator("design_flow_m3_per_hour", mode="before")
+    @classmethod
+    def finite_design_flow(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ValueError("design flow must be a finite numeric value")
+        return value
+
     @model_validator(mode="after")
     def validate_tenant_linkage(self) -> "SiteProfile":
         if self.tenant_id.strip() == "":
