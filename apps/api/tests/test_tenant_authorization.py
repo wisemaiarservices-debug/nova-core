@@ -120,3 +120,16 @@ def test_no_wildcard_resource_grants():
             subject="user-a", tenant_id="tenant-a", resource_type="site",
             resource_id="*", actions=("read",),
         )
+
+
+
+def test_conflicting_duplicate_memberships_fail_closed():
+    result = decide(
+        memberships=(
+            membership(role="viewer"),
+            membership(role="tenant_owner"),
+        ),
+        grants=(grant(),),
+    )
+    assert result.allowed is False
+    assert result.reason_code == "missing_membership"
