@@ -154,3 +154,20 @@ def test_suspended_tenant_cannot_receive_new_memberships_grants_or_assets():
             "INSERT INTO assets (id, site_id, name, asset_type, tenant_id) "
             "VALUES ('asset-suspended', 'site-a', 'Pump', 'pump', 'tenant-a')"
         )
+
+
+
+def test_tenant_audit_event_must_reference_existing_tenant():
+    db = database()
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES ('event-x', 'operator', 'site.update', 'site', 'site-a', 'unknown-tenant')"
+        )
+    seed_tenant(db, "tenant-a")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('event-a', 'operator', 'site.update', 'site', 'site-a', 'tenant-a')"
+    )
