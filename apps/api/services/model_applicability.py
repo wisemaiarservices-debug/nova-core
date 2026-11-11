@@ -162,13 +162,14 @@ def assess_model_applicability(
         needs_configuration = True
         reasons.append("model equipment applicability is not declared")
     elif model.equipment_scope == "restricted":
-        unsupported_equipment = sorted(set(context.equipment_classes) - set(model.supported_equipment_classes))
-        if unsupported_equipment:
-            hard_mismatch = True
-            reasons.append("client equipment classes exceed the model's declared applicability")
-    elif model.equipment_scope == "restricted" and not context.equipment_classes:
-        needs_configuration = True
-        reasons.append("client equipment classes are required")
+        if not context.equipment_classes:
+            needs_configuration = True
+            reasons.append("client equipment classes are required")
+        else:
+            unsupported_equipment = sorted(set(context.equipment_classes) - set(model.supported_equipment_classes))
+            if unsupported_equipment:
+                hard_mismatch = True
+                reasons.append("client equipment classes exceed the model's declared applicability")
 
     if model.minimum_land_area_m2 is not None or model.maximum_land_area_m2 is not None:
         if context.land_area_m2 is None:
