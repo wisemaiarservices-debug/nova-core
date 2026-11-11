@@ -203,7 +203,7 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/v1/data/catalogue")
-def read_dataset_catalogue(domain: str | None = Query(default=None)) -> dict[str, Any]:
+def read_dataset_catalogue(domain: str | None = None) -> dict[str, Any]:
     """Expose dataset metadata without implying retrieval, validation, or site linkage."""
     try:
         records = list_datasets(domain)
