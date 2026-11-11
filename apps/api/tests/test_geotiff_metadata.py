@@ -19,19 +19,15 @@ def _tiff(tags, *, endian="<"):
         if field_type == 2:
             raw = values.encode("ascii") + b"\x00"
             count = len(raw)
-            inline = raw
         elif field_type == 3:
             raw = struct.pack(endian + "H" * len(values), *values)
             count = len(values)
-            inline = raw
         elif field_type == 4:
             raw = struct.pack(endian + "I" * len(values), *values)
             count = len(values)
-            inline = raw
         elif field_type == 12:
             raw = struct.pack(endian + "d" * len(values), *values)
             count = len(values)
-            inline = raw
         else:
             raise AssertionError(field_type)
         if len(raw) <= 4:
@@ -100,9 +96,11 @@ def test_rejects_bigtiff_until_supported_explicitly():
 
 
 def test_rejects_metadata_offsets_outside_input():
-    payload = bytearray(_tiff(_basic_tags()))
-    # Point the width entry at an offset beyond the end of the file.
-    struct.pack_into("<I", payload, 18, 100000)
+    tags = _basic_tags() + [(33550, 12, [1.0, 1.0, 0.0])]
+    payload = bytearray(_tiff(tags))
+    # The final tag stores its three doubles externally; corrupt that value offset.
+    value_field_offset = 10 + (len(tags) - 1) * 12 + 8
+    struct.pack_into("<I", payload, value_field_offset, 100000)
     with pytest.raises(GeoTiffError, match="outside"):
         inspect_geotiff(bytes(payload))
 
