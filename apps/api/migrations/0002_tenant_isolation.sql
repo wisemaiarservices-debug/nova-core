@@ -45,6 +45,7 @@ CREATE TABLE tenant_resource_grants (
   action TEXT NOT NULL CHECK (action IN ('read', 'create', 'update', 'delete', 'ingest', 'manage_members')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   UNIQUE (tenant_id, subject, resource_type, resource_id, action),
+  CHECK (resource_type <> 'tenant' OR resource_id = tenant_id),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT
 );
 CREATE INDEX idx_tenant_resource_grants_lookup
@@ -180,7 +181,7 @@ BEGIN
 END;
 
 CREATE TRIGGER tenant_memberships_active_update_guard
-BEFORE UPDATE OF tenant_id, status ON tenant_memberships
+BEFORE UPDATE ON tenant_memberships
 WHEN NEW.status = 'active'
   AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
 BEGIN
@@ -195,7 +196,7 @@ BEGIN
 END;
 
 CREATE TRIGGER tenant_resource_grants_active_update_guard
-BEFORE UPDATE OF tenant_id ON tenant_resource_grants
+BEFORE UPDATE ON tenant_resource_grants
 WHEN NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
 BEGIN
   SELECT RAISE(ABORT, 'resource grant requires an active tenant');
@@ -209,7 +210,7 @@ BEGIN
 END;
 
 CREATE TRIGGER assets_active_tenant_update_guard
-BEFORE UPDATE OF tenant_id ON assets
+BEFORE UPDATE ON assets
 WHEN NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
 BEGIN
   SELECT RAISE(ABORT, 'asset write requires an active tenant');
@@ -223,7 +224,7 @@ BEGIN
 END;
 
 CREATE TRIGGER sources_active_tenant_update_guard
-BEFORE UPDATE OF tenant_id ON sources
+BEFORE UPDATE ON sources
 WHEN NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
 BEGIN
   SELECT RAISE(ABORT, 'source write requires an active tenant');
@@ -237,8 +238,16 @@ BEGIN
 END;
 
 CREATE TRIGGER observations_active_tenant_update_guard
-BEFORE UPDATE OF tenant_id ON observations
+BEFORE UPDATE ON observations
 WHEN NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
 BEGIN
   SELECT RAISE(ABORT, 'observation write requires an active tenant');
+END;
+
+
+CREATE TRIGGER sites_active_tenant_update_guard
+BEFORE UPDATE ON sites
+WHEN NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
+BEGIN
+  SELECT RAISE(ABORT, 'site write requires an active tenant');
 END;
