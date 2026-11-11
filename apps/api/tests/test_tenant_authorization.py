@@ -10,8 +10,8 @@ from apps.api.services.tenant_authorization import (
 )
 
 
-def membership(subject: str = "user-a", tenant: str = "tenant-a", role: str = "operator", active: bool = True):
-    return TenantMembership(subject=subject, tenant_id=tenant, role=role, active=active)
+def membership(subject: str = "user-a", tenant: str = "tenant-a", role: str = "operator", active: bool = True, tenant_active: bool = True):
+    return TenantMembership(subject=subject, tenant_id=tenant, role=role, active=active, tenant_active=tenant_active)
 
 
 def grant(subject: str = "user-a", tenant: str = "tenant-a", resource: str = "site-1", actions=("read", "ingest")):
@@ -133,3 +133,13 @@ def test_conflicting_duplicate_memberships_fail_closed():
     )
     assert result.allowed is False
     assert result.reason_code == "missing_membership"
+
+
+
+def test_suspended_tenant_denies_otherwise_active_membership():
+    result = decide(
+        memberships=(membership(tenant_active=False),),
+        grants=(grant(),),
+    )
+    assert result.allowed is False
+    assert result.reason_code == "inactive_membership"
