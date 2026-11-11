@@ -181,7 +181,8 @@ END;
 
 CREATE TRIGGER tenant_memberships_active_update_guard
 BEFORE UPDATE OF tenant_id, status ON tenant_memberships
-WHEN NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
+WHEN NEW.status = 'active'
+  AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
 BEGIN
   SELECT RAISE(ABORT, 'membership requires an active tenant');
 END;
