@@ -47,3 +47,6 @@ Open Actions → NOVA WaPOR AOI Research Processing → Run workflow. Supply:
 - a valid GeoJSON Polygon or MultiPolygon in longitude/latitude order.
 
 The result is printed as JSON in the workflow log. The workflow does not upload artifacts or persist the raster. Never paste private/customer coordinates unless authorized for this research run.
+
+
+The manifest retains the raster sample dtype and the provider's NoData sentinel as separate source metadata. Raw statistics are calculated only after the provider mask, NoData sentinel, finite-value check and AOI mask are applied. This does not apply scale/offset calibration or infer physical units.
