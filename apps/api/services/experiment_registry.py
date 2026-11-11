@@ -6,7 +6,6 @@ arrays. It does not train models, load datasets, persist records, or certify res
 from __future__ import annotations
 
 import math
-import re
 from datetime import datetime
 from typing import Literal, Sequence
 
@@ -126,7 +125,13 @@ def _validated_values(values: Sequence[float], name: str) -> list[float]:
     if isinstance(values, (str, bytes)):
         raise ValueError(f"{name} must be a numeric sequence")
     try:
-        result = [float(value) for value in values]
+        raw_values = list(values)
+    except TypeError as exc:
+        raise ValueError(f"{name} must be a numeric sequence") from exc
+    if any(isinstance(value, bool) for value in raw_values):
+        raise ValueError(f"{name} must not contain boolean values")
+    try:
+        result = [float(value) for value in raw_values]
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{name} must contain only numeric values") from exc
     if not result:
@@ -138,9 +143,15 @@ def _validated_values(values: Sequence[float], name: str) -> list[float]:
 
 def _regression_summary(actual: list[float], predicted: list[float]) -> tuple[float, float, float]:
     errors = [prediction - observed for observed, prediction in zip(actual, predicted)]
-    mae = sum(abs(error) for error in errors) / len(errors)
-    mse = sum(error * error for error in errors) / len(errors)
-    return mae, math.sqrt(mse), sum(errors) / len(errors)
+    try:
+        mae = math.fsum(abs(error) for error in errors) / len(errors)
+        rmse = math.hypot(*errors) / math.sqrt(len(errors))
+        mean_error = math.fsum(errors) / len(errors)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError("regression metrics exceed supported numeric range") from exc
+    if not all(math.isfinite(value) for value in (mae, rmse, mean_error)):
+        raise ValueError("regression metrics exceed supported numeric range")
+    return mae, rmse, mean_error
 
 
 def evaluate_regression(
@@ -166,6 +177,8 @@ def evaluate_regression(
     mae, rmse, mean_error = _regression_summary(actual, predicted)
     baseline_mae, baseline_rmse, _ = _regression_summary(actual, baseline)
     skill = None if baseline_rmse == 0 else 1.0 - (rmse / baseline_rmse)
+    if skill is not None and not math.isfinite(skill):
+        raise ValueError("RMSE skill score exceeds supported numeric range")
     return EvaluationMetrics(
         sample_count=len(actual),
         mae=mae,
