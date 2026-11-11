@@ -54,6 +54,6 @@ This module is currently an internal Python service library only. It adds no pub
 
 ## Satellite raster input references
 
-An experiment may include up to 200 checksum-bound raster input references. Each reference records the immutable raster-processing manifest ID, dataset ID, exact raster-byte SHA-256 and the fixed satellite-derived evidence class. The experiment validator requires unique manifest IDs, matching dataset IDs and a satellite-derived experiment evidence class.
+An experiment may include up to 200 checksum-bound raster input references. Each reference records the immutable raster-processing manifest ID, dataset ID, processed-window SHA-256 and optional complete source-object SHA-256 and the fixed satellite-derived evidence class. The experiment validator requires unique manifest IDs, matching dataset IDs and a satellite-derived experiment evidence class.
 
 This is a referential contract only: it does not load or verify the referenced manifest, download bytes, persist foreign keys, or prove the raster was clipped to an AOI. A later registry implementation must resolve each manifest ID and compare its checksum before an experiment is reproducibly materialized. Do not relabel satellite-derived raster inputs as field observations.
