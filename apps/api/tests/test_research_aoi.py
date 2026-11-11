@@ -32,7 +32,7 @@ def test_accepts_multipolygon_and_hole_rings():
 @pytest.mark.parametrize("geometry", [
     {"type": "Point", "coordinates": [10, 36]},
     {"type": "Polygon", "coordinates": [[[10, 36], [11, 36], [11, 37]]]},
-    {"type": "Polygon", "coordinates": [[[10, 36], [11, 36], [11, 37], [10, 36]]]},
+    {"type": "Polygon", "coordinates": [[[10, 36], [11, 36], [12, 36], [10, 36]]]},
     {"type": "Polygon", "coordinates": [[[181, 36], [182, 36], [182, 37], [181, 36]]]},
     {"type": "Polygon", "coordinates": [[[10, 36], [float("nan"), 36], [11, 37], [10, 36]]]},
     {"type": "Polygon", "coordinates": [[[10, 36], [10, 36], [11, 37], [10, 36]]]},
