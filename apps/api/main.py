@@ -12,10 +12,12 @@ try:
     from .services.nasa_power import fetch_daily_point_async
     from .services.d1_storage import storage_status
     from .services.dataset_catalogue import catalogue_summary, list_datasets
+    from .services.pvgis import build_research_result, fetch_broadband_performance_async
 except ImportError:
     from services.nasa_power import fetch_daily_point_async
     from services.d1_storage import storage_status
     from services.dataset_catalogue import catalogue_summary, list_datasets
+    from services.pvgis import build_research_result, fetch_broadband_performance_async
 
 
 class SiteState(BaseModel):
@@ -221,6 +223,27 @@ def read_dataset_catalogue(domain: str | None = None) -> dict[str, Any]:
             "Dataset terms, endpoint schemas, coverage and versions must be verified at retrieval time.",
         ],
     }
+
+
+@app.get("/api/v1/data/solar/pvgis/performance")
+async def pvgis_broadband_performance(
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+) -> dict[str, Any]:
+    """Retrieve historical PVGIS estimates; never interpret them as measured production."""
+    try:
+        payload = await fetch_broadband_performance_async(
+            latitude, longitude, start_date, end_date
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return build_research_result(
+        payload, latitude, longitude, start_date, end_date
+    )
 
 
 @app.get("/api/v1/storage/status")
