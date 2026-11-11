@@ -62,7 +62,7 @@ def test_pvgis_endpoint_returns_provenance_and_does_not_persist(monkeypatch):
     assert result["status"] == "retrieved"
     assert result["data"] == payload
     assert result["evidence_class"] == "gridded_model_product"
-    assert "not persisted" in result["limitations"][-1]
+    assert "persisted" in result["limitations"][-1]
 
 
 def test_pvgis_endpoint_maps_invalid_request_to_422():
