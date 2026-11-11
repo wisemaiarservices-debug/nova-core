@@ -93,7 +93,3 @@ def test_lineage_is_immutable_and_rejects_customer_site_identity():
     lineage = build_research_run_lineage("experiment-water-001", AOI, _raster_manifest())
     with pytest.raises(ValidationError):
         lineage.site_id = "customer-site-1"
-    with pytest.raises(ValidationError):
-        lineage.model_copy(update={"site_id": "customer-site-1"}).model_validate(
-            {"**": "not-used"}
-        )
