@@ -134,3 +134,10 @@ def test_duplicate_context_features_and_nonfinite_area_are_rejected():
         _context(available_features=(feature, feature))
     with pytest.raises(ValidationError):
         _context(land_area_m2=float("inf"))
+
+
+def test_restricted_equipment_scope_requires_client_equipment_metadata():
+    result = assess_model_applicability(_model(), _context(equipment_classes=()))
+    assert result.status == "needs_configuration"
+    assert result.recommendation == "abstain"
+    assert any("equipment classes are required" in reason for reason in result.reasons)
