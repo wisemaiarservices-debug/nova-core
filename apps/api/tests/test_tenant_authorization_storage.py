@@ -31,9 +31,20 @@ class Statement:
         if self.database.error:
             raise RuntimeError("private database details")
         if self.sql == MEMBERSHIP_SQL:
-            return Result(self.database.memberships)
+            subject, tenant_id = self.parameters
+            return Result([
+                row for row in self.database.memberships
+                if row["subject"] == subject and row["tenant_id"] == tenant_id
+            ])
         if self.sql == RESOURCE_GRANTS_SQL:
-            return Result(self.database.grants)
+            tenant_id, subject, resource_type, resource_id = self.parameters
+            return Result([
+                row for row in self.database.grants
+                if row["tenant_id"] == tenant_id
+                and row["subject"] == subject
+                and row["resource_type"] == resource_type
+                and row["resource_id"] == resource_id
+            ])
         raise AssertionError("unexpected SQL statement")
 
 
