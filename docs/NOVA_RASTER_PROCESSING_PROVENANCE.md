@@ -14,7 +14,7 @@ A processing manifest binds one output to the exact provider asset and code that
 - optional SHA-256 of the complete source COG object, populated only when the entire object is actually downloaded and hashed;
 - optional SHA-256 of the provider metadata snapshot;
 - exact 40-character processing-code commit and named processing method;
-- processed AOI-window dimensions, original source-raster dimensions, and separate valid/NoData/outside-AOI pixel counts;
+- processed AOI-window dimensions, original source-raster dimensions, source sample dtype and NoData sentinel, and separate valid/NoData/outside-AOI pixel counts;
 - raw statistics and optional calibrated statistics;
 - optional CRS and affine transform only when explicitly normalized from authoritative metadata;
 - optional study-area geometry hash and WGS84 bounding box.
