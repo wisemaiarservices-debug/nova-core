@@ -38,6 +38,7 @@ class TenantMembership(BaseModel):
     tenant_id: str = Field(min_length=1, max_length=120)
     role: Role
     active: bool = True
+    tenant_active: bool
 
 
 class ResourceGrant(BaseModel):
@@ -105,7 +106,7 @@ def authorize_resource_action(
         # Deliberately do not distinguish another tenant's membership.
         return AuthorizationDecision(allowed=False, reason_code="missing_membership")
 
-    active = tuple(item for item in matching if item.active)
+    active = tuple(item for item in matching if item.active and item.tenant_active)
     if not active:
         return AuthorizationDecision(allowed=False, reason_code="inactive_membership")
 
