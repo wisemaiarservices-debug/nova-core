@@ -30,12 +30,16 @@ def test_wapor_mapset_discovery_uses_provider_pagination_and_provenance():
 
 
 def test_wapor_rejects_untrusted_pagination_urls():
-    with pytest.raises(RuntimeError, match="untrusted"):
-        wapor._validate_api_url("https://attacker.example/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets")
-    with pytest.raises(RuntimeError, match="untrusted"):
-        wapor._validate_api_url("http://data.apps.fao.org/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets")
-    with pytest.raises(RuntimeError, match="untrusted"):
-        wapor._validate_api_url("https://data.apps.fao.org.evil.test/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets")
+    for url in (
+        "https://attacker.example/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets",
+        "http://data.apps.fao.org/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets",
+        "https://data.apps.fao.org.evil.test/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets",
+        "https://data.apps.fao.org/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets-evil",
+        "https://user@data.apps.fao.org/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets",
+        "https://data.apps.fao.org/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets#fragment",
+    ):
+        with pytest.raises(RuntimeError, match="untrusted"):
+            wapor._validate_api_url(url)
 
 
 def test_wapor_mapset_code_is_strict_and_normalized():
