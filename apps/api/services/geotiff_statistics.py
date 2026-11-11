@@ -124,7 +124,7 @@ def calculate_geotiff_statistics(data: bytes) -> dict[str, Any]:
         rows = min(rows_per_strip, height - first_row)
         expected = rows * width * bytes_per_sample
         if strip_size != expected or strip_offset < 0 or strip_offset + strip_size > len(data):
-            raise GeoTiffError("TIFF strip byte range is invalid or inconsistent with dimensions")
+            raise GeoTiffError(f"TIFF strip byte range is invalid: offset={strip_offset}, bytes={strip_size}, expected={expected}, file_bytes={len(data)}")
         raw = data[strip_offset:strip_offset + strip_size]
         values = struct.iter_unpack(endian + fmt, raw)
         for (sample,) in values:
