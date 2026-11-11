@@ -71,7 +71,7 @@ def test_rejects_boolean_unrepresentable_and_non_2d_coordinates(position):
         {"type": "MultiPolygon", "coordinates": []},
         {"type": "Polygon", "coordinates": []},
         {"type": "Polygon", "coordinates": [[
-            [10, 36], [11, 36], [11, 37], [10, 36],
+            [10, 36], [11, 36], [12, 36], [10, 36],
         ]]},
     ],
 )
