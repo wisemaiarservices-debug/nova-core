@@ -46,3 +46,35 @@ def test_rejects_antimeridian_crossing_without_normalization():
     geometry = {"type": "Polygon", "coordinates": [[[179, 10], [-179, 10], [-179, 11], [179, 11], [179, 10]]]}
     with pytest.raises(AOIValidationError, match="Antimeridian"):
         validate_research_aoi(geometry)
+
+
+@pytest.mark.parametrize(
+    "position",
+    [
+        [True, 36],
+        [10, False],
+        [10**10000, 36],
+        [10, 36, 5],
+    ],
+)
+def test_rejects_boolean_unrepresentable_and_non_2d_coordinates(position):
+    geometry = {"type": "Polygon", "coordinates": [[
+        position, [11, 36], [11, 37], position,
+    ]]}
+    with pytest.raises(AOIValidationError):
+        validate_research_aoi(geometry)
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"type": "MultiPolygon", "coordinates": []},
+        {"type": "Polygon", "coordinates": []},
+        {"type": "Polygon", "coordinates": [[
+            [10, 36], [11, 36], [12, 36], [10, 36],
+        ]]},
+    ],
+)
+def test_rejects_empty_or_malformed_polygon_collections(geometry):
+    with pytest.raises(AOIValidationError):
+        validate_research_aoi(geometry)

@@ -57,7 +57,10 @@ def validate_research_aoi(geometry: dict[str, Any]) -> dict[str, Any]:
                     or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in position)
                 ):
                     raise AOIValidationError("AOI positions must be two-dimensional numeric [longitude, latitude]")
-                longitude, latitude = float(position[0]), float(position[1])
+                try:
+                    longitude, latitude = float(position[0]), float(position[1])
+                except (OverflowError, TypeError, ValueError) as exc:
+                    raise AOIValidationError("AOI coordinates must be finite WGS84 numbers") from exc
                 if not math.isfinite(longitude) or not math.isfinite(latitude):
                     raise AOIValidationError("AOI coordinates must be finite")
                 if not -180 <= longitude <= 180 or not -90 <= latitude <= 90:
