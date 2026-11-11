@@ -188,7 +188,7 @@ def process_wapor_aoi(
             CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif",
             CPL_VSIL_CURL_USE_HEAD="YES",
             GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
-            GDAL_CACHEMAX="64",
+            GDAL_CACHEMAX=64,
         ):
             with rasterio.open(download_url) as source:
                 if source.count != 1:
