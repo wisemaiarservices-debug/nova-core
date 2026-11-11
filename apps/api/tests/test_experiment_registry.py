@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from apps.api.services.experiment_registry import (
     ChronologicalSplit,
     ExperimentManifest,
+    RasterInputReference,
     TimeWindow,
     evaluate_regression,
 )
@@ -182,3 +183,39 @@ def test_metric_overflow_is_rejected_as_invalid_scientific_output():
             test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
             test_period_end=datetime(2024, 1, 31, tzinfo=UTC),
         )
+
+
+
+def test_experiment_can_reference_checksum_bound_satellite_raster_manifests():
+    raster = RasterInputReference(
+        manifest_id="wapor.l2.aeti.2024-01",
+        dataset_id="fao-wapor-v3",
+        content_sha256="d" * 64,
+    )
+    manifest = _manifest(evidence_class="satellite_derived", raster_inputs=[raster])
+    assert manifest.raster_inputs[0].content_sha256 == "d" * 64
+
+
+def test_raster_inputs_require_matching_dataset_and_satellite_evidence():
+    raster = RasterInputReference(
+        manifest_id="wapor.l2.aeti.2024-01",
+        dataset_id="fao-wapor-v3",
+        content_sha256="d" * 64,
+    )
+    with pytest.raises(ValidationError, match="satellite_derived"):
+        _manifest(raster_inputs=[raster])
+    with pytest.raises(ValidationError, match="dataset IDs"):
+        _manifest(
+            evidence_class="satellite_derived",
+            raster_inputs=[raster.model_copy(update={"dataset_id": "other-dataset"})],
+        )
+
+
+def test_experiment_rejects_duplicate_raster_manifest_references():
+    raster = RasterInputReference(
+        manifest_id="wapor.l2.aeti.2024-01",
+        dataset_id="fao-wapor-v3",
+        content_sha256="d" * 64,
+    )
+    with pytest.raises(ValidationError, match="manifest IDs must be unique"):
+        _manifest(evidence_class="satellite_derived", raster_inputs=[raster, raster])
