@@ -93,3 +93,56 @@ def test_lineage_is_immutable_and_rejects_customer_site_identity():
     lineage = build_research_run_lineage("experiment-water-001", AOI, _raster_manifest())
     with pytest.raises(ValidationError):
         lineage.site_id = "customer-site-1"
+
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from apps.api.services.research_run_lineage import attach_lineage_to_experiment
+
+
+class _ExperimentContract(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    dataset_id: str
+    dataset_version: str
+    evidence_class: str
+    raster_inputs: list[dict] = Field(default_factory=list)
+
+
+def test_attaches_lineage_to_experiment_and_revalidates_registry_contract():
+    lineage = build_research_run_lineage("experiment-water-001", AOI, _raster_manifest())
+    experiment = _ExperimentContract(
+        dataset_id="fao-wapor-v3",
+        dataset_version="v3",
+        evidence_class="satellite_derived",
+    )
+    updated = attach_lineage_to_experiment(experiment, lineage)
+    assert isinstance(updated, _ExperimentContract)
+    assert updated.raster_inputs == [lineage.raster_input_reference]
+    assert experiment.raster_inputs == []
+
+
+def test_experiment_handoff_rejects_dataset_version_and_evidence_mismatch():
+    lineage = build_research_run_lineage("experiment-water-001", AOI, _raster_manifest())
+    with pytest.raises(ValueError, match="dataset_version"):
+        attach_lineage_to_experiment(
+            _ExperimentContract(dataset_id="fao-wapor-v3", dataset_version="v2", evidence_class="satellite_derived"),
+            lineage,
+        )
+    with pytest.raises(ValueError, match="evidence_class"):
+        attach_lineage_to_experiment(
+            _ExperimentContract(dataset_id="fao-wapor-v3", dataset_version="v3", evidence_class="field_observation"),
+            lineage,
+        )
+
+
+def test_experiment_handoff_rejects_duplicate_raster_reference():
+    lineage = build_research_run_lineage("experiment-water-001", AOI, _raster_manifest())
+    reference = lineage.raster_input_reference
+    experiment = _ExperimentContract(
+        dataset_id="fao-wapor-v3",
+        dataset_version="v3",
+        evidence_class="satellite_derived",
+        raster_inputs=[reference],
+    )
+    with pytest.raises(ValueError, match="already contains"):
+        attach_lineage_to_experiment(experiment, lineage)
