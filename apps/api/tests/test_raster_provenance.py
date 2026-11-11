@@ -27,6 +27,8 @@ def _manifest(**overrides):
         "processing_method": "nova-geotiff-strip-statistics-v1",
         "width": 2,
         "height": 2,
+        "source_width": 2,
+        "source_height": 2,
         "valid_pixel_count": 3,
         "nodata_pixel_count": 1,
         "raw_min": 1.0,
@@ -119,3 +121,25 @@ def test_hashes_and_processing_commit_are_strict():
 def test_aoi_bbox_must_be_ordered_and_wgs84_bounded():
     with pytest.raises(ValidationError, match="bounding box"):
         _manifest(aoi_bbox=(11.0, 37.0, 10.0, 36.0))
+
+
+
+def test_aoi_window_accounts_for_pixels_outside_polygon_separately():
+    result = _manifest(
+        width=2,
+        height=2,
+        valid_pixel_count=2,
+        nodata_pixel_count=1,
+        outside_aoi_pixel_count=1,
+        raw_min=1.0,
+        raw_max=5.0,
+        raw_mean=3.0,
+    )
+    assert result.outside_aoi_pixel_count == 1
+
+
+def test_source_dimensions_must_be_paired_and_not_smaller_than_window():
+    with pytest.raises(ValidationError, match="both be present"):
+        _manifest(source_width=2, source_height=None)
+    with pytest.raises(ValidationError, match="cannot exceed source"):
+        _manifest(source_width=1, source_height=1)
