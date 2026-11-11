@@ -152,6 +152,15 @@ class ClientConfiguration(BaseModel):
     site: SiteProfile
     configuration_schema: Literal["nova-client-configuration-v1"] = "nova-client-configuration-v1"
 
+    @field_validator("pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", mode="before")
+    @classmethod
+    def finite_optional_ratings(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ValueError("energy system ratings must be finite numeric values")
+        return value
+
     @model_validator(mode="after")
     def validate_tenant_site_match(self) -> "ClientConfiguration":
         if self.tenant.tenant_id != self.site.tenant_id:
