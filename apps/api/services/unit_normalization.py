@@ -173,7 +173,7 @@ def normalize_quantity(quantity: Quantity) -> NormalizedQuantity:
     definition = _UNITS.get(source_key)
     if definition is None:
         raise ValueError(f"unsupported unit: {quantity.unit}")
-    normalized = definition.from_base(definition.to_base(quantity.value))
+    normalized = definition.to_base(quantity.value)
     return NormalizedQuantity(
         original_value=quantity.value,
         original_unit=quantity.unit,
