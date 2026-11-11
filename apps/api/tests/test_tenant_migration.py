@@ -130,3 +130,27 @@ def test_legacy_null_tenant_rows_are_not_tenant_scoped():
     assert row == (None,)
     # The migration intentionally leaves ownership unresolved; consumers must
     # filter by an authorized tenant_id and must not infer or backfill ownership.
+
+
+
+def test_suspended_tenant_cannot_receive_new_memberships_grants_or_assets():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_site(db, "tenant-a", "site-a")
+    db.execute("UPDATE tenants SET status='suspended' WHERE id='tenant-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+            "VALUES ('m-suspended', 'tenant-a', 'sub-a', 'viewer')"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO tenant_resource_grants "
+            "(id, tenant_id, subject, resource_type, resource_id, action) "
+            "VALUES ('g-suspended', 'tenant-a', 'sub-a', 'site', 'site-a', 'read')"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO assets (id, site_id, name, asset_type, tenant_id) "
+            "VALUES ('asset-suspended', 'site-a', 'Pump', 'pump', 'tenant-a')"
+        )
