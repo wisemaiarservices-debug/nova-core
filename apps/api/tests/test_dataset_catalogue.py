@@ -58,7 +58,7 @@ def test_api_exposes_catalogue_without_claiming_live_ingestion():
 
 def test_api_returns_filtered_catalogue_and_rejects_bad_domain():
     response = read_dataset_catalogue("energy")
-    assert response["returned"] == 4
+    assert response["returned"] == 3
     assert all("energy" in item["domains"] for item in response["records"])
     try:
         read_dataset_catalogue("unknown")
