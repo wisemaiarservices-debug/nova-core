@@ -98,7 +98,6 @@ def test_rejects_bigtiff_until_supported_explicitly():
 def test_rejects_metadata_offsets_outside_input():
     tags = _basic_tags() + [(33550, 12, [1.0, 1.0, 0.0])]
     payload = bytearray(_tiff(tags))
-    # The final tag stores its three doubles externally; corrupt that value offset.
     value_field_offset = 10 + (len(tags) - 1) * 12 + 8
     struct.pack_into("<I", payload, value_field_offset, 100000)
     with pytest.raises(GeoTiffError, match="outside"):
@@ -115,3 +114,9 @@ def test_rejects_unreasonable_dimensions():
 def test_rejects_oversized_input_before_parsing():
     with pytest.raises(GeoTiffError, match="16 MiB"):
         inspect_geotiff(b"II" + b"\x00" * (MAX_TIFF_BYTES + 1))
+
+
+def test_rejects_nonfinite_geospatial_metadata():
+    tags = _basic_tags() + [(33550, 12, [float("nan"), 1.0, 0.0])]
+    with pytest.raises(GeoTiffError, match="non-finite"):
+        inspect_geotiff(_tiff(tags))
