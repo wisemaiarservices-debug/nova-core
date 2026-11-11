@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from apps.api.services.client_configuration import ClientConfiguration
 from apps.api.services.equipment_capabilities import CapabilityRegistry
+from apps.api.services.unit_normalization import convert_value
 from apps.api.services.model_applicability import (
     AvailableFeature,
     ClientApplicabilityContext,
@@ -58,7 +59,11 @@ def build_applicability_context(
     species = {crop.species.casefold(): crop.species for crop in configuration.site.crops}
     crop_species = next(iter(species.values())) if len(species) == 1 else None
     land_area_m2 = (
-        configuration.site.land_area.square_metres
+        convert_value(
+            configuration.site.land_area.value,
+            configuration.site.land_area.unit,
+            "m2",
+        )
         if configuration.site.land_area is not None
         else None
     )
