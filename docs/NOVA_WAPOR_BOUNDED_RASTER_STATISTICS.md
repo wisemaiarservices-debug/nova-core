@@ -24,6 +24,10 @@ Outputs remain `satellite_derived`; they are not field measurements. Statistics 
 
 This is a tested service function only. It is not wired to the WaPOR HTTP API, does not dereference `downloadUrl`/`gsutilUri`, does not decode compressed GeoTIFFs, and does not persist results or register a site, asset or source. Before a future downloader is added, the provider's exact download host, URL semantics, redirects, content type, TIFF magic, byte cap, timeouts and geographic limits must be independently verified and enforced.
 
+## Test coverage
+
+The synthetic TIFF fixtures exercise little-endian strip offsets and byte counts, NoData exclusion, all-NoData behavior, explicit scale/offset metadata, and rejection of compressed strips. These fixtures are test-only and do not represent a real WaPOR raster.
+
 ## Next gates
 
 1. Verify the official WaPOR v3 download URL behavior and permitted hosts from FAO's current tutorial/API responses.
