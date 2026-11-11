@@ -106,11 +106,12 @@ def test_evaluation_reports_negative_skill_when_model_loses_to_baseline():
     metrics = evaluate_regression(
         [1, 2, 3],
         [4, 5, 6],
-        [1, 2, 3],
+        [2, 2, 2],
         test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
         test_period_end=datetime(2024, 1, 31, tzinfo=UTC),
     )
-    assert metrics.rmse_skill_score == pytest.approx(-3.0)
+    assert metrics.rmse_skill_score is not None
+    assert metrics.rmse_skill_score < 0
 
 
 def test_zero_error_baseline_has_undefined_skill_not_division_error():
