@@ -124,3 +124,11 @@ def test_duplicate_equipment_ratings_are_rejected():
     rating = EngineeringRating(name="rated_power", value=10, unit="kW")
     with pytest.raises(ValidationError, match="unique"):
         _equipment(ratings=(rating, rating))
+
+
+@pytest.mark.parametrize("value", [True, float("nan"), float("inf"), -float("inf")])
+def test_measurement_capability_rejects_boolean_and_nonfinite_limits(value):
+    with pytest.raises(ValidationError):
+        MeasurementCapability(metric="sensor.value", unit="kW", minimum_value=value)
+    with pytest.raises(ValidationError):
+        MeasurementCapability(metric="sensor.value", unit="kW", resolution=value)
