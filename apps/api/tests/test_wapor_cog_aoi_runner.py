@@ -56,3 +56,34 @@ def test_decodes_leap_year_dekadal_periods(raster_code, start, end):
 def test_rejects_non_dekadal_periods_for_first_runner_version():
     with pytest.raises(ResearchProcessingError, match="dekadal"):
         dekadal_period("WAPOR-3.L2-T-M.2024-02")
+
+
+@pytest.mark.parametrize(
+    "content_range,prefix,expected_size",
+    [
+        ("bytes 0-3/1024", b"II*\x00", 1024),
+        ("bytes 0-3/1024 ", b"MM\x00*", 1024),
+    ],
+)
+def test_initial_range_requires_exact_range_and_head_size(content_range, prefix, expected_size):
+    from scripts.wapor_cog_aoi import _validate_initial_range
+
+    _validate_initial_range(content_range, prefix, expected_size)
+
+
+@pytest.mark.parametrize(
+    "content_range,prefix,expected_size",
+    [
+        ("bytes 0-3/2048", b"II*\x00", 1024),
+        ("bytes 0-4/1024", b"II*\x00", 1024),
+        ("bytes 0-3/*", b"II*\x00", 1024),
+        ("bytes 0-3/1024, bytes 0-3/1024", b"II*\x00", 1024),
+        ("bytes 0-3/1024", b"II*\x00x", 1024),
+        ("bytes 0-3/1024", b"NOPE", 1024),
+    ],
+)
+def test_initial_range_rejects_mismatch_partial_or_invalid_tiff(content_range, prefix, expected_size):
+    from scripts.wapor_cog_aoi import _validate_initial_range
+
+    with pytest.raises(ResearchProcessingError):
+        _validate_initial_range(content_range, prefix, expected_size)

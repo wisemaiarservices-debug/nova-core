@@ -73,6 +73,17 @@ def dekadal_period(raster_code: str) -> tuple[date, date]:
     return date(year, month, start_day), date(year, month, end_day)
 
 
+def _validate_initial_range(content_range: str, prefix: bytes, expected_size: int) -> None:
+    """Require an exact four-byte range whose advertised object size matches HEAD."""
+    match = re.fullmatch(r"bytes 0-3/(\d+)", content_range.strip())
+    if match is None or int(match.group(1)) != expected_size:
+        raise ResearchProcessingError("WaPOR COG returned an invalid or inconsistent initial byte range")
+    if len(prefix) != 4:
+        raise ResearchProcessingError("WaPOR COG returned an incomplete initial byte range")
+    if prefix not in (b"II*\x00", b"MM\x00*"):
+        raise ResearchProcessingError("WaPOR COG does not begin with a classic TIFF signature")
+
+
 def _preflight_cog(url: str) -> int:
     """Reject redirects, non-TIFF objects and unbounded remote object sizes."""
     opener = build_opener(_RejectRedirects())
@@ -100,18 +111,14 @@ def _preflight_cog(url: str) -> int:
         with opener.open(range_request, timeout=20) as response:
             if response.status != 206:
                 raise ResearchProcessingError("WaPOR COG server did not honor the bounded byte-range request")
-            prefix = response.read(4)
+            prefix = response.read(5)
             content_range = response.headers.get("Content-Range", "")
-            if not content_range.startswith("bytes 0-3/"):
-                raise ResearchProcessingError("WaPOR COG returned an invalid initial byte range")
-        if prefix not in (b"II*\x00", b"MM\x00*"):
-            raise ResearchProcessingError("WaPOR COG does not begin with a classic TIFF signature")
+        _validate_initial_range(content_range, prefix, size)
         return size
     except HTTPError as exc:
         raise ResearchProcessingError(f"WaPOR COG preflight failed with HTTP {exc.code}") from exc
-    except (URLError, TimeoutError) as exc:
+    except (URLError, TimeoutError, OSError) as exc:
         raise ResearchProcessingError("WaPOR COG preflight failed or timed out") from exc
-
 
 def _canonical_hash(payload: Any) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("utf-8")
