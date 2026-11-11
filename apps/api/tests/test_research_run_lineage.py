@@ -150,3 +150,15 @@ def test_experiment_handoff_rejects_duplicate_raster_reference():
     )
     with pytest.raises(ValueError, match="already contains"):
         attach_lineage_to_experiment(experiment, lineage)
+
+
+def test_experiment_handoff_rejects_a_different_dataset_snapshot_hash():
+    lineage = build_research_run_lineage("experiment-water-001", AOI, _raster_manifest())
+    experiment = _ExperimentContract(
+        dataset_id="fao-wapor-v3",
+        dataset_version="v3",
+        dataset_snapshot_sha256="0" * 64,
+        evidence_class="satellite_derived",
+    )
+    with pytest.raises(ValueError, match="dataset_snapshot_sha256"):
+        attach_lineage_to_experiment(experiment, lineage)
