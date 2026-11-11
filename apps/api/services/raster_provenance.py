@@ -35,7 +35,7 @@ class RasterProcessingManifest(BaseModel):
     processed_window_sha256: str = Field(pattern=_SHA256)
     provider_metadata_sha256: str | None = Field(default=None, pattern=_SHA256)
     processing_code_commit: str = Field(pattern=_COMMIT)
-    processing_method: Literal["nova-geotiff-strip-statistics-v1"]
+    processing_method: Literal["nova-geotiff-strip-statistics-v1", "nova-wapor-cog-aoi-v1"]
     evidence_class: Literal["satellite_derived"] = "satellite_derived"
 
     # width/height describe the processed AOI crop; source dimensions preserve the full COG shape.
