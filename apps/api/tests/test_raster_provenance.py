@@ -20,7 +20,8 @@ def _manifest(**overrides):
         "provider_period_start": date(2024, 1, 1),
         "provider_period_end": date(2024, 1, 10),
         "retrieved_at": datetime(2026, 11, 11, 12, tzinfo=UTC),
-        "content_sha256": "a" * 64,
+        "source_object_sha256": None,
+        "processed_window_sha256": "a" * 64,
         "provider_metadata_sha256": "b" * 64,
         "processing_code_commit": "c" * 40,
         "processing_method": "nova-geotiff-strip-statistics-v1",
@@ -45,7 +46,7 @@ def test_manifest_captures_source_snapshot_processing_and_evidence():
     result = _manifest()
     assert result.provider == "FAO WaPOR"
     assert result.mapset_code == "L2-AETI-D"
-    assert result.content_sha256 == "a" * 64
+    assert result.processed_window_sha256 == "a" * 64
     assert result.processing_code_commit == "c" * 40
     assert result.evidence_class == "satellite_derived"
     assert result.site_id is None
@@ -110,7 +111,7 @@ def test_period_and_retrieval_timestamp_are_validated():
 
 def test_hashes_and_processing_commit_are_strict():
     with pytest.raises(ValidationError):
-        _manifest(content_sha256="not-a-hash")
+        _manifest(processed_window_sha256="not-a-hash")
     with pytest.raises(ValidationError):
         _manifest(processing_code_commit="short")
 
