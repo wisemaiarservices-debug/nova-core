@@ -14,7 +14,7 @@ A processing manifest binds one output to the exact provider asset and code that
 - optional SHA-256 of the complete source COG object, populated only when the entire object is actually downloaded and hashed;
 - optional SHA-256 of the provider metadata snapshot;
 - exact 40-character processing-code commit and named processing method;
-- processed AOI-window dimensions, original source-raster dimensions, and separate valid/NoData/outside-AOI pixel counts;
+- processed AOI-window dimensions, original source-raster dimensions, source sample dtype and NoData sentinel, and separate valid/NoData/outside-AOI pixel counts;
 - raw statistics and optional calibrated statistics;
 - optional CRS and affine transform only when explicitly normalized from authoritative metadata;
 - optional study-area geometry hash and WGS84 bounding box.
@@ -41,3 +41,6 @@ No API endpoint, D1 table/binding, downloader, object store, retention policy, s
 
 
 For AOI-clipped processing, width and height describe the cropped pixel window. Source width and height retain the full source COG dimensions. Pixels inside the crop but outside the polygon are counted separately from provider NoData pixels; the three counts must sum to the crop-window pixel count.
+
+
+The AOI COG runner also records the source sample dtype and provider NoData sentinel in the manifest. These describe how the raw pixel values were represented and which values were excluded; they do not imply a calibration or a verified physical unit.
