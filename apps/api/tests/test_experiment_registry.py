@@ -226,6 +226,7 @@ def _raster_manifest_payload(**overrides):
     payload = {
         "manifest_id": "wapor.l2.aeti.2024-01",
         "dataset_id": "fao-wapor-v3",
+        "dataset_version": "v3",
         "processed_window_sha256": "d" * 64,
         "source_object_sha256": None,
         "evidence_class": "satellite_derived",
@@ -243,6 +244,7 @@ def _satellite_experiment():
     )
     return _manifest(
         dataset_id="fao-wapor-v3",
+        dataset_version="v3",
         evidence_class="satellite_derived",
         raster_inputs=[raster],
     )
@@ -266,6 +268,11 @@ def test_resolver_rejects_missing_duplicate_and_mismatched_manifests():
         resolve_raster_input_manifests(experiment, [])
     with pytest.raises(ValueError, match="IDs must be unique"):
         resolve_raster_input_manifests(experiment, [source, source])
+    with pytest.raises(ValueError, match="dataset_version"):
+        resolve_raster_input_manifests(
+            experiment,
+            [_raster_manifest_payload(dataset_version="v2")],
+        )
     with pytest.raises(ValueError, match="processed-window checksum"):
         resolve_raster_input_manifests(
             experiment,
