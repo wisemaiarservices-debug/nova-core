@@ -36,6 +36,15 @@ class MeasurementCapability(BaseModel):
     sampling_interval_seconds: float | None = Field(default=None, gt=0, le=31_536_000)
     output_kind: Literal["instantaneous", "interval_aggregate", "counter", "state", "unknown"] = "unknown"
 
+    @field_validator("minimum_value", "maximum_value", "resolution", "accuracy_absolute", "sampling_interval_seconds", mode="before")
+    @classmethod
+    def finite_optional_measurement_values(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ValueError("measurement capability values must be finite numbers")
+        return value
+
     @model_validator(mode="after")
     def validate_declared_range(self) -> "MeasurementCapability":
         for field_name in ("minimum_value", "maximum_value"):
