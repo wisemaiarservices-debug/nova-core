@@ -14,13 +14,13 @@ Do not begin until all are true:
 2. Migration `apps/api/migrations/0001_initial.sql` has been applied to the intended database.
 3. `/api/v1/storage/status` reports `ready` for the Worker that will use the binding.
 4. The operator has authorization to register the site and source, and has evidence for every supplied field.
-5. The registration SQL is reviewed by a second operator before execution.
+5. The registration batch is reviewed by a second operator before execution.
 
 If any precondition is false, stop. Do not invent a pilot site or use connectivity-test coordinates as a real site.
 
 ## Registration evidence record
 
-Prepare a private operator record before writing SQL. Keep it in the organization's approved records system, not in a public issue or browser bundle.
+Prepare a private operator record before preparing the batch. Keep it in the organization's approved records system, not in a public issue or browser bundle.
 
 ### Site evidence
 
@@ -57,7 +57,7 @@ ORDER BY name;
 
 Confirm all five tables exist. Check that every proposed site/source ID is unused. If an ID already exists, do not overwrite it; investigate and reconcile through a reviewed change. Confirm the proposed source's module and site scope match the intended producer.
 
-## Reviewed registration SQL pattern
+## Reviewed registration parameterized batch pattern
 
 Prepare a parameterized D1 REST API batch locally from the approved evidence record. Use the D1 database query endpoint with a `batch` array; each item has `sql` and `params`. This is important: D1 batches are transactional, while a plain multi-statement SQL file is not the appropriate way to guarantee that the registry rows and audit events commit together. Never interpolate operator-provided strings into SQL.
 
@@ -72,7 +72,7 @@ The following is a shape example, not executable without replacing the illustrat
     },
     {
       "sql": "INSERT INTO audit_events (id, actor_type, actor_id, action, entity_type, entity_id, details_json) VALUES (?, 'operator', ?, 'registry.site_registered', 'site', ?, ?)",
-      "params": ["REAL_AUDIT_EVENT_ID", "APPROVED_OPERATOR_ID", "REAL_SITE_ID", "{\\\"evidence_ref\\\":\\\"APPROVED_EVIDENCE_REFERENCE\\\",\\\"review\\\":\\\"two-person-reviewed\\\"}"]
+      "params": ["REAL_AUDIT_EVENT_ID", "APPROVED_OPERATOR_ID", "REAL_SITE_ID", "{\"evidence_ref\":\"APPROVED_EVIDENCE_REFERENCE\",\"review\":\"two-person-reviewed\"}"]
     },
     {
       "sql": "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, endpoint_reference, verification_status, verification_method, license_reference, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?, '{}')",
@@ -80,7 +80,7 @@ The following is a shape example, not executable without replacing the illustrat
     },
     {
       "sql": "INSERT INTO audit_events (id, actor_type, actor_id, action, entity_type, entity_id, details_json) VALUES (?, 'operator', ?, 'registry.source_registered', 'source', ?, ?)",
-      "params": ["REAL_SOURCE_AUDIT_ID", "APPROVED_OPERATOR_ID", "REAL_SOURCE_ID", "{\\\"evidence_ref\\\":\\\"APPROVED_SOURCE_EVIDENCE\\\",\\\"verification_status\\\":\\\"unverified\\\"}"]
+      "params": ["REAL_SOURCE_AUDIT_ID", "APPROVED_OPERATOR_ID", "REAL_SOURCE_ID", "{\"evidence_ref\":\"APPROVED_SOURCE_EVIDENCE\",\"verification_status\":\"unverified\"}"]
     }
   ]
 }
