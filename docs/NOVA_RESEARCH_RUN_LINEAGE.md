@@ -20,7 +20,7 @@ The canonical AOI checksum uses sorted-key compact JSON, matching the research r
 
 ## Experiment registry hand-off
 
-Use `attach_lineage_to_experiment(experiment_manifest, lineage)` to create a revalidated copy of the caller's experiment-manifest type with the exact raster reference appended. It checks dataset ID/version and evidence class, rejects duplicate manifest references, and leaves the original experiment object unchanged. The experiment registry's `resolve_raster_input_manifests` must still receive the corresponding processing-manifest records and validate dataset/version, checksum, evidence class and null site identity. The experiment caller remains responsible for dataset snapshot integrity, train/validation/test split design, leakage prevention and honest evaluation metrics.
+Build `ResearchDatasetSnapshot.from_lineage(lineage)` and set `ExperimentManifest.dataset_snapshot_sha256` to its `snapshot_sha256`. Then use `attach_lineage_to_experiment(experiment_manifest, lineage)` to create a revalidated copy of the caller's experiment-manifest type with the exact raster reference appended. It checks dataset ID/version, the exact snapshot fingerprint and evidence class, rejects duplicate manifest references, and leaves the original experiment object unchanged. The experiment registry's `resolve_raster_input_manifests` must still receive the corresponding processing-manifest records and validate dataset/version, checksum, evidence class and null site identity. The experiment caller remains responsible for dataset snapshot integrity, train/validation/test split design, leakage prevention and honest evaluation metrics.
 
 ## Status
 

@@ -112,7 +112,7 @@ def attach_lineage_to_experiment(experiment: BaseModel, lineage: ResearchRunLine
     The experiment type is supplied by the experiment-registry layer. Keeping this
     adapter structurally typed avoids duplicating that registry's model here.
     """
-    required = ("dataset_id", "dataset_version", "evidence_class", "raster_inputs")
+    required = ("dataset_id", "dataset_version", "dataset_snapshot_sha256", "evidence_class", "raster_inputs")
     if any(not hasattr(experiment, field) for field in required):
         raise ValueError("experiment must be a validated NOVA ExperimentManifest")
     raster = lineage.raster_manifest
@@ -122,6 +122,11 @@ def attach_lineage_to_experiment(experiment: BaseModel, lineage: ResearchRunLine
         raise ValueError("experiment dataset_version does not match the research raster")
     if experiment.evidence_class != "satellite_derived":
         raise ValueError("experiment evidence_class must be satellite_derived")
+    from apps.api.services.research_dataset_snapshot import ResearchDatasetSnapshot
+
+    snapshot = ResearchDatasetSnapshot.from_lineage(lineage)
+    if experiment.dataset_snapshot_sha256 != snapshot.snapshot_sha256:
+        raise ValueError("experiment dataset_snapshot_sha256 does not match the research snapshot")
     payload = experiment.model_dump(mode="python")
     references = list(payload.get("raster_inputs") or [])
     reference = lineage.raster_input_reference
