@@ -10,7 +10,8 @@ A processing manifest binds one output to the exact provider asset and code that
 - WaPOR mapset and raster codes;
 - provider period start/end (the provider's temporal interval, not the download time);
 - timezone-aware retrieval timestamp;
-- SHA-256 of the exact downloaded raster bytes;
+- SHA-256 of the normalized AOI-window pixel data, validity mask and spatial window metadata;
+- optional SHA-256 of the complete source COG object, populated only when the entire object is actually downloaded and hashed;
 - optional SHA-256 of the provider metadata snapshot;
 - exact 40-character processing-code commit and named processing method;
 - raster width/height and valid/NoData pixel counts;
@@ -18,7 +19,7 @@ A processing manifest binds one output to the exact provider asset and code that
 - optional CRS and affine transform only when explicitly normalized from authoritative metadata;
 - optional study-area geometry hash and WGS84 bounding box.
 
-The checksum is over the exact raster byte stream, not a filename, URL, or metadata response. A provider item code is an identity, not proof that the bytes are authentic; the checksum and retrieval record provide reproducibility evidence.
+The processed-window checksum is a canonical hash of the selected pixel window, its validity mask and the spatial metadata needed to interpret it. It is not represented as a hash of the complete remote COG. The optional source-object checksum is populated only after a full-object download and hash. A provider item code is an identity, not proof that the bytes are authentic.
 
 ## Scientific semantics
 
