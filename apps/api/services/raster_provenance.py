@@ -38,10 +38,14 @@ class RasterProcessingManifest(BaseModel):
     processing_method: Literal["nova-geotiff-strip-statistics-v1"]
     evidence_class: Literal["satellite_derived"] = "satellite_derived"
 
+    # width/height describe the processed AOI crop; source dimensions preserve the full COG shape.
     width: int = Field(ge=1, le=100_000)
     height: int = Field(ge=1, le=100_000)
+    source_width: int | None = Field(default=None, ge=1, le=100_000)
+    source_height: int | None = Field(default=None, ge=1, le=100_000)
     valid_pixel_count: int = Field(ge=0, le=10_000_000)
     nodata_pixel_count: int = Field(ge=0, le=10_000_000)
+    outside_aoi_pixel_count: int = Field(default=0, ge=0, le=10_000_000)
 
     raw_min: float | None = Field(default=None, allow_inf_nan=False)
     raw_max: float | None = Field(default=None, allow_inf_nan=False)
@@ -71,9 +75,14 @@ class RasterProcessingManifest(BaseModel):
 
         pixel_count = self.width * self.height
         if pixel_count > 10_000_000:
-            raise ValueError("raster dimensions exceed the 10 million pixel processing limit")
-        if self.valid_pixel_count + self.nodata_pixel_count != pixel_count:
-            raise ValueError("valid and NoData pixel counts must equal width multiplied by height")
+            raise ValueError("processed window dimensions exceed the 10 million pixel limit")
+        if (self.source_width is None) != (self.source_height is None):
+            raise ValueError("source width and height must either both be present or both be absent")
+        if self.source_width is not None and self.source_height is not None:
+            if self.width > self.source_width or self.height > self.source_height:
+                raise ValueError("processed window dimensions cannot exceed source raster dimensions")
+        if self.valid_pixel_count + self.nodata_pixel_count + self.outside_aoi_pixel_count != pixel_count:
+            raise ValueError("valid, NoData and outside-AOI pixel counts must equal window width multiplied by height")
 
         raw_values = (self.raw_min, self.raw_max, self.raw_mean)
         if self.valid_pixel_count == 0:
