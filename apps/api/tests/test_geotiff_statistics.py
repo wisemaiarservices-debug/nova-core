@@ -22,7 +22,8 @@ def _strip_tiff(samples, *, compression=1, nodata="-9999", scale_xml=None):
         len(value.encode("ascii") + b"\\x00")
         for tag, kind, value in tags if kind == 2
     )
-    pixel_offset = ifd_offset + ifd_size + external_size
+    external_offset = ifd_offset + ifd_size
+    pixel_offset = external_offset + external_size
     entries = []
     external = bytearray()
     for tag, kind, values in tags:
@@ -41,7 +42,7 @@ def _strip_tiff(samples, *, compression=1, nodata="-9999", scale_xml=None):
         if len(raw) <= 4:
             field = raw.ljust(4, b"\x00")
         else:
-            field = struct.pack("<I", pixel_offset + len(external))
+            field = struct.pack("<I", external_offset + len(external))
             external.extend(raw)
         entries.append(struct.pack("<HHI", tag, kind, count) + field)
     header = b"II" + struct.pack("<HI", 42, ifd_offset)
