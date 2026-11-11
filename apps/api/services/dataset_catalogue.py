@@ -34,7 +34,7 @@ class DatasetRecord(BaseModel):
     dataset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,79}$")
     provider: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=180)
-    version: str = Field(min_length=1, max_length=80)
+    version: str = Field(min_length=1, max_length=160)
     status: Literal["integrated", "candidate", "reference_only"]
     evidence_class: EvidenceClass
     domains: list[Literal["agriculture", "water", "solar", "energy", "climate", "land"]]
