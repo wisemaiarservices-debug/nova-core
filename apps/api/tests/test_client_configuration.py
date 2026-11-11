@@ -91,3 +91,13 @@ def test_unknown_crop_cultivar_and_energy_specs_remain_explicitly_unknown():
 def test_configuration_rejects_unrecognized_fields():
     with pytest.raises(ValidationError):
         SiteProfile(**SITE, arbitrary_capacity_kw=42)
+
+
+@pytest.mark.parametrize("value", [True, float("nan"), float("inf"), -float("inf")])
+def test_energy_and_irrigation_ratings_reject_nonfinite_or_boolean_values(value):
+    from apps.api.services.client_configuration import IrrigationProfile
+
+    with pytest.raises(ValidationError):
+        EnergySystemProfile(pv_capacity_kw=value)
+    with pytest.raises(ValidationError):
+        IrrigationProfile(design_flow_m3_per_hour=value)
