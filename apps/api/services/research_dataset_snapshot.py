@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,7 +22,7 @@ class ResearchDatasetSnapshot(BaseModel):
 
     dataset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,79}$")
     dataset_version: str = Field(min_length=1, max_length=160)
-    evidence_class: str = "satellite_derived"
+    evidence_class: Literal["satellite_derived"] = "satellite_derived"
     provider: str = Field(min_length=1, max_length=120)
     mapset_code: str = Field(min_length=1, max_length=80)
     raster_code: str = Field(min_length=1, max_length=160)
