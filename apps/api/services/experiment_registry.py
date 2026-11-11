@@ -244,6 +244,8 @@ def resolve_raster_input_manifests(
             raise ValueError(f"raster processing manifest {reference.manifest_id} was not supplied")
         if manifest.get("dataset_id") != reference.dataset_id:
             raise ValueError("raster processing manifest dataset_id does not match the experiment reference")
+        if manifest.get("dataset_version") != experiment.dataset_version:
+            raise ValueError("raster processing manifest dataset_version does not match the experiment")
         if manifest.get("processed_window_sha256") != reference.processed_window_sha256:
             raise ValueError("raster processing manifest processed-window checksum does not match the experiment reference")
         if manifest.get("source_object_sha256") != reference.source_object_sha256:
