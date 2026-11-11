@@ -79,6 +79,17 @@ class EvaluationMetrics(BaseModel):
         return self
 
 
+class RasterInputReference(BaseModel):
+    """Checksum-bound reference to an immutable satellite raster processing record."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    manifest_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{2,79}$")
+    dataset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,79}$")
+    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    evidence_class: Literal["satellite_derived"] = "satellite_derived"
+
+
 class ExperimentManifest(BaseModel):
     """Immutable description of an experiment; status is not a deployment approval."""
 
@@ -104,6 +115,7 @@ class ExperimentManifest(BaseModel):
     model_artifact_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     status: Literal["research", "evaluated"] = "research"
     metrics: EvaluationMetrics | None = None
+    raster_inputs: list[RasterInputReference] = Field(default_factory=list, max_length=200)
 
     @model_validator(mode="after")
     def validate_release_state(self) -> "ExperimentManifest":
@@ -113,6 +125,14 @@ class ExperimentManifest(BaseModel):
             raise ValueError("feature names must be non-empty and at most 100 characters")
         if self.status == "evaluated" and self.metrics is None:
             raise ValueError("evaluated experiments require holdout metrics")
+        raster_ids = [item.manifest_id for item in self.raster_inputs]
+        if len(set(raster_ids)) != len(raster_ids):
+            raise ValueError("raster input manifest IDs must be unique")
+        if self.raster_inputs:
+            if self.evidence_class != "satellite_derived":
+                raise ValueError("experiments with raster inputs must retain satellite_derived evidence")
+            if any(item.dataset_id != self.dataset_id for item in self.raster_inputs):
+                raise ValueError("raster input dataset IDs must match the experiment dataset_id")
         if self.metrics is not None:
             if self.metrics.test_period_start < self.split.test.start:
                 raise ValueError("metrics test period begins before the declared test split")
