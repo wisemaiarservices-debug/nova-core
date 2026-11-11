@@ -219,3 +219,76 @@ def test_experiment_rejects_duplicate_raster_manifest_references():
     )
     with pytest.raises(ValidationError, match="manifest IDs must be unique"):
         _manifest(evidence_class="satellite_derived", raster_inputs=[raster, raster])
+
+
+
+def _raster_manifest_payload(**overrides):
+    payload = {
+        "manifest_id": "wapor.l2.aeti.2024-01",
+        "dataset_id": "fao-wapor-v3",
+        "processed_window_sha256": "d" * 64,
+        "source_object_sha256": None,
+        "evidence_class": "satellite_derived",
+        "site_id": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _satellite_experiment():
+    raster = RasterInputReference(
+        manifest_id="wapor.l2.aeti.2024-01",
+        dataset_id="fao-wapor-v3",
+        processed_window_sha256="d" * 64,
+    )
+    return _manifest(
+        dataset_id="fao-wapor-v3",
+        evidence_class="satellite_derived",
+        raster_inputs=[raster],
+    )
+
+
+def test_resolver_links_experiment_reference_to_exact_processing_manifest():
+    from apps.api.services.experiment_registry import resolve_raster_input_manifests
+
+    source = _raster_manifest_payload()
+    resolved = resolve_raster_input_manifests(_satellite_experiment(), [source])
+    assert len(resolved) == 1
+    assert resolved[0]["processed_window_sha256"] == "d" * 64
+
+
+def test_resolver_rejects_missing_duplicate_and_mismatched_manifests():
+    from apps.api.services.experiment_registry import resolve_raster_input_manifests
+
+    experiment = _satellite_experiment()
+    source = _raster_manifest_payload()
+    with pytest.raises(ValueError, match="was not supplied"):
+        resolve_raster_input_manifests(experiment, [])
+    with pytest.raises(ValueError, match="IDs must be unique"):
+        resolve_raster_input_manifests(experiment, [source, source])
+    with pytest.raises(ValueError, match="processed-window checksum"):
+        resolve_raster_input_manifests(
+            experiment,
+            [_raster_manifest_payload(processed_window_sha256="e" * 64)],
+        )
+
+
+def test_resolver_checks_source_checksum_evidence_and_research_site_boundary():
+    from apps.api.services.experiment_registry import resolve_raster_input_manifests
+
+    experiment = _satellite_experiment()
+    with pytest.raises(ValueError, match="source-object checksum"):
+        resolve_raster_input_manifests(
+            experiment,
+            [_raster_manifest_payload(source_object_sha256="f" * 64)],
+        )
+    with pytest.raises(ValueError, match="satellite_derived"):
+        resolve_raster_input_manifests(
+            experiment,
+            [_raster_manifest_payload(evidence_class="field_observation")],
+        )
+    with pytest.raises(ValueError, match="site_id as null"):
+        resolve_raster_input_manifests(
+            experiment,
+            [_raster_manifest_payload(site_id="customer-site-1")],
+        )
