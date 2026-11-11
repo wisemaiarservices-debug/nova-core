@@ -101,6 +101,18 @@ async def authorize_tenant_resource_action(
     except Exception as exc:
         raise TenantAuthorizationStorageError("tenant authorization records are invalid") from exc
 
+    # Stop before loading resource grants for inactive memberships or suspended
+    # tenants. This avoids unnecessary access to entitlement records.
+    if not membership.active or not membership.tenant_active:
+        return authorize_resource_action(
+            principal_subject=principal_subject,
+            tenant_id=tenant_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            action=action,
+            memberships=(membership,),
+        )
+
     grants: tuple[ResourceGrant, ...] = ()
     if resource_type != "tenant":
         grant_rows = await _query(
