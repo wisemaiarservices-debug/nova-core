@@ -32,13 +32,18 @@ class _RejectRedirects(HTTPRedirectHandler):
 
 def _validate_api_url(url: str) -> None:
     parsed = urlparse(url)
+    valid_path = (
+        parsed.path == ALLOWED_PATH_PREFIX
+        or parsed.path.startswith(ALLOWED_PATH_PREFIX + "/")
+    )
     if (
         parsed.scheme != "https"
         or parsed.hostname != ALLOWED_HOST
         or parsed.port not in (None, 443)
-        or not parsed.path.startswith(ALLOWED_PATH_PREFIX)
+        or not valid_path
         or parsed.username
         or parsed.password
+        or parsed.fragment
     ):
         raise RuntimeError("WaPOR returned an untrusted pagination URL")
 
