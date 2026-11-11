@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Literal, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -211,3 +211,46 @@ def evaluate_regression(
         test_period_start=test_period_start,
         test_period_end=test_period_end,
     )
+
+
+
+def resolve_raster_input_manifests(
+    experiment: ExperimentManifest,
+    processing_manifests: Sequence[Mapping[str, Any]],
+) -> tuple[Mapping[str, Any], ...]:
+    """Resolve every raster reference against supplied immutable processing manifests.
+
+    This is an offline consistency check only. The caller must load the manifests
+    from an approved source and verify any external storage integrity separately.
+    """
+    if not experiment.raster_inputs:
+        return ()
+
+    by_id: dict[str, Mapping[str, Any]] = {}
+    for manifest in processing_manifests:
+        if not isinstance(manifest, Mapping):
+            raise ValueError("processing manifests must be mappings produced from validated manifest records")
+        manifest_id = manifest.get("manifest_id")
+        if not isinstance(manifest_id, str) or not manifest_id:
+            raise ValueError("processing manifest is missing a stable manifest_id")
+        if manifest_id in by_id:
+            raise ValueError("processing manifest IDs must be unique")
+        by_id[manifest_id] = manifest
+
+    resolved: list[Mapping[str, Any]] = []
+    for reference in experiment.raster_inputs:
+        manifest = by_id.get(reference.manifest_id)
+        if manifest is None:
+            raise ValueError(f"raster processing manifest {reference.manifest_id} was not supplied")
+        if manifest.get("dataset_id") != reference.dataset_id:
+            raise ValueError("raster processing manifest dataset_id does not match the experiment reference")
+        if manifest.get("processed_window_sha256") != reference.processed_window_sha256:
+            raise ValueError("raster processing manifest processed-window checksum does not match the experiment reference")
+        if manifest.get("source_object_sha256") != reference.source_object_sha256:
+            raise ValueError("raster processing manifest source-object checksum does not match the experiment reference")
+        if manifest.get("evidence_class") != "satellite_derived":
+            raise ValueError("raster processing manifest must retain satellite_derived evidence")
+        if "site_id" not in manifest or manifest.get("site_id") is not None:
+            raise ValueError("research raster processing manifests must explicitly declare site_id as null")
+        resolved.append(manifest)
+    return tuple(resolved)
