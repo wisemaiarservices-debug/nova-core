@@ -41,3 +41,6 @@ No API endpoint, D1 table/binding, downloader, object store, retention policy, s
 
 
 For AOI-clipped processing, width and height describe the cropped pixel window. Source width and height retain the full source COG dimensions. Pixels inside the crop but outside the polygon are counted separately from provider NoData pixels; the three counts must sum to the crop-window pixel count.
+
+
+The AOI COG runner also records the source sample dtype and provider NoData sentinel in the manifest. These describe how the raw pixel values were represented and which values were excluded; they do not imply a calibration or a verified physical unit.
