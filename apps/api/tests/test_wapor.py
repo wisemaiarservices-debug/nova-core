@@ -104,5 +104,5 @@ def test_wapor_api_endpoint_maps_provider_failure_and_invalid_inputs(monkeypatch
         raise ValueError("invalid mapset")
     monkeypatch.setattr("apps.api.main.list_rasters_async", invalid)
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(wapor_rasters("invalid"))
+        asyncio.run(wapor_rasters("invalid", None, None))
     assert exc.value.status_code == 422
