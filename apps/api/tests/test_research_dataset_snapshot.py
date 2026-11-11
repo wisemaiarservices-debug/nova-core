@@ -83,7 +83,7 @@ def test_snapshot_rejects_customer_site_identity_and_invalid_hashes():
     lineage = build_research_run_lineage("experiment-water-001", AOI, _manifest())
     snapshot = ResearchDatasetSnapshot.from_lineage(lineage)
     with pytest.raises(ValidationError):
-        snapshot.model_copy(update={"site_id": "customer-site"})
+        ResearchDatasetSnapshot.model_validate({**snapshot.model_dump(), "site_id": "customer-site"})
     with pytest.raises(ValidationError):
         ResearchDatasetSnapshot.model_validate(
             {**snapshot.model_dump(), "processed_window_sha256": "not-a-hash"}
