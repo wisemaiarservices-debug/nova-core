@@ -281,6 +281,8 @@ def process_wapor_aoi(
         provider_metadata_sha256=metadata_hash,
         processing_code_commit=processing_code_commit,
         processing_method="nova-wapor-cog-aoi-v1",
+        source_dtype=source_dtype,
+        source_nodata=source_nodata,
         width=window_width,
         height=window_height,
         source_width=source_width,
