@@ -31,7 +31,8 @@ class RasterProcessingManifest(BaseModel):
     provider_period_start: date
     provider_period_end: date
     retrieved_at: datetime
-    content_sha256: str = Field(pattern=_SHA256)
+    source_object_sha256: str | None = Field(default=None, pattern=_SHA256)
+    processed_window_sha256: str = Field(pattern=_SHA256)
     provider_metadata_sha256: str | None = Field(default=None, pattern=_SHA256)
     processing_code_commit: str = Field(pattern=_COMMIT)
     processing_method: Literal["nova-geotiff-strip-statistics-v1"]
