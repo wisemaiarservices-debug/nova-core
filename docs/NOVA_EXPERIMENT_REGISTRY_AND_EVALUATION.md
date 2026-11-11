@@ -57,3 +57,10 @@ This module is currently an internal Python service library only. It adds no pub
 An experiment may include up to 200 checksum-bound raster input references. Each reference records the immutable raster-processing manifest ID, dataset ID, processed-window SHA-256 and optional complete source-object SHA-256 and the fixed satellite-derived evidence class. The experiment validator requires unique manifest IDs, matching dataset IDs and a satellite-derived experiment evidence class.
 
 This is a referential contract only: it does not load or verify the referenced manifest, download bytes, persist foreign keys, or prove the raster was clipped to an AOI. A later registry implementation must resolve each manifest ID and compare its checksum before an experiment is reproducibly materialized. Do not relabel satellite-derived raster inputs as field observations.
+
+
+## Offline raster-manifest resolution
+
+The resolve_raster_input_manifests function checks that each experiment raster reference resolves to exactly one supplied processing manifest and that the dataset ID, processed-window SHA-256, optional complete source-object SHA-256 and satellite-derived evidence class match. It also requires the research manifest to explicitly declare site_id: null.
+
+The resolver does not fetch or persist manifests, verify remote object bytes, or establish that the caller's manifest store is trustworthy. The caller must obtain validated records from an approved source. This is a pure consistency gate, not a database foreign key or scientific validation.
