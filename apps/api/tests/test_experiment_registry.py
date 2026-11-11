@@ -190,7 +190,7 @@ def test_experiment_can_reference_checksum_bound_satellite_raster_manifests():
     raster = RasterInputReference(
         manifest_id="wapor.l2.aeti.2024-01",
         dataset_id="fao-wapor-v3",
-        content_sha256="d" * 64,
+        processed_window_sha256="d" * 64,
     )
     manifest = _manifest(dataset_id="fao-wapor-v3", evidence_class="satellite_derived", raster_inputs=[raster])
     assert manifest.raster_inputs[0].processed_window_sha256 == "d" * 64
@@ -200,7 +200,7 @@ def test_raster_inputs_require_matching_dataset_and_satellite_evidence():
     raster = RasterInputReference(
         manifest_id="wapor.l2.aeti.2024-01",
         dataset_id="fao-wapor-v3",
-        content_sha256="d" * 64,
+        processed_window_sha256="d" * 64,
     )
     with pytest.raises(ValidationError, match="satellite_derived"):
         _manifest(raster_inputs=[raster])
@@ -215,7 +215,7 @@ def test_experiment_rejects_duplicate_raster_manifest_references():
     raster = RasterInputReference(
         manifest_id="wapor.l2.aeti.2024-01",
         dataset_id="fao-wapor-v3",
-        content_sha256="d" * 64,
+        processed_window_sha256="d" * 64,
     )
     with pytest.raises(ValidationError, match="manifest IDs must be unique"):
         _manifest(evidence_class="satellite_derived", raster_inputs=[raster, raster])
