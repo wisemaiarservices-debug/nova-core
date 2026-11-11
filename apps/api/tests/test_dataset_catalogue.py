@@ -27,6 +27,10 @@ def test_candidate_datasets_are_not_misrepresented_as_integrated():
     assert any("model estimate" in item.lower() or "modelled" in item.lower()
                for item in by_id["jrc-pvgis-6"].limitations)
     assert by_id["fao-wapor-v3"].status == "candidate"
+    assert by_id["fao-wapor-v3"].authentication_required is False
+    assert "global" in by_id["fao-wapor-v3"].spatial_coverage.lower()
+    assert "100 m" in by_id["fao-wapor-v3"].spatial_resolution
+    assert any("no api token" in item.lower() for item in by_id["fao-wapor-v3"].limitations)
     assert by_id["copernicus-era5-land"].evidence_class == "reanalysis"
 
 
