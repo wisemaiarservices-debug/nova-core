@@ -1,0 +1,9 @@
+name = "nova-core-ingest-api"
+main = "src/index.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# Deliberately no D1 binding or secrets here.
+# Add the DB binding only after the account's Free-tier quota/billing review
+# and D1 migration approval. Configure Access values as Worker secrets/vars
+# in Cloudflare; never commit service credentials.
