@@ -77,6 +77,16 @@ class IrrigationProfile(BaseModel):
     water_source: str | None = Field(default=None, max_length=160)
     design_flow_m3_per_hour: float | None = Field(default=None, gt=0, le=1_000_000)
 
+    @field_validator("design_flow_m3_per_hour", mode="before")
+    @classmethod
+    def finite_design_flow(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ValueError("design flow must be a finite numeric value")
+        return value
+
+
 
 class EnergySystemProfile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
@@ -88,6 +98,16 @@ class EnergySystemProfile(BaseModel):
     nominal_voltage_v: float | None = Field(default=None, gt=0, le=1_000_000)
     grid_phase: Literal["single", "three", "dc", "off_grid", "unknown"] = "unknown"
     grid_connected: bool | None = None
+
+    @field_validator("pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", mode="before")
+    @classmethod
+    def finite_optional_ratings(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ValueError("energy system ratings must be finite numeric values")
+        return value
+
 
 
 class SiteProfile(BaseModel):
@@ -127,15 +147,6 @@ class SiteProfile(BaseModel):
             raise ValueError(f"boundary GeoJSON is structurally invalid: {exc}") from exc
         return value
 
-    @field_validator("design_flow_m3_per_hour", mode="before")
-    @classmethod
-    def finite_design_flow(cls, value: Any) -> Any:
-        if value is None:
-            return value
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
-            raise ValueError("design flow must be a finite numeric value")
-        return value
-
     @model_validator(mode="after")
     def validate_tenant_linkage(self) -> "SiteProfile":
         if self.tenant_id.strip() == "":
@@ -151,15 +162,6 @@ class ClientConfiguration(BaseModel):
     tenant: TenantProfile
     site: SiteProfile
     configuration_schema: Literal["nova-client-configuration-v1"] = "nova-client-configuration-v1"
-
-    @field_validator("pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", mode="before")
-    @classmethod
-    def finite_optional_ratings(cls, value: Any) -> Any:
-        if value is None:
-            return value
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
-            raise ValueError("energy system ratings must be finite numeric values")
-        return value
 
     @model_validator(mode="after")
     def validate_tenant_site_match(self) -> "ClientConfiguration":
