@@ -86,4 +86,9 @@ async def read_authorized_tenant_resource(
         rows = result.get("results")
     if not isinstance(rows, list) or len(rows) > 1 or any(not isinstance(row, dict) for row in rows):
         raise TenantAuthorizationStorageError("tenant resource storage returned an invalid result")
-    return rows[0] if rows else None
+    if not rows:
+        return None
+    row = rows[0]
+    if row.get("tenant_id") != tenant_id or row.get("id") != resource_id:
+        return None
+    return row
