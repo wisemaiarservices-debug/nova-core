@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { validateObservationPayload } from "../src/observation-contract.mjs";
 
 const now = Date.parse("2026-11-10T15:00:00.000Z");
@@ -16,6 +17,49 @@ const valid = {
   provenance: { provider: "Example station", acquisition_method: "sensor", source_record_ref: "record-001" },
   quality_flags: [],
 };
+
+const sharedFixture = JSON.parse(
+  readFileSync(new URL("./fixtures/nova-core-observation-v1.json", import.meta.url), "utf8"),
+);
+
+function applyFixtureCase(payload, fixtureCase) {
+  const path = fixtureCase.path ?? fixtureCase.delete;
+  let parent = payload;
+  for (const key of path.slice(0, -1)) parent = parent[key];
+  const key = path[path.length - 1];
+  if (fixtureCase.delete) delete parent[key];
+  else parent[key] = fixtureCase.value;
+  return payload;
+}
+
+test("shared v1 fixture accepts every registered module", () => {
+  for (const module of sharedFixture.allowed_modules) {
+    const payload = structuredClone(sharedFixture.base_payload);
+    payload.module = module;
+    assert.doesNotThrow(() => validateObservationPayload(payload, Date.parse(sharedFixture.fixed_now)), module);
+  }
+});
+
+test("shared v1 fixture accepts every positive boundary case", () => {
+  for (const fixtureCase of sharedFixture.accepted) {
+    const payload = applyFixtureCase(structuredClone(sharedFixture.base_payload), fixtureCase);
+    assert.doesNotThrow(
+      () => validateObservationPayload(payload, Date.parse(sharedFixture.fixed_now)),
+      fixtureCase.id,
+    );
+  }
+});
+
+test("shared v1 fixture rejects every negative boundary case", () => {
+  for (const fixtureCase of sharedFixture.rejected) {
+    const payload = applyFixtureCase(structuredClone(sharedFixture.base_payload), fixtureCase);
+    assert.throws(
+      () => validateObservationPayload(payload, Date.parse(sharedFixture.fixed_now)),
+      undefined,
+      fixtureCase.id,
+    );
+  }
+});
 
 test("accepts a complete scalar observation and normalizes its timestamp", () => {
   const result = validateObservationPayload(valid, now);
