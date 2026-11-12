@@ -29,7 +29,7 @@ for (const [name, mutate] of [
   ["unknown provenance field", (p) => { p.provenance.actor = "caller"; }],
   ["unsupported module", (p) => { p.module = "unknown"; }],
   ["blank site", (p) => { p.site_id = " "; }],
-  ["BOM-only site identifier", (p) => { p.site_id = "\\ufeff"; }],
+  ["BOM-only site identifier", (p) => { p.site_id = "\ufeff"; }],
   ["UTF-16 overlength site identifier", (p) => { p.site_id = "😀".repeat(61); }],
   ["numeric string value", (p) => { p.value = "18.5"; }],
   ["boolean value", (p) => { p.value = true; }],
