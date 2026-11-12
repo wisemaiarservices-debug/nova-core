@@ -1,0 +1,284 @@
+{
+  "contract": "nova-core-observation-envelope",
+  "version": 1,
+  "fixed_now": "2026-11-10T15:00:00.000Z",
+  "allowed_modules": [
+    "nova-core",
+    "neoagro",
+    "neogrid",
+    "neocell"
+  ],
+  "base_payload": {
+    "site_id": "site-001",
+    "asset_id": "asset-001",
+    "source_id": "source-001",
+    "module": "neoagro",
+    "metric": "weather.air_temperature",
+    "value": 18.5,
+    "unit": "degC",
+    "observed_at": "2026-11-10T14:55:00Z",
+    "idempotency_key": "source-001:record-001",
+    "provenance": {
+      "provider": "fixture-provider",
+      "acquisition_method": "sensor",
+      "source_record_ref": "record-001"
+    },
+    "quality_flags": []
+  },
+  "accepted": [
+    {
+      "id": "utf16_site_id_boundary",
+      "path": [
+        "site_id"
+      ],
+      "value": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+    },
+    {
+      "id": "nullable_asset_id",
+      "path": [
+        "asset_id"
+      ],
+      "value": null
+    },
+    {
+      "id": "omitted_asset_id",
+      "delete": [
+        "asset_id"
+      ]
+    },
+    {
+      "id": "omitted_quality_flags",
+      "delete": [
+        "quality_flags"
+      ]
+    },
+    {
+      "id": "nullable_source_record_ref",
+      "path": [
+        "provenance",
+        "source_record_ref"
+      ],
+      "value": null
+    },
+    {
+      "id": "maximum_safe_integer_value",
+      "path": [
+        "value"
+      ],
+      "value": 9007199254740991
+    }
+  ],
+  "rejected": [
+    {
+      "id": "unknown_top_level_key",
+      "path": [
+        "verified"
+      ],
+      "value": true
+    },
+    {
+      "id": "unknown_provenance_key",
+      "path": [
+        "provenance",
+        "actor"
+      ],
+      "value": "caller"
+    },
+    {
+      "id": "unsupported_module",
+      "path": [
+        "module"
+      ],
+      "value": "unknown"
+    },
+    {
+      "id": "blank_site_id",
+      "path": [
+        "site_id"
+      ],
+      "value": " "
+    },
+    {
+      "id": "bom_only_site_id",
+      "path": [
+        "site_id"
+      ],
+      "value": "﻿"
+    },
+    {
+      "id": "utf16_site_id_over_limit",
+      "path": [
+        "site_id"
+      ],
+      "value": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+    },
+    {
+      "id": "missing_site_id",
+      "delete": [
+        "site_id"
+      ]
+    },
+    {
+      "id": "source_id_over_limit",
+      "path": [
+        "source_id"
+      ],
+      "value": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+    },
+    {
+      "id": "asset_id_over_limit",
+      "path": [
+        "asset_id"
+      ],
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "idempotency_key_over_limit",
+      "path": [
+        "idempotency_key"
+      ],
+      "value": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+    },
+    {
+      "id": "numeric_string_value",
+      "path": [
+        "value"
+      ],
+      "value": "18.5"
+    },
+    {
+      "id": "boolean_value",
+      "path": [
+        "value"
+      ],
+      "value": true
+    },
+    {
+      "id": "invalid_metric",
+      "path": [
+        "metric"
+      ],
+      "value": "Air Temperature"
+    },
+    {
+      "id": "metric_trailing_newline",
+      "path": [
+        "metric"
+      ],
+      "value": "air_temperature\n"
+    },
+    {
+      "id": "invalid_unit",
+      "path": [
+        "unit"
+      ],
+      "value": ""
+    },
+    {
+      "id": "unit_trailing_newline",
+      "path": [
+        "unit"
+      ],
+      "value": "degC\n"
+    },
+    {
+      "id": "timezone_free_timestamp",
+      "path": [
+        "observed_at"
+      ],
+      "value": "2026-11-10T14:55:00"
+    },
+    {
+      "id": "year_zero_timestamp",
+      "path": [
+        "observed_at"
+      ],
+      "value": "0000-01-01T00:00:00Z"
+    },
+    {
+      "id": "impossible_calendar_date",
+      "path": [
+        "observed_at"
+      ],
+      "value": "2026-02-31T14:55:00Z"
+    },
+    {
+      "id": "invalid_timezone_offset",
+      "path": [
+        "observed_at"
+      ],
+      "value": "2026-11-10T14:55:00+25:00"
+    },
+    {
+      "id": "invalid_clock_time",
+      "path": [
+        "observed_at"
+      ],
+      "value": "2026-11-10T24:00:00Z"
+    },
+    {
+      "id": "future_timestamp",
+      "path": [
+        "observed_at"
+      ],
+      "value": "2099-11-10T12:00:00Z"
+    },
+    {
+      "id": "blank_provider",
+      "path": [
+        "provenance",
+        "provider"
+      ],
+      "value": ""
+    },
+    {
+      "id": "provider_ref_over_limit",
+      "path": [
+        "provenance",
+        "source_record_ref"
+      ],
+      "value": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+    },
+    {
+      "id": "unsupported_acquisition_method",
+      "path": [
+        "provenance",
+        "acquisition_method"
+      ],
+      "value": "unverified_by_client"
+    },
+    {
+      "id": "duplicate_quality_flag",
+      "path": [
+        "quality_flags"
+      ],
+      "value": [
+        "estimated",
+        "estimated"
+      ]
+    },
+    {
+      "id": "unknown_quality_flag",
+      "path": [
+        "quality_flags"
+      ],
+      "value": [
+        "trusted"
+      ]
+    },
+    {
+      "id": "non_array_quality_flags",
+      "path": [
+        "quality_flags"
+      ],
+      "value": "estimated"
+    },
+    {
+      "id": "unsafe_integer_value",
+      "path": [
+        "value"
+      ],
+      "value": 9007199254740992
+    }
+  ]
+}
