@@ -23,10 +23,10 @@ def test_omitted_measurements_remain_unknown_without_synthetic_defaults():
     assert result["caller_supplied_values_verified"] is False
 
 
-def test_partial_payload_is_marked_mixed():
+def test_partial_payload_is_marked_unverified_with_missing_fields():
     result = input_provenance(SiteState(site_id="test-site", temperature_c=32))
     assert result["data_mode"] == "caller_supplied_unverified"
-    assert result["provided_fields"] == ["temperature_c"]
+    assert result["provided_fields"] == ["site_id", "temperature_c"]
     assert "soil_moisture_pct" in result["missing_fields"]
     assert result["synthetic_defaults_present"] is False
 
