@@ -44,3 +44,26 @@ are not forwarded.
 
 No D1, Access application, secret, custom hostname, route, or deployment is
 created by this repository change.
+
+
+## Local end-to-end integration (CI only)
+
+The tenant Worker CI starts Wrangler with two configurations at once:
+`wrangler.local-test.toml` (gateway) and `../tenant-api/wrangler.d1-test.toml`
+(private API). Wrangler's local Service Binding connects the gateway to the
+private API Worker; the private API uses the disposable local D1 database.
+The gateway test-only entrypoint runs the same RS256 JWT verifier as production
+but injects a deterministic local JWKS response. Its paired RSA private key is
+a committed test fixture and is not a Cloudflare Access credential.
+
+The integration checks the full local gateway-to-private-Worker Service
+Binding path, including signed JWT verification, internal HMAC envelope
+creation/verification, D1-backed tenant membership and exact resource grants,
+cross-tenant denial, invalid JWT rejection, and caller identity-header/cookie
+isolation. The regular private API tests separately cover internal nonce replay
+and tampered HMAC envelopes.
+
+This is a local workerd/Miniflare simulation, not proof of Cloudflare edge
+Access enforcement, deployed Service Binding isolation, production secret
+provisioning, remote D1 operation, or live tenant readiness. The test-only
+gateway entrypoint/configuration must never be deployed.
