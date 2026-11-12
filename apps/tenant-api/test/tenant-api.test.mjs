@@ -28,8 +28,8 @@ class DB {
   }
 }
 const SECRET = "test-only-internal-secret-with-32-bytes-minimum";
-async function request(overrides = {}) {
-  const url = "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a";
+async function request(overrides = {}, targetUrl = "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a") {
+  const url = targetUrl;
   const headers = new Headers({ "x-nova-verified-subject": "operator@example.test",
     "x-nova-verified-issuer": "https://example.cloudflareaccess.com",
     "x-nova-verified-audience": "aud", "x-nova-gateway-issued-at": String(now),
@@ -76,7 +76,7 @@ test("returns same not-found result for cross-tenant selection", async () => {
 test("rejects forged signatures, path tampering, and missing internal secret", async () => {
   const signed = await request();
   const forgedHeaders = new Headers(signed.headers);
-  forgedHeaders.set("x-nova-internal-signature", "A".repeat(43));
+  forgedHeaders.set("x-nova-internal-signature", "A".repeat(64));
   assert.equal((await worker.fetch(new Request(signed.url, { headers: forgedHeaders }), env(new DB()))).status, 401);
   const pathTamper = new Request("https://private.internal/internal/v1/tenants/tenant-a/assets/site-a", { headers: signed.headers });
   assert.equal((await worker.fetch(pathTamper, env(new DB()))).status, 401);
@@ -100,7 +100,7 @@ test("maps every allowlisted route to its canonical resource grant and scoped SQ
     const db = new DB();
     const response = await worker.fetch(new Request(
       `https://private.internal/internal/v1/tenants/tenant-a/${route}/resource-1`,
-      { headers: (await request()).headers }), env(db));
+      { headers: (await request({}, `https://private.internal/internal/v1/tenants/tenant-a/${route}/resource-1`)).headers }), env(db));
     assert.equal(response.status, 200, route);
     assert.equal(db.calls[1].args[2], expectedType, route);
     assert.deepEqual(db.calls[2].args, ["tenant-a", "resource-1"], route);
