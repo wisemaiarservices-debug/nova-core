@@ -29,7 +29,8 @@ async function signEnvelope(secret, method, path, headers) {
     new TextEncoder().encode(canonicalEnvelope(method, path, headers)));
   return Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, "0")).join("");
 }
-export default {
+export function createGateway({ verifyAccessToken = (token, config) => verifyHumanAccessToken(token, config) } = {}) {
+  return {
   async fetch(request, env) {
     if (request.method !== "GET") return error("not_found", 404);
     const url = new URL(request.url);
@@ -43,9 +44,9 @@ export default {
     }
     let principal;
     try {
-      principal = await verifyHumanAccessToken(
+      principal = await verifyAccessToken(
         request.headers.get("Cf-Access-Jwt-Assertion"),
-        { issuer: env.ACCESS_ISSUER, audience: env.ACCESS_AUDIENCE },
+        { issuer: env.ACCESS_ISSUER, audience: env.ACCESS_AUDIENCE }, env,
       );
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : "";
@@ -80,4 +81,7 @@ export default {
       return error("tenant_api_unavailable", 503);
     }
   },
-};
+  };
+}
+
+export default createGateway();
