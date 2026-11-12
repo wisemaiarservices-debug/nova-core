@@ -8,7 +8,7 @@ const base = "http://127.0.0.1:8787";
 const secret = "local-ci-only-secret-not-for-any-deployment";
 const issuer = "https://nova-ci.cloudflareaccess.com";
 const audience = "nova-ci-test-audience";
-const privateKey = createPrivateKey(await readFile("../../tenant-gateway/test/fixtures/nova-local-ci-private.pem"));
+const privateKey = createPrivateKey(await readFile("../tenant-gateway/test/fixtures/nova-local-ci-private.pem"));
 const child = spawn("npx", ["--yes", "wrangler@4.13.2", "dev", "--local",
   "-c", "../tenant-gateway/wrangler.local-test.toml",
   "-c", "wrangler.d1-test.toml",
