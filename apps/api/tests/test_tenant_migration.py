@@ -243,3 +243,26 @@ def test_suspended_tenant_blocks_site_source_and_observation_writes():
             "VALUES ('obs-suspended', 'site-a', 'source-a', 'neoagro', 'temperature', 'degC', "
             "'2026-11-12T00:00:00Z', 'key-suspended', '{}', 'tenant-a')"
         )
+
+
+def test_tenant_owned_audit_events_require_tenant_id():
+    db = database()
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id) "
+            "VALUES ('event-missing-tenant', 'operator', 'site.update', 'site', 'site-a')"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id) "
+            "VALUES ('event-missing-tenant-2', 'operator', 'observation.ingest', 'observation', 'obs-a')"
+        )
+    # Global operational events remain possible when they do not describe a
+    # tenant-owned entity.
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id) "
+        "VALUES ('global-event', 'system', 'health.check', 'worker', 'nova-core')"
+    )
