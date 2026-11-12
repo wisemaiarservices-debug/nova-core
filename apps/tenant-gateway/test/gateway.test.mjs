@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.mjs";
-import { createPublicKey, generateKeyPairSync, sign, webcrypto } from "node:crypto";
+import { generateKeyPairSync, sign, webcrypto } from "node:crypto";
 globalThis.crypto ??= webcrypto;
 
 function env(overrides = {}) {
@@ -27,7 +27,7 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
   const issuer = "https://gateway-integration.cloudflareaccess.com";
   const audience = "gateway-integration-audience";
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-  const jwk = createPublicKey(publicKey).export({ format: "jwk" });
+  const jwk = publicKey.export({ format: "jwk" });
   Object.assign(jwk, { kid: "gateway-integration-key", use: "sig", alg: "RS256" });
   const enc = value => Buffer.from(value).toString("base64url");
   const now = Math.floor(Date.now() / 1000);
