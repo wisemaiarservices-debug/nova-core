@@ -23,17 +23,17 @@ except ImportError:
 
 
 class SiteState(BaseModel):
-    """Site inputs. Defaults are synthetic demo values, never live telemetry."""
+    """Caller-declared site inputs; omitted measurements remain unknown."""
 
     model_config = ConfigDict(extra="forbid")
 
-    site_id: str = "site-solarhub-agro-001"
-    temperature_c: float = Field(default=39, ge=-80, le=65)
-    soil_moisture_pct: float = Field(default=31, ge=0, le=100)
-    solar_kw: float = Field(default=42.6, ge=0)
-    battery_soc_pct: float = Field(default=67, ge=0, le=100)
-    water_use_m3_today: float = Field(default=18.4, ge=0)
-    gateway_health_pct: float = Field(default=91, ge=0, le=100)
+    site_id: str = Field(min_length=1, max_length=128)
+    temperature_c: float | None = Field(default=None, ge=-80, le=65)
+    soil_moisture_pct: float | None = Field(default=None, ge=0, le=100)
+    solar_kw: float | None = Field(default=None, ge=0)
+    battery_soc_pct: float | None = Field(default=None, ge=0, le=100)
+    water_use_m3_today: float | None = Field(default=None, ge=0)
+    gateway_health_pct: float | None = Field(default=None, ge=0, le=100)
 
 
 class Recommendation(BaseModel):
@@ -85,25 +85,23 @@ def now_iso() -> str:
 
 
 def input_provenance(state: SiteState) -> dict[str, Any]:
-    """Distinguish request fields from synthetic defaults; caller data is unverified."""
+    """Report caller-declared fields without inventing values for omitted measurements."""
     provided = sorted(state.model_fields_set)
-    defaulted = sorted(set(type(state).model_fields) - set(provided))
-    if not provided:
-        mode = "synthetic_defaults"
-    elif defaulted:
-        mode = "mixed_synthetic_and_caller_supplied"
-    else:
-        mode = "caller_supplied_unverified"
+    missing = sorted(set(type(state).model_fields) - set(provided))
+    measurement_fields = set(type(state).model_fields) - {"site_id"}
+    provided_measurements = measurement_fields.intersection(provided)
+    mode = "caller_supplied_unverified" if provided_measurements else "insufficient_inputs"
 
     return {
         "data_mode": mode,
         "provided_fields": provided,
-        "defaulted_fields": defaulted,
-        "synthetic_defaults_present": bool(defaulted),
+        "missing_fields": missing,
+        "defaulted_fields": [],
+        "synthetic_defaults_present": False,
         "caller_supplied_values_verified": False,
         "note": (
             "Caller-supplied values are not independently verified. "
-            "Default values are synthetic demonstration inputs, not sensor observations."
+            "Omitted measurements remain unknown; no synthetic demonstration values are inserted."
         ),
     }
 
@@ -132,11 +130,15 @@ def response_metadata(state: SiteState) -> dict[str, Any]:
 
 def forecast(state: SiteState) -> dict[str, Any]:
     # These are transparent screening flags, not a calibrated forecast.
-    heat_flag = state.temperature_c >= 37
-    moisture_flag = state.soil_moisture_pct < 35
+    heat_flag = state.temperature_c is not None and state.temperature_c >= 37
+    moisture_flag = state.soil_moisture_pct is not None and state.soil_moisture_pct < 35
     return {
         "site_id": state.site_id,
-        "heat_risk": "high_screening_flag" if heat_flag else "no_high_heat_flag",
+        "heat_risk": (
+            "high_screening_flag" if heat_flag
+            else "not_assessed" if state.temperature_c is None
+            else "no_high_heat_flag"
+        ),
         "water_demand_delta_pct": None,
         "solar_production_delta_pct": None,
         "yield_risk": (
@@ -166,8 +168,22 @@ def impact_score(state: SiteState) -> dict[str, Any]:
 
 
 def recommend(state: SiteState) -> Recommendation:
+    if state.temperature_c is None:
+        return Recommendation(
+            title="Insufficient inputs; no recommendation generated",
+            priority="not_assessed",
+            confidence=None,
+            explanation=(
+                "No temperature measurement was supplied. NOVA will not substitute a demo value "
+                "or infer site conditions. Provide applicable, unit-labelled evidence and verify "
+                "its source and calibration before screening."
+            ),
+            expected_impact=impact_score(state),
+            requires_operator_review=True,
+        )
+
     heat_flag = state.temperature_c >= 37
-    moisture_flag = state.soil_moisture_pct < 35
+    moisture_flag = state.soil_moisture_pct is not None and state.soil_moisture_pct < 35
     if heat_flag and moisture_flag:
         title = "Review irrigation need and verify field conditions"
         priority = "high_review"
@@ -298,7 +314,10 @@ def simulate(state: SiteState) -> dict[str, Any]:
     return {
         "site_id": state.site_id,
         "comparison_status": "optimized_case_not_estimable",
-        "baseline": {"water_use_m3": state.water_use_m3_today, "source": "caller_supplied_or_synthetic_default"},
+        "baseline": {
+            "water_use_m3": state.water_use_m3_today,
+            "source": "caller_supplied_unverified" if state.water_use_m3_today is not None else "not_supplied",
+        },
         "optimized": None,
         "impact": impact_score(state),
         "generated_at": now_iso(),
@@ -310,7 +329,11 @@ def simulate(state: SiteState) -> dict[str, Any]:
 def explain(state: SiteState) -> dict[str, Any]:
     rec = recommend(state)
     return {
-        "what_is_happening": "NOVA has evaluated the supplied site values using deterministic screening rules.",
+        "what_is_happening": (
+            "NOVA evaluated the supplied values using deterministic screening rules."
+            if state.temperature_c is not None
+            else "NOVA has insufficient measurement inputs to assess site conditions."
+        ),
         "why_it_matters": "The flags can help prioritize field verification, but are not a validated crop-stress diagnosis or a site-specific forecast.",
         "what_happens_next": "No numeric demand forecast is issued until weather, crop, soil, and baseline data are available.",
         "what_to_do": rec.title,
