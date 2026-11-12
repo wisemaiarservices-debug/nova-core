@@ -69,8 +69,8 @@ test("denies duplicate or missing membership without grant lookup", async () => 
 });
 test("returns same not-found result for cross-tenant selection", async () => {
   const db = new DB();
-  const response = await worker.fetch(new Request(
-    "https://private.internal/internal/v1/tenants/tenant-b/sites/site-a", { headers: (await request()).headers }), env(db));
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-b/sites/site-a"), env(db));
   assert.equal(response.status, 404); assert.equal(db.calls.length, 1);
 });
 test("rejects forged signatures, path tampering, and missing internal secret", async () => {
