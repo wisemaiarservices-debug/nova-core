@@ -59,6 +59,13 @@
         "source_record_ref"
       ],
       "value": null
+    },
+    {
+      "id": "maximum_safe_integer_value",
+      "path": [
+        "value"
+      ],
+      "value": 9007199254740991
     }
   ],
   "rejected": [
@@ -265,6 +272,13 @@
         "quality_flags"
       ],
       "value": "estimated"
+    },
+    {
+      "id": "unsafe_integer_value",
+      "path": [
+        "value"
+      ],
+      "value": 9007199254740992
     }
   ]
 }
