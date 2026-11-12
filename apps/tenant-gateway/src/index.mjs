@@ -49,7 +49,7 @@ export default {
       "x-nova-verified-subject": principal.subject,
       "x-nova-verified-issuer": principal.issuer,
       "x-nova-verified-audience": principal.audience,
-      "x-nova-verified-issued-at": String(principal.issuedAt),
+      "x-nova-gateway-issued-at": String(Math.floor(Date.now() / 1000)),
       "x-nova-request-id": requestId,
       "accept": "application/json",
     });
