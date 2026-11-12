@@ -1,0 +1,8 @@
+name = "nova-core-tenant-api"
+main = "src/index.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+
+# No routes or custom domains. Only the gateway Service Binding may invoke this Worker.
+# DB and ACCESS_* bindings are intentionally absent until approved D1 and Access setup.
