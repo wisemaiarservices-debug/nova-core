@@ -48,13 +48,13 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
         values: [],
         bind(...values) { this.values = values; return this; },
         async first() {
-          if (sql.includes("FROM sites")) return { id: this.values[0], status: siteStatus };
+          if (sql.includes("FROM sites")) return { id: this.values[0], status: siteStatus, tenant_id: "tenant-a", tenant_status: "active" };
           if (sql.includes("FROM sources")) return {
             id: this.values[0], site_id: sourceSiteId, module: sourceModule,
-            verification_status: sourceStatus,
+            verification_status: sourceStatus, tenant_id: "tenant-a",
           };
           if (sql.includes("FROM assets")) return {
-            id: this.values[0], site_id: assetSiteId, status: assetStatus,
+            id: this.values[0], site_id: assetSiteId, status: assetStatus, tenant_id: "tenant-a",
           };
           if (sql.includes("FROM observations WHERE source_id")) return state.observation;
           throw new Error("unexpected_query");
@@ -190,6 +190,7 @@ test("valid service identity and D1 ownership checks persist an unverified obser
   assert.equal(body.accepted, true);
   assert.equal(body.verification_status, "unverified");
   assert.equal(body.idempotent, false);
+  assert.equal(body.verification_status, "unverified");
 });
 
 test("D1 ownership mismatch is denied without revealing which record failed", async () => {
