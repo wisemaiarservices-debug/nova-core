@@ -1,4 +1,4 @@
-name = "nova-core-tenant-api-d1-contract-test"
+name = "nova-core-tenant-api"
 main = "src/index.mjs"
 compatibility_date = "2026-11-01"
 workers_dev = false
