@@ -71,7 +71,7 @@ test("rejects unsafe issuer and missing audience configuration", async () => {
 });
 test("refreshes JWKS once when key ID is unknown", async () => {
   const issuer = issuerFor("human-key-rotation"); let calls = 0;
-  globalThis.fetch = async () => new Response(JSON.stringify({ keys: calls++ === 0 ? [] : [jwk] }), { status: 200 });
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: calls++ === 0 ? [{ ...jwk, kid: "previous-key" }] : [jwk] }), { status: 200 });
   const principal = await verifyHumanAccessToken(tokenFor(issuer), { issuer, audience }, now);
   assert.equal(principal.subject, "immutable-user-subject-001"); assert.equal(calls, 2);
 });
