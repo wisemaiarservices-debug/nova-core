@@ -34,7 +34,14 @@ test("verifies signature and returns stable human subject", async () => {
   assert.equal(principal.tokenId, "human-jti");
   assert.equal(Object.isFrozen(principal), true);
 });
-test("does not confuse the Access app token type with a service token", async () => {
+
+test("accepts the maximum subject length supported by tenant membership storage", async () => {
+  const issuer = issuerFor("human-subject-boundary");
+  const principal = await verifyHumanAccessToken(
+    tokenFor(issuer, { sub: "s".repeat(200) }), { issuer, audience }, now);
+  assert.equal(principal.subject.length, 200);
+});
+\ntest("does not confuse the Access app token type with a service token", async () => {
   const issuer = issuerFor("human-type-app");
   const principal = await verifyHumanAccessToken(tokenFor(issuer, { type: "app" }), { issuer, audience }, now);
   assert.equal(principal.subject, "immutable-user-subject-001");
