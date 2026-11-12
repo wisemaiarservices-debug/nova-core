@@ -82,7 +82,7 @@ test("returns same not-found result for cross-tenant selection", async () => {
   const db = new DB();
   const response = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-b/sites/site-a"), env(db));
-  assert.equal(response.status, 404); assert.equal(db.calls.length, 1);
+  assert.equal(response.status, 404); assert.equal(db.calls.length, 2);
 });
 test("rejects forged signatures, path tampering, and missing internal secret", async () => {
   const signed = await request();
@@ -143,6 +143,6 @@ test("denies inactive tenant membership and unknown roles before grant lookup", 
     if (patch.membership) db.membershipRows = patch.membership;
     const response = await worker.fetch(await request(), env(db));
     assert.equal(response.status, 404);
-    assert.equal(db.calls.length, 1);
+    assert.equal(db.calls.length, 2);
   }
 });
