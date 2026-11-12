@@ -52,6 +52,12 @@ jobs:
       - name: Prepare tenant API queries against local D1 schema
         working-directory: apps/tenant-api
         run: npx --yes wrangler@4.13.2 d1 execute DB --local --config wrangler.d1-test.toml --persist-to ./.wrangler-d1-test --file ./test/d1-query-compatibility.sql
+      - name: Seed isolated local D1 HTTP fixtures
+        working-directory: apps/tenant-api
+        run: npx --yes wrangler@4.13.2 d1 execute DB --local --config wrangler.d1-test.toml --persist-to ./.wrangler-d1-test --file ./test/d1-http-fixtures.sql
+      - name: Exercise private Worker over HTTP against local D1
+        working-directory: apps/tenant-api
+        run: node ./test/d1-http-integration.mjs
 
   research-raster-tests:
     runs-on: ubuntu-latest
