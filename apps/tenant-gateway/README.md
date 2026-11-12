@@ -10,6 +10,7 @@ route is attached. The Worker independently verifies the human
 - `ACCESS_ISSUER`: exact HTTPS Cloudflare Access team issuer origin.
 - `ACCESS_AUDIENCE`: exact audience for the human Access application.
 - `TENANT_API`: Service Binding to `nova-core-tenant-api`.
+- `INTERNAL_AUTH_SECRET`: independently provisioned Worker secret (minimum 32 characters), identical on gateway and private API; never commit it or put it in Wrangler vars.
 
 Do not expose a workers.dev or preview hostname. Do not add arbitrary proxy
 routes. The gateway creates a fresh internal request and forwards only the
