@@ -166,3 +166,19 @@ No list/search endpoints, writes, user administration, tenant creation, grants m
 ## Explicit non-goals
 
 This design does not authorize autonomous irrigation, energy dispatch, battery control, device commands, or any other critical infrastructure action. Any future write/control capability must be separately scoped, audited, reviewed by an authorized human, and protected by domain-specific safety interlocks.
+
+
+## Cloudflare Service Binding platform notes
+
+Verified against the Cloudflare Workers Service Bindings documentation on 2026-11-12:
+
+- A Service Binding invokes another Worker without a publicly accessible URL; it can be used to isolate a Worker from the public Internet.
+- The caller declares the binding in its Wrangler configuration, and the target Worker must exist before the caller deployment that references it.
+- Cloudflare Access context (`ctx.access`) does not propagate from the gateway to the downstream Worker for either HTTP or RPC service-binding calls. The gateway must therefore explicitly pass the minimal verified principal envelope; the downstream Worker must not assume it can read the original Access context.
+- Keep the private target's `workers_dev=false`, and separately verify preview URL settings are disabled. Cloudflare documents that preview URLs may otherwise be independently enabled even when workers.dev is disabled.
+
+Official documentation:
+- https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/
+- https://developers.cloudflare.com/workers/configuration/routing/workers-dev/
+
+The Service Binding itself is the intended network/capability boundary. The minimal envelope is trusted only because the private Worker is reachable exclusively through the one explicitly declared gateway binding; if any public route, additional caller binding, or alternate invocation path is introduced, this trust assumption is invalid and the design must be revisited with cryptographic caller authentication and replay protection.
