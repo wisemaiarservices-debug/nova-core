@@ -20,7 +20,8 @@ async function stableId(sourceId, idempotencyKey) {
 }
 
 function sameAcceptedPayload(row, observation) {
-  return row.site_id === observation.site_id &&
+  return row.tenant_id === observation.tenant_id &&
+    row.site_id === observation.site_id &&
     (row.asset_id ?? null) === (observation.asset_id ?? null) &&
     row.module === observation.module &&
     row.metric === observation.metric &&
@@ -60,11 +61,12 @@ export async function persistObservation(database, observation, principal, reque
 
   const insertObservation = database.prepare(
     "INSERT OR IGNORE INTO observations " +
-    "(id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
+    "(id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
     "idempotency_key, verification_status, provenance_json, quality_flags_json) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?)",
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?)",
   ).bind(
     observationId,
+    observation.tenant_id,
     observation.site_id,
     observation.asset_id ?? null,
     observation.source_id,
@@ -80,17 +82,17 @@ export async function persistObservation(database, observation, principal, reque
 
   const insertAudit = database.prepare(
     "INSERT OR IGNORE INTO audit_events " +
-    "(id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json) " +
+    "(id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json, tenant_id) " +
     "SELECT ?, 'service', ?, 'observation.accepted', 'observation', ?, " +
-    "strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ? " +
+    "strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ?, ? " +
     "WHERE EXISTS (SELECT 1 FROM observations WHERE id = ?)",
-  ).bind(auditId, principal.serviceId, observationId, requestId, detailsJson, observationId);
+  ).bind(auditId, principal.serviceId, observationId, requestId, detailsJson, observation.tenant_id, observationId);
 
   const batchResults = await database.batch([insertObservation, insertAudit]);
   const inserted = Number(batchResults?.[0]?.meta?.changes ?? 0) > 0;
 
   const existing = await database.prepare(
-    "SELECT id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
+    "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
     "idempotency_key, verification_status, provenance_json, quality_flags_json " +
     "FROM observations WHERE source_id = ? AND idempotency_key = ? LIMIT 1",
   ).bind(observation.source_id, observation.idempotency_key).first();
