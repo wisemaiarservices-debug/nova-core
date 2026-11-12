@@ -131,4 +131,4 @@ def test_missing_resource_returns_none_after_authorized_lookup():
 def test_every_resource_projection_includes_tenant_id_for_defensive_check():
     for statement in RESOURCE_SELECTS.values():
         projection = statement.split("FROM", 1)[0]
-        assert "tenant_id" in projection.split(",")
+        assert "tenant_id" in [column.strip() for column in projection.replace("SELECT", "", 1).split(",")]
