@@ -30,7 +30,7 @@ function request(headers = {}) {
   return new Request("https://private.internal/internal/v1/tenants/tenant-a/sites/site-a", {
     headers: { "x-nova-verified-subject": "operator@example.test",
       "x-nova-verified-issuer": "https://example.cloudflareaccess.com",
-      "x-nova-verified-audience": "aud", "x-nova-verified-issued-at": String(now),
+      "x-nova-verified-audience": "aud", "x-nova-gateway-issued-at": String(now),
       "x-nova-request-id": "request-123", ...headers },
   });
 }
