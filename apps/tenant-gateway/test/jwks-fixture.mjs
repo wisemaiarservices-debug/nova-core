@@ -7,9 +7,10 @@ const jwk = {
   use: "sig",
   alg: "RS256",
 };
+export const jwksDocument = { keys: [jwk] };
 export default {
   fetch() {
-    return new Response(JSON.stringify({ keys: [jwk] }), {
+    return new Response(JSON.stringify(jwksDocument), {
       headers: { "content-type": "application/json", "cache-control": "no-store" },
     });
   },
