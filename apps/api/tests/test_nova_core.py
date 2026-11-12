@@ -221,3 +221,20 @@ def test_explicit_null_measurements_are_classified_as_missing():
     assert result["data_mode"] == "insufficient_inputs"
     assert "temperature_c" in result["missing_fields"]
     assert "temperature_c" not in result["provided_fields"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("temperature_c", float("nan")),
+        ("temperature_c", float("inf")),
+        ("soil_moisture_pct", float("-inf")),
+        ("solar_kw", float("nan")),
+        ("battery_soc_pct", float("inf")),
+        ("water_use_m3_today", float("nan")),
+        ("gateway_health_pct", float("-inf")),
+    ],
+)
+def test_non_finite_measurements_are_rejected(field, value):
+    with pytest.raises(ValidationError):
+        SiteState(site_id="test-site", **{field: value})
