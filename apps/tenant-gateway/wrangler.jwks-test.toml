@@ -1,5 +1,0 @@
-name = "nova-core-access-jwks-fixture"
-main = "test/jwks-fixture.mjs"
-compatibility_date = "2026-11-01"
-workers_dev = false
-preview_urls = false
