@@ -59,12 +59,12 @@ test("authorizes exact tenant membership and resource grant before scoped read",
 });
 test("denies when exact resource grant is absent without reading resource", async () => {
   const db = new DB({ grant: false });
-  const response = await worker.fetch(request(), env(db));
+  const response = await worker.fetch(await request(), env(db));
   assert.equal(response.status, 404); assert.equal(db.calls.length, 2);
 });
 test("denies duplicate or missing membership without grant lookup", async () => {
   const db = new DB({ membership: false });
-  const response = await worker.fetch(request(), env(db));
+  const response = await worker.fetch(await request(), env(db));
   assert.equal(response.status, 404); assert.equal(db.calls.length, 1);
 });
 test("returns same not-found result for cross-tenant selection", async () => {
@@ -73,8 +73,17 @@ test("returns same not-found result for cross-tenant selection", async () => {
     "https://private.internal/internal/v1/tenants/tenant-b/sites/site-a", { headers: (await request()).headers }), env(db));
   assert.equal(response.status, 404); assert.equal(db.calls.length, 1);
 });
-test("rejects forged signatures, path tampering, and missing internal secret", async () => {\n  const signed = await request();\n  const forgedHeaders = new Headers(signed.headers);\n  forgedHeaders.set("x-nova-internal-signature", "A".repeat(43));\n  assert.equal((await worker.fetch(new Request(signed.url, { headers: forgedHeaders }), env(new DB()))).status, 401);\n  const pathTamper = new Request("https://private.internal/internal/v1/tenants/tenant-a/assets/site-a", { headers: signed.headers });\n  assert.equal((await worker.fetch(pathTamper, env(new DB()))).status, 401);\n  assert.equal((await worker.fetch(signed, { ...env(new DB()), INTERNAL_AUTH_SECRET: undefined })).status, 401);\n});\ntest("fails closed when D1 is unavailable", async () => {
-  const response = await worker.fetch(request(), { ...env(null), DB: null });
+test("rejects forged signatures, path tampering, and missing internal secret", async () => {
+  const signed = await request();
+  const forgedHeaders = new Headers(signed.headers);
+  forgedHeaders.set("x-nova-internal-signature", "A".repeat(43));
+  assert.equal((await worker.fetch(new Request(signed.url, { headers: forgedHeaders }), env(new DB()))).status, 401);
+  const pathTamper = new Request("https://private.internal/internal/v1/tenants/tenant-a/assets/site-a", { headers: signed.headers });
+  assert.equal((await worker.fetch(pathTamper, env(new DB()))).status, 401);
+  assert.equal((await worker.fetch(signed, { ...env(new DB()), INTERNAL_AUTH_SECRET: undefined })).status, 401);
+});
+test("fails closed when D1 is unavailable", async () => {
+  const response = await worker.fetch(await request(), { ...env(null), DB: null });
   assert.equal(response.status, 503);
 });
 test("rejects unsupported methods and routes", async () => {
@@ -91,7 +100,7 @@ test("maps every allowlisted route to its canonical resource grant and scoped SQ
     const db = new DB();
     const response = await worker.fetch(new Request(
       `https://private.internal/internal/v1/tenants/tenant-a/${route}/resource-1`,
-      { headers: request().headers }), env(db));
+      { headers: (await request()).headers }), env(db));
     assert.equal(response.status, 200, route);
     assert.equal(db.calls[1].args[2], expectedType, route);
     assert.deepEqual(db.calls[2].args, ["tenant-a", "resource-1"], route);
