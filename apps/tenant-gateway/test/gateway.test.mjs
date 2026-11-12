@@ -47,7 +47,7 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
       "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a",
       { headers: { "Cf-Access-Jwt-Assertion": token, cookie: "session=secret",
         "x-nova-verified-subject": "attacker", "x-nova-verified-issuer": "https://attacker.test" } }),
-      { ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience,
+      { ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience, INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
         TENANT_API: { fetch: async request => {
           captured = request;
           return new Response(JSON.stringify({ data: "ok" }), { headers: { "content-type": "application/json" } });
@@ -58,6 +58,7 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
     assert.equal(captured.headers.get("x-nova-verified-subject"), "verified-human-subject");
     assert.equal(captured.headers.get("x-nova-verified-issuer"), issuer);
     assert.equal(captured.headers.get("cookie"), null);
-    assert.notEqual(captured.headers.get("x-nova-request-id"), null);\n    assert.match(captured.headers.get("x-nova-internal-signature"), /^[A-Za-z0-9_-]{43}$/);
+    assert.notEqual(captured.headers.get("x-nova-request-id"), null);
+    assert.match(captured.headers.get("x-nova-internal-signature"), /^[A-Za-z0-9_-]{43}$/);
   } finally { globalThis.fetch = oldFetch; }
 });
