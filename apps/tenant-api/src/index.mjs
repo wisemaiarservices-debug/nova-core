@@ -23,7 +23,7 @@ function validId(value, max = 160) {
     value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
 async function rows(statement) {
-  const result = await statement.run();
+  const result = await statement.all();
   if (!result || !Array.isArray(result.results)) throw new Error("storage_invalid_result");
   return result.results;
 }
