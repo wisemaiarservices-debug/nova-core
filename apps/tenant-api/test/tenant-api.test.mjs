@@ -46,7 +46,7 @@ test("authorizes exact tenant membership and resource grant before scoped read",
   const db = new DB();
   const response = await worker.fetch(request(), env(db));
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).data.name, "Test site");
+  assert.equal((await response.json()).data.name, "Test resource");
   assert.deepEqual(db.calls[2].args, ["tenant-a", "site-a"]);
 });
 test("denies when exact resource grant is absent without reading resource", async () => {
