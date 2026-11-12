@@ -32,3 +32,17 @@ jobs:
       - name: Run ingestion Worker security tests
         working-directory: apps/ingestion-worker
         run: npm test
+
+  tenant-worker-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test private tenant API Worker
+        working-directory: apps/tenant-api
+        run: npm test
+      - name: Test Access tenant gateway Worker
+        working-directory: apps/tenant-gateway
+        run: npm test
