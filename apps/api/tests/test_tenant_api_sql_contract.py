@@ -57,7 +57,8 @@ def _seed_two_tenants(db):
     )
     db.executemany(
         "INSERT INTO sites (id, tenant_id, name) VALUES (?, ?, ?)",
-        [("site-a", "tenant-a", "A site"), ("site-b", "tenant-b", "B site")],
+        [("site-a", "tenant-a", "A site"), ("site-a2", "tenant-a", "A site 2"),
+         ("site-b", "tenant-b", "B site")],
     )
     db.executemany(
         "INSERT INTO assets (id, tenant_id, site_id, name, asset_type) VALUES (?, ?, ?, ?, ?)",
@@ -194,6 +195,6 @@ def test_site_bound_source_cannot_be_used_for_another_site_observation():
         db.execute(
             "INSERT INTO observations (id, tenant_id, site_id, source_id, module, metric, "
             "value, unit, observed_at, idempotency_key, provenance_json) "
-            "VALUES ('wrong-site-observation', 'tenant-a', 'site-b', 'source-a', 'neoagro', "
+            "VALUES ('wrong-site-observation', 'tenant-a', 'site-a2', 'source-a', 'neoagro', "
             "'soil_moisture', 0.3, 'm3/m3', '2026-11-12T10:00:00Z', 'wrong-site-key', '{}')"
         )
