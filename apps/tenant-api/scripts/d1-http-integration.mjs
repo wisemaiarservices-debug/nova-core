@@ -65,7 +65,7 @@ try {
   assert.equal(forgedHeaders.response.status, 200);
   assert.equal(forgedHeaders.body.data.id, "site-http-a");
 
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via local JWKS Worker, actual gateway-to-private-Worker Service Binding, authorized read, missing grant, cross-tenant denial, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized read, missing grant, cross-tenant denial, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
