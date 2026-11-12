@@ -46,6 +46,12 @@ jobs:
       - name: Test Access tenant gateway Worker
         working-directory: apps/tenant-gateway
         run: npm test
+      - name: Apply ordered migrations to disposable local D1
+        working-directory: apps/tenant-api
+        run: npx --yes wrangler@4.13.2 d1 migrations apply DB --local --config wrangler.d1-test.toml --persist-to ./.wrangler-d1-test
+      - name: Prepare tenant API queries against local D1 schema
+        working-directory: apps/tenant-api
+        run: npx --yes wrangler@4.13.2 d1 execute DB --local --config wrangler.d1-test.toml --persist-to ./.wrangler-d1-test --file ./test/d1-query-compatibility.sql
 
   research-raster-tests:
     runs-on: ubuntu-latest
