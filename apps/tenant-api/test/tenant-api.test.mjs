@@ -82,6 +82,12 @@ test("rejects forged signatures, path tampering, and missing internal secret", a
   assert.equal((await worker.fetch(pathTamper, env(new DB()))).status, 401);
   assert.equal((await worker.fetch(signed, { ...env(new DB()), INTERNAL_AUTH_SECRET: undefined })).status, 401);
 });
+test("rejects signed envelopes outside the 120-second freshness window", async () => {
+  const stale = await request({ "x-nova-gateway-issued-at": String(now - 121) });
+  const future = await request({ "x-nova-gateway-issued-at": String(now + 31) });
+  assert.equal((await worker.fetch(stale, env(new DB()))).status, 401);
+  assert.equal((await worker.fetch(future, env(new DB()))).status, 401);
+});
 test("fails closed when D1 is unavailable", async () => {
   const response = await worker.fetch(await request(), { ...env(null), DB: null });
   assert.equal(response.status, 503);
