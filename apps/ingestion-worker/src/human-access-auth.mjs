@@ -72,7 +72,7 @@ export async function verifyHumanAccessToken(token, config, nowSeconds = Math.fl
   if (!claims || claims.iss !== issuer) throw new Error("unexpected_access_issuer");
   const audiences = typeof claims.aud === "string" ? [claims.aud] : claims.aud;
   if (!Array.isArray(audiences) || !audiences.includes(audience)) throw new Error("unexpected_access_audience");
-  if (claims.type === "app" || typeof claims.sub !== "string" || !claims.sub.trim() ||
+  if (typeof claims.sub !== "string" || !claims.sub.trim() ||
       claims.sub.length > 256 || (typeof claims.common_name === "string" && claims.common_name.trim()))
     throw new Error("human_access_identity_required");
   if (!Number.isInteger(claims.exp) || claims.exp <= nowSeconds - CLOCK_SKEW_SECONDS)
