@@ -1,0 +1,13 @@
+name = "nova-core-tenant-api-d1-contract-test"
+main = "src/index.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+
+# CI-only local D1 emulator configuration. This UUID is a placeholder and is
+# never used with --remote or for provisioning a Cloudflare database.
+[[d1_databases]]
+binding = "DB"
+database_name = "nova-core-tenant-api-contract-test"
+database_id = "00000000-0000-4000-8000-000000000001"
+migrations_dir = "../api/migrations"
