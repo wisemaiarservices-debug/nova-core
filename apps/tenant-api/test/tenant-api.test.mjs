@@ -70,7 +70,8 @@ test("rejects identity subjects longer than the tenant schema supports", async (
   assert.equal(response.status, 401);
   assert.equal(db.calls.length, 0);
 });
-\ntest("authorizes exact tenant membership and resource grant before scoped read", async () => {
+
+test("authorizes exact tenant membership and resource grant before scoped read", async () => {
   const db = new DB();
   const response = await worker.fetch(await request(), env(db));
   assert.equal(response.status, 200);
