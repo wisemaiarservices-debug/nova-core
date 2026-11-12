@@ -12,7 +12,6 @@ const privateKey = createPrivateKey(await readFile("../tenant-gateway/test/fixtu
 const child = spawn("npx", ["--yes", "wrangler@4.13.2", "dev", "--local",
   "-c", "../tenant-gateway/wrangler.local-test.toml",
   "-c", "wrangler.d1-test.toml",
-  "-c", "../tenant-gateway/wrangler.jwks-test.toml",
   "--ip", "127.0.0.1", "--port", "8787",
   "--persist-to", "./.wrangler-d1-test"], { stdio: "ignore" });
 
