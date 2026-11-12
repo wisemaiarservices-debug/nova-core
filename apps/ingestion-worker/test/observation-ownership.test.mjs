@@ -53,6 +53,7 @@ test("allows an explicitly global source but does not mark it verified", async (
 
 for (const [name, rows] of [
   ["unknown site", { ...validRows, site: null }],
+  ["site without tenant ownership", { ...validRows, site: { id: "site-001", status: "active" } }],
   ["inactive site", { ...validRows, site: { ...validRows.site, status: "inactive" } }],
   ["unknown source", { ...validRows, source: null }],
   ["source module mismatch", { ...validRows, source: { ...validRows.source, module: "neogrid" } }],
