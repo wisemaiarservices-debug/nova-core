@@ -74,8 +74,8 @@ export default {
     const [, tenant, routeType, resourceId] = match;
     if (!validId(tenant, 120) || !validId(resourceId)) return error("not_found", 404);
 
-    // These headers are a trusted envelope only because this Worker has no public
-    // route and is invoked solely by the one declared gateway Service Binding.
+    // The gateway identity envelope is authenticated by HMAC as well as the
+    // private Service Binding boundary; neither mechanism replaces tenant grants.
     const subject = request.headers.get("x-nova-verified-subject");
     const issuer = request.headers.get("x-nova-verified-issuer");
     const audience = request.headers.get("x-nova-verified-audience");
