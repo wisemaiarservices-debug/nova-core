@@ -14,7 +14,7 @@ const RESOURCE_SQL = {
   "audit-events": "SELECT id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json FROM audit_events WHERE tenant_id = ? AND id = ? LIMIT 1",
 };
 
-function validId(value, max = 160) {
+function validSubject(value) {\n  return typeof value === "string" && value.length > 0 && value.length <= 256 &&\n    value.trim() === value && !/[\\u0000-\\u001f\\u007f]/.test(value);\n}\nfunction validId(value, max = 160) {
   return typeof value === "string" && value.length > 0 && value.length <= max &&
     value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
@@ -57,7 +57,7 @@ export default {
     const audience = request.headers.get("x-nova-verified-audience");
     const issuedAt = Number(request.headers.get("x-nova-verified-issued-at"));
     const requestId = request.headers.get("x-nova-request-id");
-    if (!validId(subject, 256) || issuer !== env.ACCESS_ISSUER || audience !== env.ACCESS_AUDIENCE ||
+    if (!validSubject(subject) || issuer !== env.ACCESS_ISSUER || audience !== env.ACCESS_AUDIENCE ||
         !Number.isInteger(issuedAt) || issuedAt > Math.floor(Date.now()/1000) + 60 ||
         issuedAt < Math.floor(Date.now()/1000) - 900 || !validId(requestId, 80)) {
       return error("request_not_authorized", 401);
