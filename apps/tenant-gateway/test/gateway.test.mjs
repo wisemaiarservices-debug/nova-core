@@ -59,6 +59,6 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
     assert.equal(captured.headers.get("x-nova-verified-issuer"), issuer);
     assert.equal(captured.headers.get("cookie"), null);
     assert.notEqual(captured.headers.get("x-nova-request-id"), null);
-    assert.match(captured.headers.get("x-nova-internal-signature"), /^[A-Za-z0-9_-]{43}$/);
+    assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
   } finally { globalThis.fetch = oldFetch; }
 });
