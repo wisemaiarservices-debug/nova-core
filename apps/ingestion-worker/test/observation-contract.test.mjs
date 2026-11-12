@@ -29,6 +29,7 @@ for (const [name, mutate] of [
   ["unknown provenance field", (p) => { p.provenance.actor = "caller"; }],
   ["unsupported module", (p) => { p.module = "unknown"; }],
   ["blank site", (p) => { p.site_id = " "; }],
+  ["UTF-16 overlength site identifier", (p) => { p.site_id = "😀".repeat(61); }],
   ["numeric string value", (p) => { p.value = "18.5"; }],
   ["boolean value", (p) => { p.value = true; }],
   ["infinite value", (p) => { p.value = 1e400; }],
@@ -50,6 +51,12 @@ for (const [name, mutate] of [
     assert.throws(() => validateObservationPayload(payload, now));
   });
 }
+
+test("accepts a site identifier at the UTF-16 code-unit boundary", () => {
+  const payload = structuredClone(valid);
+  payload.site_id = "😀".repeat(60);
+  assert.equal(validateObservationPayload(payload, now).site_id, payload.site_id);
+});
 
 test("allows optional asset and quality flags to be omitted", () => {
   const payload = structuredClone(valid);
