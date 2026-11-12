@@ -39,7 +39,7 @@ async function request(overrides = {}) {
     headers.get("x-nova-verified-issuer"), headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id")]);
   headers.set("x-nova-internal-signature",
-    createHmac("sha256", SECRET).update(canonical).digest("base64url"));
+    createHmac("sha256", SECRET).update(canonical).digest("hex"));
   return new Request(url, { headers });
 }
 const env = db => ({ ACCESS_ISSUER: "https://example.cloudflareaccess.com",
@@ -115,7 +115,7 @@ test("denies inactive tenant membership and unknown roles before grant lookup", 
   ]) {
     const db = new DB();
     if (patch.membership) db.membershipRows = patch.membership;
-    const response = await worker.fetch(request(), env(db));
+    const response = await worker.fetch(await request(), env(db));
     assert.equal(response.status, 404);
     assert.equal(db.calls.length, 1);
   }
