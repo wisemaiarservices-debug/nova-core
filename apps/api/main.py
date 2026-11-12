@@ -86,10 +86,16 @@ def now_iso() -> str:
 
 def input_provenance(state: SiteState) -> dict[str, Any]:
     """Report caller-declared fields without inventing values for omitted measurements."""
-    provided = sorted(state.model_fields_set)
-    missing = sorted(set(type(state).model_fields) - set(provided))
-    measurement_fields = set(type(state).model_fields) - {"site_id"}
-    provided_measurements = measurement_fields.intersection(provided)
+    fields = set(type(state).model_fields)
+    provided = sorted(
+        field for field in state.model_fields_set
+        if getattr(state, field) is not None
+    )
+    missing = sorted(field for field in fields if getattr(state, field) is None)
+    measurement_fields = fields - {"site_id"}
+    provided_measurements = [
+        field for field in measurement_fields if getattr(state, field) is not None
+    ]
     mode = "caller_supplied_unverified" if provided_measurements else "insufficient_inputs"
 
     return {
