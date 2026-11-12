@@ -15,8 +15,13 @@ route is attached. The Worker independently verifies the human
 Do not expose a workers.dev or preview hostname. Do not add arbitrary proxy
 routes. The gateway creates a fresh internal request and forwards only the
 verified stable subject, configured issuer/audience, per-request gateway
-timestamp, and a random request ID. Browser cookies, caller identity headers,
-query strings, request bodies and raw JWTs are not forwarded.
+timestamp, and a random request ID. Those fields plus the exact method/path are
+HMAC-SHA256 signed using a high-entropy secret of at least 32 characters. The
+same secret must be provisioned on both Workers through the platform secret
+store, never in source or Wrangler vars. The private API enforces a 120-second
+timestamp window; this is not nonce-based one-time replay protection. Browser
+cookies, caller identity headers, query strings, request bodies and raw JWTs
+are not forwarded.
 
 ## Deployment sequence
 
