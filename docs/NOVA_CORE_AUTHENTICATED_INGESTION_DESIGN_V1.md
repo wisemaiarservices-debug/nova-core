@@ -11,7 +11,7 @@ The first ingestion release should be a server-to-server interface. Browser clie
 1. A module backend or approved integration service authenticates to NOVA Core using a Cloudflare Access service token.
 2. Cloudflare Access protects the ingestion route/application. NOVA Core validates the Access identity at the API boundary and maps the authenticated service identity to an explicit server-side allowlist.
 3. The allowlist grants only named capabilities, such as submitting observations for an approved module. Authentication alone does not grant access to every site, asset, source, or metric.
-4. NOVA Core validates the payload, resolves site/asset/source ownership, applies metric and unit rules, and assigns verification state server-side.
+4. NOVA Core validates the payload, resolves site/source/optional asset ownership and active tenant from the registry, applies metric and unit rules, and assigns verification state server-side. The producer cannot nominate its tenant.
 5. NOVA Core writes the observation and its audit event atomically. Repeated requests with the same source and idempotency key return the original accepted result rather than creating another observation.
 
 Cloudflare Access service-token credentials belong only in protected server-side secrets. They must not be placed in `NEXT_PUBLIC_*` variables, browser bundles, local-storage metadata, source control, or client-visible API responses.
@@ -27,7 +27,11 @@ A future `POST /api/v1/observations` request should contain:
 - `provenance`: provider/source identity, acquisition method, and source record reference where available
 - `quality_flags` as a bounded list of controlled values
 
-The server must assign `ingested_at`, authenticated actor/service identity, verification state, and audit metadata. Client-supplied actor identity, verified status, or audit fields must be rejected or ignored; they are never authoritative.
+The server must derive `tenant_id` from the active site/source/asset records, and assign `ingested_at`, authenticated actor/service identity, verification state, and audit metadata. The same tenant ID is persisted to the observation and audit event atomically. Legacy unowned records and cross-tenant combinations fail closed. Client-supplied actor identity, verified status, or audit fields must be rejected or ignored; they are never authoritative.
+
+## Tenant ownership enforcement
+
+The v1 payload intentionally excludes `tenant_id`. The Worker requires an active site with a non-null tenant, a source with the same tenant and matching module, and (when supplied) an active asset with the same tenant and site. A global source is allowed only when it is registered to the same tenant. Tenant suspension, legacy NULL ownership, and any ownership mismatch deny ingestion. Tenant ownership is server-derived and cannot be overridden by caller fields.
 
 ## Validation and authorization foundations
 
