@@ -7,26 +7,28 @@ from apps.api.main import ALLOWED_ORIGINS, SiteState, app, explain, forecast, im
 
 
 def test_forecast_flags_high_heat_and_low_moisture_for_review():
-    result = forecast(SiteState(temperature_c=39, soil_moisture_pct=31))
+    result = forecast(SiteState(site_id="test-site", temperature_c=39, soil_moisture_pct=31))
     assert result["heat_risk"] == "high_screening_flag"
     assert result["yield_risk"] == "review_required_heat_and_low_moisture"
     assert result["water_demand_delta_pct"] is None
     assert result["methodology"]["calibrated_model"] is False
 
 
-def test_default_inputs_are_explicitly_marked_synthetic():
-    result = input_provenance(SiteState())
-    assert result["data_mode"] == "synthetic_defaults"
-    assert result["synthetic_defaults_present"] is True
+def test_omitted_measurements_remain_unknown_without_synthetic_defaults():
+    result = input_provenance(SiteState(site_id="test-site"))
+    assert result["data_mode"] == "insufficient_inputs"
+    assert result["synthetic_defaults_present"] is False
+    assert result["defaulted_fields"] == []
+    assert "temperature_c" in result["missing_fields"]
     assert result["caller_supplied_values_verified"] is False
-    assert "temperature_c" in result["defaulted_fields"]
 
 
 def test_partial_payload_is_marked_mixed():
-    result = input_provenance(SiteState(temperature_c=32))
-    assert result["data_mode"] == "mixed_synthetic_and_caller_supplied"
+    result = input_provenance(SiteState(site_id="test-site", temperature_c=32))
+    assert result["data_mode"] == "caller_supplied_unverified"
     assert result["provided_fields"] == ["temperature_c"]
-    assert "soil_moisture_pct" in result["defaulted_fields"]
+    assert "soil_moisture_pct" in result["missing_fields"]
+    assert result["synthetic_defaults_present"] is False
 
 
 def test_full_payload_is_caller_supplied_but_unverified():
@@ -38,42 +40,43 @@ def test_full_payload_is_caller_supplied_but_unverified():
 
 
 def test_impact_is_not_fabricated_from_insufficient_inputs():
-    result = impact_score(SiteState())
+    result = impact_score(SiteState(site_id="test-site"))
     assert result["status"] == "not_estimable_from_available_inputs"
     assert result["water_saved_m3"] is None
     assert result["energy_shifted_kwh"] is None
     assert result["carbon_reduction_kg"] is None
 
 
-def test_recommendation_is_review_only_and_has_no_fake_confidence():
-    rec = recommend(SiteState())
+def test_recommendation_abstains_when_required_measurement_is_missing():
+    rec = recommend(SiteState(site_id="test-site"))
     assert rec.requires_operator_review is True
     assert rec.confidence is None
-    assert "verify field conditions" in rec.title.lower()
+    assert rec.priority == "not_assessed"
+    assert "no recommendation" in rec.title.lower()
 
 
 def test_scenario_does_not_invent_an_optimized_outcome():
-    result = simulate(SiteState())
+    result = simulate(SiteState(site_id="test-site"))
     assert result["comparison_status"] == "optimized_case_not_estimable"
     assert result["optimized"] is None
     assert result["impact"]["water_saved_m3"] is None
 
 
 def test_explanation_discloses_method_and_limits():
-    result = explain(SiteState())
+    result = explain(SiteState(site_id="test-site"))
     assert result["requires_operator_review"] is True
     assert result["methodology"]["trained_machine_learning"] is False
-    assert result["input_provenance"]["synthetic_defaults_present"] is True
+    assert result["input_provenance"]["synthetic_defaults_present"] is False
 
 
 @pytest.mark.parametrize("field,value", [("soil_moisture_pct", 101), ("battery_soc_pct", -1), ("gateway_health_pct", 101), ("solar_kw", -0.1), ("water_use_m3_today", -1)])
 def test_physical_input_ranges_are_validated(field, value):
     with pytest.raises(ValidationError):
-        SiteState(**{field: value})
+        SiteState(site_id="test-site", **{field: value})
 
 
 def test_recommendation_endpoint_preserves_explicit_review_status():
-    result = run_recommendation(SiteState())
+    result = run_recommendation(SiteState(site_id="test-site"))
     assert result["status"] == "review_required"
     assert result["recommendation"]["requires_operator_review"] is True
 
@@ -184,3 +187,30 @@ def test_storage_status_reports_incomplete_schema():
     assert result["status"] == "schema_incomplete"
     assert result["present_tables"] == ["sites"]
     assert "observations" in result["missing_tables"]
+
+
+def test_forecast_abstains_when_temperature_is_missing():
+    result = forecast(SiteState(site_id="test-site", soil_moisture_pct=20))
+    assert result["heat_risk"] == "not_assessed"
+    assert result["yield_risk"] == "not_assessed"
+
+
+def test_recommendation_uses_only_present_measurements():
+    rec = recommend(SiteState(site_id="test-site", temperature_c=39))
+    assert rec.priority == "medium_review"
+    assert "verify field conditions" not in rec.title.lower()
+
+
+def test_scenario_does_not_label_missing_water_as_a_baseline():
+    result = simulate(SiteState(site_id="test-site"))
+    assert result["baseline"]["water_use_m3"] is None
+    assert result["baseline"]["source"] == "not_supplied"
+
+
+def test_site_identifier_is_required_and_bounded():
+    with pytest.raises(ValidationError):
+        SiteState()
+    with pytest.raises(ValidationError):
+        SiteState(site_id="")
+    with pytest.raises(ValidationError):
+        SiteState(site_id="x" * 129)
