@@ -37,8 +37,10 @@ function makeAccessFixture(issuer) {
 }
 
 
-function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceModule = "neoagro",
-  sourceStatus = "unverified", assetSiteId = "site-001", assetStatus = "active" } = {}) {
+function ownershipDb({ siteStatus = "active", tenantStatus = "active", siteTenantId = "tenant-a",
+  sourceSiteId = "site-001", sourceModule = "neoagro", sourceStatus = "unverified",
+  sourceTenantId = "tenant-a", assetSiteId = "site-001", assetStatus = "active",
+  assetTenantId = "tenant-a" } = {}) {
   const state = { observation: null, audit: [] };
   return {
     state,
@@ -48,13 +50,13 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
         values: [],
         bind(...values) { this.values = values; return this; },
         async first() {
-          if (sql.includes("FROM sites")) return { id: this.values[0], status: siteStatus, tenant_id: "tenant-a", tenant_status: "active" };
+          if (sql.includes("FROM sites")) return { id: this.values[0], status: siteStatus, tenant_id: siteTenantId, tenant_status: tenantStatus };
           if (sql.includes("FROM sources")) return {
             id: this.values[0], site_id: sourceSiteId, module: sourceModule,
-            verification_status: sourceStatus, tenant_id: "tenant-a",
+            verification_status: sourceStatus, tenant_id: sourceTenantId,
           };
           if (sql.includes("FROM assets")) return {
-            id: this.values[0], site_id: assetSiteId, status: assetStatus, tenant_id: "tenant-a",
+            id: this.values[0], site_id: assetSiteId, status: assetStatus, tenant_id: assetTenantId,
           };
           if (sql.includes("FROM observations WHERE source_id")) return state.observation;
           throw new Error("unexpected_query");
@@ -71,9 +73,9 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
           module: v[4], metric: v[5], value: v[6], unit: v[7],
           observed_at: v[8], idempotency_key: v[9],
           verification_status: "unverified", provenance_json: v[10],
-          quality_flags_json: v[11],
+          quality_flags_json: v[11], tenant_id: v[12],
         };
-        state.audit.push({ id: statements[1].values[0], actor_id: statements[1].values[1] });
+        state.audit.push({ id: statements[1].values[0], actor_id: statements[1].values[2], tenant_id: statements[1].values[5] });
         inserted = true;
       }
       return [{ success: true, meta: { changes: inserted ? 1 : 0 } }, { success: true }];
@@ -173,6 +175,7 @@ test("valid service identity and D1 ownership checks persist an unverified obser
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
     status: 200, headers: { "content-type": "application/json" },
   });
+  const db = ownershipDb();
   const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
     method: "POST",
     headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
@@ -183,14 +186,44 @@ test("valid service identity and D1 ownership checks persist an unverified obser
       idempotency_key: "test-observation-owned-001",
       provenance: { provider: "test station", acquisition_method: "sensor" },
     }),
-  }), { ...envFor(issuer, fixture.audience), DB: ownershipDb() });
+  }), { ...envFor(issuer, fixture.audience), DB: db });
   assert.equal(response.status, 201);
   const body = await response.json();
   assert.equal(body.status, "accepted");
   assert.equal(body.accepted, true);
   assert.equal(body.verification_status, "unverified");
   assert.equal(body.idempotent, false);
-  assert.equal(body.verification_status, "unverified");
+  assert.equal(db.state.observation.tenant_id, "tenant-a");
+  assert.equal(db.state.audit[0].tenant_id, "tenant-a");
+});
+
+
+test("cross-tenant source ownership and suspended tenants are denied", async () => {
+  for (const [name, db] of [
+    ["source tenant mismatch", ownershipDb({ sourceTenantId: "tenant-b" })],
+    ["suspended tenant", ownershipDb({ tenantStatus: "suspended" })],
+  ]) {
+    const issuer = "https://" + name.replaceAll(" ", "-") + ".cloudflareaccess.com";
+    const fixture = makeAccessFixture(issuer);
+    globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+    const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+      method: "POST",
+      headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+      body: JSON.stringify({
+        site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+        source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+        unit: "degC", observed_at: new Date().toISOString(),
+        idempotency_key: "tenant-boundary-" + name.replaceAll(" ", "-"),
+        provenance: { provider: "test station", acquisition_method: "sensor" },
+      }),
+    }), { ...envFor(issuer, fixture.audience), DB: db });
+    assert.equal(response.status, 403, name);
+    assert.deepEqual(await response.json(), { error: "request_not_authorized" });
+    assert.equal(db.state.observation, null);
+    assert.equal(db.state.audit.length, 0);
+  }
 });
 
 test("D1 ownership mismatch is denied without revealing which record failed", async () => {
