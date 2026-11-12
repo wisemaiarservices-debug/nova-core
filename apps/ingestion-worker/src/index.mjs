@@ -122,8 +122,8 @@ export default {
       return json({ error: "storage_not_configured", status: "authenticated_but_not_accepted" }, 503);
     }
     try {
-      const ownershipValid = await resolveObservationOwnership(env.DB, observation);
-      if (!ownershipValid) return json({ error: "request_not_authorized" }, 403);
+      const ownership = await resolveObservationOwnership(env.DB, observation);
+      if (!ownership) return json({ error: "request_not_authorized" }, 403);
     } catch {
       return json({ error: "storage_unavailable" }, 503);
     }
@@ -133,6 +133,7 @@ export default {
         env.DB,
         observation,
         principal,
+        ownership.tenantId,
         crypto.randomUUID(),
       );
       if (result.status === "idempotency_conflict") {
