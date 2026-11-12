@@ -95,3 +95,27 @@ test("uses configured issuer, not token issuer, for key lookup", async () => {
     { issuer: configuredIssuer, audience }, now), /unexpected_access_issuer/);
   assert.equal(requested, configuredIssuer + "/cdn-cgi/access/certs");
 });
+
+test("rejects an oversized JWKS response before parsing", async () => {
+  const issuer = issuerFor("human-jwks-oversized");
+  globalThis.fetch = async () => new Response(" ".repeat(65_537), { status: 200 });
+  await assert.rejects(() => verifyHumanAccessToken(tokenFor(issuer), { issuer, audience }, now), /access_jwks_invalid/);
+});
+test("rejects too many or duplicate JWKS key identifiers", async () => {
+  const issuer = issuerFor("human-jwks-duplicate");
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: Array.from({ length: 33 }, (_, i) => ({ ...jwk, kid: "k" + i })) }), { status: 200 });
+  await assert.rejects(() => verifyHumanAccessToken(tokenFor(issuer), { issuer, audience }, now), /access_jwks_invalid/);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [jwk, jwk] }), { status: 200 });
+  await assert.rejects(() => verifyHumanAccessToken(tokenFor(issuer), { issuer, audience }, now), /access_jwks_invalid/);
+});
+test("rejects weak RSA signing keys", async () => {
+  const issuer = issuerFor("human-jwks-weak-key");
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [{ ...jwk, n: Buffer.from([1, 2, 3]).toString("base64url") }] }), { status: 200 });
+  await assert.rejects(() => verifyHumanAccessToken(tokenFor(issuer), { issuer, audience }, now), /access_signing_key_not_found/);
+});
+test("rejects unsupported critical and remote-key JWT headers", async () => {
+  const issuer = issuerFor("human-header-extensions");
+  for (const header of [{ crit: ["exp"] }, { b64: false }, { jku: "https://attacker.example/jwks" }, { x5u: "https://attacker.example/cert" }]) {
+    await assert.rejects(() => verifyHumanAccessToken(tokenFor(issuer, {}, header), { issuer, audience }, now), /unsupported_access_token_algorithm/);
+  }
+});
