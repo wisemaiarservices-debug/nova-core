@@ -5,7 +5,7 @@ import { generateKeyPairSync, sign, webcrypto } from "node:crypto";
 globalThis.crypto ??= webcrypto;
 
 function env(overrides = {}) {
-  return { ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud",
+  return { ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud", INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
     TENANT_API: { fetch: async request => new Response(JSON.stringify({
       path: new URL(request.url).pathname, subject: request.headers.get("x-nova-verified-subject"),
       cookie: request.headers.get("cookie"), forged: request.headers.get("x-nova-verified-issuer"),
@@ -58,6 +58,6 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
     assert.equal(captured.headers.get("x-nova-verified-subject"), "verified-human-subject");
     assert.equal(captured.headers.get("x-nova-verified-issuer"), issuer);
     assert.equal(captured.headers.get("cookie"), null);
-    assert.notEqual(captured.headers.get("x-nova-request-id"), null);
+    assert.notEqual(captured.headers.get("x-nova-request-id"), null);\n    assert.match(captured.headers.get("x-nova-internal-signature"), /^[A-Za-z0-9_-]{43}$/);
   } finally { globalThis.fetch = oldFetch; }
 });
