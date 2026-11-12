@@ -1,16 +1,13 @@
-// Test-only entrypoint: routes JWKS retrieval through a local Service Binding.
+// Test-only entrypoint: keeps the real JWT verifier but supplies a deterministic local JWKS fixture.
 import { createGateway } from "./index.mjs";
 import { verifyHumanAccessToken } from "./human-access-auth.mjs";
+import { jwksDocument } from "../test/jwks-fixture.mjs";
 
 export default createGateway({
-  verifyAccessToken: (token, config, env) => verifyHumanAccessToken(
+  verifyAccessToken: (token, config) => verifyHumanAccessToken(
     token, config, undefined,
-    () => {
-      if (!env.ACCESS_JWKS) throw new Error("local_access_jwks_binding_missing");
-      return env.ACCESS_JWKS.fetch(new Request(
-        "https://nova-core-access-jwks-fixture.internal/cdn-cgi/access/certs",
-        { method: "GET", headers: { Accept: "application/json" } },
-      ));
-    },
+    async () => new Response(JSON.stringify(jwksDocument), {
+      headers: { "content-type": "application/json" },
+    }),
   ),
 });
