@@ -47,6 +47,15 @@ async function rows(statement) {
   if (!result || !Array.isArray(result.results)) throw new Error("storage_invalid_result");
   return result.results;
 }
+async function consumeRequestId(db, requestId, issuedAt) {
+  const result = await db.prepare(
+    "INSERT INTO internal_request_nonces (request_id, issued_at, expires_at) VALUES (?, ?, ?) ON CONFLICT(request_id) DO NOTHING"
+  ).bind(requestId, issuedAt, issuedAt + 600).run();
+  if (!result || !result.meta || !Number.isInteger(result.meta.changes)) {
+    throw new Error("nonce_storage_invalid_result");
+  }
+  return result.meta.changes === 1;
+}
 async function readResource(db, subject, tenant, type, id) {
   const membership = await rows(db.prepare(
     "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
@@ -92,6 +101,9 @@ export default {
     const type = routeType === "audit-events" ? "audit_event" :
       routeType.slice(0, -1);
     try {
+      if (!(await consumeRequestId(env.DB, requestId, issuedAt))) {
+        return error("request_not_authorized", 401);
+      }
       const record = await readResource(env.DB, subject, tenant, type, resourceId);
       return record ? json({ data: record, request_id: requestId }) : error("not_found", 404);
     } catch {
