@@ -196,3 +196,50 @@ def test_suspended_tenant_blocks_updates_but_allows_membership_revocation():
         "SELECT status FROM tenant_memberships WHERE id='m-a'"
     ).fetchone()
     assert status == ("revoked",)
+
+
+
+def test_every_tenant_owned_resource_has_tenant_column_and_lookup_index():
+    db = database()
+    expected = {
+        "sites": "idx_sites_tenant_status",
+        "assets": "idx_assets_tenant_site",
+        "sources": "idx_sources_tenant_site",
+        "observations": "idx_observations_tenant_site_metric_time",
+        "audit_events": "idx_audit_events_tenant_time",
+    }
+    for table, index in expected.items():
+        columns = {
+            row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        assert "tenant_id" in columns, table
+        indexes = {
+            row[1] for row in db.execute(f"PRAGMA index_list({table})").fetchall()
+        }
+        assert index in indexes, table
+
+
+def test_suspended_tenant_blocks_site_source_and_observation_writes():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_site(db, "tenant-a", "site-a")
+    db.execute(
+        "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, tenant_id) "
+        "VALUES ('source-a', 'site-a', 'neoagro', 'operator', 'manual', 'Manual', 'tenant-a')"
+    )
+    db.execute("UPDATE tenants SET status='suspended' WHERE id='tenant-a'")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE sites SET name='Changed' WHERE id='site-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, tenant_id) "
+            "VALUES ('source-b', 'site-a', 'neoagro', 'operator', 'manual', 'Manual 2', 'tenant-a')"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO observations "
+            "(id, site_id, source_id, module, metric, unit, observed_at, idempotency_key, provenance_json, tenant_id) "
+            "VALUES ('obs-suspended', 'site-a', 'source-a', 'neoagro', 'temperature', 'degC', "
+            "'2026-11-12T00:00:00Z', 'key-suspended', '{}', 'tenant-a')"
+        )
