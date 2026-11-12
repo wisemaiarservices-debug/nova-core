@@ -74,3 +74,17 @@ WHEN NEW.tenant_id IS NOT OLD.tenant_id
 BEGIN
   SELECT RAISE(ABORT, 'grant scope is immutable; revoke and recreate');
 END;
+
+CREATE TRIGGER assets_tenant_immutable_guard
+BEFORE UPDATE OF tenant_id ON assets
+WHEN NEW.tenant_id IS NOT OLD.tenant_id
+BEGIN
+  SELECT RAISE(ABORT, 'asset tenant ownership is immutable');
+END;
+
+CREATE TRIGGER observations_tenant_immutable_guard
+BEFORE UPDATE OF tenant_id ON observations
+WHEN NEW.tenant_id IS NOT OLD.tenant_id
+BEGIN
+  SELECT RAISE(ABORT, 'observation tenant ownership is immutable');
+END;
