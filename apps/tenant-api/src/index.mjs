@@ -33,12 +33,11 @@ function canonicalEnvelope(method, path, headers) {
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
   const encoded = headers.get("x-nova-internal-signature");
-  if (typeof encoded !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(encoded)) return false;
+  if (typeof encoded !== "string" || !/^[a-f0-9]{64}$/.test(encoded)) return false;
   try {
     const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret),
       { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-    const binary = atob(encoded.replace(/-/g, "+").replace(/_/g, "/") + "=");
-    const signature = Uint8Array.from(binary, char => char.charCodeAt(0));
+    const signature = Uint8Array.from(encoded.match(/.{2}/g), pair => parseInt(pair, 16));
     return await crypto.subtle.verify("HMAC", key, signature,
       new TextEncoder().encode(canonicalEnvelope(method, path, headers)));
   } catch { return false; }
