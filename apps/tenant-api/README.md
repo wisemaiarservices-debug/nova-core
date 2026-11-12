@@ -6,7 +6,7 @@ workers.dev hostname or preview URL. Its only intended caller is the
 
 ## Required bindings (not configured)
 
-- `DB`: approved Cloudflare D1 database after tenant migration 0002 is reviewed
+- `DB`: approved Cloudflare D1 database after tenant migration 0002 and replay-protection migration 0003 are reviewed
   and applied.
 - `ACCESS_ISSUER`: exact Cloudflare Access team issuer origin.
 - `ACCESS_AUDIENCE`: exact human Access application audience.
@@ -28,14 +28,18 @@ The gateway signs the exact HTTP method/path, verified subject, issuer, audience
 timestamp and request ID with HMAC-SHA256. This Worker verifies the signature
 before any D1 lookup and fails closed if the secret is absent or invalid. Both
 Workers require the same independently generated secret, provisioned only via
-the platform secret store. The timestamp window is 120 seconds; this limits
-replay exposure but is not one-time replay prevention. Durable nonce tracking
-remains a deployment gate. The private Service Binding boundary is still
+the platform secret store. The timestamp window is 120 seconds. Each request ID is atomically consumed in
+`internal_request_nonces` before tenant reads; duplicate IDs fail with 401.
+Migration `0003_internal_request_nonces.sql` must be applied after migration
+0002. Expired nonce rows can be pruned after 10 minutes using a reviewed
+maintenance job; timestamp validation remains independently enforced. Each
+accepted request consumes one D1 write, so free-tier write quotas must be
+checked against expected traffic before enabling this path. The private Service Binding boundary is still
 mandatory: do not add public routes, workers.dev hosts, preview URLs, or callers.
 
 ## Deployment gate
 
 Deploy this target before the gateway that references it, but only after:
-Access and D1 approvals, schema migration/rollback review, Wrangler validation,
+Access and D1 approvals, migrations 0002 and 0003 plus rollback/retention review, Wrangler validation,
 private-origin isolation tests, and explicit human approval. This PR does not
 authorize deployment or production resource creation.
