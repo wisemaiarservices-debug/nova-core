@@ -55,17 +55,36 @@ an empty list. Unknown top-level and provenance keys are rejected.
 
 | Field | Contract |
 |---|---|
-| `site_id`, `source_id` | Non-empty trimmed strings, maximum 120 characters |
-| `asset_id` | Optional nullable non-empty trimmed string, maximum 120 characters |
+| `site_id`, `source_id` | Non-empty ECMAScript-trimmed strings, maximum 120 UTF-16 code units |
+| `asset_id` | Optional nullable non-empty ECMAScript-trimmed string, maximum 120 UTF-16 code units |
 | `module` | One of `nova-core`, `neoagro`, `neogrid`, `neocell` |
 | `metric` | Lowercase identifier matching `^[a-z][a-z0-9_.-]{0,119}$` |
-| `value` | Finite JSON number; booleans, NaN and infinities rejected |
+| `value` | Finite JSON number; booleans, NaN, infinities and integer-valued numbers outside JavaScript's safe-integer range rejected |
 | `unit` | 1–48 characters from the implementation's unit allowlist |
-| `observed_at` | Calendar-valid RFC 3339 timestamp with timezone; no more than 5 minutes in the future |
-| `idempotency_key` | Non-empty trimmed string, maximum 200 characters |
-| `provenance.provider` | Non-empty trimmed string, maximum 120 characters |
+| `observed_at` | Calendar-valid RFC 3339 timestamp with timezone, Gregorian year 0001–9999; no more than 5 minutes in the future |
+| `idempotency_key` | Non-empty ECMAScript-trimmed string, maximum 200 UTF-16 code units |
+| `provenance.provider` | Non-empty ECMAScript-trimmed string, maximum 120 UTF-16 code units |
 | `provenance.acquisition_method` | `sensor`, `manual`, `provider_api`, `satellite`, `model`, or `derived` |
-| `provenance.source_record_ref` | Optional nullable non-empty trimmed string, maximum 240 characters |
+| `provenance.source_record_ref` | Optional nullable non-empty ECMAScript-trimmed string, maximum 240 UTF-16 code units |
+
+String limits use JavaScript UTF-16 code units, not Unicode code points. The
+Python module adapters mirror this explicitly so astral characters cannot pass
+client preflight and then fail or change meaning at the Core boundary. Required
+strings use ECMAScript `String.trim()` whitespace semantics.
+
+Integer-valued measurements must be within ±9,007,199,254,740,991
+(`Number.MAX_SAFE_INTEGER`). This prevents JSON numbers from silently losing
+integer precision when parsed by the Worker runtime. Fractional finite values
+remain subject to the normal JSON/IEEE-754 representation.
+
+Year zero is rejected; timestamps must use Gregorian years 0001–9999. This
+keeps the Python adapter's datetime validation aligned with Core's calendar
+checks.
+
+The shared positive/negative regression matrix is stored at
+`apps/ingestion-worker/test/fixtures/nova-core-observation-v1.json` and mirrored
+byte-for-byte into the three module adapter test suites. Each implementation
+runs the same accepted and rejected boundary cases before any transport call.
 
 Allowed quality flags (maximum 16 unique values):
 
