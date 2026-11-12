@@ -52,11 +52,11 @@ async function readBoundedBody(response) {
   try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
   catch { throw new Error("access_jwks_invalid"); }
 }
-async function fetchJwks(issuer, forceRefresh = false) {
+async function fetchJwks(issuer, forceRefresh = false, fetcher = fetch) {
   const cached = jwksCache.get(issuer);
   if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.keys;
   let response;
-  try { response = await fetch(issuer + "/cdn-cgi/access/certs", {
+  try { response = await fetcher(issuer + "/cdn-cgi/access/certs", {
     method: "GET", redirect: "error",
     headers: { Accept: "application/json" }, cf: { cacheTtl: 300, cacheEverything: true },
   }); } catch { throw new Error("access_jwks_unavailable"); }
@@ -97,7 +97,7 @@ async function verifyRs256(input, signature, jwk) {
   return crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, signature, encoder.encode(input));
 }
 /** Verify a human Cloudflare Access JWT; service tokens are deliberately rejected. */
-export async function verifyHumanAccessToken(token, config, nowSeconds = Math.floor(Date.now() / 1000)) {
+export async function verifyHumanAccessToken(token, config, nowSeconds = Math.floor(Date.now() / 1000), fetcher = fetch) {
   if (typeof token !== "string" || token.length === 0 || token.length > MAX_TOKEN_LENGTH)
     throw new Error("missing_or_oversized_access_token");
   const parts = token.split(".");
@@ -111,9 +111,9 @@ export async function verifyHumanAccessToken(token, config, nowSeconds = Math.fl
   const audience = config?.audience;
   if (typeof audience !== "string" || !audience.trim()) throw new Error("invalid_access_audience_configuration");
   // Fetch keys only from the configured issuer, never from an untrusted claim.
-  let keys = await fetchJwks(issuer);
+  let keys = await fetchJwks(issuer, false, fetcher);
   let jwk = keys.find(candidate => isSigningKey(candidate, header.kid));
-  if (!jwk) { keys = await fetchJwks(issuer, true); jwk = keys.find(candidate => isSigningKey(candidate, header.kid)); }
+  if (!jwk) { keys = await fetchJwks(issuer, true, fetcher); jwk = keys.find(candidate => isSigningKey(candidate, header.kid)); }
   if (!jwk) throw new Error("access_signing_key_not_found");
   let valid = false;
   try { valid = await verifyRs256(parts[0] + "." + parts[1], decodeBase64Url(parts[2]), jwk); }
