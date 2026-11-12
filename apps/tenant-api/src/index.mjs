@@ -22,6 +22,27 @@ function validId(value, max = 160) {
   return typeof value === "string" && value.length > 0 && value.length <= max &&
     value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
+function canonicalEnvelope(method, path, headers) {
+  return JSON.stringify([method, path,
+    headers.get("x-nova-verified-subject"),
+    headers.get("x-nova-verified-issuer"),
+    headers.get("x-nova-verified-audience"),
+    headers.get("x-nova-gateway-issued-at"),
+    headers.get("x-nova-request-id")]);
+}
+async function verifyEnvelope(secret, method, path, headers) {
+  if (typeof secret !== "string" || secret.length < 32) return false;
+  const encoded = headers.get("x-nova-internal-signature");
+  if (typeof encoded !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(encoded)) return false;
+  try {
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+    const binary = atob(encoded.replace(/-/g, "+").replace(/_/g, "/") + "=");
+    const signature = Uint8Array.from(binary, char => char.charCodeAt(0));
+    return await crypto.subtle.verify("HMAC", key, signature,
+      new TextEncoder().encode(canonicalEnvelope(method, path, headers)));
+  } catch { return false; }
+}
 async function rows(statement) {
   const result = await statement.all();
   if (!result || !Array.isArray(result.results)) throw new Error("storage_invalid_result");
@@ -61,9 +82,11 @@ export default {
     const audience = request.headers.get("x-nova-verified-audience");
     const issuedAt = Number(request.headers.get("x-nova-gateway-issued-at"));
     const requestId = request.headers.get("x-nova-request-id");
+    const now = Math.floor(Date.now() / 1000);
     if (!validSubject(subject) || issuer !== env.ACCESS_ISSUER || audience !== env.ACCESS_AUDIENCE ||
-        !Number.isInteger(issuedAt) || issuedAt > Math.floor(Date.now()/1000) + 60 ||
-        issuedAt < Math.floor(Date.now()/1000) - 900 || !validId(requestId, 80)) {
+        !Number.isInteger(issuedAt) || issuedAt > now + 30 ||
+        issuedAt < now - 120 || !validId(requestId, 80) ||
+        !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
       return error("request_not_authorized", 401);
     }
     if (!env.DB) return error("storage_unavailable", 503);
