@@ -1,7 +1,12 @@
 name = "nova-core-ingest-api"
 main = "src/index.mjs"
 compatibility_date = "2026-11-01"
-workers_dev = true
+
+# This worker is an ingestion boundary, not a public browser API.
+# It must be reached only through its explicitly configured Access-protected
+# custom hostname after the Access policy and D1 binding have been provisioned.
+workers_dev = false
+preview_urls = false
 
 # Deliberately no D1 binding or secrets here.
 # Add the DB binding only after the account's Free-tier quota/billing review
