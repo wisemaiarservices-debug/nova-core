@@ -62,7 +62,15 @@ test("requires a complete, fresh gateway identity envelope", async () => {
   const response = await worker.fetch(await request({ "x-nova-verified-issuer": "https://attacker.test" }), env(db));
   assert.equal(response.status, 401); assert.equal(db.calls.length, 0);
 });
-test("authorizes exact tenant membership and resource grant before scoped read", async () => {
+
+test("rejects identity subjects longer than the tenant schema supports", async () => {
+  const db = new DB();
+  const response = await worker.fetch(
+    await request({ "x-nova-verified-subject": "s".repeat(201) }), env(db));
+  assert.equal(response.status, 401);
+  assert.equal(db.calls.length, 0);
+});
+\ntest("authorizes exact tenant membership and resource grant before scoped read", async () => {
   const db = new DB();
   const response = await worker.fetch(await request(), env(db));
   assert.equal(response.status, 200);
