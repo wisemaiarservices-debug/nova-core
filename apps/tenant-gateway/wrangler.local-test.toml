@@ -13,6 +13,3 @@ INTERNAL_AUTH_SECRET = "local-ci-only-secret-not-for-any-deployment"
 binding = "TENANT_API"
 service = "nova-core-tenant-api"
 
-[[services]]
-binding = "ACCESS_JWKS"
-service = "nova-core-access-jwks-fixture"
