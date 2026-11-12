@@ -57,7 +57,7 @@ for (const [name, claims] of [
   ["wrong issuer", { iss: "https://attacker.example" }], ["wrong audience", { aud: ["other-app"] }],
   ["expired", { exp: now - 120 }], ["future iat", { iat: now + 120 }],
   ["expiry before iat", { iat: now + 10, exp: now }], ["invalid nbf", { nbf: now + 700 }],
-  ["invalid email", { email: ["not-an-email"] }], ["oversized subject", { sub: "x".repeat(257) }],
+  ["invalid email", { email: ["not-an-email"] }], ["subject exceeds tenant identity schema limit", { sub: "x".repeat(201) }],
 ]) test("rejects " + name, async () => {
   const issuer = issuerFor("human-reject-" + name.replaceAll(" ", "-"));
   await assert.rejects(() => verifyHumanAccessToken(tokenFor(issuer, claims), { issuer, audience }, now));
