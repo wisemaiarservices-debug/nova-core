@@ -13,6 +13,23 @@ function validSubject(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 256 &&
     value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
+function canonicalEnvelope(method, path, headers) {
+  return JSON.stringify([method, path,
+    headers.get("x-nova-verified-subject"),
+    headers.get("x-nova-verified-issuer"),
+    headers.get("x-nova-verified-audience"),
+    headers.get("x-nova-gateway-issued-at"),
+    headers.get("x-nova-request-id")]);
+}
+async function signEnvelope(secret, method, path, headers) {
+  if (typeof secret !== "string" || secret.length < 32) throw new Error("internal_auth_not_configured");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key,
+    new TextEncoder().encode(canonicalEnvelope(method, path, headers)));
+  return btoa(String.fromCharCode(...new Uint8Array(signature)))
+    .replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+}
 export default {
   async fetch(request, env) {
     if (request.method !== "GET") return error("not_found", 404);
@@ -54,6 +71,8 @@ export default {
       "accept": "application/json",
     });
     try {
+      headers.set("x-nova-internal-signature",
+        await signEnvelope(env.INTERNAL_AUTH_SECRET, "GET", internalPath, headers));
       const upstream = await env.TENANT_API.fetch(new Request(
         "https://nova-core-tenant-api.internal" + internalPath, { method: "GET", headers },
       ));
