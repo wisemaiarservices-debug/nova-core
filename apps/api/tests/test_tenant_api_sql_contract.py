@@ -167,6 +167,10 @@ def test_ownership_and_grant_scope_cannot_be_silently_reassigned():
         db.execute("UPDATE sites SET tenant_id = 'tenant-b' WHERE id = 'site-a'")
     with pytest.raises(sqlite3.IntegrityError, match="source tenant ownership is immutable"):
         db.execute("UPDATE sources SET tenant_id = 'tenant-b' WHERE id = 'source-a'")
+    with pytest.raises(sqlite3.IntegrityError, match="asset tenant ownership is immutable"):
+        db.execute("UPDATE assets SET tenant_id = 'tenant-b' WHERE id = 'asset-a'")
+    with pytest.raises(sqlite3.IntegrityError, match="observation tenant ownership is immutable"):
+        db.execute("UPDATE observations SET tenant_id = 'tenant-b' WHERE id = 'obs-a'")
     with pytest.raises(sqlite3.IntegrityError, match="source site cannot change"):
         db.execute("UPDATE sources SET site_id = 'site-b' WHERE id = 'source-a'")
     with pytest.raises(sqlite3.IntegrityError, match="audit event tenant ownership is immutable"):
