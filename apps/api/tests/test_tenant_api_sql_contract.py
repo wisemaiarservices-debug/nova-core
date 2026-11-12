@@ -18,6 +18,7 @@ def test_private_tenant_api_sql_compiles_against_ordered_schema_migrations():
         MIGRATIONS / "0001_initial.sql",
         MIGRATIONS / "0002_tenant_isolation.sql",
         MIGRATIONS / "0003_internal_request_nonces.sql",
+        MIGRATIONS / "0004_tenant_ownership_immutability.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
 
@@ -155,3 +156,43 @@ def test_internal_request_nonce_is_consumed_once_and_has_bounded_expiry():
     assert replay.rowcount == 0
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(insert, ("request-bad-expiry", 1000, 999))
+
+
+def test_ownership_and_grant_scope_cannot_be_silently_reassigned():
+    db = _migrated_tenant_db()
+    _seed_two_tenants(db)
+    with pytest.raises(sqlite3.IntegrityError, match="site tenant ownership is immutable"):
+        db.execute("UPDATE sites SET tenant_id = 'tenant-b' WHERE id = 'site-a'")
+    with pytest.raises(sqlite3.IntegrityError, match="source tenant ownership is immutable"):
+        db.execute("UPDATE sources SET tenant_id = 'tenant-b' WHERE id = 'source-a'")
+    with pytest.raises(sqlite3.IntegrityError, match="source site cannot change"):
+        db.execute("UPDATE sources SET site_id = 'site-b' WHERE id = 'source-a'")
+    with pytest.raises(sqlite3.IntegrityError, match="audit event tenant ownership is immutable"):
+        db.execute("UPDATE audit_events SET tenant_id = 'tenant-b' WHERE id = 'audit-a'")
+
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-a', 'tenant-a', 'operator-a', 'operator')"
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="membership identity scope is immutable"):
+        db.execute("UPDATE tenant_memberships SET tenant_id = 'tenant-b' WHERE id = 'membership-a'")
+
+    db.execute(
+        "INSERT INTO tenant_resource_grants "
+        "(id, tenant_id, subject, resource_type, resource_id, action) "
+        "VALUES ('grant-a', 'tenant-a', 'operator-a', 'site', 'site-a', 'read')"
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="grant scope is immutable"):
+        db.execute("UPDATE tenant_resource_grants SET resource_id = 'site-b' WHERE id = 'grant-a'")
+
+
+def test_site_bound_source_cannot_be_used_for_another_site_observation():
+    db = _migrated_tenant_db()
+    _seed_two_tenants(db)
+    with pytest.raises(sqlite3.IntegrityError, match="observation site must match"):
+        db.execute(
+            "INSERT INTO observations (id, tenant_id, site_id, source_id, module, metric, "
+            "value, unit, observed_at, idempotency_key, provenance_json) "
+            "VALUES ('wrong-site-observation', 'tenant-a', 'site-b', 'source-a', 'neoagro', "
+            "'soil_moisture', 0.3, 'm3/m3', '2026-11-12T10:00:00Z', 'wrong-site-key', '{}')"
+        )
