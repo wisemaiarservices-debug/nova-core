@@ -34,7 +34,12 @@ test("verifies signature and returns stable human subject", async () => {
   assert.equal(principal.tokenId, "human-jti");
   assert.equal(Object.isFrozen(principal), true);
 });
-test("does not confuse the Access app token type with a service token", async () => {\n  const issuer = issuerFor("human-type-app");\n  const principal = await verifyHumanAccessToken(tokenFor(issuer, { type: "app" }), { issuer, audience }, now);\n  assert.equal(principal.subject, "immutable-user-subject-001");\n});\ntest("accepts exact string audience", async () => {
+test("does not confuse the Access app token type with a service token", async () => {
+  const issuer = issuerFor("human-type-app");
+  const principal = await verifyHumanAccessToken(tokenFor(issuer, { type: "app" }), { issuer, audience }, now);
+  assert.equal(principal.subject, "immutable-user-subject-001");
+});
+test("accepts exact string audience", async () => {
   const issuer = issuerFor("human-single-aud");
   assert.equal((await verifyHumanAccessToken(tokenFor(issuer, { aud: audience }), { issuer, audience }, now)).subject,
     "immutable-user-subject-001");
