@@ -251,3 +251,26 @@ WHEN NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status
 BEGIN
   SELECT RAISE(ABORT, 'site write requires an active tenant');
 END;
+
+
+-- Tenant-owned audit events must carry an explicit tenant. System-wide events
+-- for non-tenant entities may remain global; known tenant entity types may not.
+CREATE TRIGGER audit_events_require_tenant_insert_guard
+BEFORE INSERT ON audit_events
+WHEN NEW.entity_type IN (
+  'tenant', 'site', 'asset', 'source', 'observation',
+  'experiment', 'dataset_snapshot', 'membership'
+) AND NEW.tenant_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'tenant-owned audit event requires tenant_id');
+END;
+
+CREATE TRIGGER audit_events_require_tenant_update_guard
+BEFORE UPDATE OF tenant_id, entity_type ON audit_events
+WHEN NEW.entity_type IN (
+  'tenant', 'site', 'asset', 'source', 'observation',
+  'experiment', 'dataset_snapshot', 'membership'
+) AND NEW.tenant_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'tenant-owned audit event requires tenant_id');
+END;
