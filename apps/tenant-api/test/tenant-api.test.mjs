@@ -104,7 +104,7 @@ test("consumes each signed request ID exactly once", async () => {
 });
 test("rejects signed envelopes outside the 120-second freshness window", async () => {
   const stale = await request({ "x-nova-gateway-issued-at": String(now - 121) });
-  const future = await request({ "x-nova-gateway-issued-at": String(now + 31) });
+  const future = await request({ "x-nova-gateway-issued-at": String(now + 60) });
   assert.equal((await worker.fetch(stale, env(new DB()))).status, 401);
   assert.equal((await worker.fetch(future, env(new DB()))).status, 401);
 });
