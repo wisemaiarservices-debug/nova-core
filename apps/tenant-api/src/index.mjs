@@ -15,7 +15,7 @@ const RESOURCE_SQL = {
 };
 
 function validSubject(value) {
-  return typeof value === "string" && value.length > 0 && value.length <= 256 &&
+  return typeof value === "string" && value.length > 0 && value.length <= 200 &&
     value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
 function validId(value, max = 160) {
