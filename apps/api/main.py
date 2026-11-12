@@ -28,9 +28,9 @@ class SiteState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     site_id: str = Field(min_length=1, max_length=128)
-    temperature_c: float | None = Field(default=None, ge=-80, le=65)
-    soil_moisture_pct: float | None = Field(default=None, ge=0, le=100)
-    solar_kw: float | None = Field(default=None, ge=0)
+    temperature_c: float | None = Field(default=None, ge=-80, le=65, allow_inf_nan=False)
+    soil_moisture_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    solar_kw: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     battery_soc_pct: float | None = Field(default=None, ge=0, le=100)
     water_use_m3_today: float | None = Field(default=None, ge=0)
     gateway_health_pct: float | None = Field(default=None, ge=0, le=100)
