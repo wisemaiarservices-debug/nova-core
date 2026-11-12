@@ -4,8 +4,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY_ROOT = ROOT.parent.parent
-TENANT_API = REPOSITORY_ROOT / "tenant-api" / "src" / "index.mjs"
+APPS_ROOT = ROOT.parent
+TENANT_API = APPS_ROOT / "tenant-api" / "src" / "index.mjs"
 MIGRATIONS = ROOT / "migrations"
 
 
