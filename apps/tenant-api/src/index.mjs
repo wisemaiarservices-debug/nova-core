@@ -59,7 +59,7 @@ export default {
     const subject = request.headers.get("x-nova-verified-subject");
     const issuer = request.headers.get("x-nova-verified-issuer");
     const audience = request.headers.get("x-nova-verified-audience");
-    const issuedAt = Number(request.headers.get("x-nova-verified-issued-at"));
+    const issuedAt = Number(request.headers.get("x-nova-gateway-issued-at"));
     const requestId = request.headers.get("x-nova-request-id");
     if (!validSubject(subject) || issuer !== env.ACCESS_ISSUER || audience !== env.ACCESS_AUDIENCE ||
         !Number.isInteger(issuedAt) || issuedAt > Math.floor(Date.now()/1000) + 60 ||
