@@ -10,6 +10,7 @@ workers.dev hostname or preview URL. Its only intended caller is the
   and applied.
 - `ACCESS_ISSUER`: exact Cloudflare Access team issuer origin.
 - `ACCESS_AUDIENCE`: exact human Access application audience.
+- `INTERNAL_AUTH_SECRET`: same independently provisioned Worker secret as the gateway (minimum 32 characters); never commit it or put it in Wrangler vars.
 
 No binding or secret is provisioned by this repository change.
 
