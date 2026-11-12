@@ -7,6 +7,7 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null;
   }
   prepare(sql) {
     const db = this;
@@ -17,13 +18,13 @@ class DB {
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
         }] : []) };
-        if (sql.includes("FROM tenant_resource_grants")) return { results: db.grant ? [{
+        if (sql.includes("FROM tenant_resource_grants")) return { results: db.grantRows ?? (db.grant ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", resource_type: args[2],
           resource_id: args[3], action: "read",
-        }] : [] };
-        if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) return { results: db.resource ? [{
+        }] : []) };
+        if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) return { results: db.resourceRows ?? (db.resource ? [{
           id: args[1], tenant_id: args[0], name: "Test resource",
-        }] : [] };
+        }] : []) };
         throw new Error("unexpected SQL");
       },
       async run() {
@@ -73,16 +74,58 @@ test("denies when exact resource grant is absent without reading resource", asyn
   const response = await worker.fetch(await request(), env(db));
   assert.equal(response.status, 404); assert.equal(db.calls.length, 3);
 });
-test("denies duplicate or missing membership without grant lookup", async () => {
-  const db = new DB({ membership: false });
-  const response = await worker.fetch(await request(), env(db));
-  assert.equal(response.status, 404); assert.equal(db.calls.length, 2);
+test("denies missing and duplicate memberships without grant lookup", async () => {
+  const missing = new DB({ membership: false });
+  const missingResponse = await worker.fetch(await request(), env(missing));
+  assert.equal(missingResponse.status, 404);
+  assert.equal(missing.calls.length, 2);
+
+  const duplicate = new DB();
+  duplicate.membershipRows = [
+    { subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
+      membership_status: "active", tenant_status: "active" },
+    { subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
+      membership_status: "active", tenant_status: "active" },
+  ];
+  const duplicateResponse = await worker.fetch(await request(), env(duplicate));
+  assert.equal(duplicateResponse.status, 404);
+  assert.equal(duplicate.calls.length, 2);
 });
 test("returns same not-found result for cross-tenant selection", async () => {
   const db = new DB();
   const response = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-b/sites/site-a"), env(db));
   assert.equal(response.status, 404); assert.equal(db.calls.length, 2);
+});
+
+test("rejects a grant whose tenant, subject, resource or action does not exactly match", async () => {
+  const mismatches = [
+    { subject: "other-subject", tenant_id: "tenant-a", resource_type: "site", resource_id: "site-a", action: "read" },
+    { subject: "operator@example.test", tenant_id: "tenant-b", resource_type: "site", resource_id: "site-a", action: "read" },
+    { subject: "operator@example.test", tenant_id: "tenant-a", resource_type: "asset", resource_id: "site-a", action: "read" },
+    { subject: "operator@example.test", tenant_id: "tenant-a", resource_type: "site", resource_id: "site-b", action: "read" },
+    { subject: "operator@example.test", tenant_id: "tenant-a", resource_type: "site", resource_id: "site-a", action: "update" },
+  ];
+  for (const grant of mismatches) {
+    const db = new DB();
+    db.grantRows = [grant];
+    const response = await worker.fetch(await request(), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.length, 3);
+  }
+});
+
+test("defensively rejects a resource row returned for another tenant or resource ID", async () => {
+  for (const row of [
+    { id: "site-a", tenant_id: "tenant-b", name: "cross-tenant row" },
+    { id: "site-b", tenant_id: "tenant-a", name: "wrong resource row" },
+  ]) {
+    const db = new DB();
+    db.resourceRows = [row];
+    const response = await worker.fetch(await request(), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.length, 4);
+  }
 });
 test("rejects forged signatures, path tampering, and missing internal secret", async () => {
   const signed = await request();
