@@ -9,7 +9,7 @@ class DB {
   }
   prepare(sql) {
     const db = this;
-    return { bind(...args) { return { async run() {
+    return { bind(...args) { return { async all() {
       db.calls.push({ sql, args });
       if (sql.includes("FROM tenant_memberships")) return { results: db.membership ? [{
         subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
