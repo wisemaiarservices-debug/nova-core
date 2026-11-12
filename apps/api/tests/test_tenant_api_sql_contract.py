@@ -44,6 +44,7 @@ def _migrated_tenant_db():
         MIGRATIONS / "0001_initial.sql",
         MIGRATIONS / "0002_tenant_isolation.sql",
         MIGRATIONS / "0003_internal_request_nonces.sql",
+        MIGRATIONS / "0004_tenant_ownership_immutability.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
     return db
