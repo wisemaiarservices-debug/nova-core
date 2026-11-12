@@ -214,3 +214,10 @@ def test_site_identifier_is_required_and_bounded():
         SiteState(site_id="")
     with pytest.raises(ValidationError):
         SiteState(site_id="x" * 129)
+
+
+def test_explicit_null_measurements_are_classified_as_missing():
+    result = input_provenance(SiteState(site_id="test-site", temperature_c=None))
+    assert result["data_mode"] == "insufficient_inputs"
+    assert "temperature_c" in result["missing_fields"]
+    assert "temperature_c" not in result["provided_fields"]
