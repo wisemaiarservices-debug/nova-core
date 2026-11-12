@@ -9,12 +9,19 @@ from pathlib import Path
 import pytest
 
 
-MIGRATION = Path(__file__).resolve().parents[1] / "migrations" / "0003_internal_request_nonces.sql"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
 
 def database():
     db = sqlite3.connect(":memory:")
-    db.executescript(MIGRATION.read_text(encoding="utf-8"))
+    db.execute("PRAGMA foreign_keys = ON")
+    # Exercise the real ordered migration chain, not migration 0003 in isolation.
+    for name in (
+        "0001_initial.sql",
+        "0002_tenant_isolation.sql",
+        "0003_internal_request_nonces.sql",
+    ):
+        db.executescript((MIGRATIONS / name).read_text(encoding="utf-8"))
     return db
 
 
