@@ -24,11 +24,14 @@ ID. Missing and denied resources share a 404 response. D1 failures fail closed.
 
 ## Trust assumptions
 
-The internal identity envelope is trusted only because the Worker has no public
-invocation path and the gateway is the sole configured Service Binding caller.
-Do not add a route, workers.dev host, preview URL, second caller binding, or
-public HTTP hop. Any topology change invalidates this trust assumption and
-requires a cryptographically authenticated, replay-bounded envelope design.
+The gateway signs the exact HTTP method/path, verified subject, issuer, audience,
+timestamp and request ID with HMAC-SHA256. This Worker verifies the signature
+before any D1 lookup and fails closed if the secret is absent or invalid. Both
+Workers require the same independently generated secret, provisioned only via
+the platform secret store. The timestamp window is 120 seconds; this limits
+replay exposure but is not one-time replay prevention. Durable nonce tracking
+remains a deployment gate. The private Service Binding boundary is still
+mandatory: do not add public routes, workers.dev hosts, preview URLs, or callers.
 
 ## Deployment gate
 
