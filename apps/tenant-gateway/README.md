@@ -19,13 +19,18 @@ timestamp, and a random request ID. Those fields plus the exact method/path are
 HMAC-SHA256 signed using a high-entropy secret of at least 32 characters. The
 same secret must be provisioned on both Workers through the platform secret
 store, never in source or Wrangler vars. The private API enforces a 120-second
-timestamp window; this is not nonce-based one-time replay protection. Browser
+timestamp window, and each request ID is consumed once in the private API's
+`internal_request_nonces` table before any tenant data read. Duplicate request
+IDs are rejected; timestamp freshness remains an independent control. Browser
 cookies, caller identity headers, query strings, request bodies and raw JWTs
 are not forwarded.
 
 ## Deployment sequence
 
-1. Review and approve the D1 tenant schema and billing/quotas.
+1. Review the complete migration chain in order: existing `0001` base schema,
+   `0002_tenant_isolation.sql`, then `0003_internal_request_nonces.sql`. Confirm
+   the target D1 identity, schema compatibility, backup/restore, ownership
+   mapping and billing/quotas; do not apply migrations without explicit approval.
 2. Configure a narrowly scoped Cloudflare Access application/policy for the
    exact gateway hostname; configure the issuer and audience.
 3. Deploy the private tenant API first with no public hostname or route.
@@ -33,8 +38,9 @@ are not forwarded.
    callable through this gateway's Service Binding.
 5. Deploy this gateway with the binding and Access settings, then attach the
    exact Access-protected hostname.
-6. Run cross-tenant, identity, route allowlist and outage tests against a
-   disposable test database before any customer onboarding.
+6. Run cross-tenant, identity, route allowlist, request-ID replay, migration
+   and outage tests against a disposable D1 database before any customer
+   onboarding. SQLite contract tests alone do not establish D1 compatibility.
 
 No D1, Access application, secret, custom hostname, route, or deployment is
 created by this repository change.
