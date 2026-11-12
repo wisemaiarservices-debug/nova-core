@@ -1,0 +1,37 @@
+# NOVA private tenant API Worker
+
+This Worker is deliberately private. It has no public route, custom domain,
+workers.dev hostname or preview URL. Its only intended caller is the
+`nova-core-tenant-gateway` Service Binding.
+
+## Required bindings (not configured)
+
+- `DB`: approved Cloudflare D1 database after tenant migration 0002 is reviewed
+  and applied.
+- `ACCESS_ISSUER`: exact Cloudflare Access team issuer origin.
+- `ACCESS_AUDIENCE`: exact human Access application audience.
+
+No binding or secret is provisioned by this repository change.
+
+## Read-only API
+
+The Worker supports only exact resource reads for sites, assets, sources,
+observations and audit events. Every request resolves one active membership,
+checks the role's read ceiling, requires an exact resource/action grant, and
+then performs a parameterized query constrained by both tenant ID and resource
+ID. Missing and denied resources share a 404 response. D1 failures fail closed.
+
+## Trust assumptions
+
+The internal identity envelope is trusted only because the Worker has no public
+invocation path and the gateway is the sole configured Service Binding caller.
+Do not add a route, workers.dev host, preview URL, second caller binding, or
+public HTTP hop. Any topology change invalidates this trust assumption and
+requires a cryptographically authenticated, replay-bounded envelope design.
+
+## Deployment gate
+
+Deploy this target before the gateway that references it, but only after:
+Access and D1 approvals, schema migration/rollback review, Wrangler validation,
+private-origin isolation tests, and explicit human approval. This PR does not
+authorize deployment or production resource creation.
