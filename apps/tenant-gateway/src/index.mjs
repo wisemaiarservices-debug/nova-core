@@ -10,7 +10,7 @@ function validPathId(value, max = 160) {
     value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
 function validSubject(value) {
-  return typeof value === "string" && value.length > 0 && value.length <= 256 &&
+  return typeof value === "string" && value.length > 0 && value.length <= 200 &&
     value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
 function canonicalEnvelope(method, path, headers) {
