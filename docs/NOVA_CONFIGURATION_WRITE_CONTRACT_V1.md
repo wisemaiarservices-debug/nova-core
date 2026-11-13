@@ -243,3 +243,44 @@ temperature/irradiance derating, module tolerances, battery usable energy,
 charge scheduling, grid-code export controls, transformer capacity, phase
 balance, protection or utility interconnection approval. Matching declared
 capacities do not prove a commissioned or safe system.
+
+
+## Site water-source declarations and irrigation links
+
+A site may declare a `water_sources` collection with stable IDs, a source type
+(groundwater, surface water, rainwater, municipal, reclaimed water,
+desalinated, or explicitly unknown), optional available flow in m³/hour,
+permitted abstraction in m³/day, and an evidence reference. Irrigation profiles
+may link to a source using `water_source_id`; the ID must resolve within the
+same site's declared water-source collection. An unresolved reference is
+flagged for verification rather than treated as a confirmed supply connection.
+
+Declared flow and abstraction values must be finite and positive when present.
+The validator does not infer availability from source type, compare unlike
+flow/time units, assume daily operating hours, or decide legal water rights.
+It does not establish seasonal yield, aquifer sustainability, pumping head,
+water quality, salinity suitability, crop water demand, allocation compliance,
+or live source telemetry. Missing permits, source tests and measurements
+remain evidence/readiness gaps for a later water-specific schema and human
+review; these declarations do not authorize abstraction or irrigation.
+
+
+## Water-quality sample evidence envelope
+
+Each declared site water source may optionally include `quality_samples`. A
+sample has a stable ID, parameter name, finite numeric value, explicit unit,
+ISO-8601 timestamp with timezone, method, laboratory and evidence reference.
+Missing method, laboratory or evidence is surfaced as a verification issue;
+malformed identifiers, values, units, timestamps or sample collections are
+structural errors. Sample evidence references must resolve to the envelope's
+evidence registry.
+
+This is an evidence/provenance envelope, not a water-quality interpretation
+engine. Parameter names and units are retained as supplied and are not silently
+converted. No universal suitability threshold is applied: crop tolerance,
+soil texture/drainage, irrigation method, exposure duration, local standards
+and sampling protocol all affect interpretation. A sample is not assumed
+representative of current source conditions, and a laboratory name is not
+proof of accreditation or report authenticity. Suitability decisions require
+verified methods, appropriate sampling, relevant crop/soil context and
+qualified review. The schema does not authorize irrigation or abstraction.

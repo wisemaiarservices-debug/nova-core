@@ -647,3 +647,311 @@ test("leaves cross-system capacity compatibility unknown when component ratings 
     "energy.grid_export_limit_exceeds_inverter_rating",
   ].includes(item.code)), false);
 });
+
+
+test("resolves irrigation water-source references only against declared site water sources", () => {
+  const value = valid();
+  value.site.water_sources = [{
+    id: "well-1", source_type: "groundwater", name: "Borehole",
+    available_flow_m3_per_hour: 4, permitted_abstraction_m3_per_day: 30,
+  }];
+  value.site.irrigation_systems[0].water_source_id = "well-1";
+  let result = assessDomainConfiguration(value);
+  assert.equal(result.issues.some(item => item.code === "irrigation.water_source_reference_unresolved"), false);
+
+  value.site.irrigation_systems[0].water_source_id = "unknown-source";
+  result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "irrigation.water_source_reference_unresolved"));
+});
+
+test("validates water-source inventory identity and declared flow limits without inventing availability", () => {
+  const value = valid();
+  value.site.water_sources = [
+    { id: "well-1", source_type: "groundwater", available_flow_m3_per_hour: 0 },
+    { id: "well-1", source_type: "unsupported" },
+  ];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "record.id_missing_or_duplicate"));
+  assert.ok(result.errors.some(item => item.code === "engineering.rating_must_be_positive"));
+  assert.ok(result.issues.some(item => item.code === "water_source.type_unrecognized"));
+
+  const unspecified = valid();
+  unspecified.site.water_sources = [{ id: "source-unknown" }];
+  const unknownResult = assessDomainConfiguration(unspecified);
+  assert.ok(unknownResult.issues.some(item => item.code === "water_source.type_unknown"));
+  assert.equal(unknownResult.issues.some(item => item.code === "irrigation.water_source_reference_unresolved"), false);
+});
+
+
+test("validates water-quality sample identity, units, timestamp and evidence without applying suitability thresholds", () => {
+  const value = valid();
+  value.site.water_sources = [{
+    id: "well-1", source_type: "groundwater", quality_samples: [{
+      id: "sample-1", parameter: "electrical_conductivity", value: 2.1, unit: "dS/m",
+      sampled_at: "2026-10-20T09:30:00Z", method: "laboratory_method_1",
+      laboratory: "Regional Lab", evidence_ref: "water-report-1",
+    }],
+  }];
+  value.evidence.push({ source_class: "laboratory_report", reference: "water-report-1" });
+  let result = assessDomainConfiguration(value);
+  assert.equal(result.errors.some(item => item.code.startsWith("water_quality.")), false);
+  assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("quality_samples")), false);
+
+  value.site.water_sources[0].quality_samples[0].value = Number.NaN;
+  result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "water_quality.value_invalid"));
+});
+
+test("keeps water-quality sample evidence and laboratory metadata as verification gates", () => {
+  const value = valid();
+  value.site.water_sources = [{ id: "well-1", quality_samples: [{
+    id: "sample-1", parameter: "pH", value: 7.2, unit: "pH", sampled_at: "2026-10-20T09:30:00Z",
+  }] }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "water_quality.method_missing"));
+  assert.ok(result.issues.some(item => item.code === "water_quality.laboratory_missing"));
+  assert.ok(result.issues.some(item => item.code === "water_quality.evidence_missing"));
+});
+
+
+test("rejects malformed timezone-free water-quality sample timestamps and unresolved report evidence", () => {
+  const value = valid();
+  value.site.water_sources = [{ id: "well-1", quality_samples: [{
+    id: "sample-1", parameter: "electrical_conductivity", value: 1.2, unit: "dS/m",
+    sampled_at: "2026-10-20T09:30:00", method: "lab-method", laboratory: "Regional Lab",
+    evidence_ref: "missing-report",
+  }] }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("quality_samples")));
+});
+
+
+test("accepts timezone-qualified UTC and numeric-offset water-quality sample timestamps", () => {
+  const value = valid();
+  value.site.water_sources = [{ id: "well-1", quality_samples: [{
+    id: "sample-1", parameter: "electrical_conductivity", value: 1.2, unit: "dS/m",
+    sampled_at: "2026-10-20T09:30:00Z", method: "lab-method", laboratory: "Regional Lab",
+    evidence_ref: "water-report-1",
+  }] }];
+  value.evidence.push({ source_class: "laboratory_report", reference: "water-report-1" });
+
+  for (const sampledAt of ["2026-10-20T09:30:00Z", "2026-10-20T12:30:00+03:00", "2026-10-20T09:30:00.125-04:00"]) {
+    value.site.water_sources[0].quality_samples[0].sampled_at = sampledAt;
+    const result = assessDomainConfiguration(value);
+    assert.equal(result.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"), false, sampledAt);
+  }
+
+  for (const sampledAt of [
+    "2026-02-30T09:30:00Z",
+    "2025-02-29T09:30:00Z",
+    "2026-04-31T09:30:00Z",
+    "2026-13-01T09:30:00Z",
+  ]) {
+    value.site.water_sources[0].quality_samples[0].sampled_at = sampledAt;
+    const invalidDate = assessDomainConfiguration(value);
+    assert.ok(invalidDate.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"), sampledAt);
+  }
+
+  for (const sampledAt of ["2024-02-29T09:30:00Z", "2000-02-29T09:30:00Z"]) {
+    value.site.water_sources[0].quality_samples[0].sampled_at = sampledAt;
+    const leapDate = assessDomainConfiguration(value);
+    assert.equal(leapDate.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"), false, sampledAt);
+  }
+});
+
+
+test("validates soil horizons, sample depth intervals and traceable laboratory analytes", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    name: "North block profile",
+    classification_system: "WRB",
+    classification: "Cambisol",
+    horizons: [
+      { id: "horizon-a", name: "A", top_depth_cm: 0, bottom_depth_cm: 25, texture: "loam" },
+      { id: "horizon-b", name: "B", top_depth_cm: 25, bottom_depth_cm: 80, texture: "clay_loam" },
+    ],
+    samples: [{
+      id: "soil-sample-1",
+      sampling_point: { crs: "EPSG:4326", coordinates: [10.2, 36.8] },
+      top_depth_cm: 10,
+      bottom_depth_cm: 30,
+      sampled_at: "2026-10-20T09:30:00Z",
+      method: "composite_sampling",
+      laboratory: "Regional Soil Lab",
+      analytes: [
+        { parameter: "pH", value: 7.4, unit: "pH", method: "ISO_10390" },
+        { parameter: "organic_carbon", value: 1.8, unit: "g/100g", method: "dry_combustion" },
+      ],
+      evidence_ref: "soil-report-1",
+    }],
+    evidence_ref: "soil-profile-report-1",
+  }];
+  value.evidence.push(
+    { source_class: "laboratory_report", reference: "soil-report-1" },
+    { source_class: "soil_survey", reference: "soil-profile-report-1" },
+  );
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.some(item => item.code.startsWith("soil_")), false);
+  assert.equal(result.issues.some(item => item.code.startsWith("evidence.reference_unresolved") && item.path.includes("soil_profiles")), false);
+});
+
+test("rejects invalid or overlapping soil horizon depths and invalid sample intervals", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    horizons: [
+      { id: "horizon-a", top_depth_cm: 0, bottom_depth_cm: 30 },
+      { id: "horizon-b", top_depth_cm: 25, bottom_depth_cm: 60 },
+    ],
+    samples: [{
+      id: "soil-sample-1", top_depth_cm: 20, bottom_depth_cm: 10,
+      sampled_at: "2026-10-20T09:30:00Z",
+    }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "soil_horizon.depth_overlap"));
+  assert.ok(result.errors.some(item => item.code === "soil_sample.depth_interval_invalid"));
+});
+
+test("requires soil sample timestamp, method, laboratory, analytes and evidence provenance", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    samples: [{
+      id: "soil-sample-1", top_depth_cm: 0, bottom_depth_cm: 20,
+      sampled_at: "2026-02-30T09:30:00Z",
+      analytes: [{ parameter: "pH", value: 7, unit: "pH" }],
+      evidence_ref: "missing-soil-report",
+    }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "soil_sample.timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "soil_sample.method_missing"));
+  assert.ok(result.issues.some(item => item.code === "soil_sample.laboratory_missing"));
+  assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("soil_profiles")));
+});
+
+test("rejects malformed soil sampling coordinates and non-finite analyte results", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    samples: [{
+      id: "soil-sample-1",
+      sampling_point: { crs: "EPSG:4326", coordinates: [250, 95] },
+      top_depth_cm: 0, bottom_depth_cm: 20,
+      sampled_at: "2024-02-29T09:30:00Z",
+      method: "core_sampling",
+      analytes: [{ parameter: "nitrate", value: Number.NaN, unit: "mg/kg" }],
+    }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "soil_sample.sampling_point_invalid"));
+  assert.ok(result.errors.some(item => item.code === "soil_sample.analyte_invalid"));
+});
+
+
+test("checks soil profile, horizon, sample and analyte evidence references independently", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    evidence_ref: "missing-profile-evidence",
+    horizons: [{ id: "horizon-a", top_depth_cm: 0, bottom_depth_cm: 20, evidence_ref: "missing-horizon-evidence" }],
+    samples: [{
+      id: "soil-sample-1", top_depth_cm: 0, bottom_depth_cm: 20,
+      sampled_at: "2026-10-20T09:30:00Z",
+      analytes: [{ parameter: "pH", value: 7, unit: "pH", evidence_ref: "missing-analyte-evidence" }],
+      evidence_ref: "missing-sample-evidence",
+    }],
+  }];
+  const result = assessDomainConfiguration(value);
+  const unresolved = result.issues.filter(item => item.code === "evidence.reference_unresolved" && item.path.includes("soil_profiles"));
+  assert.equal(unresolved.length, 4);
+});
+
+
+test("validates hydraulic measurements with units, depth, method, timestamp and evidence provenance", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-hydraulic",
+    horizons: [{ id: "root-layer", top_depth_cm: 0, bottom_depth_cm: 30 }],
+    hydraulic_measurements: [
+      { id: "fc-1", parameter: "field_capacity", value: 0.30, unit: "m3/m3", top_depth_cm: 0, bottom_depth_cm: 30, source_type: "laboratory", method: "pressure_plate", sampled_at: "2026-10-20T09:30:00Z", evidence_ref: "fc-report" },
+      { id: "pwp-1", parameter: "wilting_point", value: 0.12, unit: "m3/m3", top_depth_cm: 0, bottom_depth_cm: 30, source_type: "laboratory", method: "pressure_plate", sampled_at: "2026-10-20T09:30:00Z", evidence_ref: "pwp-report" },
+      { id: "bd-1", parameter: "bulk_density", value: 1.3, unit: "g/cm3", top_depth_cm: 0, bottom_depth_cm: 30, source_type: "laboratory", method: "core_ring", sampled_at: "2026-10-20T09:30:00Z", evidence_ref: "bd-report" },
+    ],
+  }];
+  value.evidence.push(
+    { source_class: "laboratory_report", reference: "fc-report" },
+    { source_class: "laboratory_report", reference: "pwp-report" },
+    { source_class: "laboratory_report", reference: "bd-report" },
+  );
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.errors.some(item => item.code.startsWith("soil_hydraulic.")), false);
+  assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("hydraulic_measurements")), false);
+});
+
+test("flags invalid hydraulic calendar dates and unresolved irrigation soil links", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-hydraulic",
+    horizons: [{ id: "root-layer", top_depth_cm: 0, bottom_depth_cm: 30 }],
+    hydraulic_measurements: [{
+      id: "fc-1", parameter: "field_capacity", value: 0.3, unit: "m3/m3",
+      top_depth_cm: 0, bottom_depth_cm: 30, source_type: "measured",
+      method: "field_method", sampled_at: "2026-02-30T09:30:00Z", evidence_ref: "fc-report",
+    }],
+  }];
+  value.site.irrigation_systems = [{
+    id: "irrigation-1",
+    zones: [{ id: "zone-1", soil_profile_id: "missing-profile", soil_horizon_id: "missing-horizon" }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "soil_hydraulic.timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_soil_profile_reference_unresolved"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_soil_horizon_reference_unresolved"));
+});
+
+
+test("validates crop root-depth observation provenance and evidence references", () => {
+  const value = valid();
+  value.site.crops = [{
+    id: "crop-root-depth",
+    species: "example crop",
+    root_depth_observations: [{
+      id: "root-observation",
+      root_depth_cm: 45,
+      growth_stage: "vegetative",
+      source_type: "measured",
+      method: "field_root_sampling",
+      observed_at: "2026-10-20T09:30:00Z",
+      evidence_ref: "root-depth-report",
+    }],
+  }];
+  value.evidence.push({ source_class: "field_observation", reference: "root-depth-report" });
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.errors.some(item => item.code.startsWith("crop.root_depth_")), false);
+  assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("root_depth_observations")), false);
+});
+
+test("flags impossible root-depth dates and unresolved crop references from irrigation zones", () => {
+  const value = valid();
+  value.site.crops = [{
+    id: "crop-root-depth",
+    species: "example crop",
+    root_depth_observations: [{
+      id: "root-observation", root_depth_cm: 45, growth_stage: "vegetative",
+      source_type: "measured", method: "field_root_sampling",
+      observed_at: "2026-02-30T09:30:00Z", evidence_ref: "root-depth-report",
+    }],
+  }];
+  value.site.irrigation_systems = [{
+    id: "irrigation-1",
+    zones: [{ id: "zone-1", crop_ids: ["missing-crop"] }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "crop.root_depth_timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_crop_reference_unresolved"));
+});
