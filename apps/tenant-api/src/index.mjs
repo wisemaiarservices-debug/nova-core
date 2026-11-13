@@ -3,6 +3,7 @@ import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityC
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { createSiteConfiguration } from "./configuration-write-persistence.mjs";
 import { readSiteConfigurationHistory } from "./configuration-read-persistence.mjs";
+import { reviewSiteConfiguration } from "./configuration-review-persistence.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -412,6 +413,7 @@ export default {
     const configurationCreate = request.method === "POST" ? configurationPath : null;
     const configurationList = request.method === "GET" ? configurationPath : null;
     const configurationDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/(v[1-9][0-9]{0,30})$/);
+    const configurationReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/(v[1-9][0-9]{0,30})\/review$/);
     const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
     const reviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
     const reviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/revoke$/);
@@ -422,13 +424,13 @@ export default {
     const criteriaReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
     const criteriaResolve = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
     const criteriaAssess = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
-    if ((!match && !configurationCreate && !configurationList && !configurationDetail && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
-        (request.method === "POST" && (!configurationCreate && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
-        (request.method === "GET" && (configurationCreate || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
-    const tenant = match?.[1] ?? configurationCreate?.[1] ?? configurationList?.[1] ?? configurationDetail?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
+    if ((!match && !configurationCreate && !configurationList && !configurationDetail && !configurationReview && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
+        (request.method === "POST" && (!configurationCreate && !configurationReview && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
+        (request.method === "GET" && (configurationCreate || configurationReview || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
+    const tenant = match?.[1] ?? configurationCreate?.[1] ?? configurationList?.[1] ?? configurationDetail?.[1] ?? configurationReview?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
     const resourceId = match?.[3];
-    const configurationSiteId = configurationCreate?.[2] ?? configurationList?.[2] ?? configurationDetail?.[2] ?? null;
-    const configurationVersion = configurationDetail?.[3] ?? null;
+    const configurationSiteId = configurationCreate?.[2] ?? configurationList?.[2] ?? configurationDetail?.[2] ?? configurationReview?.[2] ?? null;
+    const configurationVersion = configurationDetail?.[3] ?? configurationReview?.[3] ?? null;
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
     if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
@@ -464,6 +466,28 @@ export default {
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
+      if (configurationReview) {
+        if (!onlyKeys(draftBody, ["decision", "reason"]) ||
+            !Object.hasOwn(draftBody, "decision") || !Object.hasOwn(draftBody, "reason")) {
+          return error("invalid_request_body", 400);
+        }
+        try {
+          const data = await reviewSiteConfiguration({
+            db: env.DB, principalSubject: subject, tenantId: tenant,
+            siteId: configurationSiteId, version: configurationVersion,
+            decision: draftBody.decision, reason: draftBody.reason, requestId,
+          });
+          return json({ data, request_id: requestId }, 201);
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : "";
+          if (reason === "configuration_review_authorization_denied" ||
+              reason === "configuration_review_not_found") return error("not_found", 404);
+          if (reason === "configuration_self_review_forbidden") return error("configuration_self_review_forbidden", 403);
+          if (reason === "configuration_review_state_conflict") return error("configuration_review_state_conflict", 409);
+          if (reason === "configuration_review_request_invalid") return error("invalid_review_request", 400);
+          return error("storage_unavailable", 503);
+        }
+      }
       if (configurationList || configurationDetail) {
         const result = await readSiteConfigurationHistory({
           db: env.DB, principalSubject: subject, tenantId: tenant,

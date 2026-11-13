@@ -245,3 +245,48 @@ test("routes tenant site configuration writes with a validated idempotency key t
     assert.equal(await captured.text(), JSON.stringify({ payload, schema_id: "nova.client-config.v1" }));
   } finally { globalThis.fetch = oldFetch; }
 });
+
+
+test("routes site configuration review through the verified human gateway", async () => {
+  const issuer = "https://configuration-review.cloudflareaccess.com";
+  const audience = "configuration-review-audience";
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = publicKey.export({ format: "jwk" });
+  Object.assign(jwk, { kid: "configuration-review-key", use: "sig", alg: "RS256" });
+  const enc = value => Buffer.from(value).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const head = enc(JSON.stringify({ alg: "RS256", typ: "JWT", kid: jwk.kid }));
+  const claims = enc(JSON.stringify({ iss: issuer, aud: [audience], sub: "independent-reviewer",
+    iat: now - 5, exp: now + 300 }));
+  const input = head + "." + claims;
+  const token = input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+  let captured;
+  try {
+    const response = await worker.fetch(new Request(
+      "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/configurations/v1/review", {
+        method: "POST",
+        headers: { "Cf-Access-Jwt-Assertion": token, "content-type": "application/json",
+          cookie: "session=secret", "x-nova-verified-subject": "forged" },
+        body: JSON.stringify({ decision: "approve", reason: "Reviewed against the submitted evidence" }),
+      }), {
+        ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience,
+        INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+        TENANT_API: { fetch: async request => {
+          captured = request;
+          return new Response(JSON.stringify({ data: { status: "approved_for_review" } }),
+            { status: 201, headers: { "content-type": "application/json" } });
+        } },
+      });
+    assert.equal(response.status, 201);
+    assert.equal(captured.method, "POST");
+    assert.equal(new URL(captured.url).pathname,
+      "/internal/v1/tenants/tenant-a/sites/site-a/configurations/v1/review");
+    assert.equal(captured.headers.get("x-nova-verified-subject"), "independent-reviewer");
+    assert.equal(captured.headers.get("cookie"), null);
+    assert.deepEqual(JSON.parse(await captured.text()), {
+      decision: "approve", reason: "Reviewed against the submitted evidence",
+    });
+  } finally { globalThis.fetch = oldFetch; }
+});
