@@ -15,6 +15,7 @@ CREATE TABLE measurement_quality_policies (
  CHECK(minimum_value IS NOT NULL OR maximum_value IS NOT NULL),
  CHECK(minimum_value IS NULL OR maximum_value IS NULL OR minimum_value <= maximum_value),
  CHECK(effective_to IS NULL OR effective_to > effective_from),
+ UNIQUE(id,tenant_id,site_id,asset_id),
  UNIQUE(id,tenant_id,site_id,asset_id,sensor_id,parameter,unit),
  FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
  FOREIGN KEY(site_id,tenant_id) REFERENCES sites(id,tenant_id) ON DELETE RESTRICT,
