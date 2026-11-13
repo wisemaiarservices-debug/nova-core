@@ -1,6 +1,7 @@
 import { json, error } from "./http.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
+import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -316,6 +317,12 @@ async function assessStoredCriteria(db, tenant, entryId, version, context, sampl
         status: "not_assessed", reason: criteria.reason ?? "criteria_not_resolved" });
       continue;
     }
+    const evidence = await resolveWaterQualitySampleEvidence(db, tenant, context.site_id, sample);
+    if (!evidence.eligible) {
+      results.push({ sample_id: sample?.id ?? null, parameter: sample?.parameter ?? null,
+        status: "not_assessed", reason: evidence.reason });
+      continue;
+    }
     const criteriaSet = {
       id: criteria.entry_id, authority: criteria.authority_name, title: criteria.title,
       version: criteria.version, effective_from: criteria.effective_from,
@@ -332,7 +339,10 @@ async function assessStoredCriteria(db, tenant, entryId, version, context, sampl
         status: "not_assessed", reason: assessment.reason ?? "criteria_comparison_result_missing" });
       continue;
     }
-    results.push(assessment.results[0]);
+    results.push({ ...assessment.results[0],
+      sample_provenance: { ...assessment.results[0].sample_provenance,
+        verification_status: evidence.verification_status },
+    });
     criteriaMetadata = assessment.criteria_set;
   }
   return { data: {
