@@ -6,7 +6,7 @@ function isoDate(value) {
   const date = new Date(value + "T00:00:00Z");
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
-function inRange(value, criterion) {
+function validTimestamp(value) {\n  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(value)) return false;\n  return isoDate(value.slice(0, 10)) && Number.isFinite(Date.parse(value));\n}\nfunction inRange(value, criterion) {
   if (criterion.operator === "max") return value <= criterion.value;
   if (criterion.operator === "min") return value >= criterion.value;
   if (criterion.operator === "range") {
@@ -50,7 +50,7 @@ export function assessWaterQualityAgainstDeclaredCriteria(samples, context, crit
     if (!object(sample) || typeof sample.parameter !== "string" ||
         typeof sample.value !== "number" || !Number.isFinite(sample.value) ||
         typeof sample.unit !== "string" || !sample.unit.trim() ||
-        !isoDate(typeof sample.sampled_at === "string" ? sample.sampled_at.slice(0, 10) : null)) {
+        !validTimestamp(sample.sampled_at)) {
       return { sample_id: sample?.id ?? null, status: "not_assessed", reason: "sample_value_unit_or_date_invalid", index };
     }
     const matches = criteriaSet.criteria.filter(rule => object(rule) &&
