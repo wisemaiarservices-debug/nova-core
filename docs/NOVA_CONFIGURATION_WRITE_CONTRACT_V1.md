@@ -144,3 +144,26 @@ diameters, emitter uniformity, simultaneous zone demand, water quality,
 controller I/O capacity, valve sizing or field commissioning. Missing pump
 curves, head data, zone topology or manufacturer evidence remain unresolved;
 no operational suitability is inferred.
+
+
+## Calibration certificate traceability and expiry
+
+Calibration records may declare a certificate number, issuing organization and
+issue date in addition to their customer/site/asset/sensor scope, unit, method,
+effective interval and evidence reference. Missing certificate identity,
+issuer or issue date is surfaced as a verification issue; it does not cause
+the validator to invent or infer those values.
+
+When the referenced evidence record is present, its source class must be
+`calibration_certificate`. If both the calibration record and evidence record
+declare an issuer, they must match. Effective intervals are assessed against
+an injectable assessment date (UTC calendar date by default): future-effective
+and expired records are flagged, as are issue dates in the future or later
+than the stated effective start.
+
+An expired or incomplete certificate remains a structurally parseable record
+but is not considered evidence-ready. These checks do not authenticate the
+issuer, verify a laboratory's accreditation, validate a certificate signature
+or digest against an external authority, establish measurement uncertainty or
+traceability to national standards, or approve a sensor for operational use.
+Certificate and calibration acceptance remain a human verification gate.
