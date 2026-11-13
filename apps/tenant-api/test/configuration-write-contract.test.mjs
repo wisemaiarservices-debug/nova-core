@@ -23,6 +23,9 @@ test("rejects non-object roots, non-finite values and unsupported runtime object
   assert.throws(() => canonicalizeConfiguration({ value: Number.NaN }), /configuration_non_finite_number/);
   assert.throws(() => canonicalizeConfiguration({ value: Infinity }), /configuration_non_finite_number/);
   assert.throws(() => canonicalizeConfiguration({ value: new Date() }), /configuration_value_not_json/);
+  assert.throws(() => canonicalizeConfiguration({ value: undefined }), /configuration_value_not_json/);
+  const sparse = []; sparse.length = 1;
+  assert.throws(() => canonicalizeConfiguration({ values: sparse }), /configuration_value_not_json/);
 });
 
 test("rejects prototype-pollution keys at every nesting level", () => {
@@ -37,6 +40,9 @@ test("bounds byte length, depth, node count and array size", () => {
   for (let i = 0; i < 26; i += 1) { cursor.next = {}; cursor = cursor.next; }
   assert.throws(() => canonicalizeConfiguration(deep), /configuration_depth_exceeded/);
   assert.throws(() => canonicalizeConfiguration({ values: Array(1001).fill(1) }), /configuration_array_too_large/);
+  assert.throws(() => canonicalizeConfiguration(Object.fromEntries(
+    Array.from({ length: 5001 }, (_, index) => ["k" + index, true])
+  )), /configuration_complexity_exceeded/);
   assert.throws(() => canonicalizeConfiguration({ a: 1 }, 0), /configuration_limit_invalid/);
 });
 
