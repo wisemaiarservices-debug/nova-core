@@ -464,7 +464,7 @@ export default {
     if (request.method === "POST") {
       const declaredLength = Number(request.headers.get("content-length") ?? "0");
       if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
-          !Number.isFinite(declaredLength) || declaredLength > 65536) return error("invalid_request_body", 400);
+          !Number.isFinite(declaredLength) || declaredLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
       try {
         const raw = await request.text();
         if (new TextEncoder().encode(raw).byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
