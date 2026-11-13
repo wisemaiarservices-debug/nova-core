@@ -170,6 +170,20 @@ test("flags unresolved calibration targets, sensor calibration links and evidenc
   assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved"));
 });
 
+test("rejects calibration records without stable unique identifiers", () => {
+  const missing = valid();
+  delete missing.calibration_records[0].id;
+  const missingResult = assessDomainConfiguration(missing);
+  assert.equal(missingResult.valid, false);
+  assert.ok(missingResult.errors.some(item => item.code === "calibration.record_invalid"));
+
+  const duplicate = valid();
+  duplicate.calibration_records[0].id = "cal-1";
+  duplicate.calibration_records.push({ ...duplicate.calibration_records[0] });
+  const duplicateResult = assessDomainConfiguration(duplicate);
+  assert.equal(duplicateResult.valid, false);
+  assert.ok(duplicateResult.errors.some(item => item.code === "calibration.id_duplicate"));
+});
 test("accepts resolved calibration and evidence links while keeping approval separate", () => {
   const value = valid();
   value.calibration_records[0].id = "cal-1";
