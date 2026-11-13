@@ -1,6 +1,7 @@
 import { json, error } from "./http.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
+import { createSiteConfiguration } from "./configuration-write-persistence.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -406,6 +407,8 @@ export default {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
     const url = new URL(request.url);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
+    const configurationRead = request.method === "GET" ? url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations(?:\/([^/]+))?$/) : null;
+    const configurationCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations$/);
     const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
     const reviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
     const reviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/revoke$/);
@@ -416,14 +419,16 @@ export default {
     const criteriaReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
     const criteriaResolve = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
     const criteriaAssess = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
-        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
-        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
+    if ((!match && !configurationRead && !configurationCreate && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
+        (request.method === "POST" && (!configurationCreate && !configurationRead && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
+        (request.method === "GET" && (configurationCreate || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
+    const tenant = match?.[1] ?? configurationRead?.[1] ?? configurationCreate?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
     const resourceId = match?.[3];
+    const configurationSiteId = configurationCreate?.[2] ?? configurationRead?.[2] ?? null;\n    const configurationVersion = configurationRead?.[3] ?? null;
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
     if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
+        (configurationSiteId && !validId(configurationSiteId, 160)) ||\n        (configurationVersion && !validId(configurationVersion, 32)) ||
         (entryId && (!validId(entryId) || !validId(version, 80)))) return error("not_found", 404);
 
     const subject = request.headers.get("x-nova-verified-subject");
@@ -454,6 +459,62 @@ export default {
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
+      if (configurationRead) {
+        const membership = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (membership.length !== 1 || membership[0].subject !== subject ||
+            membership[0].tenant_id !== tenant || membership[0].membership_status !== "active" ||
+            membership[0].tenant_status !== "active" || !ROLE_ACTIONS[membership[0].role]?.has("read") ||
+            !(await hasSiteReadGrant(env.DB, tenant, subject, configurationSiteId))) {
+          return error("not_found", 404);
+        }
+        const query = configurationVersion
+          ? "SELECT id, tenant_id, site_id, configuration_version, schema_id, configuration_json, content_sha256, created_by_subject, request_id, created_at FROM tenant_site_configurations WHERE tenant_id = ? AND site_id = ? AND configuration_version = ? LIMIT 1"
+          : "SELECT id, tenant_id, site_id, configuration_version, schema_id, configuration_json, content_sha256, created_by_subject, request_id, created_at FROM tenant_site_configurations WHERE tenant_id = ? AND site_id = ? ORDER BY CAST(substr(configuration_version, 2) AS INTEGER) DESC LIMIT 100";
+        const configurations = await rows(configurationVersion
+          ? env.DB.prepare(query).bind(tenant, configurationSiteId, configurationVersion)
+          : env.DB.prepare(query).bind(tenant, configurationSiteId));
+        const data = configurations.map(row => ({ ...row,
+          configuration: JSON.parse(row.configuration_json), configuration_json: undefined }));
+        return configurationVersion
+          ? (data.length === 1 ? json({ data: data[0], request_id: requestId }) : error("not_found", 404))
+          : json({ data, request_id: requestId });
+      }
+      if (configurationCreate) {
+        if (!onlyKeys(draftBody, ["payload", "schema_id", "content_sha256"]) ||
+            !Object.hasOwn(draftBody, "payload") || !Object.hasOwn(draftBody, "schema_id")) {
+          return error("invalid_request_body", 400);
+        }
+        const idempotencyKey = request.headers.get("x-nova-idempotency-key");
+        if (!validId(idempotencyKey, 200)) return error("idempotency_key_required", 400);
+        try {
+          const data = await createSiteConfiguration({
+            db: env.DB, principalSubject: subject, tenantId: tenant,
+            siteId: configurationSiteId, idempotencyKey, requestId,
+            payload: draftBody.payload, schemaId: draftBody.schema_id,
+            suppliedDigest: draftBody.content_sha256,
+          });
+          return json({ data, request_id: requestId }, data.replayed ? 200 : 201);
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : "";
+          if (reason === "configuration_authorization_denied") return error("not_found", 404);
+          if (reason === "configuration_idempotency_conflict") return error("idempotency_key_conflict", 409);
+          if (reason === "configuration_domain_invalid") return error("configuration_domain_invalid", 422);
+          if (reason.startsWith("configuration_request_invalid") ||
+              reason.startsWith("configuration_schema_") ||
+              reason.startsWith("configuration_digest_") ||
+              reason.startsWith("configuration_must_be_") ||
+              reason.startsWith("configuration_forbidden_") ||
+              reason === "configuration_value_not_json" ||
+              reason.startsWith("configuration_non_") ||
+              reason.startsWith("configuration_depth_") ||
+              reason.startsWith("configuration_complexity_") ||
+              reason.startsWith("configuration_array_") ||
+              reason.startsWith("configuration_too_large")) return error("invalid_configuration", 400);
+          return error("storage_unavailable", 503);
+        }
+      }
       if (criteriaReview) {
         const reviewed = await recordCriteriaReview(env.DB, tenant, entryId, version, subject, requestId, draftBody);
         return reviewed.error ? json({ error: reviewed.error }, reviewed.status)
