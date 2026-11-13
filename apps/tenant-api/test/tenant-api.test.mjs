@@ -23,10 +23,14 @@ class DB {
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
         }] : []) };
-        if (sql.includes("FROM tenant_resource_grants")) return { results: db.grantRows ?? (db.grant ? [{
-          subject: "operator@example.test", tenant_id: "tenant-a", resource_type: args[2],
-          resource_id: args[3], action: "read",
-        }] : []) };
+        if (sql.includes("FROM tenant_resource_grants")) {
+          const siteGrantQuery = sql.includes("resource_type = 'site'");
+          return { results: db.grantRows ?? (db.grant ? [{
+            subject: "operator@example.test", tenant_id: "tenant-a",
+            resource_type: siteGrantQuery ? "site" : args[2],
+            resource_id: siteGrantQuery ? args[2] : args[3], action: "read",
+          }] : []) };
+        }
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
