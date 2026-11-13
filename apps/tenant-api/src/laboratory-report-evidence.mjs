@@ -32,6 +32,15 @@ async function digestHex(bytes) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
+function validIssuedAt(value) {
+  if (!validText(value, 40)) return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.exec(value);
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  return calendar.getUTCFullYear() === year && calendar.getUTCMonth() === month - 1 &&
+    calendar.getUTCDate() === day;
+}
 function onlyKeys(value, allowed) {
   return value !== null && typeof value === "object" && !Array.isArray(value) &&
     Object.keys(value).every(key => allowed.includes(key));
@@ -45,8 +54,7 @@ export async function registerLaboratoryReportEvidence(db, tenantId, subject, re
       body.media_type !== "application/pdf" ||
       !validText(body.laboratory_name, 200) || !validText(body.report_number, 120) ||
       (body.sample_reference !== undefined && !validId(body.sample_reference)) ||
-      !validText(body.issued_at, 40) ||
-      !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(body.issued_at) || !Number.isFinite(Date.parse(body.issued_at))) {
+      !validIssuedAt(body.issued_at)) {
     return { error: "laboratory_report_evidence_request_invalid", status: 400 };
   }
   const bytes = decodeBase64(body.document_base64);
