@@ -100,6 +100,36 @@ try {
   assert.equal(draftListed.response.status, 200, JSON.stringify(draftListed.body));
   assert.equal(draftListed.body.data.some(row => row.id === "criteria-http-draft" && row.entry.review.status === "draft"), true);
 
+  const reviewer = {
+    reviewer_subject: "independent-reviewer@example.test",
+    reviewer_role: "regulatory_reviewer", jurisdiction: "TN",
+    evidence_ref: "fixture:reviewer-appointment",
+  };
+  const assigned = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers/assign",
+    accessToken(), { "content-type": "application/json" }, "POST", JSON.stringify(reviewer));
+  assert.equal(assigned.response.status, 201, JSON.stringify(assigned.body));
+  assert.equal(assigned.body.data.status, "active");
+  const reviewerList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers");
+  assert.equal(reviewerList.response.status, 200, JSON.stringify(reviewerList.body));
+  assert.equal(reviewerList.body.data.reviewers.some(row =>
+    row.reviewer_subject === reviewer.reviewer_subject && row.status === "active"), true);
+  assert.equal(reviewerList.body.data.events.some(row => row.event_type === "assigned" &&
+    row.reviewer_subject === reviewer.reviewer_subject), true);
+
+  const revoked = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers/revoke",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ ...reviewer, evidence_ref: "fixture:reviewer-revocation", reason: "CI revocation fixture" }));
+  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+  assert.equal(revoked.body.data.status, "revoked");
+  const reviewerHistory = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers");
+  assert.equal(reviewerHistory.response.status, 200);
+  assert.equal(reviewerHistory.body.data.reviewers.find(row =>
+    row.reviewer_subject === reviewer.reviewer_subject).status, "revoked");
+  assert.equal(reviewerHistory.body.data.events.filter(row =>
+    row.reviewer_subject === reviewer.reviewer_subject).length, 2);
+
   const forgedHeaders = await throughGateway(sitePath, accessToken(), {
     "x-nova-verified-subject": "attacker-subject",
     "x-nova-verified-issuer": "https://attacker.example",
@@ -227,7 +257,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create and persisted lifecycle event, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and persisted lifecycle events, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
