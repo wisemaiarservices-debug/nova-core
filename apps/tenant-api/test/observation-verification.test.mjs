@@ -11,7 +11,8 @@ function database({ site = true, assignment = true, audit = true, membership = t
       return { sql, args: [], bind(...args) { this.args = args; return this; },
         async all() {
           state.calls.push({ sql, args: this.args });
-          if (sql.includes("FROM tenant_memberships")) return { results: membership ? [{ subject: reviewer, tenant_id: "tenant-a", membership_status: "active", tenant_status: "active" }] : [] };\n          if (sql.includes("FROM sites")) return { results: site ? [{ id: "site-a" }] : [] };
+          if (sql.includes("FROM tenant_memberships")) return { results: membership ? [{ subject: reviewer, tenant_id: "tenant-a", membership_status: "active", tenant_status: "active" }] : [] };
+          if (sql.includes("FROM sites")) return { results: site ? [{ id: "site-a" }] : [] };
           if (sql.includes("FROM observations WHERE tenant_id")) return { results: [{ ...observation, verification_status: status }] };
           if (sql.includes("FROM observation_reviewers")) return { results: assignment ? [
             { reviewer_subject: "reviewer@example.test", reviewer_role: "measurement_reviewer" },
