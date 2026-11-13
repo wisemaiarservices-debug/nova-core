@@ -170,7 +170,7 @@ export function assessDomainConfiguration(payload) {
   if (payload.extensions !== undefined) {
     if (!plainObject(payload.extensions)) errors.push(issue("extensions.invalid_type", "extensions", "verification_required"));
     else for (const [namespace, value] of Object.entries(payload.extensions)) {
-      if (!/^[a-z][a-z0-9-]{0,31}(\\.[a-z][a-z0-9-]{0,31})+$/.test(namespace) || !plainObject(value)) {
+      if (!/^[a-z][a-z0-9-]{0,31}(\.[a-z][a-z0-9-]{0,31})+$/.test(namespace) || !plainObject(value)) {
         errors.push(issue("extensions.namespace_invalid", "extensions." + namespace, "verification_required"));
       } else issues.push(issue("extensions.requires_client_schema_review", "extensions." + namespace, "verification_required"));
     }
