@@ -1,12 +1,13 @@
 const ROOT_KEYS = new Set(["tenant", "site", "inventory", "calibration_records", "evidence", "extensions"]);
 const TENANT_KEYS = new Set(["tenant_id"]);
-const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crops", "irrigation_systems", "energy_systems", "metadata"]);
+const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crops", "water_sources", "irrigation_systems", "energy_systems", "metadata"]);
 const INVENTORY_KEYS = new Set(["equipment", "sensors", "gateways"]);
 const CALIBRATION_KEYS = new Set(["id", "scope", "scope_id", "unit", "method", "effective_from", "effective_to", "certificate_number", "issuer", "issued_at", "evidence_ref"]); 
 const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at", "issuer", "digest"]);
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
-  irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
+  water_sources: new Set(["id", "source_type", "name", "available_flow_m3_per_hour", "permitted_abstraction_m3_per_day", "evidence_ref"]),
+  irrigation_systems: new Set(["id", "method", "water_source", "water_source_id", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
   energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "pv_strings", "design_min_temperature_c", "design_max_temperature_c", "battery_min_voltage_v", "battery_max_voltage_v", "battery_charge_power_kw", "battery_discharge_power_kw", "grid_export_limit_kw", "grid_import_limit_kw", "evidence_ref"]),
   equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "pv_power_w", "battery_capacity_kwh", "voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a", "battery_min_voltage_v", "battery_max_voltage_v", "battery_max_charge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_charge_power_kw", "inverter_max_battery_discharge_power_kw", "evidence_ref"]),
   sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "gateway_id", "calibration_record_id", "evidence_ref"]),
@@ -96,6 +97,7 @@ function validateUniqueRecords(records, path, errors) {
 export function assessDomainConfiguration(payload, { assessedOn = new Date().toISOString().slice(0, 10) } = {}) {
   const errors = [];
   const issues = [];
+  const waterSourceIds = new Set();
   if (!plainObject(payload)) {
     return Object.freeze({ valid: false, errors: [issue("configuration.root_invalid", "$", "verification_required")],
       issues: [], status: Object.freeze({ structural_validity: "invalid", evidence_readiness: "not_assessed",
@@ -135,6 +137,26 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
           crop.expected_harvest_date < crop.planting_date) errors.push(issue("crop.date_order_invalid", "site.crops[" + i + "]", "verification_required"));
     });
     if (!crops.length) issues.push(issue("site.crops_missing", "site.crops"));
+    const waterSources = validateUniqueRecords(payload.site.water_sources ?? [], "site.water_sources", errors);
+    waterSources.forEach((source, index) => {
+      const path = "site.water_sources[" + index + "]";
+      unknownKeys(source, RECORD_KEYS.water_sources, path, issues);
+      if (!plainObject(source)) {
+        errors.push(issue("water_source.record_invalid", path, "verification_required"));
+        return;
+      }
+      waterSourceIds.add(source.id);
+      if (source.source_type !== undefined && !["groundwater", "surface_water", "rainwater", "municipal", "reclaimed_water", "desalinated", "unknown"].includes(source.source_type)) {
+        issues.push(issue("water_source.type_unrecognized", path + ".source_type", "verification_required"));
+      } else if (source.source_type === undefined || source.source_type === "unknown") {
+        issues.push(issue("water_source.type_unknown", path + ".source_type", "verification_required"));
+      }
+      for (const key of ["available_flow_m3_per_hour", "permitted_abstraction_m3_per_day"]) {
+        if (source[key] !== undefined && source[key] !== null && !finitePositive(source[key])) {
+          errors.push(issue("engineering.rating_must_be_positive", path + "." + key, "verification_required"));
+        }
+      }
+    });
     for (const field of ["irrigation_systems", "energy_systems"]) {
       const list = validateUniqueRecords(payload.site[field] ?? [], "site." + field, errors);
       list.forEach((record, index) => {
@@ -206,6 +228,9 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
           errors.push(issue("energy.design_temperature_order_invalid", "site.energy_systems[" + index + "]", "verification_required"));
         }
         if (field === "irrigation_systems") {
+          if (record.water_source_id !== undefined && !waterSourceIds.has(record.water_source_id)) {
+            issues.push(issue("irrigation.water_source_reference_unresolved", "site.irrigation_systems[" + index + "].water_source_id", "verification_required"));
+          }
           if (record.control_protocol !== undefined && !PROTOCOLS.has(record.control_protocol)) {
             issues.push(issue("irrigation.control_protocol_unrecognized",
               "site.irrigation_systems[" + index + "].control_protocol", "verification_required"));
@@ -662,6 +687,7 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
     ["crops", payload.site?.crops],
     ["irrigation_systems", payload.site?.irrigation_systems],
     ["energy_systems", payload.site?.energy_systems],
+    ["water_sources", payload.site?.water_sources],
     ["equipment", payload.inventory?.equipment],
     ["sensors", payload.inventory?.sensors],
     ["gateways", payload.inventory?.gateways],
