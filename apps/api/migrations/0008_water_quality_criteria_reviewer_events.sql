@@ -41,3 +41,16 @@ BEGIN SELECT RAISE(ABORT, 'reviewer assignment history is immutable'); END;
 CREATE TRIGGER water_quality_criteria_reviewer_event_immutable_delete_guard
 BEFORE DELETE ON water_quality_criteria_reviewer_events
 BEGIN SELECT RAISE(ABORT, 'reviewer assignment history cannot be deleted'); END;
+
+CREATE TRIGGER water_quality_criteria_reviewer_assignment_evidence_immutable_guard
+BEFORE UPDATE OF assigned_by_subject, assignment_evidence_ref, created_at
+ON water_quality_criteria_reviewers
+WHEN NEW.assigned_by_subject IS NOT OLD.assigned_by_subject
+  OR NEW.assignment_evidence_ref IS NOT OLD.assignment_evidence_ref
+  OR NEW.created_at IS NOT OLD.created_at
+BEGIN SELECT RAISE(ABORT, 'reviewer assignment evidence is immutable'); END;
+
+CREATE TRIGGER water_quality_criteria_reviewer_revocation_terminal_guard
+BEFORE UPDATE OF status ON water_quality_criteria_reviewers
+WHEN OLD.status = 'revoked' AND NEW.status <> 'revoked'
+BEGIN SELECT RAISE(ABORT, 'revoked reviewer assignments cannot be reactivated'); END;
