@@ -103,6 +103,8 @@ WHEN NOT EXISTS (
           WHERE r.tenant_id = c.tenant_id AND r.site_id = c.site_id
             AND r.reviewer_subject = NEW.actor_subject
             AND r.reviewer_role = 'measurement_reviewer' AND r.status = 'active')
+        AND EXISTS (SELECT 1 FROM tenant_memberships m WHERE m.tenant_id = c.tenant_id
+          AND m.subject = NEW.actor_subject AND m.status = 'active')
         AND (SELECT e.event_type FROM source_calibration_events e
           WHERE e.calibration_id = c.id ORDER BY e.rowid DESC LIMIT 1) IN ('registered', 'revoked'))
       OR
@@ -113,6 +115,8 @@ WHEN NOT EXISTS (
           WHERE r.tenant_id = c.tenant_id AND r.site_id = c.site_id
             AND r.reviewer_subject = NEW.actor_subject
             AND r.reviewer_role = 'measurement_reviewer' AND r.status = 'active')
+        AND EXISTS (SELECT 1 FROM tenant_memberships m WHERE m.tenant_id = c.tenant_id
+          AND m.subject = NEW.actor_subject AND m.status = 'active')
         AND (SELECT e.event_type FROM source_calibration_events e
           WHERE e.calibration_id = c.id ORDER BY e.rowid DESC LIMIT 1) = 'verified')
     )
