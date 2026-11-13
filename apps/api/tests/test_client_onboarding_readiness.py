@@ -11,13 +11,19 @@ from apps.api.services.equipment_capabilities import (
 from apps.api.services.client_onboarding_readiness import assess_client_onboarding_readiness
 
 
+BOUNDARY = {
+    "type": "Polygon",
+    "coordinates": [[[10.0, 36.0], [10.1, 36.0], [10.1, 36.1], [10.0, 36.1], [10.0, 36.0]]],
+}
+
+
 def configuration(*, complete=False):
     tenant = TenantProfile(tenant_id="tenant-a", display_name="Client", configuration_version="v1")
     site = SiteProfile(
         site_id="site-a", tenant_id="tenant-a", display_name="Site",
         configuration_version="v1", timezone="Africa/Tunis",
         land_area=LandArea(value=3, unit="ha") if complete else None,
-        boundary_geojson=None,
+        boundary_geojson=BOUNDARY if complete else None,
         crops=(CropProfile(crop_id="crop-1", species="olive"),) if complete else (),
         irrigation=None if not complete else {"method": "drip"},
         energy=None if not complete else {"pv_capacity_kw": 20},
@@ -25,7 +31,7 @@ def configuration(*, complete=False):
     return ClientConfiguration(tenant=tenant, site=site)
 
 
-def registry(*, complete=False):
+def registry(*, complete=False, calibration_verified=True):
     equipment = EquipmentProfile(
         equipment_id="sensor-unit", tenant_id="tenant-a", site_id="site-a",
         asset_class="sensor", manufacturer="Acme" if complete else None,
@@ -42,8 +48,8 @@ def registry(*, complete=False):
         protocol="mqtt",
         measurements=(MeasurementCapability(metric="soil.moisture", unit="%"),),
         calibration=CalibrationRecord(
-            status="current", independently_verified=True,
-            certificate_reference="certificate-1",
+            status="current", independently_verified=calibration_verified,
+            certificate_reference="certificate-1" if calibration_verified else None,
         ) if complete else CalibrationRecord(),
         connectivity_status="verified" if complete else "not_connected",
     )
@@ -72,9 +78,11 @@ def test_complete_declared_and_verified_profile_is_only_ready_for_human_review()
 
 
 def test_current_but_unverified_calibration_is_not_accepted_as_verified():
-    result = assess_client_onboarding_readiness(configuration(complete=True), registry())
+    result = assess_client_onboarding_readiness(
+        configuration(complete=True), registry(complete=True, calibration_verified=False)
+    )
     assert result.status == "needs_verification"
-    assert "sensor.calibration_not_current" in {issue.code for issue in result.issues}
+    assert "sensor.calibration_evidence_missing" in {issue.code for issue in result.issues}
 
 
 def test_cross_tenant_or_site_inventory_is_rejected():
