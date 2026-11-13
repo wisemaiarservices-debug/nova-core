@@ -725,3 +725,24 @@ test("rejects malformed timezone-free water-quality sample timestamps and unreso
   assert.ok(result.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"));
   assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("quality_samples")));
 });
+
+
+test("accepts timezone-qualified UTC and numeric-offset water-quality sample timestamps", () => {
+  const value = valid();
+  value.site.water_sources = [{ id: "well-1", quality_samples: [{
+    id: "sample-1", parameter: "electrical_conductivity", value: 1.2, unit: "dS/m",
+    sampled_at: "2026-10-20T09:30:00Z", method: "lab-method", laboratory: "Regional Lab",
+    evidence_ref: "water-report-1",
+  }] }];
+  value.evidence.push({ source_class: "laboratory_report", reference: "water-report-1" });
+
+  for (const sampledAt of ["2026-10-20T09:30:00Z", "2026-10-20T12:30:00+03:00", "2026-10-20T09:30:00.125-04:00"]) {
+    value.site.water_sources[0].quality_samples[0].sampled_at = sampledAt;
+    const result = assessDomainConfiguration(value);
+    assert.equal(result.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"), false, sampledAt);
+  }
+
+  value.site.water_sources[0].quality_samples[0].sampled_at = "2026-02-30T09:30:00Z";
+  const invalidDate = assessDomainConfiguration(value);
+  assert.ok(invalidDate.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"));
+});
