@@ -38,3 +38,5 @@ The completed idempotent response includes the immutable configuration version a
 ## Persistence completion invariant
 
 Migration 0006 enforces that pending idempotency rows have no response body and completed rows must have a valid non-null response body. The D1 batch helper also requires each of its five statements to report exactly one changed row; a successful SQL execution that silently updates zero rows is treated as a failed write. CI's ordered local D1 migration gate validates the migration syntax and the query-preparation gate validates the statements.
+
+The persistence service now owns the supported schema allowlist internally (`nova.client-config.v1`); callers cannot supply the expected schema ID. Requests naming any other schema are rejected before a write batch is attempted.
