@@ -1,6 +1,8 @@
 import { authorizeConfigurationWrite } from "./configuration-write-authorization.mjs";
 import { prepareConfigurationSnapshot, sha256Hex, equalDigest } from "./configuration-write-contract.mjs";
 
+const SUPPORTED_CONFIGURATION_SCHEMA_ID = "nova.client-config.v1";
+
 function validToken(value, max) {
   return typeof value === "string" && value.length > 0 && value.length <= max &&
     value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
@@ -31,7 +33,7 @@ async function existingIdempotency(db, tenantId, subject, key) {
 // in one D1 batch: reservation, immutable snapshot, review event, audit, completion.
 export async function createSiteConfiguration({
   db, principalSubject, tenantId, siteId, idempotencyKey, requestId,
-  payload, schemaId, expectedSchemaId, suppliedDigest, cryptoProvider = globalThis.crypto,
+  payload, schemaId, suppliedDigest, cryptoProvider = globalThis.crypto,
 }) {
   if (!db || typeof db.prepare !== "function" || typeof db.batch !== "function") {
     throw new Error("configuration_storage_unavailable");
@@ -55,7 +57,7 @@ export async function createSiteConfiguration({
   if (!authorization.allowed) throw new Error("configuration_authorization_denied");
 
   const snapshot = await prepareConfigurationSnapshot({
-    payload, schemaId, expectedSchemaId, suppliedDigest, cryptoProvider,
+    payload, schemaId, expectedSchemaId: SUPPORTED_CONFIGURATION_SCHEMA_ID, suppliedDigest, cryptoProvider,
   });
   const requestSha256 = await sha256Hex(
     JSON.stringify([siteId, snapshot.schemaId, snapshot.canonicalJson]), cryptoProvider
