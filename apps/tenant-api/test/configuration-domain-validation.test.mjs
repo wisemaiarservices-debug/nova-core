@@ -349,6 +349,77 @@ test("rejects calibration records without stable unique identifiers", () => {
   assert.equal(duplicateResult.valid, false);
   assert.ok(duplicateResult.errors.some(item => item.code === "calibration.id_duplicate"));
 });
+test("tracks calibration certificate identity, issuer, issue date and expiry", () => {
+  const value = valid();
+  Object.assign(value.calibration_records[0], {
+    certificate_number: "CERT-2026-0042",
+    issuer: "Accredited Calibration Lab",
+    issued_at: "2026-01-01",
+  });
+  value.evidence[0] = {
+    source_class: "calibration_certificate",
+    reference: "cert-1",
+    issuer: "Accredited Calibration Lab",
+    observed_at: "2026-01-01T00:00:00Z",
+    digest: "sha256:example",
+  };
+  const current = assessDomainConfiguration(value, { assessedOn: "2026-06-01" });
+  assert.equal(current.issues.some(item => item.code.startsWith("calibration.certificate_") ||
+    item.code === "calibration.issuer_missing" || item.code === "calibration.issued_at_missing_or_invalid"), false);
+  assert.equal(current.issues.some(item => item.code === "calibration.expired"), false);
+
+  const expired = assessDomainConfiguration(value, { assessedOn: "2028-01-02" });
+  assert.ok(expired.issues.some(item => item.code === "calibration.expired"));
+  assert.equal(expired.valid, true);
+  assert.equal(expired.status.operational_review, "not_started");
+});
+
+test("flags incomplete, future-dated and internally inconsistent calibration certificates", () => {
+  const missing = valid();
+  const missingResult = assessDomainConfiguration(missing, { assessedOn: "2026-06-01" });
+  assert.ok(missingResult.issues.some(item => item.code === "calibration.certificate_number_missing"));
+  assert.ok(missingResult.issues.some(item => item.code === "calibration.issuer_missing"));
+  assert.ok(missingResult.issues.some(item => item.code === "calibration.issued_at_missing_or_invalid"));
+
+  const future = valid();
+  Object.assign(future.calibration_records[0], {
+    certificate_number: "CERT-FUTURE",
+    issuer: "Lab",
+    issued_at: "2027-01-01",
+    effective_from: "2027-02-01",
+  });
+  const futureResult = assessDomainConfiguration(future, { assessedOn: "2026-06-01" });
+  assert.ok(futureResult.issues.some(item => item.code === "calibration.not_yet_effective"));
+  assert.ok(futureResult.issues.some(item => item.code === "calibration.issue_date_in_future"));
+
+  const issuedLate = valid();
+  Object.assign(issuedLate.calibration_records[0], {
+    certificate_number: "CERT-LATE",
+    issuer: "Lab",
+    issued_at: "2026-02-01",
+    effective_from: "2026-01-01",
+  });
+  const lateResult = assessDomainConfiguration(issuedLate, { assessedOn: "2026-06-01" });
+  assert.ok(lateResult.issues.some(item => item.code === "calibration.certificate_issued_after_effective_date"));
+});
+
+test("checks calibration certificate evidence class and issuer consistency", () => {
+  const value = valid();
+  Object.assign(value.calibration_records[0], {
+    certificate_number: "CERT-1",
+    issuer: "Lab A",
+    issued_at: "2026-01-01",
+  });
+  value.evidence[0] = {
+    source_class: "manufacturer_document",
+    reference: "cert-1",
+    issuer: "Lab B",
+  };
+  const result = assessDomainConfiguration(value, { assessedOn: "2026-06-01" });
+  assert.ok(result.issues.some(item => item.code === "calibration.evidence_source_class_mismatch"));
+  assert.ok(result.issues.some(item => item.code === "calibration.issuer_evidence_mismatch"));
+});
+
 test("accepts resolved calibration and evidence links while keeping approval separate", () => {
   const value = valid();
   value.calibration_records[0].id = "cal-1";
