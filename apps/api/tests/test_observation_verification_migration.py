@@ -109,7 +109,20 @@ def test_review_history_is_append_only_and_tenant_site_bound():
 
 def test_revoked_reviewer_cannot_create_new_verification_events():
     db = database()
+    db.execute("""INSERT INTO observation_reviewer_events
+      (id, tenant_id, site_id, reviewer_subject, reviewer_role, event_type,
+       actor_subject, evidence_ref, reason, request_id)
+      VALUES ('reviewer-revoke', 'tenant-a', 'site-a', 'reviewer-a',
+       'measurement_reviewer', 'revoked', 'owner-a', 'appointment:end',
+       'Appointment ended', 'request-revoke')""")
     db.execute("""UPDATE observation_reviewers SET status='revoked'
       WHERE tenant_id='tenant-a' AND site_id='site-a' AND reviewer_subject='reviewer-a'""")
     with pytest.raises(sqlite3.IntegrityError):
         add_event(db, "event-verify", "verified")
+
+
+def test_reviewer_status_cannot_be_changed_without_a_matching_event():
+    db = database()
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("""UPDATE observation_reviewers SET status='revoked'
+          WHERE tenant_id='tenant-a' AND site_id='site-a' AND reviewer_subject='reviewer-a'""")
