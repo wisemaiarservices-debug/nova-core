@@ -29,12 +29,12 @@ function dbFixture({ sourceExists = true, evidenceExists = true, recordStatus = 
             ? [{ id: source, tenant_id: tenant, site_id: site, site_status: "active" }] : [] };
           if (sql.includes("FROM laboratory_report_evidence")) return { results: evidenceExists
             ? [{ id: "lab-001" }] : [] };
-          if (sql.includes("FROM source_calibrations WHERE tenant_id")) return { results: state.record
-            ? [{ ...state.record, status: state.recordStatus }] : [] };
           if (sql.includes("FROM observation_reviewers r JOIN tenant_memberships")) return { results: reviewerActive
             ? [{ reviewer_subject: reviewer, membership_status: "active", tenant_status: "active" }] : [] };
           if (sql.includes("FROM source_calibrations WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND metric")) {
             return { results: calibrations };
+          if (sql.includes("FROM source_calibrations WHERE tenant_id")) return { results: state.record
+            ? [{ ...state.record, status: state.recordStatus }] : [] };
           }
           throw new Error("unexpected query: " + sql);
         },
