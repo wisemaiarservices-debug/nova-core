@@ -316,7 +316,12 @@ export default {
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
-      if (criteriaReview) {\n        const reviewed = await recordCriteriaReview(env.DB, tenant, entryId, version, subject, requestId, draftBody);\n        return reviewed.error ? json({ error: reviewed.error }, reviewed.status)\n          : json({ data: reviewed.data, request_id: requestId }, reviewed.status);\n      }\n      if (criteriaCreate || criteriaDetail || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit) {
+      if (criteriaReview) {
+        const reviewed = await recordCriteriaReview(env.DB, tenant, entryId, version, subject, requestId, draftBody);
+        return reviewed.error ? json({ error: reviewed.error }, reviewed.status)
+          : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
+      }
+      if (criteriaCreate || criteriaDetail || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
