@@ -340,6 +340,28 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   const configurationPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/configurations";
+  const reviewerPath = configurationPath + "/reviewers";
+  const engineeringReviewer = { reviewer_subject: "ci-engineering-reviewer",
+    reviewer_role: "engineering_reviewer", evidence_ref: "fixture:engineering-appointment" };
+  const operationsReviewer = { reviewer_subject: "ci-operations-reviewer",
+    reviewer_role: "operations_reviewer", evidence_ref: "fixture:operations-appointment" };
+  for (const reviewer of [engineeringReviewer, operationsReviewer]) {
+    const assigned = await throughGateway(reviewerPath + "/assign", accessToken(),
+      { "content-type": "application/json" }, "POST", JSON.stringify(reviewer));
+    assert.equal(assigned.response.status, 201, JSON.stringify(assigned.body));
+    assert.equal(assigned.body.data.status, "active");
+  }
+  const selfAssignment = await throughGateway(reviewerPath + "/assign", accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify({
+      reviewer_subject: "ci-human-subject", reviewer_role: "engineering_reviewer",
+      evidence_ref: "fixture:self-assignment",
+    }));
+  assert.equal(selfAssignment.response.status, 400);
+  const reviewerRoster = await throughGateway(reviewerPath);
+  assert.equal(reviewerRoster.response.status, 200, JSON.stringify(reviewerRoster.body));
+  assert.equal(reviewerRoster.body.data.assignments.length, 2);
+  assert.equal(reviewerRoster.body.data.events.filter(row => row.event_type === "assigned").length, 2);
+
   const routeConfigurationPayload = {
     tenant: { tenant_id: "tenant-http-a" },
     site: { site_id: "site-http-a", timezone: "Africa/Tunis", crops: [],
