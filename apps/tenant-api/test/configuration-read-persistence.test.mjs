@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readSiteConfigurationHistory } from "../src/configuration-read-persistence.mjs";
+import { readSiteConfigurationHistory, readLatestApprovedSiteConfiguration } from "../src/configuration-read-persistence.mjs";
 
 const rows = [
   { id: "cfg-v2", tenant_id: "tenant-a", site_id: "site-a", configuration_version: "v2",
@@ -27,6 +27,9 @@ function db({ membership = true, grant = true, records = rows } = {}) {
         resource_id: "site-a", action: "read",
       }] : [] };
       if (sql.includes("tenant_site_configurations")) {
+        if (sql.includes("= 'approved_for_review'")) return {
+          results: records.filter(row => row.lifecycle_status === "approved_for_review").slice(0, 1),
+        };
         if (sql.includes("configuration_version = ?")) return {
           results: records.filter(row => row.configuration_version === args[2]),
         };
@@ -80,4 +83,25 @@ test("rejects malformed configuration version selectors", async () => {
   const result = await readSiteConfigurationHistory({ db: db(),
     principalSubject: "reader", tenantId: "tenant-a", siteId: "site-a", version: "v0" });
   assert.deepEqual(result, { error: "not_found", status: 404 });
+});
+
+
+test("resolves the newest approved configuration even when a newer version is still pending or rejected", async () => {
+  const database = db();
+  const result = await readLatestApprovedSiteConfiguration({ db: database,
+    principalSubject: "reader", tenantId: "tenant-a", siteId: "site-a" });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.status, "approved_configuration_available");
+  assert.equal(result.data.configuration.configuration_version, "v1");
+  assert.equal(result.data.operational_decision, "not_authorized");
+  assert.match(database.calls[2].sql, /approved_for_review/);
+});
+
+test("returns not available when no site configuration has an approved lifecycle", async () => {
+  const database = db({ records: rows.map(row => ({ ...row, lifecycle_status: "rejected" })) });
+  const result = await readLatestApprovedSiteConfiguration({ db: database,
+    principalSubject: "reader", tenantId: "tenant-a", siteId: "site-a" });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.status, "not_available");
+  assert.equal(result.data.reason, "no_approved_configuration");
 });
