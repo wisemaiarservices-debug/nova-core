@@ -183,7 +183,7 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
             issues.push(issue("soil_hydraulic.method_missing", measurementPath + ".method", "verification_required"));
           }
           if (typeof measurement.sampled_at !== "string" || !Number.isFinite(Date.parse(measurement.sampled_at)) || !/(Z|[+-]\\d{2}:\\d{2})$/.test(measurement.sampled_at)) {
-            errors.push(issue("soil_hydraulic.timestamp_invalid", measurementPath + ".sampled_at", "verification_required"));
+          if (typeof measurement.sampled_at !== "string" || !Number.isFinite(Date.parse(measurement.sampled_at)) || !/(Z|[+-]\d{2}:\d{2})$/.test(measurement.sampled_at)) {
           }
           if (!measurement.evidence_ref) issues.push(issue("soil_hydraulic.evidence_missing", measurementPath + ".evidence_ref", "verification_required"));
           if (measurement.parameter === "field_capacity" || measurement.parameter === "wilting_point") {
