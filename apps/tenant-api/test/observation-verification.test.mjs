@@ -41,8 +41,8 @@ test("assigns a site-scoped measurement reviewer and writes an append-only event
   assert.equal(result.data.status, "active");
   assert.equal(db.state.batches.length, 1);
   assert.equal(db.state.batches[0].length, 2);
-  assert.match(db.state.batches[0][0].sql, /INSERT INTO observation_verification_events/);
-  assert.match(db.state.batches[0][1].sql, /verification_status = \\?/);
+  assert.match(db.state.batches[0][0].sql, /INSERT INTO observation_reviewers/);
+  assert.match(db.state.batches[0][1].sql, /INSERT INTO observation_reviewer_events/);
 });
 
 test("requires an active tenant membership before reviewer assignment", async () => {
@@ -75,8 +75,8 @@ test("verifies only a tenant-scoped observation with an active independent revie
   assert.equal(result.data.verification_status, "verified");
   assert.equal(db.state.batches.length, 1);
   assert.equal(db.state.batches[0].length, 2);
-  assert.match(db.state.batches[0][0].sql, /verification_status = \?/);
-  assert.match(db.state.batches[0][1].sql, /INSERT INTO observation_verification_events/);
+  assert.match(db.state.batches[0][0].sql, /INSERT INTO observation_verification_events/);
+  assert.match(db.state.batches[0][1].sql, /verification_status = \\?/);
   assert.deepEqual(db.state.calls.find(x => x.sql.includes("FROM audit_events")).args, ["tenant-a", "obs-1"]);
 });
 
