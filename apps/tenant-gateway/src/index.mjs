@@ -36,11 +36,14 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const url = new URL(request.url);
       const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
       const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
+      const reviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
+      const reviewerRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/revoke$/);
       const criteriaList = request.method === "GET" ? criteriaCreate : null;
       const criteriaDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/([^/]+)\/([^/]+)$/);
-      if ((!match && !criteriaCreate && !criteriaDetail) || url.search || url.hash ||
-          (request.method === "POST" && (!criteriaCreate || criteriaDetail || match))) return error("not_found", 404);
-      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1];
+      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke) || url.search || url.hash ||
+          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke || criteriaDetail || match)) ||
+          (request.method === "GET" && (reviewerAssign || reviewerRevoke))) return error("not_found", 404);
+      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1];
       const resourceId = match?.[3];
       const entryId = criteriaDetail?.[2];
       const version = criteriaDetail?.[3];
@@ -71,7 +74,11 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         ? `/internal/v1/tenants/${tenant}/${match[2]}/${resourceId}`
         : criteriaDetail
           ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${entryId}/${version}`
-          : `/internal/v1/tenants/${tenant}/water-quality-criteria`;
+          : reviewerAssign
+          ? `/internal/v1/tenants/${tenant}/water-quality-criteria/reviewers/assign`
+          : reviewerRevoke
+            ? `/internal/v1/tenants/${tenant}/water-quality-criteria/reviewers/revoke`
+            : `/internal/v1/tenants/${tenant}/water-quality-criteria`;
       const headers = new Headers({
         "x-nova-verified-subject": principal.subject,
         "x-nova-verified-issuer": principal.issuer,
