@@ -20,7 +20,7 @@ CREATE TABLE sensor_source_identity_mappings (
  FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
  FOREIGN KEY(site_id,tenant_id) REFERENCES sites(id,tenant_id) ON DELETE RESTRICT,
  FOREIGN KEY(asset_id,tenant_id,site_id) REFERENCES assets(id,tenant_id,site_id) ON DELETE RESTRICT,
- FOREIGN KEY(source_id,tenant_id) REFERENCES sources(id,tenant_id) ON DELETE RESTRICT
+ FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE RESTRICT
 );
 CREATE INDEX idx_sensor_source_mapping_lookup
  ON sensor_source_identity_mappings(tenant_id,site_id,asset_id,source_id,parameter,unit,effective_from);
