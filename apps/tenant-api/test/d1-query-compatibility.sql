@@ -39,6 +39,20 @@ VALUES ('fixture-tenant', 'fixture-subject', 'fixture-idempotency-key',
 'repeat0000000000000000000000000000000000000000000000000000000000000000',
 'fixture-configuration', 'pending');
 
+-- Prepare the authorization predicate executed again inside the atomic write batch.
+EXPLAIN INSERT INTO tenant_site_configuration_idempotency
+(tenant_id, subject, idempotency_key, request_sha256, configuration_id, status)
+SELECT 'fixture-tenant', 'fixture-subject', 'fixture-idempotency-key',
+'repeat0000000000000000000000000000000000000000000000000000000000000000',
+'fixture-configuration', 'pending'
+WHERE (SELECT COUNT(*) FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id
+WHERE m.subject = 'fixture-subject' AND m.tenant_id = 'fixture-tenant'
+AND m.status = 'active' AND t.status = 'active'
+AND m.role IN ('tenant_owner', 'tenant_admin')) = 1
+AND (SELECT COUNT(*) FROM tenant_resource_grants WHERE tenant_id = 'fixture-tenant'
+AND subject = 'fixture-subject' AND resource_type = 'site'
+AND resource_id = 'fixture-site' AND action = 'create') = 1;
+
 EXPLAIN INSERT INTO tenant_site_configurations
 (id, tenant_id, site_id, configuration_version, schema_id, configuration_json,
  content_sha256, created_by_subject, request_id, created_at)
