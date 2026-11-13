@@ -6,6 +6,7 @@ import { assignObservationReviewer, reviewObservation } from "./observation-veri
 import { registerLaboratoryReportEvidence, readLaboratoryReportEvidence } from "./laboratory-report-evidence.mjs";
 import { registerSensorCalibration } from "./sensor-calibration.mjs";
 import { assignCalibrationReviewer, reviewSensorCalibration } from "./sensor-calibration-verification.mjs";
+import { registerSensorSourceMapping, reviewSensorSourceMapping, assignSensorSourceMappingReviewer } from "./sensor-source-identity.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -436,20 +437,24 @@ export default {
     const calibrationReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets\/([^/]+)\/calibration-reviewers\/assign$/);
     const calibrationReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets\/([^/]+)\/calibration-reviewers\/revoke$/);
     const calibrationVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets\/([^/]+)\/calibrations\/([^/]+)\/verification$/);
+    const sensorMappingRegister = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets\/([^/]+)\/sensor-source-mappings$/);
+    const sensorMappingReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets\/([^/]+)\/sensor-source-mappings\/([^/]+)\/verification$/);
+    const sensorMappingReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sensor-source-mapping-reviewers\/assign$/);
+    const sensorMappingReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sensor-source-mapping-reviewers\/revoke$/);
     const calibrationRegister = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets\/([^/]+)\/calibrations$/);
     const labReportUpload = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
     const labReportDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !labReportUpload && !labReportDetail) || url.search || url.hash ||
-        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
-        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || labReportUpload))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
+    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
+        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || labReportUpload))) return error("not_found", 404);
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
     if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
         (entryId && (!validId(entryId) || !validId(version, 80))) ||
         (observationVerification && !validId(observationVerification[2])) ||
-        ((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validId(calibrationVerification[4])) || ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||
+        ((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && (!validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2]) || !validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[3]))) || (sensorMappingReview && !validId(sensorMappingReview[4])) || ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||
         (labReportDetail && !validId(labReportDetail[3]))) return error("not_found", 404);
 
     const subject = request.headers.get("x-nova-verified-subject");
@@ -505,7 +510,7 @@ export default {
           reviewer[0].jurisdiction === data.jurisdiction
           ? json({ data, request_id: requestId }) : error("not_found", 404);
       }
-      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || labReportUpload || labReportDetail) {
+      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || labReportUpload || labReportDetail) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
@@ -531,6 +536,28 @@ export default {
         if (calibrationVerification) {
           if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read") || !await hasSiteReadGrant(env.DB, tenant, subject, calibrationVerification[2])) return error("not_found", 404);
           const reviewed = await reviewSensorCalibration(env.DB, tenant, calibrationVerification[2], calibrationVerification[3], calibrationVerification[4], subject, requestId, draftBody);
+          return reviewed.error ? json({ error: reviewed.error }, reviewed.status) : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
+        }
+        if (sensorMappingReviewerAssign || sensorMappingReviewerRevoke) {
+          const route = sensorMappingReviewerAssign ?? sensorMappingReviewerRevoke;
+          if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, route[2])) return error("not_found", 404);
+          const assigned = await assignSensorSourceMappingReviewer(env.DB, tenant, route[2], subject, draftBody,
+            sensorMappingReviewerAssign ? "assign" : "revoke");
+          return assigned.error ? json({ error: assigned.error }, assigned.status) : json({ data: assigned.data, request_id: requestId }, assigned.status);
+        }
+        if (sensorMappingRegister) {
+          if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, sensorMappingRegister[2])) return error("not_found", 404);
+          const registered = await registerSensorSourceMapping(env.DB, tenant, sensorMappingRegister[1], sensorMappingRegister[2],
+            sensorMappingRegister[3], subject, requestId, draftBody);
+          return registered.error ? json({ error: registered.error }, registered.status) : json({ data: registered.data, request_id: requestId }, registered.status);
+        }
+        if (sensorMappingReview) {
+          if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read") ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, sensorMappingReview[2])) return error("not_found", 404);
+          const reviewed = await reviewSensorSourceMapping(env.DB, tenant, sensorMappingReview[1], sensorMappingReview[2],
+            sensorMappingReview[3], sensorMappingReview[4], subject, requestId, draftBody);
           return reviewed.error ? json({ error: reviewed.error }, reviewed.status) : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
         }
         if (calibrationRegister) {
