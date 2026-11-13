@@ -712,3 +712,16 @@ test("keeps water-quality sample evidence and laboratory metadata as verificatio
   assert.ok(result.issues.some(item => item.code === "water_quality.laboratory_missing"));
   assert.ok(result.issues.some(item => item.code === "water_quality.evidence_missing"));
 });
+
+
+test("rejects malformed timezone-free water-quality sample timestamps and unresolved report evidence", () => {
+  const value = valid();
+  value.site.water_sources = [{ id: "well-1", quality_samples: [{
+    id: "sample-1", parameter: "electrical_conductivity", value: 1.2, unit: "dS/m",
+    sampled_at: "2026-10-20T09:30:00", method: "lab-method", laboratory: "Regional Lab",
+    evidence_ref: "missing-report",
+  }] }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("quality_samples")));
+});
