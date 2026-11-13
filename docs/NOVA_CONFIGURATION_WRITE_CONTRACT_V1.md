@@ -81,3 +81,23 @@ review or audit rows.
 
 
 The validator also flags unsupported nested crop, irrigation, energy, equipment, sensor, gateway, calibration and evidence fields. Known numeric engineering ratings (declared irrigation design flow and electrical/energy capacities) must be finite positive values when supplied. These are schema-level sanity checks only: they do not establish hydraulic adequacy, electrical compatibility, equipment sizing, or commissioning.
+
+
+## Declared equipment relationship checks
+
+The domain validator resolves irrigation `controller_id` values only against
+declared equipment IDs, sensor `gateway_id` values only against declared
+gateway IDs, and sensor calibration scopes only against sensor IDs. Unresolved
+references are readiness issues requiring verification; they are not silently
+accepted as confirmed physical connections.
+
+Gateway records may optionally declare `supported_protocols`. When a sensor
+references that gateway and both declare a recognized protocol, a protocol not
+listed in the gateway capability declaration is flagged for review. Missing
+gateway capability declarations are reported as unknown, not treated as
+compatible. Malformed or duplicate capability lists are rejected.
+
+These checks compare configuration declarations only. They do not establish
+that devices are powered, paired, reachable, commissioned, correctly wired, or
+currently exchanging telemetry. A protocol match is not proof of operational
+connectivity or end-to-end interoperability.
