@@ -175,7 +175,8 @@ export function assessDomainConfiguration(payload) {
     else payload.calibration_records.forEach((record, i) => {
       const path = "calibration_records[" + i + "]";
       unknownKeys(record, CALIBRATION_KEYS, path, issues);
-      if (!plainObject(record) || !["site", "asset", "sensor"].includes(record.scope) ||
+      if (!plainObject(record) || typeof record.id !== "string" || !TOKEN.test(record.id) ||
+          !["site", "asset", "sensor"].includes(record.scope) ||
           typeof record.scope_id !== "string" || !TOKEN.test(record.scope_id) ||
           typeof record.unit !== "string" || !record.unit.trim() ||
           typeof record.method !== "string" || !record.method.trim() ||
