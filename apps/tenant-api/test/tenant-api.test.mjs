@@ -7,7 +7,11 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null;
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.batchCalls = [];
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
   }
   prepare(sql) {
     const db = this;
@@ -41,19 +45,19 @@ class DB {
   }
 }
 const SECRET = "test-only-internal-secret-with-32-bytes-minimum";
-async function request(overrides = {}, targetUrl = "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a") {
+async function request(overrides = {}, targetUrl = "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a", method = "GET", body = undefined) {
   const url = targetUrl;
   const headers = new Headers({ "x-nova-verified-subject": "operator@example.test",
     "x-nova-verified-issuer": "https://example.cloudflareaccess.com",
     "x-nova-verified-audience": "aud", "x-nova-gateway-issued-at": String(now),
     "x-nova-request-id": "request-123", ...overrides });
   const path = new URL(url).pathname;
-  const canonical = JSON.stringify(["GET", path, headers.get("x-nova-verified-subject"),
+  const canonical = JSON.stringify([method, path, headers.get("x-nova-verified-subject"),
     headers.get("x-nova-verified-issuer"), headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id")]);
   headers.set("x-nova-internal-signature",
     createHmac("sha256", SECRET).update(canonical).digest("hex"));
-  return new Request(url, { headers });
+  return new Request(url, { method, headers, body });
 }
 const env = db => ({ ACCESS_ISSUER: "https://example.cloudflareaccess.com",
   ACCESS_AUDIENCE: "aud", INTERNAL_AUTH_SECRET: SECRET, DB: db });
@@ -254,4 +258,76 @@ test("does not return criteria belonging to another tenant or unknown versions",
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
   assert.equal(response.status, 404);
   assert.deepEqual(db.calls[2].args, ["tenant-a", "criteria-tn-1", "9.9"]);
+});
+
+
+const draftEntry = {
+  id: "criteria-tn-draft", jurisdiction: "TN", title: "Draft criteria fixture",
+  version: "1.0.0", published_on: "2026-01-01", effective_from: "2026-02-01",
+  authority: { name: "Declared source", source_evidence_ref: "evidence:source",
+    document_digest: "sha256:" + "a".repeat(64) },
+  scope: { tenant_id: "tenant-a", crop_ids: ["olive"], irrigation_methods: ["drip"],
+    intended_uses: ["agricultural_irrigation"] },
+  criteria: [{ parameter: "ec", unit: "dS/m", operator: "max", value: 2,
+    reference_clause: "clause 1", evidence_ref: "evidence:clause-1" }],
+  review: { status: "draft", approvals: [] },
+};
+
+test("creates a criteria draft only for an active tenant owner/admin and appends its first event atomically", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria",
+    "POST", JSON.stringify({ entry: draftEntry })), env(db));
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.data.id, draftEntry.id);
+  assert.equal(body.data.status, "draft");
+  assert.equal(db.batchCalls.length, 1);
+  assert.equal(db.batchCalls[0].length, 2);
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO water_quality_criteria_entries/);
+  assert.match(db.batchCalls[0][1].sql, /'draft_created'/);
+  assert.equal(db.batchCalls[0][0].args[1], "tenant-a");
+  assert.equal(db.batchCalls[0][0].args[14], "operator@example.test");
+});
+
+test("denies criteria draft creation to read-only tenant members", async () => {
+  const db = new DB();
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria",
+    "POST", JSON.stringify({ entry: draftEntry })), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("rejects criteria drafts with cross-tenant scope, non-draft state or invalid provenance", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_owner", membership_status: "active", tenant_status: "active" }];
+  for (const entry of [
+    { ...draftEntry, scope: { ...draftEntry.scope, tenant_id: "tenant-b" } },
+    { ...draftEntry, review: { status: "approved", approvals: [] } },
+    { ...draftEntry, authority: { name: "missing digest" } },
+  ]) {
+    const response = await worker.fetch(await request({}, 
+      "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria",
+      "POST", JSON.stringify({ entry })), env(db));
+    assert.ok([400, 422].includes(response.status));
+  }
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("rejects malformed draft request envelopes and payload sizes", async () => {
+  const db = new DB();
+  const wrongShape = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria",
+    "POST", JSON.stringify({ tenant_id: "tenant-a", reviewer_subject: "forged" })), env(db));
+  assert.equal(wrongShape.status, 400);
+  const wrongType = await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria",
+    "POST", JSON.stringify({ entry: draftEntry }));
+  const headers = new Headers(wrongType.headers); headers.set("content-type", "text/plain");
+  assert.equal((await worker.fetch(new Request(wrongType.url, { method: "POST", headers, body: JSON.stringify({ entry: draftEntry }) }), env(db))).status, 400);
+  assert.equal(db.batchCalls.length, 0);
 });
