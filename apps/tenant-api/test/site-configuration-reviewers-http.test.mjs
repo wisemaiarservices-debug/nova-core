@@ -104,3 +104,19 @@ test("reviewer list is read-scoped and returns assignment plus immutable event h
   assert.equal(data.assignments[0].reviewer_role, "engineering_reviewer");
   assert.equal(data.events[0].event_type, "assigned");
 });
+
+
+test("revocation requires a reason and records a terminal reviewer event", async () => {
+  const db = new DB();
+  const path = "/internal/v1/tenants/tenant-a/sites/site-a/configurations/reviewers/revoke";
+  const body = { reviewer_subject: "engineer@example.test",
+    reviewer_role: "engineering_reviewer", evidence_ref: "evidence:revocation",
+    reason: "Assignment ended" };
+  const response = await worker.fetch(signedRequest({ path, body,
+    requestId: "configuration-reviewer-revoke-1" }), env(db));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.status, "revoked");
+  assert.equal(db.batches.length, 1);
+  assert.match(db.batches[0][0].sql, /UPDATE tenant_site_configuration_reviewers SET status = 'revoked'/);
+  assert.match(db.batches[0][1].sql, /event_type, actor_subject, evidence_ref, reason/);
+});
