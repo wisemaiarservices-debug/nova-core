@@ -3,7 +3,8 @@ import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityC
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
 import { assignObservationReviewer, reviewObservation } from "./observation-verification.mjs";
-import { registerLaboratoryReportEvidence, readLaboratoryReportEvidence } from "./laboratory-report-evidence.mjs";\nimport { registerSensorCalibration } from "./sensor-calibration.mjs";
+import { registerLaboratoryReportEvidence, readLaboratoryReportEvidence } from "./laboratory-report-evidence.mjs";
+import { registerSensorCalibration } from "./sensor-calibration.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -431,7 +432,8 @@ export default {
     const observationReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/reviewers\/assign$/);
     const observationReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/reviewers\/revoke$/);
     const observationVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/verification$/);
-    const calibrationRegister = url.pathname.match(/^\\/internal\\/v1\\/tenants\\/([^/]+)\\/sites\\/([^/]+)\\/assets\\/([^/]+)\\/calibrations$/);\n    const labReportUpload = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
+    const calibrationRegister = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets\/([^/]+)\/calibrations$/);
+    const labReportUpload = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
     const labReportDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
     if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationRegister && !labReportUpload && !labReportDetail) || url.search || url.hash ||
         (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationRegister && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
