@@ -195,3 +195,25 @@ irradiance-dependent current, bifacial gain, voltage transients, altitude,
 cable voltage drop, connector compatibility, string fusing, MPPT allocation,
 unequal string lengths, shading, degradation, code requirements or protection
 coordination. A passing result is not a design approval or safety certification.
+
+
+## Battery and hybrid-inverter compatibility screening
+
+Energy profiles may declare battery nominal voltage, requested charge/discharge
+power and equipment references. Battery inventory records may declare minimum
+and maximum operating voltage and maximum charge/discharge power. Hybrid
+inverter records may declare the supported battery voltage window and maximum
+battery charge/discharge power. When corresponding declarations are present,
+the validator flags nominal voltage outside either component window and
+requested charge/discharge power above either component's declared rating.
+A declared system battery power is also compared with the referenced battery
+equipment's rated power when both are supplied.
+
+These are nameplate consistency checks only. Missing limits remain unknown and
+do not imply compatibility. The checks do not calculate current from voltage
+and power, account for voltage variation under load, BMS charge curves,
+temperature derating, state-of-charge limits, C-rate, cell balancing, parallel
+battery string behavior, DC bus transients, efficiency, inverter overload
+curves, grid export constraints, generator coupling, protection settings or
+manufacturer-specific operating modes. They do not establish usable energy,
+autonomy, runtime, safety or commissioning approval.
