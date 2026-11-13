@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import worker from "../src/index.mjs";
 
 const now = Math.floor(Date.now() / 1000);
@@ -799,4 +799,27 @@ test("read-only tenant members cannot register laboratory report evidence", asyn
     "POST", JSON.stringify(payload)), env(db));
   assert.equal(response.status, 404);
   assert.equal(db.batchCalls.length, 0);
+});
+
+
+test("site-granted reader retrieves laboratory report bytes only after stored digest verification", async () => {
+  const db = new DB();
+  const bytes = Buffer.from("%PDF-1.4\\nretrievable report\\n%%EOF");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  db.laboratoryEvidenceRows = [{
+    id: "lab-report-a", tenant_id: "tenant-a", site_id: "site-a",
+    evidence_type: "laboratory_report", file_name: "report.pdf", media_type: "application/pdf",
+    byte_length: bytes.length, sha256, document_bytes: new Uint8Array(bytes),
+    laboratory_name: "Declared lab", report_number: "RPT-1", sample_reference: null,
+    issued_at: "2026-10-01", verification_status: "registered_unverified",
+    uploaded_by_subject: "owner@example.test", created_at: "2026-11-13T10:00:00Z",
+  }];
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports/lab-report-a"),
+    env(db));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.data.sha256, sha256);
+  assert.equal(Buffer.from(result.data.document_base64, "base64").compare(bytes), 0);
+  assert.equal(result.data.verification_status, "registered_unverified");
 });
