@@ -253,7 +253,7 @@ async function readCriteriaReviewers(db, tenant) {
 async function readCriteriaRegistry(db, tenant, entryId, version) {
   if (entryId === null) {
     const result = await rows(db.prepare(
-      "SELECT id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at FROM water_quality_criteria_entries WHERE tenant_id = ? ORDER BY jurisdiction, id, version LIMIT 100"
+      "SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at, (SELECT ev.event_type FROM water_quality_criteria_events ev WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version ORDER BY ev.rowid DESC LIMIT 1) AS lifecycle_status FROM water_quality_criteria_entries e WHERE e.tenant_id = ? ORDER BY e.jurisdiction, e.id, e.version LIMIT 100"
     ).bind(tenant));
     return result.map(row => ({ ...row, entry: JSON.parse(row.entry_json), entry_json: undefined }));
   }
@@ -262,7 +262,19 @@ async function readCriteriaRegistry(db, tenant, entryId, version) {
   ).bind(tenant, entryId, version));
   if (result.length !== 1) return null;
   const row = result[0];
-  return { ...row, entry: JSON.parse(row.entry_json), entry_json: undefined };
+  const [events, approvals] = await Promise.all([
+    rows(db.prepare(
+      "SELECT event_type, actor_subject, reason, request_id, occurred_at FROM water_quality_criteria_events WHERE tenant_id = ? AND entry_id = ? AND entry_version = ? ORDER BY rowid ASC LIMIT 100"
+    ).bind(tenant, entryId, version)),
+    rows(db.prepare(
+      "SELECT reviewer_subject, reviewer_role, decision, evidence_ref, reason, reviewed_at, request_id FROM water_quality_criteria_approvals WHERE tenant_id = ? AND entry_id = ? AND entry_version = ? ORDER BY reviewed_at, id LIMIT 20"
+    ).bind(tenant, entryId, version)),
+  ]);
+  return { ...row, entry: JSON.parse(row.entry_json), entry_json: undefined,
+    lifecycle: { status: events.at(-1)?.event_type ?? "unknown", events },
+    approvals,
+    legal_status: "not_verified", scientific_suitability: "not_assessed",
+    operational_decision: "not_authorized" };
 }
 
 export default {
