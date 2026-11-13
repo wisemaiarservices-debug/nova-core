@@ -327,8 +327,12 @@ async function assessStoredCriteria(db, tenant, entryId, version, context, sampl
       })),
     };
     const assessment = assessWaterQualityAgainstDeclaredCriteria([sample], context, criteriaSet);
-    results.push(assessment.results[0] ?? { sample_id: sample.id ?? null,
-      status: "not_assessed", reason: "criteria_comparison_result_missing" });
+    if (!Array.isArray(assessment.results) || !assessment.results[0]) {
+      results.push({ sample_id: sample.id ?? null, parameter: sample.parameter ?? null,
+        status: "not_assessed", reason: assessment.reason ?? "criteria_comparison_result_missing" });
+      continue;
+    }
+    results.push(assessment.results[0]);
     criteriaMetadata = assessment.criteria_set;
   }
   return { data: {
