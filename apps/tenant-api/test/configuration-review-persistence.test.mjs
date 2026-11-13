@@ -42,7 +42,8 @@ test("records an independent admin approval and audit event atomically", async (
   const db = database();
   const result = await reviewSiteConfiguration({ db, ...input });
   assert.equal(result.status, "approved_for_review");
-  assert.equal(result.reviewed_by_subject, "reviewer");\n  assert.equal(result.reviewer_role, "engineering_reviewer");
+  assert.equal(result.reviewed_by_subject, "reviewer");
+  assert.equal(result.reviewer_role, "engineering_reviewer");
   assert.equal(result.operational_decision, "not_authorized");
   assert.equal(db.batches.length, 1);
   assert.equal(db.batches[0].length, 2);
@@ -62,7 +63,8 @@ test("records rejection using the same lifecycle and audit transaction", async (
 
 test("denies creator self-review, non-admin reviewers, missing grants and inactive tenants", async () => {
   for (const options of [
-    { creator: "reviewer" }, { role: "operator" }, { grant: false }, { active: false },\n    { assignment: false }, { ambiguousAssignment: true },
+    { creator: "reviewer" }, { role: "operator" }, { grant: false }, { active: false },
+    { assignment: false }, { ambiguousAssignment: true },
   ]) {
     const db = database(options);
     await assert.rejects(() => reviewSiteConfiguration({ db, ...input }));
