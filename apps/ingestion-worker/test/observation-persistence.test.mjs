@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { persistObservation } from "../src/observation-persistence.mjs";
 
 const observation = {
+  tenant_id: "tenant-001",
   site_id: "site-001",
   asset_id: "asset-001",
   source_id: "source-001",
@@ -48,13 +49,13 @@ function mockD1(existing = null) {
       let inserted = false;
       if (!state.observation) {
         state.observation = {
-          id: v[0], site_id: v[1], asset_id: v[2], source_id: v[3],
-          module: v[4], metric: v[5], value: v[6], unit: v[7],
-          observed_at: v[8], idempotency_key: v[9],
-          verification_status: "unverified", provenance_json: v[10],
-          quality_flags_json: v[11],
+          id: v[0], tenant_id: v[1], site_id: v[2], asset_id: v[3], source_id: v[4],
+          module: v[5], metric: v[6], value: v[7], unit: v[8],
+          observed_at: v[9], idempotency_key: v[10],
+          verification_status: "unverified", provenance_json: v[11],
+          quality_flags_json: v[12],
         };
-        state.audit.push({ id: audit.values[0], actor_id: audit.values[1] });
+        state.audit.push({ id: audit.values[0], actor_id: audit.values[1], tenant_id: audit.values[5] });
         inserted = true;
       } else if (state.observation.id === v[0]) {
         // A retry is ignored by the unique key and does not create a second audit event.
@@ -74,6 +75,8 @@ test("inserts observation and audit atomically with server-owned unverified stat
   assert.equal(db.state.batches, 1);
   assert.equal(db.state.audit.length, 1);
   assert.equal(db.state.audit[0].actor_id, principal.serviceId);
+  assert.equal(db.state.observation.tenant_id, "tenant-001");
+  assert.equal(db.state.audit[0].tenant_id, "tenant-001");
 });
 
 test("retries return the original observation without duplicating the audit event", async () => {
