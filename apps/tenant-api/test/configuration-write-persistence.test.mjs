@@ -43,6 +43,10 @@ test("performs authorization reads before one atomic five-statement write batch"
   const batch=db.calls.find(c=>c.kind==="batch").statements;
   assert.equal(batch.length,5);
   assert.match(batch[0].sql,/tenant_site_configuration_idempotency/);
+  assert.match(batch[0].sql,/tenant_memberships/);
+  assert.match(batch[0].sql,/tenant_resource_grants/);
+  assert.match(batch[0].sql,/m.status = 'active'/);
+  assert.match(batch[1].sql,/WHERE EXISTS \(SELECT 1 FROM tenant_site_configuration_idempotency/);
   assert.match(batch[1].sql,/tenant_site_configurations/);
   assert.match(batch[2].sql,/submitted_for_review/);
   assert.match(batch[3].sql,/audit_events/);
