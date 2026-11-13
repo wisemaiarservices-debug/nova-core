@@ -48,10 +48,10 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
           (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview))) return error("not_found", 404);
       const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1];
       const resourceId = match?.[3];
-      const entryId = criteriaDetail?.[2];
-      const version = criteriaDetail?.[3];
+      const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2];
+      const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3];
       if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
-          (criteriaDetail && (!validPathId(entryId) || !validPathId(version, 80)))) return error("not_found", 404);
+          ((criteriaDetail || criteriaSubmit || criteriaReview) && (!validPathId(entryId) || !validPathId(version, 80)))) return error("not_found", 404);
       if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
           typeof env.ACCESS_AUDIENCE !== "string" || !env.ACCESS_AUDIENCE) {
         return error("identity_or_private_api_not_configured", 503);
