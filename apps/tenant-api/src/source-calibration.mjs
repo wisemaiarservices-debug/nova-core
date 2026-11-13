@@ -48,7 +48,7 @@ export async function createSourceCalibration(db, tenantId, siteId, sourceId, ac
     return { error: "source_calibration_dates_invalid", status: 400 };
   }
   const source = await db.prepare(
-    "SELECT s.id, s.tenant_id, s.site_id, st.status AS site_status FROM sources s JOIN sites st ON st.id = s.site_id AND st.tenant_id = s.tenant_id WHERE s.tenant_id = ? AND s.site_id = ? AND s.id = ? LIMIT 2"
+    "SELECT s.id, s.tenant_id, s.site_id, s.verification_status, st.status AS site_status FROM sources s JOIN sites st ON st.id = s.site_id AND st.tenant_id = s.tenant_id WHERE s.tenant_id = ? AND s.site_id = ? AND s.id = ? LIMIT 2"
   ).bind(tenantId, siteId, sourceId).all();
   if (!Array.isArray(source?.results) || source.results.length !== 1 ||
       source.results[0].id !== sourceId || source.results[0].tenant_id !== tenantId ||
@@ -147,6 +147,7 @@ export async function reviewSourceCalibration(db, tenantId, siteId, sourceId,
 }
 
 export async function assessObservationCalibration(db, tenantId, observation) {
+  if (!Number.isFinite(observation.value)) return { observation_id: observation.id, status: "not_assessed", reason: "observation_value_not_numeric" };
   const rows = await db.prepare(
     "SELECT id, instrument_serial, calibration_method, calibration_standard, calibrated_at, valid_until, range_min, range_max, uncertainty, status, evidence_ref FROM source_calibrations WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND metric = ? AND unit = ? AND calibrated_at <= ? AND valid_until >= ? ORDER BY calibrated_at DESC, id LIMIT 10"
   ).bind(tenantId, observation.site_id, observation.source_id, observation.metric,
@@ -156,7 +157,7 @@ export async function assessObservationCalibration(db, tenantId, observation) {
   const common = { observation_id: observation.id, source_id: observation.source_id,
     metric: observation.metric, unit: observation.unit,
     observation_verification_status: observation.verification_status,
-    ingestion_quality_flags: JSON.parse(observation.quality_flags_json ?? "[]") };
+    ingestion_quality_flags: (() => { try { const flags = JSON.parse(observation.quality_flags_json ?? "[]"); return Array.isArray(flags) ? flags : []; } catch { return []; } })() };
   if (verified.length > 1) return { ...common, status: "not_assessed",
     reason: "multiple_verified_calibrations_cover_observation_time" };
   if (verified.length === 0) return { ...common, status: "not_assessed",
