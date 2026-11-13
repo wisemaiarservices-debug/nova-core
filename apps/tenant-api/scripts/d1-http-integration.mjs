@@ -348,6 +348,10 @@ try {
     { "content-type": "application/json" }, "POST", JSON.stringify(calibrationPayload));
   assert.equal(calibration.response.status, 201, JSON.stringify(calibration.body));
   assert.equal(calibration.body.data.status, "unverified");
+  const calibrationDetail = await throughGateway(calibrationPath + "/" + calibration.body.data.id, accessToken());
+  assert.equal(calibrationDetail.response.status, 200, JSON.stringify(calibrationDetail.body));
+  assert.equal(calibrationDetail.body.data.events[0].event_type, "registered");
+  assert.equal(calibrationDetail.body.data.instrument_serial, "CI-SENSOR-001");
   const calibrationReviewPath = calibrationPath + "/" + calibration.body.data.id + "/review";
   const calibrationVerified = await throughGateway(calibrationReviewPath,
     accessToken("ci-calibration-reviewer"), { "content-type": "application/json" }, "POST",
