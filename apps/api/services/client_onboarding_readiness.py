@@ -8,6 +8,10 @@ from pydantic import BaseModel, ConfigDict
 
 from apps.api.services.client_configuration import ClientConfiguration
 from apps.api.services.equipment_capabilities import CapabilityRegistry
+from apps.api.services.client_capability_assessment import assess_client_capabilities
+from apps.api.services.model_applicability import (
+    ApplicabilityAssessment, AvailableFeature, ModelApplicabilityContract,
+)
 
 
 IssueSeverity = Literal["information_required", "verification_required"]
@@ -31,6 +35,8 @@ class ClientOnboardingReadiness(BaseModel):
     registry_version: str
     assessed_on: date
     status: Literal["needs_information", "needs_verification", "ready_for_review"]
+    model_assessments: tuple[ApplicabilityAssessment, ...] = ()
+    model_readiness: Literal["not_assessed", "blocked", "research_only", "applicable_for_review"] = "not_assessed"
     issues: tuple[OnboardingIssue, ...]
     equipment_count: int
     sensor_count: int
@@ -42,6 +48,9 @@ def assess_client_onboarding_readiness(
     registry: CapabilityRegistry,
     *,
     assessed_on: date | None = None,
+    model_contracts: tuple[ModelApplicabilityContract, ...] = (),
+    available_features: tuple[AvailableFeature, ...] = (),
+    climate_zone: str | None = None,
 ) -> ClientOnboardingReadiness:
     """Assess supplied onboarding records without filling gaps or claiming device health.
 
@@ -114,6 +123,23 @@ def assess_client_onboarding_readiness(
         else "needs_verification" if has_verification_gaps
         else "ready_for_review"
     )
+    model_results = tuple(
+        assess_client_capabilities(
+            configuration, registry, contract,
+            climate_zone=climate_zone,
+            available_features=available_features,
+        ).assessment
+        for contract in model_contracts
+    )
+    if not model_results:
+        model_readiness = "not_assessed"
+    elif any(result.status in ("not_applicable", "needs_configuration", "insufficient_data") for result in model_results):
+        model_readiness = "blocked"
+    elif any(result.status == "research_only" for result in model_results):
+        model_readiness = "research_only"
+    else:
+        model_readiness = "applicable_for_review"
+
     return ClientOnboardingReadiness(
         tenant_id=tenant_id,
         site_id=site.site_id,
@@ -121,6 +147,8 @@ def assess_client_onboarding_readiness(
         registry_version=registry.registry_version,
         assessed_on=assessment_date,
         status=status,
+        model_assessments=model_results,
+        model_readiness=model_readiness,
         issues=tuple(issues),
         equipment_count=len(registry.equipment),
         sensor_count=len(registry.sensors),
