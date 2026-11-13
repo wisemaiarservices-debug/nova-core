@@ -651,3 +651,65 @@ test("criteria resolution rejects cross-tenant and malformed caller context", as
       sampled_at: "2026-05-10T10:00:00Z" })), env(db));
   assert.equal(response.status, 400);
 });
+
+
+test("assesses sample values only against the approved tenant criteria and preserves comparison-only meaning", async () => {
+  const db = new DB();
+  db.criteriaRows = [{ id: resolutionEntry.id, tenant_id: "tenant-a", version: "1.0",
+    entry_json: JSON.stringify(resolutionEntry) }];
+  db.criteriaEventRows = [{ event_type: "draft_created" }, { event_type: "submitted_for_review" },
+    { event_type: "approved" }];
+  db.approvalRows = resolutionApprovals;
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "viewer", membership_status: "active", tenant_status: "active" }];
+  const samples = [
+    { id: "sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+    { id: "sample-outside", parameter: "ec", value: 3, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+  ];
+  const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-assess-approved" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-resolve-1/1.0/assess",
+    "POST", JSON.stringify({ context: resolutionContext, samples })), env(db));
+  assert.equal(response.status, 200);
+  const result = (await response.json()).data;
+  assert.equal(result.status, "declared_criteria_comparison_complete");
+  assert.equal(result.results[0].status, "within_declared_criterion");
+  assert.equal(result.results[1].status, "outside_declared_criterion");
+  assert.equal(result.interpretation, "comparison_to_caller_supplied_criteria_only");
+  assert.equal(result.scientific_suitability, "not_assessed");
+  assert.equal(result.operational_decision, "not_authorized");
+});
+
+test("does not assess samples against draft or pending criteria and leaves invalid samples not assessed", async () => {
+  const db = new DB();
+  db.criteriaRows = [{ id: resolutionEntry.id, tenant_id: "tenant-a", version: "1.0",
+    entry_json: JSON.stringify(resolutionEntry) }];
+  db.criteriaEventRows = [{ event_type: "submitted_for_review" }];
+  db.approvalRows = resolutionApprovals;
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "analyst", membership_status: "active", tenant_status: "active" }];
+  const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-assess-pending" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-resolve-1/1.0/assess",
+    "POST", JSON.stringify({ context: resolutionContext, samples: [
+      { id: "pending-sample", parameter: "ec", value: 1, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+      { id: "missing-time", parameter: "ec", value: 1, unit: "dS/m" },
+    ] })), env(db));
+  assert.equal(response.status, 200);
+  const result = (await response.json()).data;
+  assert.equal(result.status, "partial_criteria_comparison");
+  assert.equal(result.results[0].reason, "registry_entry_not_approved");
+  assert.equal(result.results[1].reason, "sample_value_unit_or_date_invalid");
+});
+
+test("criteria sample assessment rejects oversized batches and caller scope injection", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "viewer", membership_status: "active", tenant_status: "active" }];
+  const tooMany = await worker.fetch(await request({ "x-nova-request-id": "criteria-assess-too-many" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/assess",
+    "POST", JSON.stringify({ context: resolutionContext, samples: Array.from({ length: 51 }, () => ({})) })), env(db));
+  assert.equal(tooMany.status, 400);
+  const badContext = await worker.fetch(await request({ "x-nova-request-id": "criteria-assess-bad-context" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/assess",
+    "POST", JSON.stringify({ context: { ...resolutionContext, tenant_id: "tenant-b" }, samples: [{}] })), env(db));
+  assert.equal(badContext.status, 400);
+});
