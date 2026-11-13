@@ -375,6 +375,41 @@ try {
     "/api/v1/tenants/tenant-http-a/sites/site-http-private/configurations");
   assert.equal(ungrantedConfigurationHistory.response.status, 404);
 
+  const selfReview = await throughGateway(configurationPath + "/v6/review", accessToken(),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "approve", reason: "Creator cannot approve their own version" }));
+  assert.equal(selfReview.response.status, 403);
+  assert.equal(selfReview.body.error, "configuration_self_review_forbidden");
+
+  const approvedConfiguration = await throughGateway(configurationPath + "/v6/review",
+    accessToken("ci-config-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "approve", reason: "Independent review completed against the submitted site evidence" }));
+  assert.equal(approvedConfiguration.response.status, 201, JSON.stringify(approvedConfiguration.body));
+  assert.equal(approvedConfiguration.body.data.status, "approved_for_review");
+  const approvedConfigurationRead = await throughGateway(configurationPath + "/v6");
+  assert.equal(approvedConfigurationRead.response.status, 200);
+  assert.equal(approvedConfigurationRead.body.data.lifecycle_status, "approved_for_review");
+
+  const secondConfiguration = await throughGateway(configurationPath, accessToken(), {
+    "content-type": "application/json", "idempotency-key": "ci-site-config-create-002",
+  }, "POST", JSON.stringify({ payload: {
+    ...routeConfigurationPayload, site: { ...routeConfigurationPayload.site, timezone: "UTC" },
+  }, schema_id: "nova.client-config.v1" }));
+  assert.equal(secondConfiguration.response.status, 201, JSON.stringify(secondConfiguration.body));
+  assert.equal(secondConfiguration.body.data.configuration_version, "v7");
+  const rejectedConfiguration = await throughGateway(configurationPath + "/v7/review",
+    accessToken("ci-config-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "reject", reason: "The site boundary requires a corrected evidence package" }));
+  assert.equal(rejectedConfiguration.response.status, 201, JSON.stringify(rejectedConfiguration.body));
+  assert.equal(rejectedConfiguration.body.data.status, "rejected");
+  const rejectedConfigurationRead = await throughGateway(configurationPath + "/v7");
+  assert.equal(rejectedConfigurationRead.response.status, 200);
+  assert.equal(rejectedConfigurationRead.body.data.lifecycle_status, "rejected");
+  const latestConfigurationHistory = await throughGateway(configurationPath);
+  assert.equal(latestConfigurationHistory.response.status, 200);
+  assert.equal(latestConfigurationHistory.body.data.length, 7);
+  assert.equal(latestConfigurationHistory.body.data[0].configuration_version, "v7");
+
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and reviewer-readable evidence context, dual-role approval and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
