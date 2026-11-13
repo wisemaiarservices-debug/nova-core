@@ -2,6 +2,7 @@ import { json, error } from "./http.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
+import { assignObservationReviewer, reviewObservation } from "./observation-verification.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -426,15 +427,19 @@ export default {
     const criteriaReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
     const criteriaResolve = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
     const criteriaAssess = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
-        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
-        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
+    const observationReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/reviewers\/assign$/);
+    const observationReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/reviewers\/revoke$/);
+    const observationVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/verification$/);
+    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification) || url.search || url.hash ||
+        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification || criteriaDetail || match)) ||
+        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification))) return error("not_found", 404);
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
     if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
-        (entryId && (!validId(entryId) || !validId(version, 80)))) return error("not_found", 404);
+        (entryId && (!validId(entryId) || !validId(version, 80))) ||
+        (observationVerification && !validId(observationVerification[2]))) return error("not_found", 404);
 
     const subject = request.headers.get("x-nova-verified-subject");
     const issuer = request.headers.get("x-nova-verified-issuer");
@@ -496,6 +501,26 @@ export default {
         if (membership.length !== 1 || membership[0].subject !== subject ||
             membership[0].tenant_id !== tenant || membership[0].membership_status !== "active" ||
             membership[0].tenant_status !== "active") return error("not_found", 404);
+        if (observationReviewerAssign || observationReviewerRevoke) {
+          if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, draftBody?.site_id)) return error("not_found", 404);
+          const assigned = await assignObservationReviewer(env.DB, tenant, subject, requestId,
+            draftBody, observationReviewerAssign ? "assign" : "revoke");
+          return assigned.error ? json({ error: assigned.error }, assigned.status)
+            : json({ data: assigned.data, request_id: requestId }, assigned.status);
+        }
+        if (observationVerification) {
+          if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
+          const observationRows = await rows(env.DB.prepare(
+            "SELECT site_id FROM observations WHERE tenant_id = ? AND id = ? LIMIT 2"
+          ).bind(tenant, observationVerification[2]));
+          if (observationRows.length !== 1 ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, observationRows[0].site_id)) return error("not_found", 404);
+          const reviewed = await reviewObservation(env.DB, tenant, observationVerification[2],
+            subject, requestId, draftBody);
+          return reviewed.error ? json({ error: reviewed.error }, reviewed.status)
+            : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
+        }
         if (criteriaAssess) {
           if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
           if (!onlyKeys(draftBody, ["context", "samples"]) ||
