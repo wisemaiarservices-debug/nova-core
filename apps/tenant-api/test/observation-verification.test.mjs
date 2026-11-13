@@ -76,7 +76,7 @@ test("verifies only a tenant-scoped observation with an active independent revie
   assert.equal(db.state.batches.length, 1);
   assert.equal(db.state.batches[0].length, 2);
   assert.match(db.state.batches[0][0].sql, /INSERT INTO observation_verification_events/);
-  assert.match(db.state.batches[0][1].sql, /verification_status = \\?/);
+  assert.match(db.state.batches[0][1].sql, /verification_status = \?/);
   assert.deepEqual(db.state.calls.find(x => x.sql.includes("FROM audit_events")).args, ["tenant-a", "obs-1"]);
 });
 
