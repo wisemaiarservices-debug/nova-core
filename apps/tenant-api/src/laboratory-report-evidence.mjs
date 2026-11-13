@@ -2,10 +2,7 @@ const MAX_DOCUMENT_BYTES = 1024 * 1024;
 const HEX_SHA256 = /^[a-f0-9]{64}$/;
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
-function validText(value, max) {
-    value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
-    value.trim() === value && !/[\\u0000-\\u001f\\u007f]/.test(value);
-}
+function validText(value, max) {,  return typeof value === "string" && value.length > 0 && value.length <= max &&,    value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);,}
 function validId(value, max = 160) {
   return validText(value, max) && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
