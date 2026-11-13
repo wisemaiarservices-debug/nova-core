@@ -12,11 +12,9 @@ export async function registerSensorSourceMapping(db,tenant,siteId,assetId,actor
  const source=await db.prepare("SELECT id,site_id FROM sources WHERE tenant_id=? AND id=? LIMIT 2").bind(tenant,body.source_id).all();
  if(!Array.isArray(asset?.results)||asset.results.length!==1||!Array.isArray(source?.results)||source.results.length!==1||
  (source.results[0].site_id!==null&&source.results[0].site_id!==siteId))return {error:"sensor_source_mapping_scope_not_found",status:404};
- const result=await db.batch([
- db.prepare("INSERT INTO sensor_source_identity_mappings(id,tenant_id,site_id,asset_id,source_id,sensor_id,parameter,unit,effective_from,effective_to,mapping_method,evidence_ref,registered_by_subject) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(body.id,tenant,siteId,assetId,body.source_id,body.sensor_id,body.parameter,body.unit,body.effective_from,body.effective_to??null,body.mapping_method,body.evidence_ref,actor),
- db.prepare("INSERT INTO audit_events(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json) SELECT ?,?,'user',?,'sensor_source_mapping_registered','sensor_source_identity_mapping',?,?,?").bind(crypto.randomUUID(),tenant,actor,body.id,requestId,JSON.stringify({site_id:siteId,asset_id:assetId,source_id:body.source_id,sensor_id:body.sensor_id,parameter:body.parameter,unit:body.unit}))
- ]);
- if(!Array.isArray(result)||result.length!==2||result.some(x=>x?.meta?.changes!==1))throw new Error("sensor_source_mapping_write_failed");
+ const result=await db.prepare("INSERT INTO sensor_source_identity_mappings(id,tenant_id,site_id,asset_id,source_id,sensor_id,parameter,unit,effective_from,effective_to,mapping_method,evidence_ref,registered_by_subject) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
+ .bind(body.id,tenant,siteId,assetId,body.source_id,body.sensor_id,body.parameter,body.unit,body.effective_from,body.effective_to??null,body.mapping_method,body.evidence_ref,actor).run();
+ if(result?.meta?.changes!==1)throw new Error("sensor_source_mapping_write_failed");
  return {data:{id:body.id,tenant_id:tenant,site_id:siteId,asset_id:assetId,source_id:body.source_id,sensor_id:body.sensor_id,parameter:body.parameter,unit:body.unit,status:"registered_unverified"},status:201};
 }
 export async function reviewSensorSourceMapping(db,tenant,siteId,assetId,mappingId,reviewer,requestId,body){
