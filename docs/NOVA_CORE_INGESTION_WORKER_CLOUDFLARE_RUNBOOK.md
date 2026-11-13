@@ -5,8 +5,8 @@
 The isolated Worker source is in `apps/ingestion-worker/`. It now contains:
 - Cloudflare Access RS256/JWKS verification and exact service/module/source grants.
 - Strict observation payload validation.
-- Active site/source/asset ownership checks.
-- Transactional D1 observation + audit writes, stable idempotency, and server-owned `unverified` status.
+- Active site/source/asset ownership checks with server-derived tenant ownership; legacy unowned records and cross-tenant combinations fail closed.
+- Transactional D1 observation + tenant-owned audit writes, stable idempotency, and server-owned `unverified` status.
 
 **None of this is deployed or live-integrated yet.** No D1 database/binding, Access application/policy, service token, Worker variables, or ingestion Worker deployment has been created. Tests use mocked D1 bindings. The existing public NOVA Core API remains unchanged.
 
@@ -35,13 +35,19 @@ Official references:
 
 **Cost decision:** D1 is available on the Free plan and can remain $0 if usage stays within these limits and the account remains on Workers Free. This is not a guarantee against unrelated account charges or a later plan change. Do not upgrade, enable paid features, or accept a usage commitment. If the dashboard asks for payment details or an upgrade, stop.
 
+## Tenant ownership requirement
+
+The observation envelope does not accept `tenant_id`. The Worker resolves an active site, source and optional asset from D1, requires all records to belong to the same active tenant, and derives the tenant ID server-side. Legacy records with `NULL tenant_id`, suspended tenants, disabled sources, and cross-tenant site/source/asset combinations are rejected. The same derived tenant ID is written to both the observation and its audit event in one D1 batch. Verification remains `unverified` after acceptance.
+
+The tenant schema requires the ordered migrations `0001_initial.sql` → `0002_tenant_isolation.sql` → `0003_internal_request_nonces.sql` → `0004_tenant_ownership_immutability.sql`. Do not run ingestion against a pre-tenant schema.
+
 ## Intended deployment shape
 
 - Ingestion Worker name: `nova-core-ingest-api`
-- Expected workers.dev hostname: `nova-core-ingest-api.neohaven.workers.dev` (verify the actual hostname after deployment)
+- No public `workers.dev` or preview hostname is enabled (`workers_dev = false`, `preview_urls = false`). A dedicated custom hostname/route must be selected and protected by Access before deployment.
 - Public read-only API remains: `nova-core-api.neohaven.workers.dev`
 - D1 binding name expected by the Worker: `DB`
-- Migration: `apps/api/migrations/0001_initial.sql`
+- Migrations: `apps/api/migrations/0001_initial.sql` through `0004_tenant_ownership_immutability.sql` (ordered chain)
 
 The dedicated ingestion hostname is separate so Access can require Service Auth without blocking browser-facing read endpoints.
 
@@ -56,12 +62,11 @@ The dedicated ingestion hostname is separate so Access can require Service Auth 
 
 ### Gate 2 — create and protect the isolated Worker
 
-1. Deploy `apps/ingestion-worker/` with Wrangler using a narrowly scoped Cloudflare API token.
-2. Confirm the actual `workers.dev` hostname in deployment output.
-3. Create a self-hosted Access application for that exact hostname.
-4. Create a policy with action **Service Auth** and include only the intended service-token identity. Do not add Everyone, broad Allow, or Bypass rules.
-5. Confirm unauthenticated requests are denied by Access.
-6. Keep the public NOVA Core API hostname outside this Access application.
+1. Select a dedicated custom hostname and route for the ingestion Worker; do not enable `workers.dev` or preview URLs.
+2. Create a self-hosted Access application for that exact hostname before exposing the route.
+3. Create a policy with action **Service Auth** and include only the intended service-token identity. Do not add Everyone, broad Allow, or Bypass rules.
+4. Configure the Worker route and deploy with a narrowly scoped Cloudflare API token only after D1 and Access are ready.
+5. Confirm unauthenticated requests are denied by Access and the public NOVA Core API remains outside this Access application.
 
 ### Gate 3 — configure server-side identity and grants
 
