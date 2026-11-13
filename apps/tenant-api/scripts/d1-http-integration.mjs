@@ -23,9 +23,10 @@ function accessToken(subject = "ci-human-subject") {
   const input = head + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
 }
-async function throughGateway(path, token = accessToken(), extraHeaders = {}) {
+async function throughGateway(path, token = accessToken(), extraHeaders = {}, method = "GET", body = undefined) {
   const response = await fetch(base + path, {
-    method: "GET", headers: { "Cf-Access-Jwt-Assertion": token, ...extraHeaders },
+    method, headers: { "Cf-Access-Jwt-Assertion": token, ...extraHeaders },
+    body,
   });
   return { response, body: await response.json() };
 }
@@ -75,6 +76,29 @@ try {
   const criteriaUnknownVersion = await throughGateway(
     "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-a/9.9");
   assert.equal(criteriaUnknownVersion.response.status, 404);
+
+  const draftEntry = {
+    id: "criteria-http-draft", jurisdiction: "TN", title: "CI draft fixture only",
+    version: "1.0.0", published_on: "2026-01-01", effective_from: "2026-02-01",
+    authority: { name: "CI fixture source", source_evidence_ref: "fixture:source",
+      document_digest: "sha256:" + "c".repeat(64) },
+    scope: { tenant_id: "tenant-http-a", site_id: "site-http-a",
+      crop_ids: ["olive"], irrigation_methods: ["drip"],
+      intended_uses: ["agricultural_irrigation"] },
+    criteria: [{ parameter: "ec", unit: "dS/m", operator: "max", value: 2,
+      reference_clause: "fixture clause 1", evidence_ref: "fixture:clause-1" }],
+    review: { status: "draft", approvals: [] },
+  };
+  const draftCreated = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria", accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify({ entry: draftEntry }));
+  assert.equal(draftCreated.response.status, 201, JSON.stringify(draftCreated.body));
+  assert.equal(draftCreated.body.data.id, "criteria-http-draft");
+  assert.equal(draftCreated.body.data.created_by_subject, "ci-human-subject");
+
+  const draftListed = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
+  assert.equal(draftListed.response.status, 200, JSON.stringify(draftListed.body));
+  assert.equal(draftListed.body.data.some(row => row.id === "criteria-http-draft" && row.entry.review.status === "draft"), true);
 
   const forgedHeaders = await throughGateway(sitePath, accessToken(), {
     "x-nova-verified-subject": "attacker-subject",
@@ -203,7 +227,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create and persisted lifecycle event, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
