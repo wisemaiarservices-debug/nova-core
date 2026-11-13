@@ -44,15 +44,16 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const criteriaSubmit = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/submit$/);
       const criteriaReview = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
       const criteriaResolve = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
-      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve) || url.search || url.hash ||
-          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve || criteriaDetail || match)) ||
-          (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve))) return error("not_found", 404);
-      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1];
+      const criteriaAssess = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
+      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
+          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
+          (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
+      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
       const resourceId = match?.[3];
-      const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2];
-      const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3];
+      const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
+      const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
       if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
-          ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve) && (!validPathId(entryId) || !validPathId(version, 80)))) return error("not_found", 404);
+          ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess) && (!validPathId(entryId) || !validPathId(version, 80)))) return error("not_found", 404);
       if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
           typeof env.ACCESS_AUDIENCE !== "string" || !env.ACCESS_AUDIENCE) {
         return error("identity_or_private_api_not_configured", 503);
@@ -90,7 +91,9 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
                   ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaReview[2]}/${criteriaReview[3]}/review`
                   : criteriaResolve
                     ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaResolve[2]}/${criteriaResolve[3]}/resolve`
-                    : `/internal/v1/tenants/${tenant}/water-quality-criteria`;
+                    : criteriaAssess
+                      ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaAssess[2]}/${criteriaAssess[3]}/assess`
+                      : `/internal/v1/tenants/${tenant}/water-quality-criteria`;
       const headers = new Headers({
         "x-nova-verified-subject": principal.subject,
         "x-nova-verified-issuer": principal.issuer,
