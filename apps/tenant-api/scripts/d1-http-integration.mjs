@@ -128,6 +128,17 @@ try {
   assert.equal(reviewerContext.body.data.approvals.length, 0);
   assert.equal(reviewerContext.body.data.legal_status, "not_verified");
 
+  const resolverContext = { tenant_id: "tenant-http-a", site_id: "site-http-a",
+    jurisdiction: "TN", crop_id: "olive", irrigation_method: "drip",
+    intended_use: "agricultural_irrigation" };
+  const pendingResolution = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/resolve",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, sampled_at: "2026-05-10T10:00:00Z" }));
+  assert.equal(pendingResolution.response.status, 200);
+  assert.equal(pendingResolution.body.data.status, "not_assessed");
+  assert.equal(pendingResolution.body.data.reason, "registry_entry_not_approved");
+
   const unassignedContext = await throughGateway(
     "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0",
     accessToken("unassigned-reviewer"));
@@ -148,6 +159,28 @@ try {
       evidence_ref: "fixture:domain-review" }));
   assert.equal(secondApproval.response.status, 201, JSON.stringify(secondApproval.body));
   assert.equal(secondApproval.body.data.status, "approved");
+
+  const approvedResolution = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/resolve",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, sampled_at: "2026-05-10T10:00:00Z" }));
+  assert.equal(approvedResolution.response.status, 200, JSON.stringify(approvedResolution.body));
+  assert.equal(approvedResolution.body.data.status, "approved_entry_scope_match");
+  assert.equal(approvedResolution.body.data.lifecycle_status, "approved");
+  assert.equal(approvedResolution.body.data.operational_decision, "not_authorized");
+
+  const sampleAssessment = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/assess",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, samples: [
+      { id: "ci-sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+      { id: "ci-sample-outside", parameter: "ec", value: 3, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+    ] }));
+  assert.equal(sampleAssessment.response.status, 200, JSON.stringify(sampleAssessment.body));
+  assert.equal(sampleAssessment.body.data.status, "declared_criteria_comparison_complete");
+  assert.equal(sampleAssessment.body.data.results[0].status, "within_declared_criterion");
+  assert.equal(sampleAssessment.body.data.results[1].status, "outside_declared_criterion");
+  assert.equal(sampleAssessment.body.data.operational_decision, "not_authorized");
 
   const reviewer = {
     reviewer_subject: "independent-reviewer@example.test",
@@ -306,7 +339,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and reviewer-readable evidence context and dual-role approval lifecycle, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and reviewer-readable evidence context, dual-role approval and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
