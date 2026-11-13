@@ -5,7 +5,7 @@ const INVENTORY_KEYS = new Set(["equipment", "sensors", "gateways"]);
 const CALIBRATION_KEYS = new Set(["id", "scope", "scope_id", "unit", "method", "effective_from", "effective_to", "certificate_number", "issuer", "issued_at", "evidence_ref"]); 
 const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at", "issuer", "digest"]);
 const RECORD_KEYS = {
-  crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "root_depth_observations", "evidence_ref"]),
+  crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "root_depth_observations", "water_demand_observations", "evidence_ref"]),
   water_sources: new Set(["id", "source_type", "name", "available_flow_m3_per_hour", "permitted_abstraction_m3_per_day", "quality_samples", "evidence_ref"]),
   soil_profiles: new Set(["id", "name", "classification_system", "classification", "horizons", "samples", "hydraulic_measurements", "evidence_ref"]),
   irrigation_systems: new Set(["id", "method", "water_source", "water_source_id", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
@@ -166,6 +166,35 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
               errors.push(issue("crop.root_depth_timestamp_invalid", observationPath + ".observed_at", "verification_required"));
             }
             if (!observation.evidence_ref) issues.push(issue("crop.root_depth_evidence_missing", observationPath + ".evidence_ref", "verification_required"));
+          });
+        }
+      }
+      if (crop?.water_demand_observations !== undefined) {
+        if (!Array.isArray(crop.water_demand_observations)) {
+          errors.push(issue("crop.water_demand_observations_invalid_type", "site.crops[" + i + "].water_demand_observations", "verification_required"));
+        } else {
+          const demandIds = new Set();
+          crop.water_demand_observations.forEach((observation, observationIndex) => {
+            const observationPath = "site.crops[" + i + "].water_demand_observations[" + observationIndex + "]";
+            if (!plainObject(observation) || typeof observation.id !== "string" || !TOKEN.test(observation.id) || demandIds.has(observation.id)) {
+              errors.push(issue("crop.water_demand_observation_id_invalid", observationPath + ".id", "verification_required"));
+              return;
+            }
+            demandIds.add(observation.id);
+            unknownKeys(observation, new Set(["id", "demand_mm", "period_start", "period_end", "source_type", "method", "evidence_ref"]), observationPath, issues);
+            if (typeof observation.demand_mm !== "number" || !Number.isFinite(observation.demand_mm) || observation.demand_mm < 0) {
+              errors.push(issue("crop.water_demand_value_invalid", observationPath + ".demand_mm", "verification_required"));
+            }
+            if (!validDate(observation.period_start) || !validDate(observation.period_end) || observation.period_end < observation.period_start) {
+              errors.push(issue("crop.water_demand_period_invalid", observationPath, "verification_required"));
+            }
+            if (!["measured", "modelled", "calculated"].includes(observation.source_type)) {
+              issues.push(issue("crop.water_demand_source_unverified", observationPath + ".source_type", "verification_required"));
+            }
+            if (typeof observation.method !== "string" || !observation.method.trim()) {
+              issues.push(issue("crop.water_demand_method_missing", observationPath + ".method", "verification_required"));
+            }
+            if (!observation.evidence_ref) issues.push(issue("crop.water_demand_evidence_missing", observationPath + ".evidence_ref", "verification_required"));
           });
         }
       }
