@@ -52,7 +52,7 @@ export async function createSourceCalibration(db, tenantId, siteId, sourceId, ac
   ).bind(tenantId, siteId, sourceId).all();
   if (!Array.isArray(source?.results) || source.results.length !== 1 ||
       source.results[0].id !== sourceId || source.results[0].tenant_id !== tenantId ||
-      source.results[0].site_id !== siteId || source.results[0].site_status !== "active") {
+      source.results[0].site_id !== siteId || source.results[0].site_status !== "active" || source.results[0].verification_status === "disabled") {
     return { error: "source_not_found_in_site_scope", status: 404 };
   }
   const reportRef = /^lab-report:([A-Za-z0-9][A-Za-z0-9._:-]{0,159})$/.exec(body.evidence_ref);
