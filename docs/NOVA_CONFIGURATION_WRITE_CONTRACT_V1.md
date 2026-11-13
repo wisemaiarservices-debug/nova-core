@@ -101,3 +101,24 @@ These checks compare configuration declarations only. They do not establish
 that devices are powered, paired, reachable, commissioned, correctly wired, or
 currently exchanging telemetry. A protocol match is not proof of operational
 connectivity or end-to-end interoperability.
+
+
+## Declared energy equipment checks
+
+Energy system profiles may reference declared inverter, battery and PV equipment
+IDs. References must resolve to inventory equipment; when an equipment
+`asset_class` is supplied, it is compared with the requested role. Missing
+equipment references and role mismatches are flagged for review.
+
+Equipment may optionally declare positive finite `rated_voltage_v` and
+`rated_power_kw`, plus a declared phase. Energy profiles may declare nominal
+voltage and grid phase. Where both sides provide comparable inverter voltage
+or phase declarations, mismatches are flagged. Invalid ratings and unsupported
+phase labels are rejected.
+
+These checks are deliberately limited to explicit declarations. They do not
+calculate electrical design, AC/DC conversion, battery/inverter power flow,
+short-circuit ratings, protection coordination, conductor sizing, grid-code
+compliance, PV string limits, or system safety. A matching voltage or phase
+label is not an engineering approval; qualified review and manufacturer
+documentation remain necessary.
