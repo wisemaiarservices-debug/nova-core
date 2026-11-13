@@ -13,7 +13,6 @@ const RESOURCE_SQL = {
   observation: "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, ingested_at, verification_status, provenance_json, quality_flags_json, retention_until FROM observations WHERE tenant_id = ? AND id = ? LIMIT 1",
   audit_event: "SELECT id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json FROM audit_events WHERE tenant_id = ? AND id = ? LIMIT 1",
 };
-
 function validSubject(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 200 &&
     value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
@@ -73,18 +72,36 @@ async function readResource(db, subject, tenant, type, id) {
   if (record.length !== 1 || record[0].tenant_id !== tenant || record[0].id !== id) return null;
   return record[0];
 }
+async function readCriteriaRegistry(db, tenant, entryId, version) {
+  if (entryId === null) {
+    const result = await rows(db.prepare(
+      "SELECT id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at FROM water_quality_criteria_entries WHERE tenant_id = ? ORDER BY jurisdiction, id, version LIMIT 100"
+    ).bind(tenant));
+    return result.map(row => ({ ...row, entry: JSON.parse(row.entry_json), entry_json: undefined }));
+  }
+  const result = await rows(db.prepare(
+    "SELECT id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at FROM water_quality_criteria_entries WHERE tenant_id = ? AND id = ? AND version = ? LIMIT 1"
+  ).bind(tenant, entryId, version));
+  if (result.length !== 1) return null;
+  const row = result[0];
+  return { ...row, entry: JSON.parse(row.entry_json), entry_json: undefined };
+}
 
 export default {
   async fetch(request, env) {
     if (request.method !== "GET") return error("not_found", 404);
     const url = new URL(request.url);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
-    if (!match || url.search || url.hash) return error("not_found", 404);
-    const [, tenant, routeType, resourceId] = match;
-    if (!validId(tenant, 120) || !validId(resourceId)) return error("not_found", 404);
+    const criteriaList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
+    const criteriaDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/([^/]+)\/([^/]+)$/);
+    if ((!match && !criteriaList && !criteriaDetail) || url.search || url.hash) return error("not_found", 404);
+    const tenant = match?.[1] ?? criteriaList?.[1] ?? criteriaDetail?.[1];
+    const resourceId = match?.[3];
+    const entryId = criteriaDetail?.[2] ?? null;
+    const version = criteriaDetail?.[3] ?? null;
+    if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
+        (entryId && (!validId(entryId) || !validId(version, 80)))) return error("not_found", 404);
 
-    // The gateway identity envelope is authenticated by HMAC as well as the
-    // private Service Binding boundary; neither mechanism replaces tenant grants.
     const subject = request.headers.get("x-nova-verified-subject");
     const issuer = request.headers.get("x-nova-verified-issuer");
     const audience = request.headers.get("x-nova-verified-audience");
@@ -92,18 +109,28 @@ export default {
     const requestId = request.headers.get("x-nova-request-id");
     const now = Math.floor(Date.now() / 1000);
     if (!validSubject(subject) || issuer !== env.ACCESS_ISSUER || audience !== env.ACCESS_AUDIENCE ||
-        !Number.isInteger(issuedAt) || issuedAt > now + 30 ||
-        issuedAt < now - 120 || !validId(requestId, 80) ||
+        !Number.isInteger(issuedAt) || issuedAt > now + 30 || issuedAt < now - 120 ||
+        !validId(requestId, 80) ||
         !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
       return error("request_not_authorized", 401);
     }
     if (!env.DB) return error("storage_unavailable", 503);
-    const type = routeType === "audit-events" ? "audit_event" :
-      routeType.slice(0, -1);
     try {
-      if (!(await consumeRequestId(env.DB, requestId, issuedAt))) {
-        return error("request_not_authorized", 401);
+      if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
+      if (criteriaList || criteriaDetail) {
+        const membership = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (membership.length !== 1 || membership[0].subject !== subject ||
+            membership[0].tenant_id !== tenant || membership[0].membership_status !== "active" ||
+            membership[0].tenant_status !== "active" || !ROLE_ACTIONS[membership[0].role]?.has("read")) {
+          return error("not_found", 404);
+        }
+        const data = await readCriteriaRegistry(env.DB, tenant, entryId, version);
+        return data === null ? error("not_found", 404) : json({ data, request_id: requestId });
       }
+      const routeType = match[2];
+      const type = routeType === "audit-events" ? "audit_event" : routeType.slice(0, -1);
       const record = await readResource(env.DB, subject, tenant, type, resourceId);
       return record ? json({ data: record, request_id: requestId }) : error("not_found", 404);
     } catch {
