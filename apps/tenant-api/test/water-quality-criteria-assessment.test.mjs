@@ -30,7 +30,7 @@ const criteriaSet = {
 };
 const samples = [{
   id: "sample-1", parameter: "electrical_conductivity",
-  value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z",
+  value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z",\n  provenance: { source_type: "measured", method: "field_meter", evidence_ref: "evidence:sample-1" },
 }];
 
 test("compares only an exact jurisdiction, crop, method, use, parameter and unit match", () => {
@@ -86,4 +86,31 @@ test("requires a valid timezone-qualified sample timestamp", () => {
       [{ ...samples[0], sampled_at }], context, criteriaSet);
     assert.equal(result.results[0].reason, "sample_value_unit_or_date_invalid");
   }
+});
+
+
+test("requires explicit sample provenance and never assesses synthetic fixtures", () => {
+  const missing = assessWaterQualityAgainstDeclaredCriteria(
+    [{ ...samples[0], provenance: undefined }], context, criteriaSet);
+  assert.equal(missing.results[0].reason, "sample_provenance_incomplete_or_invalid");
+  const synthetic = assessWaterQualityAgainstDeclaredCriteria(
+    [{ ...samples[0], provenance: { source_type: "synthetic", method: "test_fixture", evidence_ref: "fixture:sample" } }],
+    context, criteriaSet);
+  assert.equal(synthetic.results[0].status, "not_assessed");
+  assert.equal(synthetic.results[0].reason, "synthetic_sample_not_eligible_for_field_assessment");
+});
+
+test("requires laboratory and model identities for those provenance classes", () => {
+  const laboratory = assessWaterQualityAgainstDeclaredCriteria(
+    [{ ...samples[0], provenance: { source_type: "laboratory", method: "ion_chromatography", evidence_ref: "report:1" } }],
+    context, criteriaSet);
+  assert.equal(laboratory.results[0].reason, "laboratory_identity_missing");
+  const modelled = assessWaterQualityAgainstDeclaredCriteria(
+    [{ ...samples[0], provenance: { source_type: "modelled", method: "downscaling", evidence_ref: "model:1" } }],
+    context, criteriaSet);
+  assert.equal(modelled.results[0].reason, "model_identity_missing");
+  const complete = assessWaterQualityAgainstDeclaredCriteria(
+    [{ ...samples[0], provenance: { source_type: "laboratory", method: "ion_chromatography",
+      laboratory: "Declared lab", evidence_ref: "report:1" } }], context, criteriaSet);
+  assert.equal(complete.results[0].sample_provenance.verification_status, "not_independently_verified");
 });
