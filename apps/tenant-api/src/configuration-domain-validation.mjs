@@ -107,8 +107,7 @@ export function assessDomainConfiguration(payload) {
     if (payload.site.boundary !== undefined && payload.site.boundary !== null) {
       validateGeoJSON(payload.site.boundary, "site.boundary", errors);
     } else issues.push(issue("site.boundary_missing", "site.boundary"));
-    const crops = payload.site.crops ?? [];
-    validateUniqueRecords(crops, "site.crops", errors);
+    const crops = validateUniqueRecords(payload.site.crops ?? [], "site.crops", errors);
     crops.forEach((crop, i) => {
       unknownKeys(crop, RECORD_KEYS.crops, "site.crops[" + i + "]", issues);
       if (!plainObject(crop) || typeof crop.species !== "string" || !crop.species.trim()) {
@@ -121,8 +120,7 @@ export function assessDomainConfiguration(payload) {
     });
     if (!crops.length) issues.push(issue("site.crops_missing", "site.crops"));
     for (const field of ["irrigation_systems", "energy_systems"]) {
-      const list = payload.site[field] ?? [];
-      validateUniqueRecords(list, "site." + field, errors);
+      const list = validateUniqueRecords(payload.site[field] ?? [], "site." + field, errors);
       list.forEach((record, index) => {
         unknownKeys(record, RECORD_KEYS[field], "site." + field + "[" + index + "]", issues);
         if (!plainObject(record)) return;
@@ -143,8 +141,7 @@ export function assessDomainConfiguration(payload) {
     else {
       unknownKeys(payload.inventory, INVENTORY_KEYS, "inventory", issues);
       for (const kind of ["equipment", "sensors", "gateways"]) {
-        const records = payload.inventory[kind] ?? [];
-        validateUniqueRecords(records, "inventory." + kind, errors);
+        const records = validateUniqueRecords(payload.inventory[kind] ?? [], "inventory." + kind, errors);
         records.forEach((record, i) => {
           if (!plainObject(record)) errors.push(issue("inventory.record_invalid", "inventory." + kind + "[" + i + "]", "verification_required"));
           else {
