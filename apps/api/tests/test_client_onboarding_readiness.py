@@ -9,6 +9,9 @@ from apps.api.services.equipment_capabilities import (
     EngineeringRating, MeasurementCapability, SensorProfile,
 )
 from apps.api.services.client_onboarding_readiness import assess_client_onboarding_readiness
+from apps.api.services.model_applicability import (
+    AvailableFeature, FeatureRequirement, ModelApplicabilityContract,
+)
 
 
 BOUNDARY = {
@@ -117,3 +120,37 @@ def test_expired_calibration_is_not_treated_as_current():
     )
     assert result.status == "needs_verification"
     assert "sensor.calibration_expired" in {issue.code for issue in result.issues}
+
+def model_contract():
+    return ModelApplicabilityContract(
+        model_id="crop-water-screen", model_version="1.0", domain="agriculture",
+        crop_scope="restricted", supported_crop_species=("olive",),
+        climate_scope="unrestricted", equipment_scope="unrestricted",
+        required_features=(FeatureRequirement(
+            metric="soil.moisture", accepted_units=("%",),
+            accepted_evidence_classes=("field_observation",),
+        ),),
+        lifecycle="research",
+    )
+
+
+def test_declared_sensor_capability_is_not_promoted_to_model_observation():
+    result = assess_client_onboarding_readiness(
+        configuration(complete=True), registry(complete=True),
+        model_contracts=(model_contract(),),
+    )
+    assert result.model_readiness == "blocked"
+    assert result.model_assessments[0].status == "insufficient_data"
+    assert result.model_assessments[0].missing_features == ("soil.moisture",)
+
+
+def test_explicit_evidence_can_only_make_research_model_research_only():
+    result = assess_client_onboarding_readiness(
+        configuration(complete=True), registry(complete=True),
+        model_contracts=(model_contract(),),
+        available_features=(AvailableFeature(
+            metric="soil.moisture", unit="%", evidence_class="field_observation",
+        ),),
+    )
+    assert result.model_readiness == "research_only"
+    assert result.model_assessments[0].recommendation == "research_only"
