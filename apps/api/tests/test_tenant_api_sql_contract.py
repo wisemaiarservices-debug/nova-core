@@ -22,6 +22,7 @@ def test_private_tenant_api_sql_compiles_against_ordered_schema_migrations():
         MIGRATIONS / "0005_tenant_site_configuration_history.sql",
         MIGRATIONS / "0006_site_configuration_idempotency.sql",
         MIGRATIONS / "0007_water_quality_criteria_registry.sql",
+        MIGRATIONS / "0008_water_quality_criteria_reviewer_events.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
 
