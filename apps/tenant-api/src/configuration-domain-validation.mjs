@@ -179,7 +179,7 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
               errors.push(issue("water_quality.unit_required", samplePath + ".unit", "verification_required"));
             }
             if (typeof sample.sampled_at !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(sample.sampled_at) || !Number.isFinite(Date.parse(sample.sampled_at))) {
-              errors.push(issue("water_quality.sample_timestamp_invalid", samplePath + ".sampled_at", "verification_required"));
+            if (typeof sample.sampled_at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(sample.sampled_at) || !Number.isFinite(Date.parse(sample.sampled_at))) {
             }
             if (typeof sample.method !== "string" || !sample.method.trim()) {
               issues.push(issue("water_quality.method_missing", samplePath + ".method", "verification_required"));
