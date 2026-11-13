@@ -20,9 +20,9 @@ function database({ role = "tenant_admin", active = true, grant = true,
         subject: "reviewer", tenant_id: "tenant-a", resource_type: "site",
         resource_id: "site-a", action: "update",
       }] : [] };
-      if (sql.includes("tenant_site_configurations")) return [{
+      if (sql.includes("tenant_site_configurations")) return { results: [{
         id: "configuration-1", created_by_subject: creator, configuration_version: "v1",
-      }];
+      }] };
       if (sql.includes("tenant_site_configuration_events")) return [{ event_type: latest }];
       throw new Error("unexpected SQL");
     } }; } }; },
