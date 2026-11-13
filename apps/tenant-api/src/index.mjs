@@ -1,5 +1,6 @@
 import { json, error } from "./http.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
+import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -283,7 +284,64 @@ async function resolveStoredCriteria(db, tenant, entryId, version, context, samp
   };
   const resolution = resolveApprovedWaterQualityCriteria(entry, context, sampledAt);
   return { data: { ...resolution, tenant_id: tenant, site_id: entries[0].site_id,
+    title: entries[0].title, authority_name: entry.authority.name,
     lifecycle_status: latest }, status: 200 };
+}
+
+
+async function assessStoredCriteria(db, tenant, entryId, version, context, samples) {
+  if (!Array.isArray(samples) || samples.length < 1 || samples.length > 50 ||
+      samples.some(sample => !onlyKeys(sample, ["id", "parameter", "value", "unit", "sampled_at"]))) {
+    return { error: "criteria_assessment_samples_invalid", status: 400 };
+  }
+  const results = [];
+  let criteriaMetadata = null;
+  for (const sample of samples) {
+    if (typeof sample?.sampled_at !== "string") {
+      results.push({ sample_id: sample?.id ?? null, status: "not_assessed",
+        reason: "sample_value_unit_or_date_invalid" });
+      continue;
+    }
+    const resolved = await resolveStoredCriteria(db, tenant, entryId, version, context, sample.sampled_at);
+    if (resolved.error) return resolved;
+    const criteria = resolved.data;
+    if (criteria.status !== "approved_entry_scope_match") {
+      results.push({ sample_id: sample?.id ?? null, parameter: sample?.parameter ?? null,
+        status: "not_assessed", reason: criteria.reason ?? "criteria_not_resolved" });
+      continue;
+    }
+    const criteriaSet = {
+      id: criteria.entry_id, authority: criteria.authority_name, title: criteria.title,
+      version: criteria.version, effective_from: criteria.effective_from,
+      effective_to: criteria.effective_to, evidence_ref: criteria.source_evidence_ref,
+      criteria: criteria.criteria.map(rule => ({ ...rule,
+        jurisdiction: context.jurisdiction, crop_id: context.crop_id,
+        irrigation_method: context.irrigation_method, intended_use: context.intended_use,
+      })),
+    };
+    const assessment = assessWaterQualityAgainstDeclaredCriteria([sample], context, criteriaSet);
+    results.push(assessment.results[0] ?? { sample_id: sample.id ?? null,
+      status: "not_assessed", reason: "criteria_comparison_result_missing" });
+    criteriaMetadata = assessment.criteria_set;
+  }
+  return { data: {
+    status: results.every(item => item.status !== "not_assessed")
+      ? "declared_criteria_comparison_complete" : "partial_criteria_comparison",
+    context, criteria_set: criteriaMetadata,
+    results,
+    interpretation: "comparison_to_caller_supplied_criteria_only",
+    legal_status: "not_verified", scientific_suitability: "not_assessed",
+    operational_decision: "not_authorized",
+    limitations: [
+      "no_default_or_universal_thresholds_are_embedded",
+      "no_unit_conversion_or_parameter_aliasing_is_performed",
+      "criteria_authority_accuracy_and_current_legal_status_are_not_independently_verified",
+      "within_declared_criterion_does_not_mean_safe_or_suitable",
+      "outside_declared_criterion_is_not_a_standalone_operational_decision",
+      "sampling_representativeness_and_laboratory_accreditation_are_not_established",
+      "human_regulatory_and_domain_expert_review_is_required",
+    ],
+  }, status: 200 };
 }
 
 async function readCriteriaReviewers(db, tenant) {
