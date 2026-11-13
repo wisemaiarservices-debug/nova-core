@@ -48,7 +48,7 @@ test("allows an explicitly global source but does not mark it verified", async (
     ...validRows,
     source: { ...validRows.source, site_id: null, verification_status: "unverified" },
   });
-  assert.equal(await resolveObservationOwnership(db, observation), true);
+  assert.equal(await resolveObservationOwnership(db, observation), "tenant-a");
 });
 
 for (const [name, rows] of [
