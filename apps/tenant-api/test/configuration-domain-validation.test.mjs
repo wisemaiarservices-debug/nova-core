@@ -759,3 +759,95 @@ test("accepts timezone-qualified UTC and numeric-offset water-quality sample tim
     assert.equal(leapDate.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"), false, sampledAt);
   }
 });
+
+
+test("validates soil horizons, sample depth intervals and traceable laboratory analytes", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    name: "North block profile",
+    classification_system: "WRB",
+    classification: "Cambisol",
+    horizons: [
+      { id: "horizon-a", name: "A", top_depth_cm: 0, bottom_depth_cm: 25, texture: "loam" },
+      { id: "horizon-b", name: "B", top_depth_cm: 25, bottom_depth_cm: 80, texture: "clay_loam" },
+    ],
+    samples: [{
+      id: "soil-sample-1",
+      sampling_point: { crs: "EPSG:4326", coordinates: [10.2, 36.8] },
+      top_depth_cm: 10,
+      bottom_depth_cm: 30,
+      sampled_at: "2026-10-20T09:30:00Z",
+      method: "composite_sampling",
+      laboratory: "Regional Soil Lab",
+      analytes: [
+        { parameter: "pH", value: 7.4, unit: "pH", method: "ISO_10390" },
+        { parameter: "organic_carbon", value: 1.8, unit: "g/100g", method: "dry_combustion" },
+      ],
+      evidence_ref: "soil-report-1",
+    }],
+    evidence_ref: "soil-profile-report-1",
+  }];
+  value.evidence.push(
+    { source_class: "laboratory_report", reference: "soil-report-1" },
+    { source_class: "soil_survey", reference: "soil-profile-report-1" },
+  );
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.some(item => item.code.startsWith("soil_")), false);
+  assert.equal(result.issues.some(item => item.code.startsWith("evidence.reference_unresolved") && item.path.includes("soil_profiles")), false);
+});
+
+test("rejects invalid or overlapping soil horizon depths and invalid sample intervals", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    horizons: [
+      { id: "horizon-a", top_depth_cm: 0, bottom_depth_cm: 30 },
+      { id: "horizon-b", top_depth_cm: 25, bottom_depth_cm: 60 },
+    ],
+    samples: [{
+      id: "soil-sample-1", top_depth_cm: 20, bottom_depth_cm: 10,
+      sampled_at: "2026-10-20T09:30:00Z",
+    }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "soil_horizon.depth_overlap"));
+  assert.ok(result.errors.some(item => item.code === "soil_sample.depth_interval_invalid"));
+});
+
+test("requires soil sample timestamp, method, laboratory, analytes and evidence provenance", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    samples: [{
+      id: "soil-sample-1", top_depth_cm: 0, bottom_depth_cm: 20,
+      sampled_at: "2026-02-30T09:30:00Z",
+      analytes: [{ parameter: "pH", value: 7, unit: "pH" }],
+      evidence_ref: "missing-soil-report",
+    }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "soil_sample.timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "soil_sample.method_missing"));
+  assert.ok(result.issues.some(item => item.code === "soil_sample.laboratory_missing"));
+  assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("soil_profiles")));
+});
+
+test("rejects malformed soil sampling coordinates and non-finite analyte results", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    samples: [{
+      id: "soil-sample-1",
+      sampling_point: { crs: "EPSG:4326", coordinates: [250, 95] },
+      top_depth_cm: 0, bottom_depth_cm: 20,
+      sampled_at: "2024-02-29T09:30:00Z",
+      method: "core_sampling",
+      analytes: [{ parameter: "nitrate", value: Number.NaN, unit: "mg/kg" }],
+    }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "soil_sample.sampling_point_invalid"));
+  assert.ok(result.errors.some(item => item.code === "soil_sample.analyte_invalid"));
+});
