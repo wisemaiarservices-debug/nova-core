@@ -33,6 +33,14 @@ export async function assignObservationReviewer(db, tenant, actor, requestId, bo
       return { error: "observation_reviewer_membership_not_active", status: 409 };
     }
   }
+  if (action === "revoke") {
+    const active = await db.prepare(
+      "SELECT reviewer_subject FROM observation_reviewers WHERE tenant_id = ? AND site_id = ? AND reviewer_subject = ? AND reviewer_role = 'measurement_reviewer' AND status = 'active' LIMIT 2"
+    ).bind(tenant, body.site_id, body.reviewer_subject).all();
+    if (!Array.isArray(active?.results) || active.results.length !== 1) {
+      return { error: "active_observation_reviewer_not_found", status: 404 };
+    }
+  }
   const eventId = crypto.randomUUID();
   const first = action === "assign"
     ? db.prepare("INSERT INTO observation_reviewers (tenant_id, site_id, reviewer_subject, reviewer_role, status, assigned_by_subject, assignment_evidence_ref) VALUES (?, ?, ?, 'measurement_reviewer', 'active', ?, ?) ON CONFLICT(tenant_id, site_id, reviewer_subject, reviewer_role) DO NOTHING")
