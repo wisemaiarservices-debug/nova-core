@@ -25,13 +25,13 @@ export async function assignObservationReviewer(db, tenant, actor, requestId, bo
   const first = action === "assign"
     ? db.prepare("INSERT INTO observation_reviewers (tenant_id, site_id, reviewer_subject, reviewer_role, status, assigned_by_subject, assignment_evidence_ref) VALUES (?, ?, ?, 'measurement_reviewer', 'active', ?, ?) ON CONFLICT(tenant_id, site_id, reviewer_subject, reviewer_role) DO NOTHING")
       .bind(tenant, body.site_id, body.reviewer_subject, actor, body.evidence_ref)
-    : db.prepare("UPDATE observation_reviewers SET status = 'revoked' WHERE tenant_id = ? AND site_id = ? AND reviewer_subject = ? AND reviewer_role = 'measurement_reviewer' AND status = 'active'")
-      .bind(tenant, body.site_id, body.reviewer_subject);
+    : db.prepare("INSERT INTO observation_reviewer_events (id, tenant_id, site_id, reviewer_subject, reviewer_role, event_type, actor_subject, evidence_ref, reason, request_id) VALUES (?, ?, ?, ?, 'measurement_reviewer', 'revoked', ?, ?, ?, ?)")
+      .bind(eventId, tenant, body.site_id, body.reviewer_subject, actor, body.evidence_ref, body.reason, requestId);
   const second = action === "assign"
     ? db.prepare("INSERT INTO observation_reviewer_events (id, tenant_id, site_id, reviewer_subject, reviewer_role, event_type, actor_subject, evidence_ref, request_id) SELECT ?, ?, ?, ?, 'measurement_reviewer', 'assigned', ?, ?, ? WHERE changes() = 1")
       .bind(eventId, tenant, body.site_id, body.reviewer_subject, actor, body.evidence_ref, requestId)
-    : db.prepare("INSERT INTO observation_reviewer_events (id, tenant_id, site_id, reviewer_subject, reviewer_role, event_type, actor_subject, evidence_ref, reason, request_id) SELECT ?, ?, ?, ?, 'measurement_reviewer', 'revoked', ?, ?, ?, ? WHERE changes() = 1")
-      .bind(eventId, tenant, body.site_id, body.reviewer_subject, actor, body.evidence_ref, body.reason, requestId);
+    : db.prepare("UPDATE observation_reviewers SET status = 'revoked' WHERE tenant_id = ? AND site_id = ? AND reviewer_subject = ? AND reviewer_role = 'measurement_reviewer' AND status = 'active' AND EXISTS (SELECT 1 FROM observation_reviewer_events e WHERE e.id = ? AND e.tenant_id = observation_reviewers.tenant_id AND e.site_id = observation_reviewers.site_id AND e.reviewer_subject = observation_reviewers.reviewer_subject AND e.event_type = 'revoked')")
+      .bind(tenant, body.site_id, body.reviewer_subject, eventId);
   const results = await db.batch([first, second]);
   if (!Array.isArray(results) || results.length !== 2 ||
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
