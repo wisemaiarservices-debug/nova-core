@@ -16,7 +16,7 @@ function canonicalValue(value, depth, budget) {
   }
   if (Array.isArray(value)) {
     if (value.length > 1000) throw new Error("configuration_array_too_large");
-    return "[" + value.map(item => canonicalValue(item, depth + 1, budget)).join(",") + "]";
+    return "[" + Array.from(value, item => canonicalValue(item, depth + 1, budget)).join(",") + "]";
   }
   if (typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) {
     throw new Error("configuration_value_not_json");
