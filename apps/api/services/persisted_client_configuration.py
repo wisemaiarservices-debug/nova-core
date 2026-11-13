@@ -10,9 +10,16 @@ import hmac
 import json
 import re
 
-from pydantic import ValidationError
+from datetime import date
+
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from apps.api.services.client_configuration import ClientConfiguration
+from apps.api.services.client_onboarding_readiness import (
+    ClientOnboardingReadiness, assess_client_onboarding_readiness,
+)
+from apps.api.services.equipment_capabilities import CapabilityRegistry
+from apps.api.services.model_applicability import AvailableFeature, ModelApplicabilityContract
 
 
 CONFIGURATION_SCHEMA = "nova-client-configuration-v1"
@@ -73,3 +80,54 @@ def validate_configuration_snapshot(
     ):
         raise ConfigurationSnapshotError("configuration_version_mismatch")
     return configuration
+
+
+
+class PersistedClientOnboardingAssessment(BaseModel):
+    """Validated immutable configuration plus deterministic onboarding result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    configuration: ClientConfiguration
+    readiness: ClientOnboardingReadiness
+
+
+def assess_persisted_client_onboarding(
+    *,
+    tenant_id: str,
+    site_id: str,
+    configuration_version: str,
+    schema_id: str,
+    configuration_json: str,
+    content_sha256: str,
+    registry: CapabilityRegistry,
+    assessed_on: date | None = None,
+    model_contracts: tuple[ModelApplicabilityContract, ...] = (),
+    available_features: tuple[AvailableFeature, ...] = (),
+    climate_zone: str | None = None,
+) -> PersistedClientOnboardingAssessment:
+    """Validate the immutable snapshot, then assess it against its matching inventory.
+
+    Registry tenant/site mismatch is rejected by the existing readiness service.
+    No configuration or capability declaration is promoted to observed telemetry.
+    """
+    configuration = validate_configuration_snapshot(
+        tenant_id=tenant_id,
+        site_id=site_id,
+        configuration_version=configuration_version,
+        schema_id=schema_id,
+        configuration_json=configuration_json,
+        content_sha256=content_sha256,
+    )
+    readiness = assess_client_onboarding_readiness(
+        configuration,
+        registry,
+        assessed_on=assessed_on,
+        model_contracts=model_contracts,
+        available_features=available_features,
+        climate_zone=climate_zone,
+    )
+    return PersistedClientOnboardingAssessment(
+        configuration=configuration,
+        readiness=readiness,
+    )
