@@ -92,7 +92,7 @@ export async function reviewSiteConfiguration({
   const occurredAt = new Date().toISOString();
   const details = JSON.stringify({
     configuration_id: configuration.id, configuration_version: version,
-    decision, reason,
+    decision, reason, reviewer_role: reviewerRole,
   });
   const results = await db.batch([
     db.prepare(
@@ -112,7 +112,7 @@ export async function reviewSiteConfiguration({
   return Object.freeze({
     configuration_id: configuration.id, site_id: siteId,
     configuration_version: version, status: eventType,
-    reviewed_by_subject: principalSubject, reviewed_at: occurredAt,
+    reviewed_by_subject: principalSubject, reviewer_role: reviewerRole, reviewed_at: occurredAt,
     reason, operational_decision: "not_authorized",
   });
 }
