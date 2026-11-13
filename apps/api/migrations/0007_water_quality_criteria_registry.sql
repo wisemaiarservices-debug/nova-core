@@ -108,6 +108,11 @@ CREATE TRIGGER water_quality_criteria_reviewer_active_tenant_guard
 BEFORE INSERT ON water_quality_criteria_reviewers
 WHEN NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
 BEGIN SELECT RAISE(ABORT, 'reviewer assignment requires an active tenant'); END;
+CREATE TRIGGER water_quality_criteria_reviewer_active_update_guard
+BEFORE UPDATE OF status ON water_quality_criteria_reviewers
+WHEN NEW.status = 'active'
+  AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
+BEGIN SELECT RAISE(ABORT, 'reviewer activation requires an active tenant'); END;
 CREATE TRIGGER water_quality_criteria_reviewer_scope_immutable_guard
 BEFORE UPDATE OF tenant_id, reviewer_subject, reviewer_role, jurisdiction
 ON water_quality_criteria_reviewers
@@ -129,6 +134,7 @@ WHEN NOT EXISTS (
     AND r.reviewer_role = NEW.reviewer_role
     AND r.jurisdiction = NEW.jurisdiction
     AND r.status = 'active'
+    AND EXISTS (SELECT 1 FROM tenants t WHERE t.id = NEW.tenant_id AND t.status = 'active')
     AND (SELECT ev.event_type FROM water_quality_criteria_events ev
          WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version
          ORDER BY ev.rowid DESC LIMIT 1) = 'submitted_for_review'
@@ -166,15 +172,27 @@ WHEN
     (SELECT e.event_type FROM water_quality_criteria_events e
      WHERE e.tenant_id = NEW.tenant_id AND e.entry_id = NEW.entry_id AND e.entry_version = NEW.entry_version
      ORDER BY e.rowid DESC LIMIT 1) IS NOT 'submitted_for_review'
-    OR (SELECT COUNT(DISTINCT reviewer_subject) FROM water_quality_criteria_approvals a
+    OR (SELECT COUNT(DISTINCT a.reviewer_subject)
+        FROM water_quality_criteria_approvals a
+        JOIN water_quality_criteria_reviewers r
+          ON r.tenant_id = a.tenant_id AND r.reviewer_subject = a.reviewer_subject
+         AND r.reviewer_role = a.reviewer_role AND r.status = 'active'
         WHERE a.tenant_id = NEW.tenant_id AND a.entry_id = NEW.entry_id
           AND a.entry_version = NEW.entry_version AND a.decision = 'approve'
           AND a.reviewer_role = 'regulatory_reviewer') < 1
-    OR (SELECT COUNT(DISTINCT reviewer_subject) FROM water_quality_criteria_approvals a
+    OR (SELECT COUNT(DISTINCT a.reviewer_subject)
+        FROM water_quality_criteria_approvals a
+        JOIN water_quality_criteria_reviewers r
+          ON r.tenant_id = a.tenant_id AND r.reviewer_subject = a.reviewer_subject
+         AND r.reviewer_role = a.reviewer_role AND r.status = 'active'
         WHERE a.tenant_id = NEW.tenant_id AND a.entry_id = NEW.entry_id
           AND a.entry_version = NEW.entry_version AND a.decision = 'approve'
           AND a.reviewer_role = 'domain_expert') < 1
-    OR (SELECT COUNT(DISTINCT reviewer_subject) FROM water_quality_criteria_approvals a
+    OR (SELECT COUNT(DISTINCT a.reviewer_subject)
+        FROM water_quality_criteria_approvals a
+        JOIN water_quality_criteria_reviewers r
+          ON r.tenant_id = a.tenant_id AND r.reviewer_subject = a.reviewer_subject
+         AND r.reviewer_role = a.reviewer_role AND r.status = 'active'
         WHERE a.tenant_id = NEW.tenant_id AND a.entry_id = NEW.entry_id
           AND a.entry_version = NEW.entry_version AND a.decision = 'approve') < 2
   ))
