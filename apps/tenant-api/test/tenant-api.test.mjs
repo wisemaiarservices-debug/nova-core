@@ -7,7 +7,7 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
@@ -28,6 +28,8 @@ class DB {
           resource_id: args[3], action: "read",
         }] : []) };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_reviewers")) return { results: db.reviewerRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_reviewer_events")) return { results: db.reviewerEventRows ?? [] };
         if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) return { results: db.resourceRows ?? (db.resource ? [{
@@ -533,4 +535,42 @@ test("review requires a rejection reason and returns conflict on terminal or dup
     "POST", JSON.stringify({ reviewer_role: "domain_expert", decision: "approve",
       evidence_ref: "evidence:review" })), env(db));
   assert.equal(conflict.status, 409);
+});
+
+
+test("assigned external reviewer can read only the matching jurisdiction criteria and full review context", async () => {
+  const db = new DB();
+  db.criteriaRows = [{ id: "criteria-1", tenant_id: "tenant-a", version: "1.0",
+    jurisdiction: "TN", created_by_subject: "criteria-author@example.test",
+    entry_json: JSON.stringify({ id: "criteria-1", criteria: [{ parameter: "ec", value: 2 }] }) }];
+  db.membershipRows = [];
+  db.reviewerRows = [reviewAssignmentRow("reviewer@example.test", "domain_expert")];
+  db.criteriaEventRows = [{ event_type: "submitted_for_review", actor_subject: "tenant-admin" }];
+  db.approvalRows = [{ reviewer_subject: "regulatory@example.test", reviewer_role: "regulatory_reviewer",
+    decision: "approve", evidence_ref: "evidence:regulatory", reviewed_at: "2026-11-13T10:00:00Z" }];
+  const response = await worker.fetch(await request({ "x-nova-verified-subject": "reviewer@example.test" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0"), env(db));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.data.lifecycle.status, "submitted_for_review");
+  assert.equal(body.data.approvals[0].decision, "approve");
+  assert.equal(body.data.legal_status, "not_verified");
+  assert.equal(body.data.operational_decision, "not_authorized");
+});
+
+test("unassigned and wrong-jurisdiction identities cannot read criteria review context", async () => {
+  for (const assignment of [
+    [],
+    [reviewAssignmentRow("reviewer@example.test", "domain_expert", "FR")],
+  ]) {
+    const db = new DB();
+    db.criteriaRows = [{ id: "criteria-1", tenant_id: "tenant-a", version: "1.0",
+      jurisdiction: "TN", created_by_subject: "criteria-author@example.test",
+      entry_json: JSON.stringify({ id: "criteria-1" }) }];
+    db.membershipRows = [];
+    db.reviewerRows = assignment;
+    const response = await worker.fetch(await request({ "x-nova-verified-subject": "reviewer@example.test" },
+      "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0"), env(db));
+    assert.equal(response.status, 404);
+  }
 });
