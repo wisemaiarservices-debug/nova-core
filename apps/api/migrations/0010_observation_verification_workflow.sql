@@ -105,7 +105,8 @@ BEGIN SELECT RAISE(ABORT, 'verification event requires an active tenant'); END;
 CREATE TRIGGER observation_verification_transition_guard
 BEFORE INSERT ON observation_verification_events
 WHEN NOT EXISTS (
-  SELECT 1 FROM observation_reviewers r
+  SELECT 1 FROM observation_reviewers r JOIN tenants t
+    ON t.id = r.tenant_id AND t.status = 'active'
   WHERE r.tenant_id = NEW.tenant_id AND r.site_id = NEW.site_id
     AND r.reviewer_subject = NEW.reviewer_subject AND r.reviewer_role = NEW.reviewer_role
     AND r.status = 'active'
@@ -114,19 +115,40 @@ OR NOT EXISTS (
   SELECT 1 FROM observations o
   WHERE o.id = NEW.observation_id AND o.tenant_id = NEW.tenant_id
     AND o.site_id = NEW.site_id
-    AND ((NEW.event_type = 'verified' AND o.verification_status = 'verified')
-      OR (NEW.event_type = 'rejected' AND o.verification_status = 'rejected')
-      OR (NEW.event_type = 'revoked' AND o.verification_status = 'unverified'))
+    AND (
+      (NEW.event_type IN ('verified', 'rejected') AND o.verification_status = 'unverified'
+        AND COALESCE((SELECT e.event_type FROM observation_verification_events e
+          WHERE e.tenant_id = NEW.tenant_id AND e.observation_id = NEW.observation_id
+          ORDER BY e.rowid DESC LIMIT 1), 'initial') IN ('initial', 'revoked'))
+      OR
+      (NEW.event_type = 'revoked' AND o.verification_status = 'verified'
+        AND (SELECT e.event_type FROM observation_verification_events e
+          WHERE e.tenant_id = NEW.tenant_id AND e.observation_id = NEW.observation_id
+          ORDER BY e.rowid DESC LIMIT 1) = 'verified')
+    )
 )
-OR (NEW.event_type IN ('verified', 'rejected') AND
-  (SELECT e.event_type FROM observation_verification_events e
-   WHERE e.tenant_id = NEW.tenant_id AND e.observation_id = NEW.observation_id
-   ORDER BY e.rowid DESC LIMIT 1) NOT IN ('revoked'))
-OR (NEW.event_type = 'revoked' AND
-  (SELECT e.event_type FROM observation_verification_events e
-   WHERE e.tenant_id = NEW.tenant_id AND e.observation_id = NEW.observation_id
-   ORDER BY e.rowid DESC LIMIT 1) IS NOT 'verified')
 BEGIN SELECT RAISE(ABORT, 'invalid observation verification transition'); END;
+
+-- A status change is accepted only when its matching append-only decision event
+-- already exists in the same D1 transaction. This blocks direct status edits.
+CREATE TRIGGER observations_verification_status_guard
+BEFORE UPDATE OF verification_status ON observations
+WHEN NEW.verification_status IS NOT OLD.verification_status
+AND NOT EXISTS (
+  SELECT 1 FROM observation_verification_events e
+  WHERE e.observation_id = OLD.id AND e.tenant_id = OLD.tenant_id
+    AND e.site_id = OLD.site_id
+    AND e.event_type = CASE NEW.verification_status
+      WHEN 'verified' THEN 'verified'
+      WHEN 'rejected' THEN 'rejected'
+      WHEN 'unverified' THEN 'revoked'
+      ELSE ''
+    END
+    AND ((OLD.verification_status = 'unverified' AND NEW.verification_status IN ('verified', 'rejected'))
+      OR (OLD.verification_status = 'verified' AND NEW.verification_status = 'unverified'))
+  ORDER BY e.rowid DESC LIMIT 1
+)
+BEGIN SELECT RAISE(ABORT, 'observation verification status requires a matching review event'); END;
 CREATE TRIGGER observation_verification_events_immutable_update_guard
 BEFORE UPDATE ON observation_verification_events
 BEGIN SELECT RAISE(ABORT, 'observation verification history is immutable'); END;
