@@ -196,3 +196,78 @@ def test_laboratory_report_evidence_and_history_are_immutable():
         db.execute("UPDATE laboratory_report_evidence_events SET actor_subject='forged' WHERE id='lab-event-a'")
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("DELETE FROM laboratory_report_evidence_events WHERE id='lab-event-a'")
+
+
+def add_calibration(db):
+    db.execute("""INSERT INTO source_calibrations
+      (id, tenant_id, site_id, source_id, instrument_serial, metric, unit,
+       calibration_method, calibration_standard, calibrated_at, valid_until,
+       range_min, range_max, uncertainty, evidence_ref, created_by_subject)
+      VALUES ('cal-a', 'tenant-a', 'site-a', 'source-a', 'SN-001', 'ec', 'dS/m',
+       'laboratory', 'ISO reference method', '2026-05-01T10:00:00.000Z',
+       '2027-05-01T10:00:00.000Z', 0, 10, 0.05, 'inspection:certificate-1', 'owner-a')""")
+    db.execute("""INSERT INTO source_calibration_events
+      (id, calibration_id, tenant_id, site_id, source_id, event_type, actor_subject,
+       evidence_ref, request_id)
+      VALUES ('cal-reg-a', 'cal-a', 'tenant-a', 'site-a', 'source-a',
+       'registered', 'owner-a', 'inspection:certificate-1', 'request-reg')""")
+
+
+def test_source_calibration_requires_independent_assigned_reviewer_and_is_revocable():
+    db = database()
+    add_calibration(db)
+    db.execute("""INSERT INTO source_calibration_events
+      (id, calibration_id, tenant_id, site_id, source_id, event_type, actor_subject,
+       reviewer_role, evidence_ref, request_id)
+      VALUES ('cal-verify-a', 'cal-a', 'tenant-a', 'site-a', 'source-a',
+       'verified', 'reviewer-a', 'measurement_reviewer',
+       'inspection:independent-review', 'request-verify')""")
+    db.execute("UPDATE source_calibrations SET status='verified' WHERE id='cal-a'")
+    assert db.execute("SELECT status FROM source_calibrations WHERE id='cal-a'").fetchone() == ("verified",)
+    db.execute("""INSERT INTO source_calibration_events
+      (id, calibration_id, tenant_id, site_id, source_id, event_type, actor_subject,
+       reviewer_role, evidence_ref, reason, request_id)
+      VALUES ('cal-revoke-a', 'cal-a', 'tenant-a', 'site-a', 'source-a',
+       'revoked', 'reviewer-a', 'measurement_reviewer',
+       'inspection:withdrawal', 'Calibration certificate withdrawn', 'request-revoke')""")
+    db.execute("UPDATE source_calibrations SET status='unverified' WHERE id='cal-a'")
+    assert db.execute("SELECT status FROM source_calibrations WHERE id='cal-a'").fetchone() == ("unverified",)
+    assert db.execute("SELECT COUNT(*) FROM source_calibration_events WHERE calibration_id='cal-a'").fetchone() == (3,)
+
+
+def test_calibration_status_cannot_be_changed_without_a_matching_review_event():
+    db = database()
+    add_calibration(db)
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE source_calibrations SET status='verified' WHERE id='cal-a'")
+
+
+def test_calibration_self_review_and_inactive_reviewer_membership_are_blocked():
+    db = database()
+    add_calibration(db)
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("""INSERT INTO source_calibration_events
+          (id, calibration_id, tenant_id, site_id, source_id, event_type, actor_subject,
+           reviewer_role, evidence_ref, request_id)
+          VALUES ('cal-self', 'cal-a', 'tenant-a', 'site-a', 'source-a',
+           'verified', 'owner-a', 'measurement_reviewer', 'inspection:self', 'request-self')""")
+    db.execute("UPDATE tenant_memberships SET status='inactive' WHERE tenant_id='tenant-a' AND subject='reviewer-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("""INSERT INTO source_calibration_events
+          (id, calibration_id, tenant_id, site_id, source_id, event_type, actor_subject,
+           reviewer_role, evidence_ref, request_id)
+          VALUES ('cal-inactive', 'cal-a', 'tenant-a', 'site-a', 'source-a',
+           'verified', 'reviewer-a', 'measurement_reviewer', 'inspection:inactive', 'request-inactive')""")
+
+
+def test_calibration_identity_scope_and_history_are_immutable():
+    db = database()
+    add_calibration(db)
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE source_calibrations SET range_max=20 WHERE id='cal-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("DELETE FROM source_calibrations WHERE id='cal-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE source_calibration_events SET evidence_ref='edited' WHERE id='cal-reg-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("DELETE FROM source_calibration_events WHERE id='cal-reg-a'")
