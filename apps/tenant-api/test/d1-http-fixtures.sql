@@ -12,7 +12,8 @@ INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resou
 
 INSERT INTO sites (id, tenant_id, name, status) VALUES
   ('site-http-a', 'tenant-http-a', 'CI Site A', 'active'),
-  ('site-http-b', 'tenant-http-b', 'CI Site B', 'active');
+  ('site-http-b', 'tenant-http-b', 'CI Site B', 'active'),
+  ('site-http-private', 'tenant-http-a', 'CI Private Site', 'active');
 
 
 -- Test-only failure injection: the local D1 integration harness verifies that
@@ -36,4 +37,13 @@ VALUES
 ('criteria-http-b', 'tenant-http-b', NULL, 'TN', '1.0', 'Other tenant fixture',
  '{"id":"criteria-http-b","jurisdiction":"TN","version":"1.0","title":"Other tenant fixture","criteria":[]}',
  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+ 'fixture:ci-only', '2026-01-01', '2026-02-01', 'ci-fixture-author');
+
+INSERT INTO water_quality_criteria_entries
+(id, tenant_id, site_id, jurisdiction, version, title, entry_json,
+ source_document_sha256, source_evidence_ref, published_on, effective_from, created_by_subject)
+VALUES
+('criteria-http-private', 'tenant-http-a', 'site-http-private', 'TN', '1.0', 'Private site fixture',
+ '{"id":"criteria-http-private","jurisdiction":"TN","version":"1.0","title":"Private site fixture","criteria":[]}',
+ 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
  'fixture:ci-only', '2026-01-01', '2026-02-01', 'ci-fixture-author');
