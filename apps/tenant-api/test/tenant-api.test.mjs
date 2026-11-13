@@ -262,6 +262,25 @@ test("denies criteria registry reads for inactive, duplicate or non-reader tenan
   }
 });
 
+test("criteria list binds the authenticated subject to both site-grant and reviewer-jurisdiction filters", async () => {
+  const db = new DB();
+  db.criteriaRows = [{
+    id: "criteria-site-a", tenant_id: "tenant-a", site_id: "site-a",
+    jurisdiction: "TN", version: "1.0", title: "Site criteria",
+    entry_json: JSON.stringify({ id: "criteria-site-a" }),
+  }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria"), env(db));
+  assert.equal(response.status, 200);
+  const query = db.calls.find(call => call.sql.includes("FROM water_quality_criteria_entries"));
+  assert.deepEqual(query.args, ["tenant-a", "operator@example.test", "operator@example.test"]);
+  assert.match(query.sql, /tenant_resource_grants g/);
+  assert.match(query.sql, /g\.subject = \?/);
+  assert.match(query.sql, /water_quality_criteria_reviewers r/);
+  assert.match(query.sql, /r\.reviewer_subject = \?/);
+  assert.match(query.sql, /r\.jurisdiction = e\.jurisdiction/);
+});
+
 test("does not return criteria belonging to another tenant or unknown versions", async () => {
   const db = new DB(); db.criteriaRows = [];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
