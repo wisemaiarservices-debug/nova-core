@@ -33,7 +33,7 @@ function fakeDb({prior=null,batchFailure=false}={}) {
 }
 const input={principalSubject:"operator-1",tenantId:"tenant-a",siteId:"site-a",
   idempotencyKey:"idem-001",requestId:"req-001",payload:{crop:"olive"},
-  schemaId:"nova.client-config.v1",expectedSchemaId:"nova.client-config.v1",cryptoProvider:webcrypto};
+  schemaId:"nova.client-config.v1",cryptoProvider:webcrypto};
 
 test("performs authorization reads before one atomic five-statement write batch",async()=>{
   const db=fakeDb();
