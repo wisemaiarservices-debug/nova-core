@@ -442,7 +442,9 @@ export default {
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
     if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
         (entryId && (!validId(entryId) || !validId(version, 80))) ||
-        (observationVerification && !validId(observationVerification[2])) ||\n        ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||\n        (labReportDetail && !validId(labReportDetail[3]))) return error("not_found", 404);
+        (observationVerification && !validId(observationVerification[2])) ||
+        ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||
+        (labReportDetail && !validId(labReportDetail[3]))) return error("not_found", 404);
 
     const subject = request.headers.get("x-nova-verified-subject");
     const issuer = request.headers.get("x-nova-verified-issuer");
