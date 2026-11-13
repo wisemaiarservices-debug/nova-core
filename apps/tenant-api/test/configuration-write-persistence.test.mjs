@@ -86,3 +86,11 @@ test("does not report success when the atomic D1 batch fails",async()=>{
   const db=fakeDb({batchFailure:true});
   await assert.rejects(()=>createSiteConfiguration({db,...input}),/simulated_atomic_failure/);
 });
+
+test("does not accept a successful-looking batch when a required statement changes zero rows",async()=>{
+  const db=fakeDb();
+  db.batch=async statements=>statements.map((_,index)=>({
+    success:true,meta:{changes:index===4?0:1},
+  }));
+  await assert.rejects(()=>createSiteConfiguration({db,...input}),/configuration_atomic_write_failed/);
+});
