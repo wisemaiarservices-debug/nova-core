@@ -303,6 +303,32 @@ test("criteria list binds the authenticated subject to both site-grant and revie
   assert.match(query.sql, /r\.jurisdiction = e\.jurisdiction/);
 });
 
+test("denies a site-scoped criteria detail read without a matching site grant or reviewer assignment", async () => {
+  const db = new DB({ grant: false });
+  db.criteriaRows = [{ id: "criteria-site-private", tenant_id: "tenant-a", site_id: "site-private",
+    jurisdiction: "TN", version: "1.0", title: "Private site criteria",
+    entry_json: JSON.stringify({ id: "criteria-site-private" }) }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-site-private/1.0"), env(db));
+  assert.equal(response.status, 404);
+  const grantQuery = db.calls.find(call => call.sql.includes("FROM tenant_resource_grants"));
+  assert.deepEqual(grantQuery.args, ["tenant-a", "operator@example.test", "site-private"]);
+  const reviewerQuery = db.calls.find(call => call.sql.includes("SELECT DISTINCT r.reviewer_subject"));
+  assert.deepEqual(reviewerQuery.args, ["tenant-a", "operator@example.test", "TN"]);
+});
+
+test("allows site-scoped criteria detail reads only with an exact matching site grant", async () => {
+  const db = new DB();
+  db.criteriaRows = [{ id: "criteria-site-private", tenant_id: "tenant-a", site_id: "site-private",
+    jurisdiction: "TN", version: "1.0", title: "Private site criteria",
+    entry_json: JSON.stringify({ id: "criteria-site-private" }) }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-site-private/1.0"), env(db));
+  assert.equal(response.status, 200);
+  const grantQuery = db.calls.find(call => call.sql.includes("FROM tenant_resource_grants"));
+  assert.deepEqual(grantQuery.args, ["tenant-a", "operator@example.test", "site-private"]);
+});
+
 test("does not return criteria belonging to another tenant or unknown versions", async () => {
   const db = new DB(); db.criteriaRows = [];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
