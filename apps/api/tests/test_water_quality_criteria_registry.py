@@ -181,6 +181,7 @@ def test_lifecycle_requires_submit_before_approval_and_is_append_only():
                (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id)
                VALUES ('early','tenant-a','criteria-a','1.0','approved','workflow','req-early')"""
         )
+    submit(db)
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(
             """INSERT INTO water_quality_criteria_events
