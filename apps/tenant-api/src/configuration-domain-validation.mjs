@@ -6,9 +6,9 @@ const CALIBRATION_KEYS = new Set(["id", "scope", "scope_id", "unit", "method", "
 const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at", "issuer", "digest"]);
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
-  irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "zones", "evidence_ref"]),
+  irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
   energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "evidence_ref"]),
-  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "phase", "evidence_ref"]),
+  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "evidence_ref"]),
   sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "gateway_id", "calibration_record_id", "evidence_ref"]),
   gateways: new Set(["id", "manufacturer", "model", "protocol", "supported_protocols", "connectivity_status", "evidence_ref"]),
 };
@@ -152,6 +152,33 @@ export function assessDomainConfiguration(payload) {
             !["single_phase", "three_phase", "dc", "unknown"].includes(record.grid_phase)) {
           errors.push(issue("energy.grid_phase_invalid", "site.energy_systems[" + index + "].grid_phase", "verification_required"));
         }
+        if (field === "irrigation_systems") {
+          if (record.control_protocol !== undefined && !PROTOCOLS.has(record.control_protocol)) {
+            issues.push(issue("irrigation.control_protocol_unrecognized",
+              "site.irrigation_systems[" + index + "].control_protocol", "verification_required"));
+          }
+          if (record.zones !== undefined) {
+            if (!Array.isArray(record.zones)) {
+              errors.push(issue("irrigation.zones_invalid_type", "site.irrigation_systems[" + index + "].zones", "verification_required"));
+            } else {
+              const zoneIds = new Set();
+              record.zones.forEach((zone, zoneIndex) => {
+                const zonePath = "site.irrigation_systems[" + index + "].zones[" + zoneIndex + "]";
+                if (!plainObject(zone) || typeof zone.id !== "string" || !TOKEN.test(zone.id) || zoneIds.has(zone.id)) {
+                  errors.push(issue("irrigation.zone_id_missing_or_duplicate", zonePath + ".id", "verification_required"));
+                  return;
+                }
+                zoneIds.add(zone.id);
+                unknownKeys(zone, new Set(["id", "pump_id", "controller_id", "design_flow_m3_per_hour", "area_ha"]), zonePath, issues);
+                for (const key of ["design_flow_m3_per_hour", "area_ha"]) {
+                  if (zone[key] !== undefined && zone[key] !== null && !finitePositive(zone[key])) {
+                    errors.push(issue("engineering.rating_must_be_positive", zonePath + "." + key, "verification_required"));
+                  }
+                }
+              });
+            }
+          }
+        }
       });
       if (!list.length) issues.push(issue("site." + field + "_missing", "site." + field));
     }
@@ -177,7 +204,7 @@ export function assessDomainConfiguration(payload) {
               }
             }
             if (kind === "equipment") {
-              for (const key of ["rated_voltage_v", "rated_power_kw"]) {
+              for (const key of ["rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour"]) {
                 if (record[key] !== undefined && record[key] !== null && !finitePositive(record[key])) {
                   errors.push(issue("engineering.rating_must_be_positive", "inventory.equipment[" + i + "]." + key, "verification_required"));
                 }
@@ -242,6 +269,55 @@ export function assessDomainConfiguration(payload) {
         issues.push(issue("irrigation.controller_reference_unresolved",
           "site.irrigation_systems[" + i + "].controller_id", "verification_required"));
       }
+    });
+  }
+  if (Array.isArray(payload.site?.irrigation_systems)) {
+    payload.site.irrigation_systems.forEach((system, i) => {
+      if (!plainObject(system)) return;
+      const systemPath = "site.irrigation_systems[" + i + "]";
+      for (const [field, role] of [["controller_id", "controller"], ["pump_id", "pump"]]) {
+        if (system[field] && !inventoryByKind.equipment.has(system[field])) {
+          issues.push(issue("irrigation.equipment_reference_unresolved", systemPath + "." + field, "verification_required"));
+          continue;
+        }
+        if (system[field]) {
+          const equipment = Array.isArray(payload.inventory?.equipment)
+            ? payload.inventory.equipment.find(item => plainObject(item) && item.id === system[field]) : undefined;
+          if (equipment?.asset_class && equipment.asset_class !== role) {
+            issues.push(issue("irrigation.equipment_role_mismatch", systemPath + "." + field, "verification_required"));
+          }
+          if (field === "controller_id" && equipment?.protocol && system.control_protocol &&
+              equipment.protocol !== "unknown" && system.control_protocol !== "unknown" &&
+              equipment.protocol !== system.control_protocol) {
+            issues.push(issue("irrigation.controller_protocol_mismatch", systemPath + ".control_protocol", "verification_required"));
+          }
+          if (field === "pump_id" && equipment && finitePositive(system.design_flow_m3_per_hour) &&
+              finitePositive(equipment.rated_flow_m3_per_hour) &&
+              system.design_flow_m3_per_hour > equipment.rated_flow_m3_per_hour) {
+            issues.push(issue("irrigation.pump_flow_rating_exceeded", systemPath + ".design_flow_m3_per_hour", "verification_required"));
+          }
+        }
+      }
+      if (Array.isArray(system.zones)) system.zones.forEach((zone, zoneIndex) => {
+        if (!plainObject(zone)) return;
+        const zonePath = systemPath + ".zones[" + zoneIndex + "]";
+        for (const [field, systemField, role] of [["pump_id", "pump_id", "pump"], ["controller_id", "controller_id", "controller"]]) {
+          const reference = zone[field] ?? system[systemField];
+          if (reference && !inventoryByKind.equipment.has(reference)) {
+            issues.push(issue("irrigation.zone_equipment_reference_unresolved", zonePath + "." + field, "verification_required"));
+          } else if (reference) {
+            const equipment = Array.isArray(payload.inventory?.equipment)
+              ? payload.inventory.equipment.find(item => plainObject(item) && item.id === reference) : undefined;
+            if (equipment?.asset_class && equipment.asset_class !== role) {
+              issues.push(issue("irrigation.zone_equipment_role_mismatch", zonePath + "." + field, "verification_required"));
+            }
+          }
+        }
+        if (finitePositive(zone.design_flow_m3_per_hour) && finitePositive(system.design_flow_m3_per_hour) &&
+            zone.design_flow_m3_per_hour > system.design_flow_m3_per_hour) {
+          issues.push(issue("irrigation.zone_flow_exceeds_system", zonePath + ".design_flow_m3_per_hour", "verification_required"));
+        }
+      });
     });
   }
   if (Array.isArray(payload.site?.energy_systems)) {
