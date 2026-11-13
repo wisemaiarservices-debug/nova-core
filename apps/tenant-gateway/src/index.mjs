@@ -31,57 +31,97 @@ async function signEnvelope(secret, method, path, headers) {
 }
 export function createGateway({ verifyAccessToken = (token, config) => verifyHumanAccessToken(token, config) } = {}) {
   return {
-  async fetch(request, env) {
-    if (request.method !== "GET") return error("not_found", 404);
-    const url = new URL(request.url);
-    const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
-    if (!match || url.search || url.hash) return error("not_found", 404);
-    const [, tenant, routeType, resourceId] = match;
-    if (!validPathId(tenant, 120) || !ROUTES.has(routeType) || !validPathId(resourceId)) return error("not_found", 404);
-    if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
-        typeof env.ACCESS_AUDIENCE !== "string" || !env.ACCESS_AUDIENCE) {
-      return error("identity_or_private_api_not_configured", 503);
-    }
-    let principal;
-    try {
-      principal = await verifyAccessToken(
-        request.headers.get("Cf-Access-Jwt-Assertion"),
-        { issuer: env.ACCESS_ISSUER, audience: env.ACCESS_AUDIENCE }, env,
-      );
-    } catch (cause) {
-      const reason = cause instanceof Error ? cause.message : "";
-      if (reason.startsWith("access_jwks_")) return error("identity_provider_unavailable", 503);
-      if (reason === "invalid_access_issuer" || reason === "invalid_access_audience_configuration") {
-        return error("identity_configuration_invalid", 503);
+    async fetch(request, env) {
+      if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
+      const url = new URL(request.url);
+      const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
+      const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
+      const reviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
+      const reviewerList = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers$/);
+      const reviewerRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/revoke$/);
+      const criteriaList = request.method === "GET" ? criteriaCreate : null;
+        const criteriaDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)$/);
+      const criteriaSubmit = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/submit$/);
+      const criteriaReview = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
+      const criteriaResolve = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
+      const criteriaAssess = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
+      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
+          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
+          (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
+      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
+      const resourceId = match?.[3];
+      const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
+      const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
+      if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
+          ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess) && (!validPathId(entryId) || !validPathId(version, 80)))) return error("not_found", 404);
+      if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
+          typeof env.ACCESS_AUDIENCE !== "string" || !env.ACCESS_AUDIENCE) {
+        return error("identity_or_private_api_not_configured", 503);
       }
-      return error("request_not_authorized", 401);
-    }
-    if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
+      let principal;
+      try {
+        principal = await verifyAccessToken(
+          request.headers.get("Cf-Access-Jwt-Assertion"),
+          { issuer: env.ACCESS_ISSUER, audience: env.ACCESS_AUDIENCE }, env,
+        );
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : "";
+        if (reason.startsWith("access_jwks_")) return error("identity_provider_unavailable", 503);
+        if (reason === "invalid_access_issuer" || reason === "invalid_access_audience_configuration") {
+          return error("identity_configuration_invalid", 503);
+        }
+        return error("request_not_authorized", 401);
+      }
+      if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
 
-    const requestId = crypto.randomUUID();
-    const internalPath = `/internal/v1/tenants/${tenant}/${routeType}/${resourceId}`;
-    // Construct a fresh request: no caller-supplied identity/trust headers,
-    // cookies, query parameters, body, or arbitrary upstream URL are forwarded.
-    const headers = new Headers({
-      "x-nova-verified-subject": principal.subject,
-      "x-nova-verified-issuer": principal.issuer,
-      "x-nova-verified-audience": principal.audience,
-      "x-nova-gateway-issued-at": String(Math.floor(Date.now() / 1000)),
-      "x-nova-request-id": requestId,
-      "accept": "application/json",
-    });
-    try {
-      headers.set("x-nova-internal-signature",
-        await signEnvelope(env.INTERNAL_AUTH_SECRET, "GET", internalPath, headers));
-      const upstream = await env.TENANT_API.fetch(new Request(
-        "https://nova-core-tenant-api.internal" + internalPath, { method: "GET", headers },
-      ));
-      return await boundedJsonResponse(upstream, requestId);
-    } catch {
-      return error("tenant_api_unavailable", 503);
-    }
-  },
+      const requestId = crypto.randomUUID();
+      const internalPath = match
+        ? `/internal/v1/tenants/${tenant}/${match[2]}/${resourceId}`
+        : criteriaDetail
+          ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${entryId}/${version}`
+          : reviewerAssign
+          ? `/internal/v1/tenants/${tenant}/water-quality-criteria/reviewers/assign`
+          : reviewerRevoke
+            ? `/internal/v1/tenants/${tenant}/water-quality-criteria/reviewers/revoke`
+            : reviewerList
+              ? `/internal/v1/tenants/${tenant}/water-quality-criteria/reviewers`
+              : criteriaSubmit
+                ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaSubmit[2]}/${criteriaSubmit[3]}/submit`
+                : criteriaReview
+                  ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaReview[2]}/${criteriaReview[3]}/review`
+                  : criteriaResolve
+                    ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaResolve[2]}/${criteriaResolve[3]}/resolve`
+                    : criteriaAssess
+                      ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaAssess[2]}/${criteriaAssess[3]}/assess`
+                      : `/internal/v1/tenants/${tenant}/water-quality-criteria`;
+      const headers = new Headers({
+        "x-nova-verified-subject": principal.subject,
+        "x-nova-verified-issuer": principal.issuer,
+        "x-nova-verified-audience": principal.audience,
+        "x-nova-gateway-issued-at": String(Math.floor(Date.now() / 1000)),
+        "x-nova-request-id": requestId,
+        "accept": "application/json",
+      });
+      try {
+        headers.set("x-nova-internal-signature",
+          await signEnvelope(env.INTERNAL_AUTH_SECRET, request.method, internalPath, headers));
+        if (request.method === "POST") {
+          const declaredLength = Number(request.headers.get("content-length") ?? "0");
+          if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
+              !Number.isFinite(declaredLength) || declaredLength > 65536) return error("invalid_request_body", 400);
+          headers.set("content-type", "application/json");
+        }
+        const forwardedBody = request.method === "POST" ? await request.arrayBuffer() : undefined;
+        if (forwardedBody && forwardedBody.byteLength > 65536) return error("invalid_request_body", 400);
+        const upstream = await env.TENANT_API.fetch(new Request(
+          "https://nova-core-tenant-api.internal" + internalPath,
+          { method: request.method, headers, body: forwardedBody },
+        ));
+        return await boundedJsonResponse(upstream, requestId);
+      } catch {
+        return error("tenant_api_unavailable", 503);
+      }
+    },
   };
 }
-
 export default createGateway();

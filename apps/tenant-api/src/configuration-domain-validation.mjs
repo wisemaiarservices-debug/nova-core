@@ -1,12 +1,13 @@
 const ROOT_KEYS = new Set(["tenant", "site", "inventory", "calibration_records", "evidence", "extensions"]);
 const TENANT_KEYS = new Set(["tenant_id"]);
-const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crops", "water_sources", "irrigation_systems", "energy_systems", "metadata"]);
+const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crops", "soil_profiles", "water_sources", "irrigation_systems", "energy_systems", "metadata"]);
 const INVENTORY_KEYS = new Set(["equipment", "sensors", "gateways"]);
 const CALIBRATION_KEYS = new Set(["id", "scope", "scope_id", "unit", "method", "effective_from", "effective_to", "certificate_number", "issuer", "issued_at", "evidence_ref"]); 
 const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at", "issuer", "digest"]);
 const RECORD_KEYS = {
-  crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
+  crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "root_depth_observations", "evidence_ref"]),
   water_sources: new Set(["id", "source_type", "name", "available_flow_m3_per_hour", "permitted_abstraction_m3_per_day", "quality_samples", "evidence_ref"]),
+  soil_profiles: new Set(["id", "name", "classification_system", "classification", "horizons", "samples", "hydraulic_measurements", "evidence_ref"]),
   irrigation_systems: new Set(["id", "method", "water_source", "water_source_id", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
   energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "pv_strings", "design_min_temperature_c", "design_max_temperature_c", "battery_min_voltage_v", "battery_max_voltage_v", "battery_charge_power_kw", "battery_discharge_power_kw", "grid_export_limit_kw", "grid_import_limit_kw", "evidence_ref"]),
   equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "pv_power_w", "battery_capacity_kwh", "voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a", "battery_min_voltage_v", "battery_max_voltage_v", "battery_max_charge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_charge_power_kw", "inverter_max_battery_discharge_power_kw", "evidence_ref"]),
@@ -128,6 +129,46 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
     const crops = validateUniqueRecords(payload.site.crops ?? [], "site.crops", errors);
     crops.forEach((crop, i) => {
       unknownKeys(crop, RECORD_KEYS.crops, "site.crops[" + i + "]", issues);
+      if (crop?.root_depth_observations !== undefined) {
+        if (!Array.isArray(crop.root_depth_observations)) {
+          errors.push(issue("crop.root_depth_observations_invalid_type", "site.crops[" + i + "].root_depth_observations", "verification_required"));
+        } else {
+          const observationIds = new Set();
+          crop.root_depth_observations.forEach((observation, observationIndex) => {
+            const observationPath = "site.crops[" + i + "].root_depth_observations[" + observationIndex + "]";
+            if (!plainObject(observation) || typeof observation.id !== "string" || !TOKEN.test(observation.id) || observationIds.has(observation.id)) {
+              errors.push(issue("crop.root_depth_observation_id_invalid", observationPath + ".id", "verification_required"));
+              return;
+            }
+            observationIds.add(observation.id);
+            unknownKeys(observation, new Set(["id", "root_depth_cm", "growth_stage", "source_type", "method", "observed_at", "evidence_ref"]), observationPath, issues);
+            if (!finitePositive(observation.root_depth_cm)) {
+              errors.push(issue("crop.root_depth_value_invalid", observationPath + ".root_depth_cm", "verification_required"));
+            }
+            if (!["measured", "laboratory", "modelled"].includes(observation.source_type)) {
+              issues.push(issue("crop.root_depth_source_unverified", observationPath + ".source_type", "verification_required"));
+            }
+            if (typeof observation.method !== "string" || !observation.method.trim()) {
+              issues.push(issue("crop.root_depth_method_missing", observationPath + ".method", "verification_required"));
+            }
+            if (typeof observation.growth_stage !== "string" || !observation.growth_stage.trim()) {
+              issues.push(issue("crop.root_depth_growth_stage_missing", observationPath + ".growth_stage", "verification_required"));
+            }
+            const observedAt = typeof observation.observed_at === "string"
+              ? observation.observed_at.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)
+              : null;
+            const year = observedAt ? Number(observedAt[1]) : 0;
+            const month = observedAt ? Number(observedAt[2]) : 0;
+            const day = observedAt ? Number(observedAt[3]) : 0;
+            const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+            const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+            if (!observedAt || month < 1 || month > 12 || day < 1 || !days || day > days || !Number.isFinite(Date.parse(observation.observed_at))) {
+              errors.push(issue("crop.root_depth_timestamp_invalid", observationPath + ".observed_at", "verification_required"));
+            }
+            if (!observation.evidence_ref) issues.push(issue("crop.root_depth_evidence_missing", observationPath + ".evidence_ref", "verification_required"));
+          });
+        }
+      }
       if (!plainObject(crop) || typeof crop.species !== "string" || !crop.species.trim()) {
         errors.push(issue("crop.species_required", "site.crops[" + i + "].species", "verification_required"));
       }
@@ -137,6 +178,169 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
           crop.expected_harvest_date < crop.planting_date) errors.push(issue("crop.date_order_invalid", "site.crops[" + i + "]", "verification_required"));
     });
     if (!crops.length) issues.push(issue("site.crops_missing", "site.crops"));
+    const soilProfiles = validateUniqueRecords(payload.site.soil_profiles ?? [], "site.soil_profiles", errors);
+    soilProfiles.forEach((profile, profileIndex) => {
+      const profilePath = "site.soil_profiles[" + profileIndex + "]";
+      unknownKeys(profile, RECORD_KEYS.soil_profiles, profilePath, issues);
+      if (!plainObject(profile)) {
+        errors.push(issue("soil_profile.record_invalid", profilePath, "verification_required"));
+        return;
+      }
+      if (profile.name !== undefined && (typeof profile.name !== "string" || !profile.name.trim())) {
+        errors.push(issue("soil_profile.name_invalid", profilePath + ".name", "verification_required"));
+      }
+      if (profile.classification_system && !profile.classification) {
+        issues.push(issue("soil_profile.classification_missing", profilePath + ".classification", "verification_required"));
+      }
+      const hydraulicMeasurements = profile.hydraulic_measurements ?? [];
+      if (!Array.isArray(hydraulicMeasurements)) {
+        errors.push(issue("soil_hydraulic.measurements_invalid_type", profilePath + ".hydraulic_measurements", "verification_required"));
+      } else {
+        const measurementIds = new Set();
+        hydraulicMeasurements.forEach((measurement, measurementIndex) => {
+          const measurementPath = profilePath + ".hydraulic_measurements[" + measurementIndex + "]";
+          if (!plainObject(measurement) || typeof measurement.id !== "string" || !TOKEN.test(measurement.id) || measurementIds.has(measurement.id)) {
+            errors.push(issue("soil_hydraulic.id_missing_or_duplicate", measurementPath + ".id", "verification_required"));
+            return;
+          }
+          measurementIds.add(measurement.id);
+          unknownKeys(measurement, new Set(["id", "parameter", "value", "unit", "top_depth_cm", "bottom_depth_cm", "source_type", "method", "sampled_at", "evidence_ref"]), measurementPath, issues);
+          if (!["field_capacity", "wilting_point", "bulk_density"].includes(measurement.parameter)) {
+            errors.push(issue("soil_hydraulic.parameter_invalid", measurementPath + ".parameter", "verification_required"));
+          }
+          if (typeof measurement.value !== "number" || !Number.isFinite(measurement.value) || measurement.value < 0 ||
+              typeof measurement.unit !== "string" || !measurement.unit.trim()) {
+            errors.push(issue("soil_hydraulic.value_or_unit_invalid", measurementPath, "verification_required"));
+          }
+          if (typeof measurement.top_depth_cm !== "number" || !Number.isFinite(measurement.top_depth_cm) || measurement.top_depth_cm < 0 ||
+              typeof measurement.bottom_depth_cm !== "number" || !Number.isFinite(measurement.bottom_depth_cm) || measurement.bottom_depth_cm <= measurement.top_depth_cm) {
+            errors.push(issue("soil_hydraulic.depth_interval_invalid", measurementPath, "verification_required"));
+          }
+          if (!["measured", "laboratory", "modelled"].includes(measurement.source_type)) {
+            issues.push(issue("soil_hydraulic.source_type_unverified", measurementPath + ".source_type", "verification_required"));
+          }
+          if (typeof measurement.method !== "string" || !measurement.method.trim()) {
+            issues.push(issue("soil_hydraulic.method_missing", measurementPath + ".method", "verification_required"));
+          }
+          const hydraulicTimestamp = typeof measurement.sampled_at === "string"
+            ? measurement.sampled_at.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)
+            : null;
+          const timestampYear = hydraulicTimestamp ? Number(hydraulicTimestamp[1]) : 0;
+          const timestampMonth = hydraulicTimestamp ? Number(hydraulicTimestamp[2]) : 0;
+          const timestampDay = hydraulicTimestamp ? Number(hydraulicTimestamp[3]) : 0;
+          const timestampLeap = timestampYear % 4 === 0 && (timestampYear % 100 !== 0 || timestampYear % 400 === 0);
+          const timestampMonthDays = [31, timestampLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][timestampMonth - 1];
+          if (!hydraulicTimestamp || timestampMonth < 1 || timestampMonth > 12 || timestampDay < 1 ||
+              !timestampMonthDays || timestampDay > timestampMonthDays || !Number.isFinite(Date.parse(measurement.sampled_at))) {
+            errors.push(issue("soil_hydraulic.timestamp_invalid", measurementPath + ".sampled_at", "verification_required"));
+          }
+          if (!measurement.evidence_ref) issues.push(issue("soil_hydraulic.evidence_missing", measurementPath + ".evidence_ref", "verification_required"));
+          if (measurement.parameter === "field_capacity" || measurement.parameter === "wilting_point") {
+            const volumetric = ["m3/m3", "cm3/cm3"].includes(measurement.unit);
+            const gravimetric = ["kg/kg", "g/g"].includes(measurement.unit);
+            if (!volumetric && !gravimetric) issues.push(issue("soil_hydraulic.water_content_unit_unsupported", measurementPath + ".unit", "verification_required"));
+            if (volumetric && measurement.value > 1) {
+              errors.push(issue("soil_hydraulic.water_content_out_of_range", measurementPath + ".value", "verification_required"));
+            }
+          }
+          if (measurement.parameter === "bulk_density" && !["g/cm3", "kg/m3"].includes(measurement.unit)) {
+            issues.push(issue("soil_hydraulic.bulk_density_unit_unsupported", measurementPath + ".unit", "verification_required"));
+          }
+        });
+      }
+      const horizons = profile.horizons ?? [];
+      if (!Array.isArray(horizons)) {
+        errors.push(issue("soil_profile.horizons_invalid_type", profilePath + ".horizons", "verification_required"));
+      } else {
+        const horizonIds = new Set();
+        const intervals = [];
+        horizons.forEach((horizon, horizonIndex) => {
+          const horizonPath = profilePath + ".horizons[" + horizonIndex + "]";
+          if (!plainObject(horizon) || typeof horizon.id !== "string" || !TOKEN.test(horizon.id) || horizonIds.has(horizon.id)) {
+            errors.push(issue("soil_horizon.id_missing_or_duplicate", horizonPath + ".id", "verification_required"));
+            return;
+          }
+          horizonIds.add(horizon.id);
+          unknownKeys(horizon, new Set(["id", "name", "top_depth_cm", "bottom_depth_cm", "texture", "classification", "evidence_ref"]), horizonPath, issues);
+          const top = horizon.top_depth_cm;
+          const bottom = horizon.bottom_depth_cm;
+          if (typeof top !== "number" || !Number.isFinite(top) || top < 0 ||
+              typeof bottom !== "number" || !Number.isFinite(bottom) || bottom <= top) {
+            errors.push(issue("soil_horizon.depth_interval_invalid", horizonPath, "verification_required"));
+          } else intervals.push({ top, bottom, path: horizonPath });
+        });
+        intervals.sort((a, b) => a.top - b.top);
+        for (let i = 1; i < intervals.length; i++) {
+          if (intervals[i].top < intervals[i - 1].bottom) {
+            errors.push(issue("soil_horizon.depth_overlap", intervals[i].path, "verification_required"));
+          }
+        }
+      }
+      const samples = profile.samples ?? [];
+      if (!Array.isArray(samples)) {
+        errors.push(issue("soil_profile.samples_invalid_type", profilePath + ".samples", "verification_required"));
+      } else {
+        const sampleIds = new Set();
+        samples.forEach((sample, sampleIndex) => {
+          const samplePath = profilePath + ".samples[" + sampleIndex + "]";
+          if (!plainObject(sample) || typeof sample.id !== "string" || !TOKEN.test(sample.id) || sampleIds.has(sample.id)) {
+            errors.push(issue("soil_sample.id_missing_or_duplicate", samplePath + ".id", "verification_required"));
+            return;
+          }
+          sampleIds.add(sample.id);
+          unknownKeys(sample, new Set(["id", "sampling_point", "top_depth_cm", "bottom_depth_cm", "sampled_at", "method", "laboratory", "analytes", "evidence_ref"]), samplePath, issues);
+          if (typeof sample.top_depth_cm !== "number" || !Number.isFinite(sample.top_depth_cm) || sample.top_depth_cm < 0 ||
+              typeof sample.bottom_depth_cm !== "number" || !Number.isFinite(sample.bottom_depth_cm) ||
+              sample.bottom_depth_cm <= sample.top_depth_cm) {
+            errors.push(issue("soil_sample.depth_interval_invalid", samplePath, "verification_required"));
+          }
+          if (sample.sampling_point !== undefined) {
+            const point = sample.sampling_point;
+            if (!plainObject(point) || point.crs !== "EPSG:4326" || !Array.isArray(point.coordinates) ||
+                point.coordinates.length !== 2 || !point.coordinates.every(Number.isFinite) ||
+                point.coordinates[0] < -180 || point.coordinates[0] > 180 ||
+                point.coordinates[1] < -90 || point.coordinates[1] > 90) {
+              errors.push(issue("soil_sample.sampling_point_invalid", samplePath + ".sampling_point", "verification_required"));
+            }
+          }
+          const timestampMatch = typeof sample.sampled_at === "string"
+            ? sample.sampled_at.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)
+            : null;
+          const year = timestampMatch ? Number(timestampMatch[1]) : 0;
+          const month = timestampMatch ? Number(timestampMatch[2]) : 0;
+          const day = timestampMatch ? Number(timestampMatch[3]) : 0;
+          const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+          const monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+          if (!timestampMatch || month < 1 || month > 12 || day < 1 || !monthDays || day > monthDays ||
+              !Number.isFinite(Date.parse(sample.sampled_at))) {
+            errors.push(issue("soil_sample.timestamp_invalid", samplePath + ".sampled_at", "verification_required"));
+          }
+          if (typeof sample.method !== "string" || !sample.method.trim()) {
+            issues.push(issue("soil_sample.method_missing", samplePath + ".method", "verification_required"));
+          }
+          if (typeof sample.laboratory !== "string" || !sample.laboratory.trim()) {
+            issues.push(issue("soil_sample.laboratory_missing", samplePath + ".laboratory", "verification_required"));
+          }
+          if (!Array.isArray(sample.analytes) || sample.analytes.length === 0) {
+            issues.push(issue("soil_sample.analytes_missing", samplePath + ".analytes", "verification_required"));
+          } else {
+            sample.analytes.forEach((analyte, analyteIndex) => {
+              const analytePath = samplePath + ".analytes[" + analyteIndex + "]";
+              if (!plainObject(analyte) || typeof analyte.parameter !== "string" || !analyte.parameter.trim() ||
+                  typeof analyte.value !== "number" || !Number.isFinite(analyte.value) ||
+                  typeof analyte.unit !== "string" || !analyte.unit.trim()) {
+                errors.push(issue("soil_sample.analyte_invalid", analytePath, "verification_required"));
+              }
+              if (plainObject(analyte)) unknownKeys(analyte, new Set(["parameter", "value", "unit", "method", "evidence_ref"]), analytePath, issues);
+              if (plainObject(analyte) && !analyte.method && !sample.method) {
+                issues.push(issue("soil_sample.analyte_method_missing", analytePath + ".method", "verification_required"));
+              }
+            });
+          }
+          if (!sample.evidence_ref) issues.push(issue("soil_sample.evidence_missing", samplePath + ".evidence_ref", "verification_required"));
+        });
+      }
+    });
     const waterSources = validateUniqueRecords(payload.site.water_sources ?? [], "site.water_sources", errors);
     waterSources.forEach((source, index) => {
       const path = "site.water_sources[" + index + "]";
@@ -178,7 +382,16 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
             if (typeof sample.unit !== "string" || !sample.unit.trim()) {
               errors.push(issue("water_quality.unit_required", samplePath + ".unit", "verification_required"));
             }
-            if (typeof sample.sampled_at !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(sample.sampled_at) || !Number.isFinite(Date.parse(sample.sampled_at))) {
+            const timestampMatch = typeof sample.sampled_at === "string"
+              ? sample.sampled_at.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)
+              : null;
+            const timestampYear = timestampMatch ? Number(timestampMatch[1]) : 0;
+            const timestampMonth = timestampMatch ? Number(timestampMatch[2]) : 0;
+            const timestampDay = timestampMatch ? Number(timestampMatch[3]) : 0;
+            const leapYear = timestampYear % 4 === 0 && (timestampYear % 100 !== 0 || timestampYear % 400 === 0);
+            const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][timestampMonth - 1];
+            if (!timestampMatch || timestampMonth < 1 || timestampMonth > 12 || timestampDay < 1 ||
+                !daysInMonth || timestampDay > daysInMonth || !Number.isFinite(Date.parse(sample.sampled_at))) {
               errors.push(issue("water_quality.sample_timestamp_invalid", samplePath + ".sampled_at", "verification_required"));
             }
             if (typeof sample.method !== "string" || !sample.method.trim()) {
@@ -286,7 +499,25 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
                 if (zoneIds.has(zone.id)) {
                   errors.push(issue("irrigation.zone_id_missing_or_duplicate", zonePath + ".id", "verification_required"));
                 } else zoneIds.add(zone.id);
-                unknownKeys(zone, new Set(["id", "pump_id", "controller_id", "design_flow_m3_per_hour", "area_ha"]), zonePath, issues);
+                unknownKeys(zone, new Set(["id", "pump_id", "controller_id", "design_flow_m3_per_hour", "area_ha", "soil_profile_id", "soil_horizon_id", "crop_ids", "boundary"]), zonePath, issues);
+                if (zone.boundary !== undefined && zone.boundary !== null) validateGeoJSON(zone.boundary, zonePath + ".boundary", errors);
+                if (zone.crop_ids !== undefined) {
+                  if (!Array.isArray(zone.crop_ids)) errors.push(issue("irrigation.zone_crop_ids_invalid_type", zonePath + ".crop_ids", "verification_required"));
+                  else zone.crop_ids.forEach(cropId => {
+                    if (!crops.some(crop => plainObject(crop) && crop.id === cropId)) {
+                      issues.push(issue("irrigation.zone_crop_reference_unresolved", zonePath + ".crop_ids", "verification_required"));
+                    }
+                  });
+                }
+                if (zone.soil_profile_id !== undefined && !soilProfiles.some(profile => plainObject(profile) && profile.id === zone.soil_profile_id)) {
+                  issues.push(issue("irrigation.zone_soil_profile_reference_unresolved", zonePath + ".soil_profile_id", "verification_required"));
+                }
+                if (zone.soil_horizon_id !== undefined) {
+                  const linkedProfile = soilProfiles.find(profile => plainObject(profile) && profile.id === zone.soil_profile_id);
+                  if (!linkedProfile || !Array.isArray(linkedProfile.horizons) || !linkedProfile.horizons.some(horizon => plainObject(horizon) && horizon.id === zone.soil_horizon_id)) {
+                    issues.push(issue("irrigation.zone_soil_horizon_reference_unresolved", zonePath + ".soil_horizon_id", "verification_required"));
+                  }
+                }
                 for (const key of ["design_flow_m3_per_hour", "area_ha"]) {
                   if (zone[key] !== undefined && zone[key] !== null && !finitePositive(zone[key])) {
                     errors.push(issue("engineering.rating_must_be_positive", zonePath + "." + key, "verification_required"));
@@ -722,6 +953,7 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
   });
   for (const [kind, records] of [
     ["crops", payload.site?.crops],
+    ["soil_profiles", payload.site?.soil_profiles],
     ["irrigation_systems", payload.site?.irrigation_systems],
     ["energy_systems", payload.site?.energy_systems],
     ["water_sources", payload.site?.water_sources],
@@ -732,8 +964,23 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
     if (Array.isArray(records)) records.forEach((record, i) => {
       if (plainObject(record)) {
         checkEvidenceReference(record.evidence_ref, "configuration." + kind + "[" + i + "].evidence_ref");
+        if (kind === "crops" && Array.isArray(record.root_depth_observations)) record.root_depth_observations.forEach((observation, j) => {
+          if (plainObject(observation)) checkEvidenceReference(observation.evidence_ref, "configuration.crops[" + i + "].root_depth_observations[" + j + "].evidence_ref");
+        });
         if (kind === "water_sources" && Array.isArray(record.quality_samples)) record.quality_samples.forEach((sample, j) => {
           if (plainObject(sample)) checkEvidenceReference(sample.evidence_ref, "configuration.water_sources[" + i + "].quality_samples[" + j + "].evidence_ref");
+        });
+        if (kind === "soil_profiles" && Array.isArray(record.hydraulic_measurements)) record.hydraulic_measurements.forEach((measurement, j) => {
+          if (plainObject(measurement)) checkEvidenceReference(measurement.evidence_ref, "configuration.soil_profiles[" + i + "].hydraulic_measurements[" + j + "].evidence_ref");
+        });
+        if (kind === "soil_profiles" && Array.isArray(record.horizons)) record.horizons.forEach((horizon, j) => {
+          if (plainObject(horizon)) checkEvidenceReference(horizon.evidence_ref, "configuration.soil_profiles[" + i + "].horizons[" + j + "].evidence_ref");
+        });
+        if (kind === "soil_profiles" && Array.isArray(record.samples)) record.samples.forEach((sample, j) => {
+          if (plainObject(sample)) checkEvidenceReference(sample.evidence_ref, "configuration.soil_profiles[" + i + "].samples[" + j + "].evidence_ref");
+          if (plainObject(sample) && Array.isArray(sample.analytes)) sample.analytes.forEach((analyte, k) => {
+            if (plainObject(analyte)) checkEvidenceReference(analyte.evidence_ref, "configuration.soil_profiles[" + i + "].samples[" + j + "].analytes[" + k + "].evidence_ref");
+          });
         });
       }
     });
