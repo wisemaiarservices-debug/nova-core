@@ -365,11 +365,20 @@ async function readCriteriaReviewers(db, tenant) {
   return { reviewers, events };
 }
 
-async function readCriteriaRegistry(db, tenant, entryId, version) {
+async function hasSiteReadGrant(db, tenant, subject, siteId) {
+  if (typeof siteId !== "string" || !siteId.trim()) return false;
+  const grants = await rows(db.prepare(
+    "SELECT subject, tenant_id, resource_type, resource_id, action FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = 'read' LIMIT 2"
+  ).bind(tenant, subject, siteId));
+  return grants.length === 1 && grants[0].subject === subject && grants[0].tenant_id === tenant &&
+    grants[0].resource_type === "site" && grants[0].resource_id === siteId && grants[0].action === "read";
+}
+
+async function readCriteriaRegistry(db, tenant, entryId, version, subject) {
   if (entryId === null) {
     const result = await rows(db.prepare(
-      "SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at, (SELECT ev.event_type FROM water_quality_criteria_events ev WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version ORDER BY ev.rowid DESC LIMIT 1) AS lifecycle_status FROM water_quality_criteria_entries e WHERE e.tenant_id = ? ORDER BY e.jurisdiction, e.id, e.version LIMIT 100"
-    ).bind(tenant));
+      "SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at, (SELECT ev.event_type FROM water_quality_criteria_events ev WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version ORDER BY ev.rowid DESC LIMIT 1) AS lifecycle_status FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND (e.site_id IS NULL OR EXISTS (SELECT 1 FROM tenant_resource_grants g WHERE g.tenant_id = e.tenant_id AND g.subject = ? AND g.resource_type = 'site' AND g.resource_id = e.site_id AND g.action = 'read')) ORDER BY e.jurisdiction, e.id, e.version LIMIT 100"
+    ).bind(tenant, subject));
     return result.map(row => ({ ...row, entry: JSON.parse(row.entry_json), entry_json: undefined }));
   }
   const result = await rows(db.prepare(
@@ -451,7 +460,7 @@ export default {
           : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
       }
       if (criteriaDetail) {
-        const data = await readCriteriaRegistry(env.DB, tenant, entryId, version);
+        const data = await readCriteriaRegistry(env.DB, tenant, entryId, version, subject);
         if (data === null) return error("not_found", 404);
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
@@ -460,7 +469,9 @@ export default {
           membership[0].subject === subject && membership[0].tenant_id === tenant &&
           membership[0].membership_status === "active" && membership[0].tenant_status === "active" &&
           ROLE_ACTIONS[membership[0].role]?.has("read");
-        if (memberCanRead) return json({ data, request_id: requestId });
+        const memberHasSiteGrant = memberCanRead &&
+          (data.site_id === null || await hasSiteReadGrant(env.DB, tenant, subject, data.site_id));
+        if (memberHasSiteGrant) return json({ data, request_id: requestId });
         const reviewer = await rows(env.DB.prepare(
           "SELECT r.reviewer_subject, r.jurisdiction FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = ? AND r.reviewer_subject = ? AND r.jurisdiction = ? AND r.status = 'active' LIMIT 2"
         ).bind(tenant, subject, data.jurisdiction));
@@ -479,6 +490,7 @@ export default {
           if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
           if (!onlyKeys(draftBody, ["context", "samples"]) ||
               !Object.hasOwn(draftBody, "context") || !Object.hasOwn(draftBody, "samples")) return error("invalid_request_body", 400);
+          if (!await hasSiteReadGrant(env.DB, tenant, subject, draftBody.context?.site_id)) return error("not_found", 404);
           const assessed = await assessStoredCriteria(env.DB, tenant, entryId, version, draftBody.context, draftBody.samples);
           return assessed.error ? json({ error: assessed.error }, assessed.status)
             : json({ data: assessed.data, request_id: requestId }, assessed.status);
@@ -487,6 +499,7 @@ export default {
           if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
           if (!onlyKeys(draftBody, ["context", "sampled_at"]) ||
               !Object.hasOwn(draftBody, "context") || !Object.hasOwn(draftBody, "sampled_at")) return error("invalid_request_body", 400);
+          if (!await hasSiteReadGrant(env.DB, tenant, subject, draftBody.context?.site_id)) return error("not_found", 404);
           const resolved = await resolveStoredCriteria(env.DB, tenant, entryId, version, draftBody.context, draftBody.sampled_at);
           return resolved.error ? json({ error: resolved.error }, resolved.status)
             : json({ data: resolved.data, request_id: requestId }, resolved.status);
