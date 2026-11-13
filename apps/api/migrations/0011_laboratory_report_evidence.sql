@@ -38,6 +38,7 @@ CREATE TABLE laboratory_report_evidence_events (
   actor_subject TEXT NOT NULL CHECK (length(trim(actor_subject)) BETWEEN 1 AND 200),
   request_id TEXT NOT NULL CHECK (length(trim(request_id)) BETWEEN 1 AND 80),
   occurred_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE (evidence_id),
   FOREIGN KEY (evidence_id, tenant_id, site_id)
     REFERENCES laboratory_report_evidence(id, tenant_id, site_id) ON DELETE RESTRICT
 );
