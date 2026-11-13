@@ -144,3 +144,15 @@ test("returns structured errors for malformed collections instead of throwing", 
   assert.ok(result.errors.some(item => item.code === "collection.invalid_type" && item.path === "site.irrigation_systems"));
   assert.ok(result.errors.some(item => item.code === "collection.invalid_type" && item.path === "inventory.sensors"));
 });
+
+test("rejects zero-area polygon rings and out-of-range WGS84 coordinates", () => {
+  const degenerate = valid();
+  degenerate.site.boundary.coordinates = [[[10,36],[11,37],[12,38],[10,36]]];
+  const degenerateResult = assessDomainConfiguration(degenerate);
+  assert.ok(degenerateResult.errors.some(item => item.code === "geometry.invalid_ring"));
+
+  const outOfRange = valid();
+  outOfRange.site.boundary.coordinates = [[[10,36],[11,36],[181,37],[10,36]]];
+  const rangeResult = assessDomainConfiguration(outOfRange);
+  assert.ok(rangeResult.errors.some(item => item.code === "geometry.invalid_ring"));
+});
