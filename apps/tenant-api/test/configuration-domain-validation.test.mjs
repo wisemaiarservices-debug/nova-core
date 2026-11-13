@@ -18,7 +18,7 @@ const valid = () => ({
     gateways: [{ id: "gateway-1", protocol: "lorawan" }],
   },
   calibration_records: [{
-    scope: "sensor", scope_id: "sensor-1", unit: "%", method: "two-point",
+    id: "cal-1", scope: "sensor", scope_id: "sensor-1", unit: "%", method: "two-point",
     effective_from: "2026-01-01", effective_to: "2027-01-01", evidence_ref: "cert-1",
   }],
   evidence: [{ source_class: "manufacturer_document", reference: "datasheet-1" }],
