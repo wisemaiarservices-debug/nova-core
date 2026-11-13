@@ -217,3 +217,29 @@ battery string behavior, DC bus transients, efficiency, inverter overload
 curves, grid export constraints, generator coupling, protection settings or
 manufacturer-specific operating modes. They do not establish usable energy,
 autonomy, runtime, safety or commissioning approval.
+
+
+## Cross-system energy capacity consistency
+
+Energy profiles may declare inverter AC capacity, battery energy capacity,
+grid-connected state and grid import/export limits. When a referenced inverter
+or battery declares a comparable nameplate rating, the validator compares
+the system-level declaration with that equipment rating using a bounded 1%
+or 0.01-unit tolerance. A declared export limit above the referenced inverter
+AC rating is flagged; grid import limits are retained as declarations and are
+not inferred from inverter ratings. Grid limits declared alongside
+`grid_connected: false` are flagged for review.
+
+For PV arrays, when every declared string group resolves to a module with a
+positive `pv_power_w` nameplate value and valid series/parallel counts, the
+validator sums module nameplate power across the groups and compares it with
+the declared system `pv_capacity_kw`. If any required module rating is
+missing, the comparison remains explicitly incomplete; no standard module
+rating is assumed.
+
+These checks are cross-field consistency screens only. They do not select
+inverter sizes, prescribe a DC/AC ratio, calculate yield, account for clipping,
+temperature/irradiance derating, module tolerances, battery usable energy,
+charge scheduling, grid-code export controls, transformer capacity, phase
+balance, protection or utility interconnection approval. Matching declared
+capacities do not prove a commissioned or safe system.
