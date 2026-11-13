@@ -405,6 +405,11 @@ try {
   const rejectedConfigurationRead = await throughGateway(configurationPath + "/v7");
   assert.equal(rejectedConfigurationRead.response.status, 200);
   assert.equal(rejectedConfigurationRead.body.data.lifecycle_status, "rejected");
+  const effectiveConfiguration = await throughGateway(configurationPath + "/effective");
+  assert.equal(effectiveConfiguration.response.status, 200, JSON.stringify(effectiveConfiguration.body));
+  assert.equal(effectiveConfiguration.body.data.status, "approved_configuration_available");
+  assert.equal(effectiveConfiguration.body.data.configuration.configuration_version, "v6");
+  assert.equal(effectiveConfiguration.body.data.operational_decision, "not_authorized");
   const latestConfigurationHistory = await throughGateway(configurationPath);
   assert.equal(latestConfigurationHistory.response.status, 200);
   assert.equal(latestConfigurationHistory.body.data.length, 7);
