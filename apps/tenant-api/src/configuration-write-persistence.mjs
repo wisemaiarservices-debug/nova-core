@@ -1,4 +1,5 @@
 import { authorizeConfigurationWrite } from "./configuration-write-authorization.mjs";
+import { assessDomainConfiguration } from "./configuration-domain-validation.mjs";
 import { prepareConfigurationSnapshot, sha256Hex, equalDigest } from "./configuration-write-contract.mjs";
 
 const SUPPORTED_CONFIGURATION_SCHEMA_ID = "nova.client-config.v1";
@@ -55,6 +56,11 @@ export async function createSiteConfiguration({
     principalSubject, tenantId, siteId, membershipRows, grantRows,
   });
   if (!authorization.allowed) throw new Error("configuration_authorization_denied");
+
+  const domainAssessment = assessDomainConfiguration(payload);
+  if (!domainAssessment.valid || payload.tenant?.tenant_id !== tenantId || payload.site?.site_id !== siteId) {
+    throw new Error("configuration_domain_invalid");
+  }
 
   const snapshot = await prepareConfigurationSnapshot({
     payload, schemaId, expectedSchemaId: SUPPORTED_CONFIGURATION_SCHEMA_ID, suppliedDigest, cryptoProvider,
