@@ -42,7 +42,7 @@ test("keeps incomplete specifications explicit rather than inventing values", ()
   delete value.inventory;
   const result = assessDomainConfiguration(value);
   assert.equal(result.valid, true);
-  assert.equal(result.status.evidence_readiness, "incomplete");
+  assert.equal(result.status.evidence_readiness, "needs_verification");
   assert.ok(result.issues.some(item => item.code === "site.land_area_missing"));
   assert.ok(result.issues.some(item => item.code === "inventory.not_supplied"));
 });
