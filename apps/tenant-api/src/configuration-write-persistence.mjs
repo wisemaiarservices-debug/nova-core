@@ -84,12 +84,22 @@ export async function createSiteConfiguration({
   });
   const statements = [
     db.prepare(
-      "INSERT INTO tenant_site_configuration_idempotency (tenant_id, subject, idempotency_key, request_sha256, configuration_id, status) VALUES (?, ?, ?, ?, ?, 'pending')"
-    ).bind(tenantId, principalSubject, idempotencyKey, requestSha256, configurationId),
+      "INSERT INTO tenant_site_configuration_idempotency (tenant_id, subject, idempotency_key, request_sha256, configuration_id, status) " +
+      "SELECT ?, ?, ?, ?, ?, 'pending' WHERE " +
+      "(SELECT COUNT(*) FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id " +
+      "WHERE m.subject = ? AND m.tenant_id = ? AND m.status = 'active' AND t.status = 'active' " +
+      "AND m.role IN ('tenant_owner', 'tenant_admin')) = 1 AND " +
+      "(SELECT COUNT(*) FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ? " +
+      "AND resource_type = 'site' AND resource_id = ? AND action = 'create') = 1"
+    ).bind(tenantId, principalSubject, idempotencyKey, requestSha256, configurationId,
+      principalSubject, tenantId, tenantId, principalSubject, siteId),
     db.prepare(
-      "INSERT INTO tenant_site_configurations (id, tenant_id, site_id, configuration_version, schema_id, configuration_json, content_sha256, created_by_subject, request_id, created_at) VALUES (?, ?, ?, 'v' || CAST((SELECT COALESCE(MAX(CAST(substr(configuration_version, 2) AS INTEGER)), 0) + 1 FROM tenant_site_configurations WHERE tenant_id = ? AND site_id = ?) AS TEXT), ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO tenant_site_configurations (id, tenant_id, site_id, configuration_version, schema_id, configuration_json, content_sha256, created_by_subject, request_id, created_at) " +
+      "SELECT ?, ?, ?, 'v' || CAST((SELECT COALESCE(MAX(CAST(substr(configuration_version, 2) AS INTEGER)), 0) + 1 FROM tenant_site_configurations WHERE tenant_id = ? AND site_id = ?) AS TEXT), ?, ?, ?, ?, ?, ? " +
+      "WHERE EXISTS (SELECT 1 FROM tenant_site_configuration_idempotency i WHERE i.tenant_id = ? AND i.subject = ? AND i.idempotency_key = ? AND i.request_sha256 = ? AND i.configuration_id = ? AND i.status = 'pending')"
     ).bind(configurationId, tenantId, siteId, tenantId, siteId, snapshot.schemaId,
-      snapshot.canonicalJson, snapshot.contentSha256, principalSubject, requestId, now),
+      snapshot.canonicalJson, snapshot.contentSha256, principalSubject, requestId, now,
+      tenantId, principalSubject, idempotencyKey, requestSha256, configurationId),
     db.prepare(
       "INSERT INTO tenant_site_configuration_events (id, configuration_id, tenant_id, site_id, event_type, actor_subject, reason, request_id, occurred_at) VALUES (?, ?, ?, ?, 'submitted_for_review', ?, NULL, ?, ?)"
     ).bind(eventId, configurationId, tenantId, siteId, principalSubject, requestId, now),
