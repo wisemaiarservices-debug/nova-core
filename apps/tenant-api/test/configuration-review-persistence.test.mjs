@@ -42,8 +42,8 @@ test("records an independent admin approval and audit event atomically", async (
   assert.equal(result.operational_decision, "not_authorized");
   assert.equal(db.batches.length, 1);
   assert.equal(db.batches[0].length, 2);
-  assert.match(db.batches[0][0].sql, /approved_for_review/);
-  assert.match(db.batches[0][1].sql, /configuration.approved_for_review/);
+  assert.equal(db.batches[0][0].args[4], "approved_for_review");
+  assert.equal(db.batches[0][1].args[3], "configuration.approved_for_review");
 });
 
 test("records rejection using the same lifecycle and audit transaction", async () => {
@@ -52,7 +52,8 @@ test("records rejection using the same lifecycle and audit transaction", async (
     reason: "The boundary evidence is incomplete" });
   assert.equal(result.status, "rejected");
   assert.match(db.batches[0][0].sql, /event_type/);
-  assert.match(db.batches[0][1].sql, /configuration.rejected/);
+  assert.equal(db.batches[0][0].args[4], "rejected");
+  assert.equal(db.batches[0][1].args[3], "configuration.rejected");
 });
 
 test("denies creator self-review, non-admin reviewers, missing grants and inactive tenants", async () => {
