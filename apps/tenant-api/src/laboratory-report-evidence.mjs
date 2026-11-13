@@ -64,7 +64,7 @@ export async function registerLaboratoryReportEvidence(db, tenantId, subject, re
   const id = crypto.randomUUID();
   const eventId = crypto.randomUUID();
   const insertEvidence = db.prepare(
-    "INSERT INTO laboratory_report_evidence (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length, sha256, document_bytes, laboratory_name, report_number, sample_reference, issued_at, uploaded_by_subject) VALUES (?, ?, ?, 'laboratory_report', ?, 'application/pdf', ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT OR IGNORE INTO laboratory_report_evidence (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length, sha256, document_bytes, laboratory_name, report_number, sample_reference, issued_at, uploaded_by_subject) VALUES (?, ?, ?, 'laboratory_report', ?, 'application/pdf', ?, ?, ?, ?, ?, ?, ?, ?)"
   ).bind(id, tenantId, body.site_id, body.file_name, bytes.byteLength, sha256, bytes,
     body.laboratory_name, body.report_number, body.sample_reference ?? null, body.issued_at, subject);
   const insertEvent = db.prepare(
