@@ -151,9 +151,8 @@ def test_approval_requires_exact_role_assignment_and_two_distinct_reviewer_roles
                VALUES ('revoked-reviewer-approved','tenant-a','criteria-a','1.0',
                        'approved','workflow','req-revoked')"""
         )
-    db.execute(
-        "UPDATE water_quality_criteria_reviewers SET status='active' WHERE reviewer_subject='reviewer-r'"
-    )
+    assign_reviewer(db, "reviewer-r2", "regulatory_reviewer")
+    approve(db, "criteria-a", "1.0", "reviewer-r2", "regulatory_reviewer")
     db.execute(
         """INSERT INTO water_quality_criteria_events
            (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id)
