@@ -73,6 +73,11 @@ try {
   const criteriaCrossTenant = await throughGateway(
     "/api/v1/tenants/tenant-http-b/water-quality-criteria");
   assert.equal(criteriaCrossTenant.response.status, 404);
+
+  const privateCriteriaDetail = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-private/1.0");
+  assert.equal(privateCriteriaDetail.response.status, 404);
+  assert.equal(criteriaList.body.data.some(entry => entry.id === "criteria-http-private"), false);
   const criteriaUnknownVersion = await throughGateway(
     "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-a/9.9");
   assert.equal(criteriaUnknownVersion.response.status, 404);
