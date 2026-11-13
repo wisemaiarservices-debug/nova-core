@@ -101,3 +101,19 @@ effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject,
 FROM water_quality_criteria_entries
 WHERE tenant_id = 'fixture-tenant' AND id = 'fixture-criteria'
 AND version = '1.0' LIMIT 1;
+
+-- Prepare the ingestion Worker's tenant-owned observation and audit insert shapes.
+EXPLAIN INSERT OR IGNORE INTO observations
+(id, site_id, asset_id, source_id, module, metric, value, unit, observed_at,
+ idempotency_key, verification_status, provenance_json, quality_flags_json, tenant_id)
+VALUES ('fixture-ingest-observation', 'fixture-site', 'fixture-asset', 'fixture-source',
+ 'neogrid', 'energy.solar_power', 1.0, 'kW', '2026-11-10T14:55:00.000Z',
+ 'fixture-idempotency', 'unverified', '{}', '[]', 'fixture-tenant');
+
+EXPLAIN INSERT OR IGNORE INTO audit_events
+(id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json, tenant_id)
+SELECT 'fixture-ingest-audit', 'service', 'fixture-service', 'observation.accepted',
+ 'observation', 'fixture-ingest-observation', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+ 'fixture-request', '{}', 'fixture-tenant'
+WHERE EXISTS (SELECT 1 FROM observations
+ WHERE id = 'fixture-ingest-observation' AND tenant_id = 'fixture-tenant');
