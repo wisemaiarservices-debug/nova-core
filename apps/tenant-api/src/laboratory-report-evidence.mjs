@@ -3,7 +3,7 @@ const HEX_SHA256 = /^[a-f0-9]{64}$/;
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function validText(value, max) {
-  return typeof value === "string" && value.length > 0 && value.length <= max &&
+    value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
     value.trim() === value && !/[\\u0000-\\u001f\\u007f]/.test(value);
 }
 function validId(value, max = 160) {
@@ -41,12 +41,12 @@ export async function registerLaboratoryReportEvidence(db, tenantId, subject, re
   if (!onlyKeys(body, ["site_id", "file_name", "media_type", "laboratory_name",
       "report_number", "sample_reference", "issued_at", "document_base64"]) ||
       !validId(body.site_id) || !validText(body.file_name, 180) ||
-      /[/\\\\]/.test(body.file_name) || !body.file_name.toLowerCase().endsWith(".pdf") ||
+      /[\/\\]/.test(body.file_name) || !body.file_name.toLowerCase().endsWith(".pdf") ||
       body.media_type !== "application/pdf" ||
       !validText(body.laboratory_name, 200) || !validText(body.report_number, 120) ||
       (body.sample_reference !== undefined && !validId(body.sample_reference)) ||
       !validText(body.issued_at, 40) ||
-      !/^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2}))?$/.test(body.issued_at)) {
+      !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(body.issued_at)) {
     return { error: "laboratory_report_evidence_request_invalid", status: 400 };
   }
   const bytes = decodeBase64(body.document_base64);
