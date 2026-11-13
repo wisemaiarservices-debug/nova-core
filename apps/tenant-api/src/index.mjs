@@ -403,6 +403,89 @@ async function readCriteriaRegistry(db, tenant, entryId, version, subject) {
     operational_decision: "not_authorized" };
 }
 
+async function provisionSiteConfigurationReviewer(db, tenant, site, actor, requestId, body, action) {
+  const allowedKeys = action === "assign"
+    ? ["reviewer_subject", "reviewer_role", "evidence_ref"]
+    : ["reviewer_subject", "reviewer_role", "evidence_ref", "reason"];
+  if (!onlyKeys(body, allowedKeys) || !validSubject(body.reviewer_subject) ||
+      body.reviewer_subject === actor ||
+      !["engineering_reviewer", "operations_reviewer"].includes(body.reviewer_role) ||
+      typeof body.evidence_ref !== "string" || body.evidence_ref.trim() !== body.evidence_ref ||
+      body.evidence_ref.length < 1 || body.evidence_ref.length > 500 ||
+      (action === "revoke" && (typeof body.reason !== "string" ||
+        body.reason.trim() !== body.reason || body.reason.length < 1 || body.reason.length > 2000))) {
+    return { error: "site_configuration_reviewer_request_invalid", status: 400 };
+  }
+  const memberships = await rows(db.prepare(
+    "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status " +
+    "FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+  ).bind(actor, tenant));
+  const grants = await rows(db.prepare(
+    "SELECT subject, tenant_id, resource_type, resource_id, action FROM tenant_resource_grants " +
+    "WHERE tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = 'manage_members' LIMIT 2"
+  ).bind(tenant, actor, site));
+  if (memberships.length !== 1 || memberships[0].subject !== actor ||
+      memberships[0].tenant_id !== tenant || memberships[0].role !== "tenant_owner" ||
+      memberships[0].membership_status !== "active" || memberships[0].tenant_status !== "active" ||
+      grants.length !== 1) return { error: "not_found", status: 404 };
+
+  const eventId = crypto.randomUUID();
+  const auditId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const first = action === "assign"
+    ? db.prepare("INSERT INTO tenant_site_configuration_reviewers (tenant_id, site_id, reviewer_subject, reviewer_role, status, assigned_by_subject, assignment_evidence_ref) VALUES (?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(tenant_id, site_id, reviewer_subject, reviewer_role) DO NOTHING")
+        .bind(tenant, site, body.reviewer_subject, body.reviewer_role, actor, body.evidence_ref)
+    : db.prepare("UPDATE tenant_site_configuration_reviewers SET status = 'revoked' WHERE tenant_id = ? AND site_id = ? AND reviewer_subject = ? AND reviewer_role = ? AND status = 'active'")
+        .bind(tenant, site, body.reviewer_subject, body.reviewer_role);
+  const event = action === "assign"
+    ? db.prepare("INSERT INTO tenant_site_configuration_reviewer_events (id, tenant_id, site_id, reviewer_subject, reviewer_role, event_type, actor_subject, evidence_ref, request_id) SELECT ?, ?, ?, ?, ?, 'assigned', ?, ?, ? WHERE changes() = 1")
+        .bind(eventId, tenant, site, body.reviewer_subject, body.reviewer_role, actor, body.evidence_ref, requestId)
+    : db.prepare("INSERT INTO tenant_site_configuration_reviewer_events (id, tenant_id, site_id, reviewer_subject, reviewer_role, event_type, actor_subject, evidence_ref, reason, request_id) SELECT ?, ?, ?, ?, ?, 'revoked', ?, ?, ?, ? WHERE changes() = 1")
+        .bind(eventId, tenant, site, body.reviewer_subject, body.reviewer_role, actor, body.evidence_ref, body.reason, requestId);
+  const audit = db.prepare("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json) SELECT ?, ?, 'operator', ?, ?, 'site', ?, ?, ?, ? WHERE changes() = 1")
+    .bind(auditId, tenant, actor,
+      action === "assign" ? "site_configuration.reviewer_assigned" : "site_configuration.reviewer_revoked",
+      site, now, requestId, JSON.stringify({ reviewer_subject: body.reviewer_subject, reviewer_role: body.reviewer_role }));
+  try {
+    const result = await db.batch([first, event, audit]);
+    if (!Array.isArray(result) || result.length !== 3 ||
+        result.some(row => !row?.meta || !Number.isInteger(row.meta.changes))) {
+      throw new Error("site_configuration_reviewer_batch_invalid");
+    }
+    if (result[0].meta.changes !== 1 || result[1].meta.changes !== 1 || result[2].meta.changes !== 1) {
+      return { error: action === "assign" ? "reviewer_assignment_conflict" : "active_reviewer_not_found",
+        status: action === "assign" ? 409 : 404 };
+    }
+  } catch {
+    return { error: "site_configuration_reviewer_write_failed", status: 409 };
+  }
+  return { data: { site_id: site, reviewer_subject: body.reviewer_subject,
+    reviewer_role: body.reviewer_role, status: action === "assign" ? "active" : "revoked",
+    event_type: action === "assign" ? "assigned" : "revoked", actor_subject: actor },
+    status: action === "assign" ? 201 : 200 };
+}
+
+async function listSiteConfigurationReviewers(db, tenant, site, actor) {
+  const memberships = await rows(db.prepare(
+    "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status " +
+    "FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+  ).bind(actor, tenant));
+  const grants = await rows(db.prepare(
+    "SELECT subject, tenant_id, resource_type, resource_id, action FROM tenant_resource_grants " +
+    "WHERE tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = 'read' LIMIT 2"
+  ).bind(tenant, actor, site));
+  if (memberships.length !== 1 || memberships[0].membership_status !== "active" ||
+      memberships[0].tenant_status !== "active" || !ROLE_ACTIONS[memberships[0].role]?.has("read") ||
+      grants.length !== 1) return { error: "not_found", status: 404 };
+  const assignments = await rows(db.prepare(
+    "SELECT reviewer_subject, reviewer_role, status, assigned_by_subject, assignment_evidence_ref, created_at FROM tenant_site_configuration_reviewers WHERE tenant_id = ? AND site_id = ? ORDER BY reviewer_role, reviewer_subject"
+  ).bind(tenant, site));
+  const events = await rows(db.prepare(
+    "SELECT reviewer_subject, reviewer_role, event_type, actor_subject, evidence_ref, reason, request_id, occurred_at FROM tenant_site_configuration_reviewer_events WHERE tenant_id = ? AND site_id = ? ORDER BY rowid"
+  ).bind(tenant, site));
+  return { data: { assignments, events }, status: 200 };
+}
+
 export default {
   async fetch(request, env) {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
@@ -412,6 +495,9 @@ export default {
     const configurationCreate = request.method === "POST" ? configurationPath : null;
     const configurationList = request.method === "GET" ? configurationPath : null;
     const configurationDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/(v[1-9][0-9]{0,30})$/);
+    const configurationReviewers = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/reviewers$/);
+    const configurationReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/reviewers\/assign$/);
+    const configurationReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/reviewers\/revoke$/);
     const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
     const reviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
     const reviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/revoke$/);
@@ -422,12 +508,12 @@ export default {
     const criteriaReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
     const criteriaResolve = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
     const criteriaAssess = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
-    if ((!match && !configurationCreate && !configurationList && !configurationDetail && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
-        (request.method === "POST" && (!configurationCreate && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
-        (request.method === "GET" && (configurationCreate || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
-    const tenant = match?.[1] ?? configurationCreate?.[1] ?? configurationList?.[1] ?? configurationDetail?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
+    if ((!match && !configurationCreate && !configurationList && !configurationDetail && !configurationReviewers && !configurationReviewerAssign && !configurationReviewerRevoke && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
+        (request.method === "POST" && (!configurationCreate && !configurationReviewerAssign && !configurationReviewerRevoke && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
+        (request.method === "GET" && (configurationCreate || configurationReviewerAssign || configurationReviewerRevoke || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
+    const tenant = match?.[1] ?? configurationCreate?.[1] ?? configurationList?.[1] ?? configurationDetail?.[1] ?? configurationReviewers?.[1] ?? configurationReviewerAssign?.[1] ?? configurationReviewerRevoke?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
     const resourceId = match?.[3];
-    const configurationSiteId = configurationCreate?.[2] ?? configurationList?.[2] ?? configurationDetail?.[2] ?? null;
+    const configurationSiteId = configurationCreate?.[2] ?? configurationList?.[2] ?? configurationDetail?.[2] ?? configurationReviewers?.[2] ?? configurationReviewerAssign?.[2] ?? configurationReviewerRevoke?.[2] ?? null;
     const configurationVersion = configurationDetail?.[3] ?? null;
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
@@ -464,6 +550,17 @@ export default {
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
+      if (configurationReviewers) {
+        const result = await listSiteConfigurationReviewers(env.DB, tenant, configurationSiteId, subject);
+        return result.error ? error(result.error, result.status)
+          : json({ data: result.data, request_id: requestId }, result.status);
+      }
+      if (configurationReviewerAssign || configurationReviewerRevoke) {
+        const result = await provisionSiteConfigurationReviewer(env.DB, tenant, configurationSiteId,
+          subject, requestId, draftBody, configurationReviewerAssign ? "assign" : "revoke");
+        return result.error ? error(result.error, result.status)
+          : json({ data: result.data, request_id: requestId }, result.status);
+      }
       if (configurationList || configurationDetail) {
         const result = await readSiteConfigurationHistory({
           db: env.DB, principalSubject: subject, tenantId: tenant,
