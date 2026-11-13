@@ -88,14 +88,14 @@ export async function reviewObservation(db, tenant, observationId, reviewerSubje
     return { error: "observation_verification_state_conflict", status: 409 };
   }
   const eventId = crypto.randomUUID();
-  const update = db.prepare(
-    "UPDATE observations SET verification_status = ? WHERE id = ? AND tenant_id = ? AND site_id = ? AND verification_status = ?"
-  ).bind(transition.to, observationId, tenant, observation.site_id, transition.from);
   const event = db.prepare(
-    "INSERT INTO observation_verification_events (id, tenant_id, site_id, observation_id, reviewer_subject, reviewer_role, event_type, evidence_ref, reason, request_id) SELECT ?, ?, ?, ?, ?, 'measurement_reviewer', ?, ?, ?, ? WHERE changes() = 1"
+    "INSERT INTO observation_verification_events (id, tenant_id, site_id, observation_id, reviewer_subject, reviewer_role, event_type, evidence_ref, reason, request_id) VALUES (?, ?, ?, ?, ?, 'measurement_reviewer', ?, ?, ?, ?)"
   ).bind(eventId, tenant, observation.site_id, observationId, reviewerSubject,
     transition.event, body.evidence_ref, body.reason ?? null, requestId);
-  const results = await db.batch([update, event]);
+  const update = db.prepare(
+    "UPDATE observations SET verification_status = ? WHERE id = ? AND tenant_id = ? AND site_id = ? AND verification_status = ? AND EXISTS (SELECT 1 FROM observation_verification_events e WHERE e.id = ? AND e.observation_id = observations.id AND e.tenant_id = observations.tenant_id AND e.site_id = observations.site_id AND e.event_type = ?)"
+  ).bind(transition.to, observationId, tenant, observation.site_id, transition.from, eventId, transition.event);
+  const results = await db.batch([event, update]);
   if (!Array.isArray(results) || results.length !== 2 ||
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
     throw new Error("observation_verification_batch_invalid");
