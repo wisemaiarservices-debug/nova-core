@@ -87,7 +87,8 @@ test("routes tenant water-quality criteria list and version reads through the ve
       ["/api/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0", "/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0"],
       ["/api/v1/tenants/tenant-a/water-quality-criteria/reviewers", "/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers"],
       ["/api/v1/tenants/tenant-a/sites/site-a/configurations", "/internal/v1/tenants/tenant-a/sites/site-a/configurations"],
-      ["/api/v1/tenants/tenant-a/sites/site-a/configurations/v1", "/internal/v1/tenants/tenant-a/sites/site-a/configurations/v1"],\n      ["/api/v1/tenants/tenant-a/sites/site-a/configurations/reviewers", "/internal/v1/tenants/tenant-a/sites/site-a/configurations/reviewers"],
+      ["/api/v1/tenants/tenant-a/sites/site-a/configurations/v1", "/internal/v1/tenants/tenant-a/sites/site-a/configurations/v1"],
+      ["/api/v1/tenants/tenant-a/sites/site-a/configurations/reviewers", "/internal/v1/tenants/tenant-a/sites/site-a/configurations/reviewers"],
     ]) {
       let captured;
       const response = await worker.fetch(new Request("https://gateway.test" + publicPath, {
