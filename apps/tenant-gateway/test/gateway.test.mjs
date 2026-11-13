@@ -149,6 +149,38 @@ test("routes tenant water-quality criteria list and version reads through the ve
       assert.equal(await forwarded.text(), payload);
       assert.equal(forwarded.headers.get("x-nova-verified-subject"), "criteria-reader");
     }
+    for (const action of ["submit", "review", "resolve", "assess"]) {
+      let forwarded;
+      const payload = action === "submit" ? "{}" : action === "review" ? JSON.stringify({
+        reviewer_role: "domain_expert", decision: "approve", evidence_ref: "evidence:review",
+      }) : action === "resolve" ? JSON.stringify({
+        context: { tenant_id: "tenant-a", site_id: "site-a", jurisdiction: "TN",
+          crop_id: "olive", irrigation_method: "drip", intended_use: "agricultural_irrigation" },
+        sampled_at: "2026-05-10T10:00:00Z",
+      }) : JSON.stringify({
+        context: { tenant_id: "tenant-a", site_id: "site-a", jurisdiction: "TN",
+          crop_id: "olive", irrigation_method: "drip", intended_use: "agricultural_irrigation" },
+        samples: [{ id: "sample-1", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" }],
+      });
+      const response = await worker.fetch(new Request(
+        "https://gateway.test/api/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/" + action,
+        { method: "POST", body: payload, headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": token } }), {
+        ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience,
+        INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+        TENANT_API: { fetch: async request => {
+          forwarded = request;
+          return new Response(JSON.stringify({ data: { status: "ok" } }), {
+            status: 200, headers: { "content-type": "application/json" },
+          });
+        } },
+      });
+      assert.equal(response.status, 200);
+      assert.equal(new URL(forwarded.url).pathname,
+        "/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/" + action);
+      assert.equal(forwarded.method, "POST");
+      assert.equal(await forwarded.text(), payload);
+      assert.equal(forwarded.headers.get("x-nova-verified-subject"), "criteria-reader");
+    }
   } finally { globalThis.fetch = oldFetch; }
 });
 
