@@ -97,3 +97,32 @@ def test_non_object_and_malformed_json_are_rejected():
     args["content_sha256"] = hashlib.sha256(b"{").hexdigest()
     with pytest.raises(ConfigurationSnapshotError, match="json_invalid"):
         validate_configuration_snapshot(**args)
+
+
+def test_persisted_snapshot_flows_into_onboarding_with_matching_inventory():
+    from apps.api.services.equipment_capabilities import CapabilityRegistry
+    from apps.api.services.persisted_client_configuration import assess_persisted_client_onboarding
+
+    args = snapshot()
+    registry = CapabilityRegistry(
+        tenant_id="tenant-a", site_id="site-a", registry_version="v1",
+    )
+    result = assess_persisted_client_onboarding(**args, registry=registry)
+    assert result.configuration.site.configuration_version == "v1"
+    assert result.readiness.tenant_id == "tenant-a"
+    assert result.readiness.site_id == "site-a"
+    assert result.readiness.status == "needs_information"
+    assert result.readiness.model_readiness == "not_assessed"
+
+
+def test_persisted_snapshot_cannot_be_assessed_with_another_sites_inventory():
+    from apps.api.services.equipment_capabilities import CapabilityRegistry
+    from apps.api.services.persisted_client_configuration import assess_persisted_client_onboarding
+
+    with pytest.raises(ValueError, match="tenant/site"):
+        assess_persisted_client_onboarding(
+            **snapshot(),
+            registry=CapabilityRegistry(
+                tenant_id="tenant-a", site_id="site-b", registry_version="v1",
+            ),
+        )
