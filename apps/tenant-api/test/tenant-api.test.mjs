@@ -7,7 +7,7 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
@@ -31,6 +31,7 @@ class DB {
             resource_id: siteGrantQuery ? args[2] : args[3], action: "read",
           }] : []) };
         }
+        if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
@@ -707,8 +708,13 @@ test("assesses sample values only against the approved tenant criteria and prese
   db.approvalRows = resolutionApprovals;
   db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
     role: "viewer", membership_status: "active", tenant_status: "active" }];
+  db.observationEvidenceRows = [{
+    id: "obs-sample-1", tenant_id: "tenant-a", site_id: "site-a",
+    metric: "ec", value: 1.5, unit: "dS/m", observed_at: "2026-05-10T10:00:00Z",
+    verification_status: "verified",
+  }];
   const samples = [
-    { id: "sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z", provenance: { source_type: "measured", method: "field_meter", evidence_ref: "evidence:sample-1" } },
+    { id: "sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z", provenance: { source_type: "measured", method: "field_meter", evidence_ref: "observation:obs-sample-1" } },
     { id: "sample-outside", parameter: "ec", value: 3, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z", provenance: { source_type: "laboratory", method: "ion_chromatography", laboratory: "Declared lab", evidence_ref: "report:sample-2" } },
   ];
   const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-assess-approved" },
@@ -716,9 +722,11 @@ test("assesses sample values only against the approved tenant criteria and prese
     "POST", JSON.stringify({ context: resolutionContext, samples })), env(db));
   assert.equal(response.status, 200);
   const result = (await response.json()).data;
-  assert.equal(result.status, "declared_criteria_comparison_complete");
+  assert.equal(result.status, "partial_criteria_comparison");
   assert.equal(result.results[0].status, "within_declared_criterion");
-  assert.equal(result.results[1].status, "outside_declared_criterion");
+  assert.equal(result.results[0].sample_provenance.verification_status, "matched_to_verified_core_observation");
+  assert.equal(result.results[1].status, "not_assessed");
+  assert.equal(result.results[1].reason, "external_evidence_verification_not_configured");
   assert.equal(result.interpretation, "comparison_to_caller_supplied_criteria_only");
   assert.equal(result.scientific_suitability, "not_assessed");
   assert.equal(result.operational_decision, "not_authorized");
