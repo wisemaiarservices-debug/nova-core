@@ -10,15 +10,15 @@ function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[]}={})
   if(sql.includes("FROM sources"))return {results:[{id:"source-1",site_id:"site-1"}]};
   if(sql.includes("FROM sensor_source_identity_mappings WHERE"))return {results:[{id:"map-1",source_id:"source-1",registered_by_subject:owner}]};
   if(sql.includes("FROM sensor_source_mapping_reviewers"))return {results:[{reviewer_subject:reviewer}]};
-  if(sql.includes("FROM sensor_source_mapping_events"))return {results:history};
   if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:matches};
+  if(sql.includes("FROM sensor_source_mapping_events"))return {results:history};
   throw Error(sql);
  },async run(){calls.push({sql,values:this.values});return {meta:{changes:1}};}};},async batch(stmts){calls.push(...stmts.map(x=>({sql:x.sql,values:x.values})));return stmts.map(()=>({meta:{changes:1}}));}};
 }
 const mapping={id:"map-1",source_id:"source-1",sensor_id:"sensor-7",parameter:"air_temperature",unit:"degC",effective_from:"2026-01-01T00:00:00.000Z",mapping_method:"commissioning inspection",evidence_ref:"evidence-7"};
 test("mapping registration requires exact explicit identity fields and writes immutable record plus audit",async()=>{
  const db=dbFixture();const r=await registerSensorSourceMapping(db,"tenant-1","site-1","asset-1","admin","req-1",mapping);
- assert.equal(r.status,201);assert.equal(r.data.status,"registered_unverified");assert.equal(db.calls.length,2);
+ assert.equal(r.status,201);assert.equal(r.data.status,"registered_unverified");assert.equal(db.calls.length,1);
 });
 test("mapping registration rejects ambiguous or malformed effective dates",async()=>{
  const r=await registerSensorSourceMapping(dbFixture(),"tenant-1","site-1","asset-1","admin","req-1",{...mapping,effective_from:"yesterday"});
