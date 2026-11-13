@@ -48,7 +48,8 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const observationReviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/reviewers\/assign$/);
       const observationReviewerRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/reviewers\/revoke$/);
       const observationVerification = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/verification$/);
-      const calibrationRegister = url.pathname.match(/^\\/api\\/v1\\/tenants\\/([^/]+)\\/sites\\/([^/]+)\\/assets\\/([^/]+)\\/calibrations$/);\n      const labReportUpload = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
+      const calibrationRegister = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets\/([^/]+)\/calibrations$/);
+      const labReportUpload = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
       const labReportDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
       if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationRegister && !labReportUpload && !labReportDetail) || url.search || url.hash ||
           (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationRegister && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
@@ -81,7 +82,9 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
 
       const requestId = crypto.randomUUID();
-      const internalPath = calibrationRegister\n        ? "/internal/v1/tenants/" + tenant + "/sites/" + calibrationRegister[2] + "/assets/" + calibrationRegister[3] + "/calibrations"\n        : labReportUpload
+      const internalPath = calibrationRegister
+        ? "/internal/v1/tenants/" + tenant + "/sites/" + calibrationRegister[2] + "/assets/" + calibrationRegister[3] + "/calibrations"
+        : labReportUpload
         ? "/internal/v1/tenants/" + tenant + "/sites/" + labReportUpload[2] + "/laboratory-reports"
         : labReportDetail
           ? "/internal/v1/tenants/" + tenant + "/sites/" + labReportDetail[2] + "/laboratory-reports/" + labReportDetail[3]
