@@ -400,9 +400,9 @@ export default {
             membership[0].tenant_id !== tenant || membership[0].membership_status !== "active" ||
             membership[0].tenant_status !== "active") return error("not_found", 404);
         if (criteriaResolve) {
-          if (!ROLE_ACTIONS[membership[0].role]?.has("read") ||
-              !onlyKeys(draftBody, ["context", "sampled_at"]) ||
-              !Object.hasOwn(draftBody, "context") || !Object.hasOwn(draftBody, "sampled_at")) return error("not_found", 404);
+          if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
+          if (!onlyKeys(draftBody, ["context", "sampled_at"]) ||
+              !Object.hasOwn(draftBody, "context") || !Object.hasOwn(draftBody, "sampled_at")) return error("invalid_request_body", 400);
           const resolved = await resolveStoredCriteria(env.DB, tenant, entryId, version, draftBody.context, draftBody.sampled_at);
           return resolved.error ? json({ error: resolved.error }, resolved.status)
             : json({ data: resolved.data, request_id: requestId }, resolved.status);
