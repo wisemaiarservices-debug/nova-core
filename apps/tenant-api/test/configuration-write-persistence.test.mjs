@@ -47,6 +47,8 @@ test("performs authorization reads before one atomic five-statement write batch"
   assert.match(batch[2].sql,/submitted_for_review/);
   assert.match(batch[3].sql,/audit_events/);
   assert.match(batch[4].sql,/status = 'completed'/);
+  assert.match(batch[4].sql,/configuration_version/);
+  assert.equal(batch[4].params.length,3);
 });
 
 test("denies before writes when membership or exact site grant is missing",async()=>{
