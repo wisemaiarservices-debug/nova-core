@@ -18,6 +18,7 @@ def database():
         "0005_tenant_site_configuration_history.sql",
         "0006_site_configuration_idempotency.sql",
         "0007_water_quality_criteria_registry.sql",
+        "0008_water_quality_criteria_reviewer_events.sql",
     ):
         db.executescript((MIGRATIONS / name).read_text(encoding="utf-8"))
     db.executemany(
@@ -150,9 +151,8 @@ def test_approval_requires_exact_role_assignment_and_two_distinct_reviewer_roles
                VALUES ('revoked-reviewer-approved','tenant-a','criteria-a','1.0',
                        'approved','workflow','req-revoked')"""
         )
-    db.execute(
-        "UPDATE water_quality_criteria_reviewers SET status='active' WHERE reviewer_subject='reviewer-r'"
-    )
+    assign_reviewer(db, "reviewer-r2", "regulatory_reviewer")
+    approve(db, "criteria-a", "1.0", "reviewer-r2", "regulatory_reviewer")
     db.execute(
         """INSERT INTO water_quality_criteria_events
            (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id)
@@ -204,4 +204,46 @@ def test_suspended_tenant_cannot_create_registry_entries_or_events():
             """INSERT INTO water_quality_criteria_events
                (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id)
                VALUES ('blocked','tenant-a','criteria-a','1.0','retired','owner','req')"""
+        )
+
+
+def test_reviewer_assignment_and_revocation_events_are_append_only_and_state_bound():
+    db = database()
+    assign_reviewer(db, "reviewer-r", "regulatory_reviewer")
+    db.execute(
+        """INSERT INTO water_quality_criteria_reviewer_events
+           (id, tenant_id, reviewer_subject, reviewer_role, jurisdiction,
+            event_type, actor_subject, evidence_ref, request_id)
+           VALUES ('review-event-1','tenant-a','reviewer-r','regulatory_reviewer',
+                   'TN','assigned','tenant-owner','evidence:assignment','req-assign')"""
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            """INSERT INTO water_quality_criteria_reviewer_events
+               (id, tenant_id, reviewer_subject, reviewer_role, jurisdiction,
+                event_type, actor_subject, evidence_ref, request_id)
+               VALUES ('review-event-invalid','tenant-a','reviewer-r','regulatory_reviewer',
+                       'TN','revoked','tenant-owner','evidence:revocation','req-invalid')"""
+        )
+    db.execute(
+        "UPDATE water_quality_criteria_reviewers SET status='revoked' WHERE tenant_id='tenant-a' AND reviewer_subject='reviewer-r' AND reviewer_role='regulatory_reviewer'"
+    )
+    db.execute(
+        """INSERT INTO water_quality_criteria_reviewer_events
+           (id, tenant_id, reviewer_subject, reviewer_role, jurisdiction,
+            event_type, actor_subject, evidence_ref, reason, request_id)
+           VALUES ('review-event-2','tenant-a','reviewer-r','regulatory_reviewer',
+                   'TN','revoked','tenant-owner','evidence:revocation','scope ended','req-revoke')"""
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+        db.execute("UPDATE water_quality_criteria_reviewer_events SET reason='edited' WHERE id='review-event-2'")
+    with pytest.raises(sqlite3.IntegrityError, match="cannot be deleted"):
+        db.execute("DELETE FROM water_quality_criteria_reviewer_events WHERE id='review-event-1'")
+    with pytest.raises(sqlite3.IntegrityError, match="cannot be reactivated"):
+        db.execute(
+            "UPDATE water_quality_criteria_reviewers SET status='active' WHERE tenant_id='tenant-a' AND reviewer_subject='reviewer-r'"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="assignment evidence is immutable"):
+        db.execute(
+            "UPDATE water_quality_criteria_reviewers SET assignment_evidence_ref='evidence:changed' WHERE tenant_id='tenant-a' AND reviewer_subject='reviewer-r'"
         )
