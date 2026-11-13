@@ -16,7 +16,8 @@ async function one(statement) {
 }
 function assertBatch(results) {
   if (!Array.isArray(results) || results.length !== 5 ||
-      results.some(result => !result || result.success === false)) {
+      results.some(result => !result || result.success === false ||
+        !result.meta || result.meta.changes !== 1)) {
     throw new Error("configuration_atomic_write_failed");
   }
 }
