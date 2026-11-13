@@ -94,7 +94,7 @@ export async function createSiteConfiguration({
       "INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json) VALUES (?, ?, 'operator', ?, 'configuration.created_for_review', 'site', ?, ?, ?, ?)"
     ).bind(auditId, tenantId, principalSubject, siteId, now, requestId, auditDetails),
     db.prepare(
-      "UPDATE tenant_site_configuration_idempotency SET status = 'completed', response_json = json_object('configuration_id', configuration_id, 'site_id', ?, 'schema_id', ?, 'content_sha256', ?, 'request_id', ?, 'created_at', ?) WHERE tenant_id = ? AND subject = ? AND idempotency_key = ? AND status = 'pending'"
+      "UPDATE tenant_site_configuration_idempotency SET status = 'completed', response_json = (SELECT json_object('configuration_id', c.id, 'configuration_version', c.configuration_version, 'site_id', c.site_id, 'schema_id', c.schema_id, 'content_sha256', c.content_sha256, 'request_id', c.request_id, 'created_at', c.created_at) FROM tenant_site_configurations c WHERE c.id = tenant_site_configuration_idempotency.configuration_id AND c.tenant_id = tenant_site_configuration_idempotency.tenant_id) WHERE tenant_id = ? AND subject = ? AND idempotency_key = ? AND status = 'pending'"
     ).bind(tenantId, principalSubject, idempotencyKey),
   ];
   try {
