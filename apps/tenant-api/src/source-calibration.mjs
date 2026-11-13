@@ -154,7 +154,7 @@ export async function assessObservationCalibration(db, tenantId, observation) {
     observation.unit, observation.observed_at, observation.observed_at).all();
   if (!Array.isArray(rows?.results)) throw new Error("source_calibration_query_invalid");
   const verified = rows.results.filter(item => item.status === "verified");
-  const common = { observation_id: observation.id, source_id: observation.source_id,
+  const common = { id: observation.id, tenant_id: tenantId, observation_id: observation.id, source_id: observation.source_id,
     metric: observation.metric, unit: observation.unit,
     observation_verification_status: observation.verification_status,
     ingestion_quality_flags: (() => { try { const flags = JSON.parse(observation.quality_flags_json ?? "[]"); return Array.isArray(flags) ? flags : []; } catch { return []; } })() };
