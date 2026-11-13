@@ -118,5 +118,5 @@ test("revokes an existing verification back to unverified with an auditable reas
   });
   assert.equal(result.status, 201);
   assert.equal(result.data.verification_status, "unverified");
-  assert.deepEqual(db.state.batches[0][0].args, ["unverified", "obs-1", "tenant-a", "site-a", "verified"]);
+  assert.deepEqual(db.state.batches[0][1].args, ["unverified", "obs-1", "tenant-a", "site-a", "verified", db.state.batches[0][0].args[0], "revoked"]);
 });
