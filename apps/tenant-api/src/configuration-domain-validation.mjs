@@ -2,7 +2,7 @@ const ROOT_KEYS = new Set(["tenant", "site", "inventory", "calibration_records",
 const TENANT_KEYS = new Set(["tenant_id"]);
 const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crops", "irrigation_systems", "energy_systems", "metadata"]);
 const INVENTORY_KEYS = new Set(["equipment", "sensors", "gateways"]);
-const CALIBRATION_KEYS = new Set(["id", "scope", "scope_id", "unit", "method", "effective_from", "effective_to", "evidence_ref"]); 
+const CALIBRATION_KEYS = new Set(["id", "scope", "scope_id", "unit", "method", "effective_from", "effective_to", "certificate_number", "issuer", "issued_at", "evidence_ref"]); 
 const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at", "issuer", "digest"]);
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
@@ -93,7 +93,7 @@ function validateUniqueRecords(records, path, errors) {
  * approval and model applicability. Missing client specifications remain
  * missing; declarations never become observed telemetry.
  */
-export function assessDomainConfiguration(payload) {
+export function assessDomainConfiguration(payload, { assessedOn = new Date().toISOString().slice(0, 10) } = {}) {
   const errors = [];
   const issues = [];
   if (!plainObject(payload)) {
@@ -238,6 +238,28 @@ export function assessDomainConfiguration(payload) {
         errors.push(issue("calibration.global_model_parameter_forbidden", path, "verification_required"));
       }
       if (!record?.evidence_ref) issues.push(issue("calibration.evidence_missing", path + ".evidence_ref", "verification_required"));
+      if (plainObject(record)) {
+        if (typeof record.certificate_number !== "string" || !record.certificate_number.trim()) {
+          issues.push(issue("calibration.certificate_number_missing", path + ".certificate_number", "verification_required"));
+        }
+        if (typeof record.issuer !== "string" || !record.issuer.trim()) {
+          issues.push(issue("calibration.issuer_missing", path + ".issuer", "verification_required"));
+        }
+        if (!validDate(record.issued_at)) {
+          issues.push(issue("calibration.issued_at_missing_or_invalid", path + ".issued_at", "verification_required"));
+        } else if (validDate(record.effective_from) && record.issued_at > record.effective_from) {
+          issues.push(issue("calibration.certificate_issued_after_effective_date", path + ".issued_at", "verification_required"));
+        }
+        if (validDate(assessedOn) && validDate(record.effective_from) && record.effective_from > assessedOn) {
+          issues.push(issue("calibration.not_yet_effective", path + ".effective_from", "verification_required"));
+        }
+        if (validDate(assessedOn) && validDate(record.effective_to) && record.effective_to < assessedOn) {
+          issues.push(issue("calibration.expired", path + ".effective_to", "verification_required"));
+        }
+        if (validDate(assessedOn) && validDate(record.issued_at) && record.issued_at > assessedOn) {
+          issues.push(issue("calibration.issue_date_in_future", path + ".issued_at", "verification_required"));
+        }
+      }
     });
   }
   if (payload.evidence !== undefined && !Array.isArray(payload.evidence)) errors.push(issue("evidence.invalid_type", "evidence", "verification_required"));
@@ -404,6 +426,21 @@ export function assessDomainConfiguration(payload) {
   };
   if (Array.isArray(payload.calibration_records)) payload.calibration_records.forEach((record, i) => {
     if (plainObject(record)) checkEvidenceReference(record.evidence_ref, "calibration_records[" + i + "].evidence_ref");
+  });
+  if (Array.isArray(payload.calibration_records)) payload.calibration_records.forEach((record, i) => {
+    if (!plainObject(record) || !record.evidence_ref) return;
+    const certificateEvidence = Array.isArray(payload.evidence)
+      ? payload.evidence.find(entry => plainObject(entry) && entry.reference === record.evidence_ref)
+      : undefined;
+    if (certificateEvidence && certificateEvidence.source_class !== "calibration_certificate") {
+      issues.push(issue("calibration.evidence_source_class_mismatch",
+        "calibration_records[" + i + "].evidence_ref", "verification_required"));
+    }
+    if (certificateEvidence && record.issuer && certificateEvidence.issuer &&
+        record.issuer !== certificateEvidence.issuer) {
+      issues.push(issue("calibration.issuer_evidence_mismatch",
+        "calibration_records[" + i + "].issuer", "verification_required"));
+    }
   });
   for (const [kind, records] of [
     ["crops", payload.site?.crops],
