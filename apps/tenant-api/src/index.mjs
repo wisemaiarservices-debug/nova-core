@@ -75,6 +75,9 @@ async function readResource(db, subject, tenant, type, id) {
 }
 
 async function createCriteriaDraft(db, tenant, subject, requestId, entry) {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return { error: "criteria_entry_invalid", status: 422, details: [{ code: "entry.invalid_type", path: "$" }] };
+  }
   if (entry.scope?.tenant_id !== tenant || entry.review?.status !== "draft" ||
       (entry.review.approvals !== undefined &&
        (!Array.isArray(entry.review.approvals) || entry.review.approvals.length !== 0))) {
