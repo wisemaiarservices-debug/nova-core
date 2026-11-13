@@ -431,6 +431,8 @@ export default {
     const observationReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/reviewers\/assign$/);
     const observationReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/reviewers\/revoke$/);
     const observationVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/verification$/);
+    const labReportUpload = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
+    const labReportDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
     if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !labReportDetail) || url.search || url.hash ||
         (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
         (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || labReportUpload))) return error("not_found", 404);
