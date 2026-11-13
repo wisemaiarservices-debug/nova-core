@@ -41,10 +41,12 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const reviewerRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/revoke$/);
       const criteriaList = request.method === "GET" ? criteriaCreate : null;
         const criteriaDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)$/);
-      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList) || url.search || url.hash ||
-          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke || criteriaDetail || match)) ||
-          (request.method === "GET" && (reviewerAssign || reviewerRevoke))) return error("not_found", 404);
-      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1];
+      const criteriaSubmit = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/submit$/);
+      const criteriaReview = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
+      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview) || url.search || url.hash ||
+          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview || criteriaDetail || match)) ||
+          (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview))) return error("not_found", 404);
+      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1];
       const resourceId = match?.[3];
       const entryId = criteriaDetail?.[2];
       const version = criteriaDetail?.[3];
@@ -81,7 +83,11 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
             ? `/internal/v1/tenants/${tenant}/water-quality-criteria/reviewers/revoke`
             : reviewerList
               ? `/internal/v1/tenants/${tenant}/water-quality-criteria/reviewers`
-              : `/internal/v1/tenants/${tenant}/water-quality-criteria`;
+              : criteriaSubmit
+                ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaSubmit[2]}/${criteriaSubmit[3]}/submit`
+                : criteriaReview
+                  ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${criteriaReview[2]}/${criteriaReview[3]}/review`
+                  : `/internal/v1/tenants/${tenant}/water-quality-criteria`;
       const headers = new Headers({
         "x-nova-verified-subject": principal.subject,
         "x-nova-verified-issuer": principal.issuer,
