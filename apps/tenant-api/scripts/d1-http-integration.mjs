@@ -67,19 +67,19 @@ try {
 
   // Exercise the real persistence helper through a test-only entrypoint backed
   // by the same disposable local D1 used by the Service Binding integration.
-  async function writeConfiguration(key, requestId, payload) {
+  async function writeConfiguration(key, requestId, payload, tenantId = "tenant-http-a", siteId = "site-http-a") {
     const response = await fetch(base + "/__ci/configuration-write", {
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": key },
       body: JSON.stringify({
-        tenantId: "tenant-http-a", siteId: "site-http-a",
+        tenantId, siteId,
         requestId, schemaId: "nova.client-config.v1", payload,
       }),
     });
     return { response, body: await response.json() };
   }
-  async function configurationState(key) {
-    const response = await fetch(base + "/__ci/configuration-write-state?key=" + encodeURIComponent(key));
+  async function configurationState(key, tenant = "tenant-http-a") {
+    const response = await fetch(base + "/__ci/configuration-write-state?key=" + encodeURIComponent(key) + "&tenant=" + encodeURIComponent(tenant));
     assert.equal(response.status, 200);
     return response.json();
   }
@@ -131,6 +131,18 @@ try {
   );
   assert.notEqual(parallelVersions[0].body.data.configuration_id,
     parallelVersions[1].body.data.configuration_id);
+
+  // The same verified subject cannot write to another tenant merely by
+  // substituting tenant/site IDs in the request body.
+  const crossTenant = await writeConfiguration("ci-cross-tenant-key", "req-cross-tenant",
+    { crop: "unauthorized" }, "tenant-http-b", "site-http-b");
+  assert.equal(crossTenant.response.status, 403);
+  assert.equal(crossTenant.body.error, "configuration_authorization_denied");
+  const tenantBState = await configurationState("ci-cross-tenant-key", "tenant-http-b");
+  assert.equal(tenantBState.idempotency.length, 0);
+  assert.equal(tenantBState.configurations.length, 0);
+  assert.equal(tenantBState.events.length, 0);
+  assert.equal(tenantBState.audits.length, 0);
 
   const conflict = await writeConfiguration("ci-config-key-1", "req-config-conflict",
     { crop: "different-payload" });
