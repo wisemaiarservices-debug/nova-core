@@ -78,3 +78,6 @@ CRS, geometry/range/date errors, tenant/site binding, client extensions,
 calibration scope and evidence gaps. The disposable local D1 integration also
 proves a structurally invalid configuration creates no idempotency, snapshot,
 review or audit rows.
+
+
+The validator also flags unsupported nested crop, irrigation, energy, equipment, sensor, gateway, calibration and evidence fields. Known numeric engineering ratings (declared irrigation design flow and electrical/energy capacities) must be finite positive values when supplied. These are schema-level sanity checks only: they do not establish hydraulic adequacy, electrical compatibility, equipment sizing, or commissioning.
