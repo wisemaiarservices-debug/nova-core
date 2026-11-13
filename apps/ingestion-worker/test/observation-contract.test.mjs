@@ -26,6 +26,7 @@ test("accepts a complete scalar observation and normalizes its timestamp", () =>
 
 for (const [name, mutate] of [
   ["unknown top-level field", (p) => { p.verified = true; }],
+  ["caller cannot nominate tenant ownership", (p) => { p.tenant_id = "tenant-b"; }],
   ["unknown provenance field", (p) => { p.provenance.actor = "caller"; }],
   ["unsupported module", (p) => { p.module = "unknown"; }],
   ["blank site", (p) => { p.site_id = " "; }],
