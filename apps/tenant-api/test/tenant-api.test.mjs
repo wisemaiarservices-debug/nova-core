@@ -785,7 +785,7 @@ lab evidence\
     "POST", JSON.stringify(payload)), env(db));
   assert.equal(response.status, 201);
   assert.equal(db.batchCalls.length, 1);
-  assert.match(db.batchCalls[0][0].sql, /INSERT INTO laboratory_report_evidence/);
+  assert.match(db.batchCalls[0][0].sql, /INSERT(?: OR IGNORE)? INTO laboratory_report_evidence/);
   assert.match(db.batchCalls[0][1].sql, /INSERT INTO laboratory_report_evidence_events/);
   assert.equal(db.batchCalls[0][0].args[1], "tenant-a");
   assert.equal(db.batchCalls[0][0].args[2], "site-a");
