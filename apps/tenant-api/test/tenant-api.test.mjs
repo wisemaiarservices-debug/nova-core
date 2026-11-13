@@ -50,7 +50,7 @@ async function request(overrides = {}, targetUrl = "https://private.internal/int
   const headers = new Headers({ "x-nova-verified-subject": "operator@example.test",
     "x-nova-verified-issuer": "https://example.cloudflareaccess.com",
     "x-nova-verified-audience": "aud", "x-nova-gateway-issued-at": String(now),
-    "x-nova-request-id": "request-123", ...overrides });
+    "x-nova-request-id": "request-123", ...(method === "POST" ? { "content-type": "application/json" } : {}), ...overrides });
   const path = new URL(url).pathname;
   const canonical = JSON.stringify([method, path, headers.get("x-nova-verified-subject"),
     headers.get("x-nova-verified-issuer"), headers.get("x-nova-verified-audience"),
