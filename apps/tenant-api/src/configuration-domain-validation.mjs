@@ -1,6 +1,14 @@
 const ROOT_KEYS = new Set(["tenant", "site", "inventory", "calibration_records", "evidence", "extensions"]);
 const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crops", "irrigation_systems", "energy_systems", "metadata"]);
 const INVENTORY_KEYS = new Set(["equipment", "sensors", "gateways"]);
+const RECORD_KEYS = {
+  crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
+  irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "zones", "evidence_ref"]),
+  energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "evidence_ref"]),
+  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "evidence_ref"]),
+  sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "calibration_record_id", "evidence_ref"]),
+  gateways: new Set(["id", "manufacturer", "model", "protocol", "connectivity_status", "evidence_ref"]),
+};
 const PROTOCOLS = new Set(["modbus_tcp", "modbus_rtu", "mqtt", "http_rest", "opc_ua", "lorawan", "bacnet_ip", "can_bus", "serial", "manual", "unknown"]);
 const AREA_UNITS = new Set(["m2", "ha", "km2", "acre"]);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
