@@ -30,7 +30,8 @@ const criteriaSet = {
 };
 const samples = [{
   id: "sample-1", parameter: "electrical_conductivity",
-  value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z",\n  provenance: { source_type: "measured", method: "field_meter", evidence_ref: "evidence:sample-1" },
+  value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z",
+  provenance: { source_type: "measured", method: "field_meter", evidence_ref: "evidence:sample-1" },
 }];
 
 test("compares only an exact jurisdiction, crop, method, use, parameter and unit match", () => {
