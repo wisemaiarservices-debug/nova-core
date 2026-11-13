@@ -15,12 +15,12 @@ CREATE TABLE tenant_site_configuration_idempotency (
   response_json TEXT CHECK (
     response_json IS NULL OR json_valid(response_json)
   ),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (tenant_id, subject, idempotency_key),
   CHECK (
     (status = 'pending' AND response_json IS NULL) OR
     (status = 'completed' AND response_json IS NOT NULL)
   ),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  PRIMARY KEY (tenant_id, subject, idempotency_key),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT
 );
 
