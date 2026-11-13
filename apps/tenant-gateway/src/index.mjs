@@ -52,17 +52,18 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const labReportDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
       const sourceCalibrationCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/calibrations$/);
       const sourceCalibrationReview = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/calibrations\/([^/]+)\/review$/);
+      const sourceCalibrationDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/calibrations\/([^/]+)$/);
       const observationQuality = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/measurement-quality$/);
-      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !labReportDetail && !sourceCalibrationCreate && !sourceCalibrationReview && !observationQuality) || url.search || url.hash ||
+      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !labReportDetail && !sourceCalibrationCreate && !sourceCalibrationReview && !sourceCalibrationDetail && !observationQuality) || url.search || url.hash ||
           (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !sourceCalibrationCreate && !sourceCalibrationReview || criteriaDetail || match || labReportDetail || observationQuality)) ||
           (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || labReportUpload || sourceCalibrationCreate || sourceCalibrationReview))) return error("not_found", 404);
-      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1] ?? sourceCalibrationCreate?.[1] ?? sourceCalibrationReview?.[1] ?? observationQuality?.[1];
+      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1] ?? sourceCalibrationCreate?.[1] ?? sourceCalibrationReview?.[1] ?? sourceCalibrationDetail?.[1] ?? observationQuality?.[1];
       const resourceId = match?.[3];
       const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
       const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
       if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
           ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess) && (!validPathId(entryId) || !validPathId(version, 80))) ||
-          (observationVerification && !validPathId(observationVerification[2])) || ((labReportUpload || labReportDetail) && !validPathId((labReportUpload ?? labReportDetail)[2])) || (labReportDetail && !validPathId(labReportDetail[3])) || ((sourceCalibrationCreate || sourceCalibrationReview) && (!validPathId((sourceCalibrationCreate ?? sourceCalibrationReview)[2]) || !validPathId((sourceCalibrationCreate ?? sourceCalibrationReview)[3]))) || (sourceCalibrationReview && !validPathId(sourceCalibrationReview[4])) || (observationQuality && !validPathId(observationQuality[2]))) return error("not_found", 404);
+          (observationVerification && !validPathId(observationVerification[2])) || ((labReportUpload || labReportDetail) && !validPathId((labReportUpload ?? labReportDetail)[2])) || (labReportDetail && !validPathId(labReportDetail[3])) || ((sourceCalibrationCreate || sourceCalibrationReview || sourceCalibrationDetail) && (!validPathId((sourceCalibrationCreate ?? sourceCalibrationReview ?? sourceCalibrationDetail)[2]) || !validPathId((sourceCalibrationCreate ?? sourceCalibrationReview ?? sourceCalibrationDetail)[3]))) || (sourceCalibrationReview && !validPathId(sourceCalibrationReview[4])) || (sourceCalibrationDetail && !validPathId(sourceCalibrationDetail[4])) || (observationQuality && !validPathId(observationQuality[2]))) return error("not_found", 404);
       if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
           typeof env.ACCESS_AUDIENCE !== "string" || !env.ACCESS_AUDIENCE) {
         return error("identity_or_private_api_not_configured", 503);
@@ -84,7 +85,9 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
 
       const requestId = crypto.randomUUID();
-      const internalPath = sourceCalibrationCreate
+      const internalPath = sourceCalibrationDetail
+        ? "/internal/v1/tenants/" + tenant + "/sites/" + sourceCalibrationDetail[2] + "/sources/" + sourceCalibrationDetail[3] + "/calibrations/" + sourceCalibrationDetail[4]
+        : sourceCalibrationCreate
         ? "/internal/v1/tenants/" + tenant + "/sites/" + sourceCalibrationCreate[2] + "/sources/" + sourceCalibrationCreate[3] + "/calibrations"
         : sourceCalibrationReview
           ? "/internal/v1/tenants/" + tenant + "/sites/" + sourceCalibrationReview[2] + "/sources/" + sourceCalibrationReview[3] + "/calibrations/" + sourceCalibrationReview[4] + "/review"
