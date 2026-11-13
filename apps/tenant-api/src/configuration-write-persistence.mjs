@@ -95,8 +95,7 @@ export async function createSiteConfiguration({
     ).bind(auditId, tenantId, principalSubject, siteId, now, requestId, auditDetails),
     db.prepare(
       "UPDATE tenant_site_configuration_idempotency SET status = 'completed', response_json = json_object('configuration_id', configuration_id, 'site_id', ?, 'schema_id', ?, 'content_sha256', ?, 'request_id', ?, 'created_at', ?) WHERE tenant_id = ? AND subject = ? AND idempotency_key = ? AND status = 'pending'"
-    ).bind(siteId, snapshot.schemaId, snapshot.contentSha256, requestId, now,
-      tenantId, principalSubject, idempotencyKey),
+    ).bind(tenantId, principalSubject, idempotencyKey),
   ];
   try {
     assertBatch(await db.batch(statements));
