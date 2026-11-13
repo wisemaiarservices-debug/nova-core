@@ -67,7 +67,12 @@ try {
 
   // Exercise the real persistence helper through a test-only entrypoint backed
   // by the same disposable local D1 used by the Service Binding integration.
-  function configurationPayload(label, tenantId = "tenant-http-a", siteId = "site-http-a") {\n    return { tenant: { tenant_id: tenantId }, site: { site_id: siteId, timezone: "Africa/Tunis",\n      crops: [{ id: "crop-1", species: label }], irrigation_systems: [{ id: "irrigation-1", method: "unknown" }],\n      energy_systems: [{ id: "energy-1", type: "unknown" }] } };\n  }\n  async function writeConfiguration(key, requestId, payload, tenantId = "tenant-http-a", siteId = "site-http-a") {
+  function configurationPayload(label, tenantId = "tenant-http-a", siteId = "site-http-a") {
+    return { tenant: { tenant_id: tenantId }, site: { site_id: siteId, timezone: "Africa/Tunis",
+      crops: [{ id: "crop-1", species: label }], irrigation_systems: [{ id: "irrigation-1", method: "unknown" }],
+      energy_systems: [{ id: "energy-1", type: "unknown" }] } };
+  }
+  async function writeConfiguration(key, requestId, payload, tenantId = "tenant-http-a", siteId = "site-http-a") {
     const response = await fetch(base + "/__ci/configuration-write", {
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": key },
