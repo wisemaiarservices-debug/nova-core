@@ -1,7 +1,7 @@
-const validText=(v,n)=>typeof v==="string"&&v.length>0&&v.length<=n&&v.trim()===v&&!/[\\u0000-\\u001f\\u007f]/.test(v);
+const validText=(v,n)=>typeof v==="string"&&v.length>0&&v.length<=n&&v.trim()===v&&!/[\u0000-\u001f\u007f]/.test(v);
 const validId=v=>validText(v,160)&&/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(v);
 const onlyKeys=(v,k)=>v!==null&&typeof v==="object"&&!Array.isArray(v)&&Object.keys(v).every(x=>k.includes(x));
-const validTime=v=>typeof v==="string"&&Number.isFinite(Date.parse(v))&&/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$/.test(v);
+const validTime=v=>typeof v==="string"&&Number.isFinite(Date.parse(v))&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(v);
 
 export async function registerMeasurementQualityPolicy(db,tenant,siteId,assetId,actor,body){
  if(!onlyKeys(body,["id","sensor_id","parameter","unit","version","minimum_value","maximum_value","effective_from","effective_to","method","evidence_ref"])||
