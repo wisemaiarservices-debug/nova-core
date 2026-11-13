@@ -7,7 +7,7 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null;
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null;
   }
   prepare(sql) {
     const db = this;
@@ -22,6 +22,7 @@ class DB {
           subject: "operator@example.test", tenant_id: "tenant-a", resource_type: args[2],
           resource_id: args[3], action: "read",
         }] : []) };
+        if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) return { results: db.resourceRows ?? (db.resource ? [{
           id: args[1], tenant_id: args[0], name: "Test resource",
         }] : []) };
@@ -197,4 +198,60 @@ test("denies inactive tenant membership and unknown roles before grant lookup", 
     assert.equal(response.status, 404);
     assert.equal(db.calls.length, 2);
   }
+});
+
+
+test("lists only the authenticated tenant's water-quality criteria entries", async () => {
+  const db = new DB();
+  db.criteriaRows = [{
+    id: "criteria-tn-1", site_id: null, jurisdiction: "TN", version: "1.0",
+    title: "Fixture criteria", entry_json: JSON.stringify({ criteria: [{ parameter: "ec", unit: "dS/m", value: 2 }] }),
+    source_document_sha256: "a".repeat(64), source_evidence_ref: "evidence:source",
+    published_on: "2026-01-01", effective_from: "2026-02-01", effective_to: null,
+    supersedes_entry_id: null, supersedes_entry_version: null,
+    created_by_subject: "author", created_at: "2026-01-01T00:00:00Z",
+  }];
+  const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria"), env(db));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.data.length, 1);
+  assert.equal(body.data[0].entry.criteria[0].parameter, "ec");
+  assert.equal(body.data[0].entry_json, undefined);
+  assert.deepEqual(db.calls[1].args, ["operator@example.test", "tenant-a"]);
+  assert.deepEqual(db.calls[2].args, ["tenant-a"]);
+});
+
+test("reads one criteria version with tenant, entry and version selectors bound in SQL", async () => {
+  const db = new DB();
+  db.criteriaRows = [{
+    id: "criteria-tn-1", tenant_id: "tenant-a", version: "1.0",
+    entry_json: JSON.stringify({ id: "criteria-tn-1", version: "1.0" }),
+  }];
+  const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/1.0"), env(db));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.entry.id, "criteria-tn-1");
+  assert.deepEqual(db.calls[2].args, ["tenant-a", "criteria-tn-1", "1.0"]);
+});
+
+test("denies criteria registry reads for inactive, duplicate or non-reader tenant memberships", async () => {
+  for (const membershipRows of [
+    [{ subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer", membership_status: "active", tenant_status: "suspended" }],
+    [{ subject: "operator@example.test", tenant_id: "tenant-a", role: "unknown", membership_status: "active", tenant_status: "active" }],
+    [
+      { subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer", membership_status: "active", tenant_status: "active" },
+      { subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer", membership_status: "active", tenant_status: "active" },
+    ],
+  ]) {
+    const db = new DB(); db.membershipRows = membershipRows;
+    const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria"), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.length, 2);
+  }
+});
+
+test("does not return criteria belonging to another tenant or unknown versions", async () => {
+  const db = new DB(); db.criteriaRows = [];
+  const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
+  assert.equal(response.status, 404);
+  assert.deepEqual(db.calls[2].args, ["tenant-a", "criteria-tn-1", "9.9"]);
 });
