@@ -62,3 +62,59 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
     assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
   } finally { globalThis.fetch = oldFetch; }
 });
+
+
+test("routes tenant water-quality criteria list and version reads through the verified gateway", async () => {
+  const issuer = "https://criteria-gateway.cloudflareaccess.com";
+  const audience = "criteria-gateway-audience";
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = publicKey.export({ format: "jwk" });
+  Object.assign(jwk, { kid: "criteria-gateway-key", use: "sig", alg: "RS256" });
+  const enc = value => Buffer.from(value).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const head = enc(JSON.stringify({ alg: "RS256", typ: "JWT", kid: jwk.kid }));
+  const claims = enc(JSON.stringify({ iss: issuer, aud: [audience], sub: "criteria-reader", iat: now - 5, exp: now + 300 }));
+  const input = head + "." + claims;
+  const token = input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    assert.equal(String(url), issuer + "/cdn-cgi/access/certs");
+    return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+  };
+  try {
+    for (const [publicPath, internalPath] of [
+      ["/api/v1/tenants/tenant-a/water-quality-criteria", "/internal/v1/tenants/tenant-a/water-quality-criteria"],
+      ["/api/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0", "/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0"],
+    ]) {
+      let captured;
+      const response = await worker.fetch(new Request("https://gateway.test" + publicPath, {
+        headers: { "Cf-Access-Jwt-Assertion": token, cookie: "session=secret", "x-nova-verified-subject": "attacker" },
+      }), {
+        ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience,
+        INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+        TENANT_API: { fetch: async request => {
+          captured = request;
+          return new Response(JSON.stringify({ data: [] }), { headers: { "content-type": "application/json" } });
+        } },
+      });
+      assert.equal(response.status, 200);
+      assert.equal(new URL(captured.url).pathname, internalPath);
+      assert.equal(captured.headers.get("x-nova-verified-subject"), "criteria-reader");
+      assert.equal(captured.headers.get("cookie"), null);
+      assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+    }
+  } finally { globalThis.fetch = oldFetch; }
+});
+
+test("rejects malformed criteria selectors and query-string expansion", async () => {
+  const env = { TENANT_API: { fetch: async () => { throw new Error("must not reach upstream"); } },
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud" };
+  for (const path of [
+    "/api/v1/tenants/tenant-a/water-quality-criteria?tenant=tenant-b",
+    "/api/v1/tenants/tenant-a/water-quality-criteria/../1.0",
+    "/api/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0?site=site-b",
+  ]) {
+    const response = await worker.fetch(new Request("https://gateway.test" + path), env);
+    assert.equal(response.status, 404);
+  }
+});
