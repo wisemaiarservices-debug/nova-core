@@ -48,16 +48,18 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const observationReviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/reviewers\/assign$/);
       const observationReviewerRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/reviewers\/revoke$/);
       const observationVerification = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/verification$/);
-      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification) || url.search || url.hash ||
-          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification || criteriaDetail || match)) ||
-          (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification))) return error("not_found", 404);
-      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1];
+      const labReportUpload = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
+      const labReportDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
+      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
+          (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || labReportUpload))) return error("not_found", 404);
+      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
       const resourceId = match?.[3];
       const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
       const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
       if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
           ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess) && (!validPathId(entryId) || !validPathId(version, 80))) ||
-          (observationVerification && !validPathId(observationVerification[2]))) return error("not_found", 404);
+          (observationVerification && !validPathId(observationVerification[2])) || ((labReportUpload || labReportDetail) && !validPathId((labReportUpload ?? labReportDetail)[2])) || (labReportDetail && !validPathId(labReportDetail[3]))) return error("not_found", 404);
       if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
           typeof env.ACCESS_AUDIENCE !== "string" || !env.ACCESS_AUDIENCE) {
         return error("identity_or_private_api_not_configured", 503);
@@ -79,7 +81,11 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
 
       const requestId = crypto.randomUUID();
-      const internalPath = observationReviewerAssign
+      const internalPath = labReportUpload
+        ? "/internal/v1/tenants/" + tenant + "/sites/" + labReportUpload[2] + "/laboratory-reports"
+        : labReportDetail
+          ? "/internal/v1/tenants/" + tenant + "/sites/" + labReportDetail[2] + "/laboratory-reports/" + labReportDetail[3]
+          : observationReviewerAssign
         ? `/internal/v1/tenants/${tenant}/observations/reviewers/assign`
         : observationReviewerRevoke
           ? `/internal/v1/tenants/${tenant}/observations/reviewers/revoke`
@@ -118,16 +124,16 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         if (request.method === "POST") {
           const declaredLength = Number(request.headers.get("content-length") ?? "0");
           if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
-              !Number.isFinite(declaredLength) || declaredLength > 65536) return error("invalid_request_body", 400);
+              !Number.isFinite(declaredLength) || declaredLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
           headers.set("content-type", "application/json");
         }
         const forwardedBody = request.method === "POST" ? await request.arrayBuffer() : undefined;
-        if (forwardedBody && forwardedBody.byteLength > 65536) return error("invalid_request_body", 400);
+        if (forwardedBody && forwardedBody.byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
         const upstream = await env.TENANT_API.fetch(new Request(
           "https://nova-core-tenant-api.internal" + internalPath,
           { method: request.method, headers, body: forwardedBody },
         ));
-        return await boundedJsonResponse(upstream, requestId);
+        return await boundedJsonResponse(upstream, requestId, labReportDetail ? 1500000 : undefined);
       } catch {
         return error("tenant_api_unavailable", 503);
       }
