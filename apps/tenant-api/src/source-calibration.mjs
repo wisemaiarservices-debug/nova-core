@@ -186,7 +186,7 @@ export async function readSourceCalibration(db, tenantId, siteId, sourceId, cali
   ).bind(tenantId, siteId, sourceId, calibrationId).all();
   if (!Array.isArray(records?.results) || records.results.length !== 1) return null;
   const events = await db.prepare(
-    "SELECT event_type, actor_subject, reviewer_role, evidence_ref, reason, request_id, occurred_at FROM source_calibration_events WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND calibration_id = ? ORDER BY occurred_at, id LIMIT 20"
+    "SELECT event_type, actor_subject, reviewer_role, evidence_ref, reason, request_id, occurred_at FROM (SELECT event_type, actor_subject, reviewer_role, evidence_ref, reason, request_id, occurred_at, id FROM source_calibration_events WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND calibration_id = ? ORDER BY occurred_at DESC, id DESC LIMIT 20) ORDER BY occurred_at, id"
   ).bind(tenantId, siteId, sourceId, calibrationId).all();
   if (!Array.isArray(events?.results)) throw new Error("source_calibration_events_query_invalid");
   return { ...records.results[0], events: events.results };
