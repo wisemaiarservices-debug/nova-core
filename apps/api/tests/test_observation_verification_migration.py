@@ -22,9 +22,11 @@ def database():
         "0008_water_quality_criteria_reviewer_events.sql",
         "0010_observation_verification_workflow.sql",
         "0011_laboratory_report_evidence.sql",
+        "0012_sensor_calibration_quality.sql",
     ):
         db.executescript((MIGRATIONS / name).read_text(encoding="utf-8"))
     db.execute("INSERT INTO tenants (id, display_name) VALUES ('tenant-a', 'Tenant A')")
+    db.execute("INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES ('membership-reviewer', 'tenant-a', 'reviewer-a', 'viewer', 'active')")
     db.execute("INSERT INTO sites (id, tenant_id, name, status) VALUES ('site-a', 'tenant-a', 'Site A', 'active')")
     db.execute("""INSERT INTO sources
       (id, site_id, tenant_id, module, provider, source_type, display_name)
