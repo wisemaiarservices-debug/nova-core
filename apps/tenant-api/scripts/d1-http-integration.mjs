@@ -363,6 +363,19 @@ try {
     }, schema_id: "nova.client-config.v1" }));
   assert.equal(configurationConflict.response.status, 409);
 
+  const configurationHistory = await throughGateway(configurationPath, accessToken());
+  assert.equal(configurationHistory.response.status, 200, JSON.stringify(configurationHistory.body));
+  assert.equal(configurationHistory.body.data.length, 1);
+  assert.equal(configurationHistory.body.data[0].configuration_version, "v6");
+  assert.equal(configurationHistory.body.data[0].configuration.site.site_id, "site-http-a");
+  const configurationVersion = await throughGateway(configurationPath + "/v6", accessToken());
+  assert.equal(configurationVersion.response.status, 200, JSON.stringify(configurationVersion.body));
+  assert.equal(configurationVersion.body.data.configuration_version, "v6");
+  assert.equal(configurationVersion.body.data.configuration.tenant.tenant_id, "tenant-http-a");
+  const configurationCrossSite = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-b/configurations", accessToken());
+  assert.equal(configurationCrossSite.response.status, 404);
+
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and reviewer-readable evidence context, dual-role approval and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
