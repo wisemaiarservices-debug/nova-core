@@ -184,6 +184,20 @@ try {
   assert.equal(sampleAssessment.body.data.results[1].reason, "synthetic_sample_not_eligible_for_field_assessment");
   assert.equal(sampleAssessment.body.data.operational_decision, "not_authorized");
 
+  const unverifiedObservationAssessment = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/assess",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, samples: [{
+      id: "ci-measured-sample", parameter: "ec", value: 1.5, unit: "dS/m",
+      sampled_at: "2026-05-10T10:00:00Z",
+      provenance: { source_type: "measured", method: "field_meter", evidence_ref: "observation:missing-ci-observation" },
+    }] }));
+  assert.equal(unverifiedObservationAssessment.response.status, 200,
+    JSON.stringify(unverifiedObservationAssessment.body));
+  assert.equal(unverifiedObservationAssessment.body.data.results[0].status, "not_assessed");
+  assert.equal(unverifiedObservationAssessment.body.data.results[0].reason,
+    "persisted_observation_not_found_in_site_scope");
+
   const reviewer = {
     reviewer_subject: "independent-reviewer@example.test",
     reviewer_role: "regulatory_reviewer", jurisdiction: "TN",
