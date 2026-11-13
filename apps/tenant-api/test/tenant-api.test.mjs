@@ -7,10 +7,11 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.batchCalls = []; this.batchResult = null;
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
+    if (this.batchError) throw this.batchError;
     return this.batchResult ?? [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
   }
   prepare(sql) {
@@ -416,4 +417,117 @@ test("reviewer list and immutable assignment history are restricted to tenant ow
   const denied = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers"), env(viewer));
   assert.equal(denied.status, 404);
+});
+
+
+const reviewEntryRow = { jurisdiction: "TN", created_by_subject: "criteria-author@example.test" };
+const reviewAssignmentRow = (subject, role, jurisdiction = "TN") => ({
+  reviewer_subject: subject, reviewer_role: role, jurisdiction,
+});
+
+test("tenant owner/admin submits only an existing draft into review", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
+  const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-submit-1" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/submit",
+    "POST", JSON.stringify({})), env(db));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.status, "submitted_for_review");
+  assert.equal(db.batchCalls.length, 1);
+  assert.match(db.batchCalls[0][0].sql, /submitted_for_review/);
+});
+
+test("criteria submit is denied to non-admin members and malformed bodies", async () => {
+  const db = new DB();
+  const denied = await worker.fetch(await request({ "x-nova-request-id": "criteria-submit-denied" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/submit",
+    "POST", JSON.stringify({})), env(db));
+  assert.equal(denied.status, 404);
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_owner", membership_status: "active", tenant_status: "active" }];
+  const invalid = await worker.fetch(await request({ "x-nova-request-id": "criteria-submit-invalid" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/submit",
+    "POST", JSON.stringify({ reviewer_subject: "forged" })), env(db));
+  assert.equal(invalid.status, 400);
+});
+
+test("assigned independent reviewer records first approval without prematurely approving criteria", async () => {
+  const db = new DB();
+  db.criteriaRows = [reviewEntryRow];
+  db.reviewerRows = [reviewAssignmentRow("regulatory@example.test", "regulatory_reviewer")];
+  db.batchResult = [{ meta: { changes: 1 } }, { meta: { changes: 0 } }];
+  const response = await worker.fetch(await request({ "x-nova-verified-subject": "regulatory@example.test",
+    "x-nova-request-id": "criteria-review-regulatory" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/review",
+    "POST", JSON.stringify({ reviewer_role: "regulatory_reviewer", decision: "approve",
+      evidence_ref: "evidence:regulatory-review" })), env(db));
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).data.status, "submitted_for_review");
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO water_quality_criteria_approvals/);
+  assert.match(db.batchCalls[0][1].sql, /COUNT\(DISTINCT a.reviewer_subject\)/);
+});
+
+test("second distinct assigned reviewer role completes approval; rejection records a terminal event", async () => {
+  const db = new DB();
+  db.criteriaRows = [reviewEntryRow];
+  db.reviewerRows = [reviewAssignmentRow("domain@example.test", "domain_expert")];
+  db.batchResult = [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+  const approved = await worker.fetch(await request({ "x-nova-verified-subject": "domain@example.test",
+    "x-nova-request-id": "criteria-review-domain" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/review",
+    "POST", JSON.stringify({ reviewer_role: "domain_expert", decision: "approve",
+      evidence_ref: "evidence:domain-review" })), env(db));
+  assert.equal(approved.status, 201);
+  assert.equal((await approved.json()).data.status, "approved");
+  assert.match(db.batchCalls[0][1].sql, /event_type/);
+  const rejectDb = new DB();
+  rejectDb.criteriaRows = [reviewEntryRow];
+  rejectDb.reviewerRows = [reviewAssignmentRow("regulatory@example.test", "regulatory_reviewer")];
+  const rejected = await worker.fetch(await request({ "x-nova-verified-subject": "regulatory@example.test",
+    "x-nova-request-id": "criteria-review-reject" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/review",
+    "POST", JSON.stringify({ reviewer_role: "regulatory_reviewer", decision: "reject",
+      evidence_ref: "evidence:rejection", reason: "Evidence is incomplete" })), env(rejectDb));
+  assert.equal(rejected.status, 201);
+  assert.equal((await rejected.json()).data.status, "rejected");
+  assert.match(rejectDb.batchCalls[0][1].sql, /'rejected'/);
+});
+
+test("unassigned, revoked, wrong-scope and author identities cannot review criteria", async () => {
+  for (const { subject, assignment } of [
+    { subject: "unassigned@example.test", assignment: [] },
+    { subject: "criteria-author@example.test", assignment: [reviewAssignmentRow("criteria-author@example.test", "domain_expert")] },
+    { subject: "wrong-jurisdiction@example.test", assignment: [reviewAssignmentRow("wrong-jurisdiction@example.test", "domain_expert", "FR")] },
+  ]) {
+    const db = new DB();
+    db.criteriaRows = [reviewEntryRow];
+    db.reviewerRows = assignment;
+    const response = await worker.fetch(await request({ "x-nova-verified-subject": subject,
+      "x-nova-request-id": "criteria-review-denied-" + subject },
+      "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/review",
+      "POST", JSON.stringify({ reviewer_role: "domain_expert", decision: "approve",
+        evidence_ref: "evidence:review" })), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.batchCalls.length, 0);
+  }
+});
+
+test("review requires a rejection reason and returns conflict on terminal or duplicate writes", async () => {
+  const db = new DB();
+  db.criteriaRows = [reviewEntryRow];
+  db.reviewerRows = [reviewAssignmentRow("domain@example.test", "domain_expert")];
+  const invalid = await worker.fetch(await request({ "x-nova-verified-subject": "domain@example.test",
+    "x-nova-request-id": "criteria-review-invalid" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/review",
+    "POST", JSON.stringify({ reviewer_role: "domain_expert", decision: "reject",
+      evidence_ref: "evidence:review" })), env(db));
+  assert.equal(invalid.status, 400);
+  db.batchError = new Error("unique constraint failed");
+  const conflict = await worker.fetch(await request({ "x-nova-verified-subject": "domain@example.test",
+    "x-nova-request-id": "criteria-review-conflict" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/review",
+    "POST", JSON.stringify({ reviewer_role: "domain_expert", decision: "approve",
+      evidence_ref: "evidence:review" })), env(db));
+  assert.equal(conflict.status, 409);
 });
