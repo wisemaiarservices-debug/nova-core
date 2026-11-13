@@ -156,3 +156,32 @@ test("rejects zero-area polygon rings and out-of-range WGS84 coordinates", () =>
   const rangeResult = assessDomainConfiguration(outOfRange);
   assert.ok(rangeResult.errors.some(item => item.code === "geometry.invalid_ring"));
 });
+
+test("flags unresolved calibration targets, sensor calibration links and evidence references", () => {
+  const value = valid();
+  value.calibration_records[0].id = "cal-1";
+  value.calibration_records[0].scope_id = "sensor-does-not-exist";
+  value.inventory.sensors[0].calibration_record_id = "cal-missing";
+  value.calibration_records[0].evidence_ref = "evidence-does-not-exist";
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.ok(result.issues.some(item => item.code === "calibration.scope_reference_unresolved"));
+  assert.ok(result.issues.some(item => item.code === "sensor.calibration_reference_unresolved"));
+  assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved"));
+});
+
+test("accepts resolved calibration and evidence links while keeping approval separate", () => {
+  const value = valid();
+  value.calibration_records[0].id = "cal-1";
+  value.calibration_records[0].scope_id = "sensor-1";
+  value.calibration_records[0].evidence_ref = "calibration-certificate";
+  value.evidence.push({ source_class: "calibration_certificate", reference: "calibration-certificate" });
+  value.inventory.sensors[0].calibration_record_id = "cal-1";
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.equal(result.status.operational_review, "not_started");
+  assert.equal(result.status.model_applicability, "not_assessed");
+  assert.equal(result.issues.some(item => item.code === "calibration.scope_reference_unresolved"), false);
+  assert.equal(result.issues.some(item => item.code === "sensor.calibration_reference_unresolved"), false);
+  assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved"), false);
+});
