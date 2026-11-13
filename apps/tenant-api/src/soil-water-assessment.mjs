@@ -101,8 +101,11 @@ export function calculateRootZoneAvailableWater(profile, crop, { observation_id 
   if (!crop || !Array.isArray(crop.root_depth_observations)) {
     return insufficient("root_depth_observations_missing");
   }
+  if (typeof observation_id !== "string" || !observation_id) {
+    return insufficient("root_depth_observation_selection_required");
+  }
   const observations = crop.root_depth_observations.filter(item =>
-    item && typeof item === "object" && (!observation_id || item.id === observation_id));
+    item && typeof item === "object" && item.id === observation_id);
   if (observations.length !== 1) {
     return insufficient(observation_id ? "root_depth_observation_not_found_or_ambiguous" : "root_depth_observation_selection_required");
   }
