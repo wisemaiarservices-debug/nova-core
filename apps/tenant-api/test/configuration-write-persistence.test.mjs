@@ -22,6 +22,11 @@ function fakeDb({prior=null,batchFailure=false}={}) {
     },
     async batch(statements){calls.push({kind:"batch",statements});
       if(batchFailure) throw new Error("simulated_atomic_failure");
+      const reservation = statements[0].params;
+      const snapshot = statements[1].params;
+      prior = {request_sha256:reservation[3],configuration_id:reservation[4],
+        status:"completed",response_json:JSON.stringify({configuration_id:reservation[4],
+          configuration_version:"v1",site_id:snapshot[2]})};
       return statements.map(()=>({success:true,meta:{changes:1}}));}
   };
   return db;
