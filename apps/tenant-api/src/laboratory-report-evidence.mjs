@@ -46,7 +46,7 @@ export async function registerLaboratoryReportEvidence(db, tenantId, subject, re
       !validText(body.laboratory_name, 200) || !validText(body.report_number, 120) ||
       (body.sample_reference !== undefined && !validId(body.sample_reference)) ||
       !validText(body.issued_at, 40) ||
-      !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(body.issued_at)) {
+      !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(body.issued_at) || !Number.isFinite(Date.parse(body.issued_at))) {
     return { error: "laboratory_report_evidence_request_invalid", status: 400 };
   }
   const bytes = decodeBase64(body.document_base64);
