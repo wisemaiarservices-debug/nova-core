@@ -87,3 +87,17 @@ WHERE c.id = tenant_site_configuration_idempotency.configuration_id
 AND c.tenant_id = tenant_site_configuration_idempotency.tenant_id)
 WHERE tenant_id = 'fixture-tenant' AND subject = 'fixture-subject'
 AND idempotency_key = 'fixture-idempotency-key' AND status = 'pending';
+
+EXPLAIN SELECT id, site_id, jurisdiction, version, title, entry_json,
+source_document_sha256, source_evidence_ref, published_on, effective_from,
+effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at
+FROM water_quality_criteria_entries
+WHERE tenant_id = 'fixture-tenant'
+ORDER BY jurisdiction, id, version LIMIT 100;
+
+EXPLAIN SELECT id, site_id, jurisdiction, version, title, entry_json,
+source_document_sha256, source_evidence_ref, published_on, effective_from,
+effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at
+FROM water_quality_criteria_entries
+WHERE tenant_id = 'fixture-tenant' AND id = 'fixture-criteria'
+AND version = '1.0' LIMIT 1;
