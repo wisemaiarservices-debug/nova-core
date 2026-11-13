@@ -1,6 +1,7 @@
 """Deterministic client onboarding readiness; declarations are not telemetry."""
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -28,6 +29,7 @@ class ClientOnboardingReadiness(BaseModel):
     site_id: str
     configuration_version: str
     registry_version: str
+    assessed_on: date
     status: Literal["needs_information", "needs_verification", "ready_for_review"]
     issues: tuple[OnboardingIssue, ...]
     equipment_count: int
@@ -38,6 +40,8 @@ class ClientOnboardingReadiness(BaseModel):
 def assess_client_onboarding_readiness(
     configuration: ClientConfiguration,
     registry: CapabilityRegistry,
+    *,
+    assessed_on: date | None = None,
 ) -> ClientOnboardingReadiness:
     """Assess supplied onboarding records without filling gaps or claiming device health.
 
@@ -47,6 +51,7 @@ def assess_client_onboarding_readiness(
     """
     tenant_id = configuration.tenant.tenant_id
     site = configuration.site
+    assessment_date = assessed_on or date.today()
     if registry.tenant_id != tenant_id or registry.site_id != site.site_id:
         raise ValueError("capability registry tenant/site must match client configuration")
 
@@ -93,6 +98,10 @@ def assess_client_onboarding_readiness(
         if sensor.connectivity_status != "verified":
             add("sensor.connectivity_unverified", "verification_required", f"{prefix}.connectivity_status", "Connectivity has not been verified by an authenticated live check.")
         calibration = sensor.calibration
+        if calibration.last_calibrated_on and calibration.last_calibrated_on > assessment_date:
+            add("sensor.calibration_date_in_future", "verification_required", f"{prefix}.calibration", "Calibration date is later than the assessment date.")
+        if calibration.status == "current" and calibration.next_calibration_due and calibration.next_calibration_due < assessment_date:
+            add("sensor.calibration_expired", "verification_required", f"{prefix}.calibration", "The declared calibration due date has passed.")
         if calibration.status != "current":
             add("sensor.calibration_not_current", "verification_required", f"{prefix}.calibration", "Calibration is not declared current.")
         elif not calibration.independently_verified or not calibration.certificate_reference:
@@ -110,6 +119,7 @@ def assess_client_onboarding_readiness(
         site_id=site.site_id,
         configuration_version=site.configuration_version,
         registry_version=registry.registry_version,
+        assessed_on=assessment_date,
         status=status,
         issues=tuple(issues),
         equipment_count=len(registry.equipment),
