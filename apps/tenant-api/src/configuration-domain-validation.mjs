@@ -7,8 +7,8 @@ const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at",
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
   irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "zones", "evidence_ref"]),
-  energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "evidence_ref"]),
-  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "evidence_ref"]),
+  energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "evidence_ref"]),
+  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "phase", "evidence_ref"]),
   sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "gateway_id", "calibration_record_id", "evidence_ref"]),
   gateways: new Set(["id", "manufacturer", "model", "protocol", "supported_protocols", "connectivity_status", "evidence_ref"]),
 };
@@ -148,6 +148,10 @@ export function assessDomainConfiguration(payload) {
             errors.push(issue("engineering.rating_must_be_positive", "site." + field + "[" + index + "]." + key, "verification_required"));
           }
         }
+        if (field === "energy_systems" && record.grid_phase !== undefined &&
+            !["single_phase", "three_phase", "dc", "unknown"].includes(record.grid_phase)) {
+          errors.push(issue("energy.grid_phase_invalid", "site.energy_systems[" + index + "].grid_phase", "verification_required"));
+        }
       });
       if (!list.length) issues.push(issue("site." + field + "_missing", "site." + field));
     }
@@ -170,6 +174,16 @@ export function assessDomainConfiguration(payload) {
                 errors.push(issue("gateway.supported_protocols_invalid", "inventory.gateways[" + i + "].supported_protocols", "verification_required"));
               } else if (new Set(record.supported_protocols).size !== record.supported_protocols.length) {
                 errors.push(issue("gateway.supported_protocols_duplicate", "inventory.gateways[" + i + "].supported_protocols", "verification_required"));
+              }
+            }
+            if (kind === "equipment") {
+              for (const key of ["rated_voltage_v", "rated_power_kw"]) {
+                if (record[key] !== undefined && record[key] !== null && !finitePositive(record[key])) {
+                  errors.push(issue("engineering.rating_must_be_positive", "inventory.equipment[" + i + "]." + key, "verification_required"));
+                }
+              }
+              if (record.phase !== undefined && !["single_phase", "three_phase", "dc", "unknown"].includes(record.phase)) {
+                errors.push(issue("equipment.phase_invalid", "inventory.equipment[" + i + "].phase", "verification_required"));
               }
             }
             if (record.manufacturer === undefined || record.model === undefined) issues.push(issue("inventory.identity_incomplete", "inventory." + kind + "[" + i + "]"));
@@ -227,6 +241,34 @@ export function assessDomainConfiguration(payload) {
           !inventoryByKind.equipment.has(system.controller_id)) {
         issues.push(issue("irrigation.controller_reference_unresolved",
           "site.irrigation_systems[" + i + "].controller_id", "verification_required"));
+      }
+    });
+  }
+  if (Array.isArray(payload.site?.energy_systems)) {
+    payload.site.energy_systems.forEach((system, i) => {
+      if (!plainObject(system)) return;
+      for (const [field, role] of [["inverter_id", "inverter"], ["battery_id", "battery"], ["pv_equipment_id", "pv"]]) {
+        if (system[field] && !inventoryByKind.equipment.has(system[field])) {
+          issues.push(issue("energy.equipment_reference_unresolved",
+            "site.energy_systems[" + i + "]." + field, "verification_required"));
+        } else if (system[field]) {
+          const equipment = payload.inventory?.equipment?.find(item => plainObject(item) && item.id === system[field]);
+          if (equipment && equipment.asset_class && equipment.asset_class !== role) {
+            issues.push(issue("energy.equipment_role_mismatch",
+              "site.energy_systems[" + i + "]." + field, "verification_required"));
+          }
+          if (role === "inverter" && equipment && finitePositive(system.nominal_voltage_v) &&
+              finitePositive(equipment.rated_voltage_v) && system.nominal_voltage_v !== equipment.rated_voltage_v) {
+            issues.push(issue("energy.inverter_voltage_mismatch",
+              "site.energy_systems[" + i + "].nominal_voltage_v", "verification_required"));
+          }
+          if (role === "inverter" && equipment && system.grid_phase && equipment.phase &&
+              system.grid_phase !== "unknown" && equipment.phase !== "unknown" &&
+              system.grid_phase !== equipment.phase) {
+            issues.push(issue("energy.inverter_phase_mismatch",
+              "site.energy_systems[" + i + "].grid_phase", "verification_required"));
+          }
+        }
       }
     });
   }
