@@ -12,13 +12,14 @@ The tenant API derives the reviewer subject from the verified gateway identity. 
 - exactly one active membership in the active route tenant;
 - role `tenant_owner` or `tenant_admin`;
 - exactly one exact tenant/subject/site `update` grant;
+- exactly one active site reviewer assignment for the authenticated subject, with role `engineering_reviewer` or `operations_reviewer`;
 - an existing configuration version in the route tenant and site;
 - a reviewer subject different from the configuration creator;
 - the latest lifecycle event to be `submitted_for_review`.
 
 The service appends either `approved_for_review` or `rejected` and a corresponding tenant audit event in one D1 batch. The database lifecycle trigger independently enforces the valid transition. A duplicate or concurrent review cannot transition a terminal record again.
 
-This initial release uses tenant-admin/owner plus site-update authority; it does not yet provide separate professional reviewer credentialing or an external engineering sign-off system. The reviewer identity is authenticated by Access but their professional qualifications and independence outside the creator-subject check are not independently verified.
+Reviewer assignments are provisioned by a tenant owner through the separate reviewer-governance endpoints and are scoped to one site and one role. A reviewer with no active assignment, multiple active role assignments, or a revoked assignment cannot decide a configuration. The role is recorded in the review response and audit details. Professional qualifications, evidence authenticity and independence outside the creator-subject check are not independently verified.
 
 ## Meaning
 
@@ -28,4 +29,4 @@ This initial release uses tenant-admin/owner plus site-update authority; it does
 
 ## Validation
 
-Unit tests cover admin/grant checks, creator self-review denial, submitted-only transitions, approval/rejection audit writes and atomic failure. Local CI uses disposable D1 and the actual Access gateway/private Worker Service Binding to approve v6 with a different tenant admin, reject v7, and verify the resulting lifecycle events through the read API.
+Unit tests cover admin/grant and reviewer-assignment checks, creator self-review denial, submitted-only transitions, approval/rejection audit writes and atomic failure. Local CI uses disposable D1 and the actual Access gateway/private Worker Service Binding to approve v6 with a different tenant admin, reject v7, and verify the resulting lifecycle events through the read API.

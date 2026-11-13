@@ -11,7 +11,8 @@ INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resou
   ('grant-http-a-site', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'read'),
   ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create'),
   ('grant-http-a-site-update', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'update'),
-  ('grant-http-reviewer-site-update', 'tenant-http-a', 'ci-config-reviewer', 'site', 'site-http-a', 'update');
+  ('grant-http-reviewer-site-update', 'tenant-http-a', 'ci-config-reviewer', 'site', 'site-http-a', 'update'),
+  ('grant-http-a-site-manage', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'manage_members');
 
 INSERT INTO sites (id, tenant_id, name, status) VALUES
   ('site-http-a', 'tenant-http-a', 'CI Site A', 'active'),

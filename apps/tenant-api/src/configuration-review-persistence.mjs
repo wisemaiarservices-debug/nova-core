@@ -69,6 +69,15 @@ export async function reviewSiteConfiguration({
     throw new Error("configuration_self_review_forbidden");
   }
 
+  const assignments = await all(db.prepare(
+    "SELECT reviewer_role FROM tenant_site_configuration_reviewers WHERE tenant_id = ? AND site_id = ? AND reviewer_subject = ? AND status = 'active' LIMIT 2"
+  ).bind(tenantId, siteId, principalSubject));
+  if (assignments.length !== 1 ||
+      !["engineering_reviewer", "operations_reviewer"].includes(assignments[0].reviewer_role)) {
+    throw new Error("configuration_review_assignment_required");
+  }
+  const reviewerRole = assignments[0].reviewer_role;
+
   const events = await all(db.prepare(
     "SELECT event_type FROM tenant_site_configuration_events WHERE tenant_id = ? AND site_id = ? " +
     "AND configuration_id = ? ORDER BY rowid DESC LIMIT 1"
@@ -83,7 +92,7 @@ export async function reviewSiteConfiguration({
   const occurredAt = new Date().toISOString();
   const details = JSON.stringify({
     configuration_id: configuration.id, configuration_version: version,
-    decision, reason,
+    decision, reason, reviewer_role: reviewerRole,
   });
   const results = await db.batch([
     db.prepare(
@@ -103,7 +112,7 @@ export async function reviewSiteConfiguration({
   return Object.freeze({
     configuration_id: configuration.id, site_id: siteId,
     configuration_version: version, status: eventType,
-    reviewed_by_subject: principalSubject, reviewed_at: occurredAt,
+    reviewed_by_subject: principalSubject, reviewer_role: reviewerRole, reviewed_at: occurredAt,
     reason, operational_decision: "not_authorized",
   });
 }

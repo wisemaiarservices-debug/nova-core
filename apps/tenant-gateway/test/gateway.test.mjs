@@ -88,6 +88,7 @@ test("routes tenant water-quality criteria list and version reads through the ve
       ["/api/v1/tenants/tenant-a/water-quality-criteria/reviewers", "/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers"],
       ["/api/v1/tenants/tenant-a/sites/site-a/configurations", "/internal/v1/tenants/tenant-a/sites/site-a/configurations"],
       ["/api/v1/tenants/tenant-a/sites/site-a/configurations/v1", "/internal/v1/tenants/tenant-a/sites/site-a/configurations/v1"],
+      ["/api/v1/tenants/tenant-a/sites/site-a/configurations/reviewers", "/internal/v1/tenants/tenant-a/sites/site-a/configurations/reviewers"],
       ["/api/v1/tenants/tenant-a/sites/site-a/configurations/effective", "/internal/v1/tenants/tenant-a/sites/site-a/configurations/effective"],
     ]) {
       let captured;
@@ -289,5 +290,50 @@ test("routes site configuration review through the verified human gateway", asyn
     assert.deepEqual(JSON.parse(await captured.text()), {
       decision: "approve", reason: "Reviewed against the submitted evidence",
     });
+  } finally { globalThis.fetch = oldFetch; }
+});
+
+
+test("forwards site configuration reviewer assignment only through verified Access identity", async () => {
+  const issuer = "https://site-reviewer-gateway.cloudflareaccess.com";
+  const audience = "site-reviewer-audience";
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = publicKey.export({ format: "jwk" });
+  Object.assign(jwk, { kid: "site-reviewer-key", use: "sig", alg: "RS256" });
+  const enc = value => Buffer.from(value).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const head = enc(JSON.stringify({ alg: "RS256", typ: "JWT", kid: jwk.kid }));
+  const claims = enc(JSON.stringify({ iss: issuer, aud: [audience], sub: "tenant-owner", iat: now - 5, exp: now + 300 }));
+  const input = head + "." + claims;
+  const token = input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+  const body = { reviewer_subject: "engineer", reviewer_role: "engineering_reviewer",
+    evidence_ref: "evidence:assignment" };
+  let captured;
+  try {
+    const response = await worker.fetch(new Request(
+      "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/configurations/reviewers/assign", {
+        method: "POST",
+        headers: { "Cf-Access-Jwt-Assertion": token, "content-type": "application/json",
+          cookie: "secret=session", "x-nova-verified-subject": "forged" },
+        body: JSON.stringify(body),
+      }), {
+        ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience,
+        INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+        TENANT_API: { fetch: async request => {
+          captured = request;
+          return new Response(JSON.stringify({ data: { status: "active" } }), {
+            status: 201, headers: { "content-type": "application/json" },
+          });
+        } },
+      });
+    assert.equal(response.status, 201);
+    assert.equal(captured.method, "POST");
+    assert.equal(new URL(captured.url).pathname,
+      "/internal/v1/tenants/tenant-a/sites/site-a/configurations/reviewers/assign");
+    assert.equal(captured.headers.get("x-nova-verified-subject"), "tenant-owner");
+    assert.equal(captured.headers.get("cookie"), null);
+    assert.equal(await captured.text(), JSON.stringify(body));
   } finally { globalThis.fetch = oldFetch; }
 });
