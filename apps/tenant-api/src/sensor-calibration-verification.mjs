@@ -37,7 +37,6 @@ export async function reviewSensorCalibration(db,tenant,siteId,assetId,calibrati
  if(calibration.certificate_evidence_id){
   const evidence=await db.prepare("SELECT verification_status FROM laboratory_report_evidence WHERE tenant_id=? AND site_id=? AND id=? LIMIT 2").bind(tenant,siteId,calibration.certificate_evidence_id).all();
   if(!Array.isArray(evidence?.results)||evidence.results.length!==1)return {error:"calibration_certificate_evidence_not_found",status:409};
-  if(body.decision==="verify"&&evidence.results[0].verification_status!=="verified")return {error:"calibration_certificate_evidence_not_verified",status:409};
  }
  const history=await db.prepare("SELECT event_type,reviewer_subject FROM sensor_calibration_verification_events WHERE tenant_id=? AND site_id=? AND calibration_id=? ORDER BY occurred_at DESC,rowid DESC LIMIT 2").bind(tenant,siteId,calibrationId).all();
  if(!Array.isArray(history?.results))throw new Error("calibration_verification_history_invalid");
