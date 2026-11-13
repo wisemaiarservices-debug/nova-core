@@ -196,3 +196,50 @@ test("rejects malformed criteria selectors and query-string expansion", async ()
     assert.equal(response.status, 404);
   }
 });
+
+
+test("routes tenant site configuration writes with a validated idempotency key through the private binding", async () => {
+  const issuer = "https://configuration-gateway.cloudflareaccess.com";
+  const audience = "configuration-gateway-audience";
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = publicKey.export({ format: "jwk" });
+  Object.assign(jwk, { kid: "configuration-gateway-key", use: "sig", alg: "RS256" });
+  const enc = value => Buffer.from(value).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const head = enc(JSON.stringify({ alg: "RS256", typ: "JWT", kid: jwk.kid }));
+  const claims = enc(JSON.stringify({ iss: issuer, aud: [audience], sub: "configuration-admin",
+    iat: now - 5, exp: now + 300 }));
+  const input = head + "." + claims;
+  const token = input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+  const payload = { tenant: { tenant_id: "tenant-a" }, site: { site_id: "site-a" } };
+  let captured;
+  try {
+    const response = await worker.fetch(new Request(
+      "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/configurations", {
+        method: "POST",
+        headers: { "Cf-Access-Jwt-Assertion": token, "content-type": "application/json",
+          "idempotency-key": "configuration-idem-001", cookie: "session=secret",
+          "x-nova-idempotency-key": "forged" },
+        body: JSON.stringify({ payload, schema_id: "nova.client-config.v1" }),
+      }), {
+        ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience,
+        INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+        TENANT_API: { fetch: async request => {
+          captured = request;
+          return new Response(JSON.stringify({ data: { configuration_version: "v1" } }),
+            { status: 201, headers: { "content-type": "application/json" } });
+        } },
+      });
+    assert.equal(response.status, 201);
+    assert.equal(captured.method, "POST");
+    assert.equal(new URL(captured.url).pathname,
+      "/internal/v1/tenants/tenant-a/sites/site-a/configurations");
+    assert.equal(captured.headers.get("x-nova-verified-subject"), "configuration-admin");
+    assert.equal(captured.headers.get("x-nova-idempotency-key"), "configuration-idem-001");
+    assert.equal(captured.headers.get("cookie"), null);
+    assert.equal(captured.headers.get("x-nova-idempotency-key"), "configuration-idem-001");
+    assert.equal(await captured.text(), JSON.stringify({ payload, schema_id: "nova.client-config.v1" }));
+  } finally { globalThis.fetch = oldFetch; }
+});
