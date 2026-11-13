@@ -15,7 +15,7 @@ class DB {
   }
   prepare(sql) {
     const db = this;
-    return { bind(...args) { return {
+    return { bind(...args) { return { sql, args,
       async all() {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
@@ -305,6 +305,7 @@ test("rejects criteria drafts with cross-tenant scope, non-draft state or invali
   const db = new DB();
   db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
     role: "tenant_owner", membership_status: "active", tenant_status: "active" }];
+  let index = 0;
   for (const entry of [
     { ...draftEntry, scope: { ...draftEntry.scope, tenant_id: "tenant-b" } },
     { ...draftEntry, review: { status: "approved", approvals: [] } },
@@ -312,7 +313,8 @@ test("rejects criteria drafts with cross-tenant scope, non-draft state or invali
     { ...draftEntry, reviewer_subject: "forged-reviewer" },
     { ...draftEntry, review: { status: "draft", approvals: [{ reviewer_id: "forged", role: "domain_expert" }] } },
   ]) {
-    const response = await worker.fetch(await request({}, 
+    index += 1;
+    const response = await worker.fetch(await request({ "x-nova-request-id": "invalid-draft-" + index },
       "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria",
       "POST", JSON.stringify({ entry })), env(db));
     assert.ok([400, 422].includes(response.status));
