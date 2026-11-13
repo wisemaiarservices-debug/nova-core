@@ -1,8 +1,8 @@
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
-const ISO = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/;
-function text(v,max){return typeof v==="string"&&v.length>0&&v.length<=max&&v.trim()===v&&!/[\\u0000-\\u001f\\u007f]/.test(v);}
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+function text(v,max){return typeof v==="string"&&v.length>0&&v.length<=max&&v.trim()===v&&!/[\u0000-\u001f\u007f]/.test(v);}
 function id(v,max=160){return text(v,max)&&ID.test(v);}
-function timestamp(v){if(!text(v,40)||!ISO.test(v)||!Number.isFinite(Date.parse(v)))return false;const m=/^(\\d{4})-(\\d{2})-(\\d{2})T/.exec(v);if(!m)return false;const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));return d.getUTCFullYear()===+m[1]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3];}
+function timestamp(v){if(!text(v,40)||!ISO.test(v)||!Number.isFinite(Date.parse(v)))return false;const m=/^(\d{4})-(\d{2})-(\d{2})T/.exec(v);if(!m)return false;const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));return d.getUTCFullYear()===+m[1]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3];}
 function onlyKeys(v,keys){return v!==null&&typeof v==="object"&&!Array.isArray(v)&&Object.keys(v).every(k=>keys.includes(k));}
 export async function registerSensorCalibration(db,tenantId,siteId,assetId,subject,requestId,body){
  const allowed=["sensor_id","parameter","unit","calibration_method","calibrated_at","valid_until","laboratory_name","certificate_evidence_id","reference_value","as_found_value","as_left_value","uncertainty","notes"];
