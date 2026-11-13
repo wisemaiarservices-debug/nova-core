@@ -4,11 +4,15 @@ INSERT INTO tenants (id, display_name, status) VALUES
   ('tenant-http-b', 'CI Tenant B', 'active');
 
 INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
-  ('membership-http-a', 'tenant-http-a', 'ci-human-subject', 'tenant_owner', 'active'),\n  ('membership-http-reviewer', 'tenant-http-a', 'ci-config-reviewer', 'tenant_admin', 'active');
+  ('membership-http-a', 'tenant-http-a', 'ci-human-subject', 'tenant_owner', 'active'),
+  ('membership-http-reviewer', 'tenant-http-a', 'ci-config-reviewer', 'tenant_admin', 'active');
 
 INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) VALUES
   ('grant-http-a-site', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'read'),
-  ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create'),\n  ('grant-http-a-site-update', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'update'),\n  ('grant-http-reviewer-site-update', 'tenant-http-a', 'ci-config-reviewer', 'site', 'site-http-a', 'update'),\n  ('grant-http-a-site-manage', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'manage_members');
+  ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create'),
+  ('grant-http-a-site-update', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'update'),
+  ('grant-http-reviewer-site-update', 'tenant-http-a', 'ci-config-reviewer', 'site', 'site-http-a', 'update'),
+  ('grant-http-a-site-manage', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'manage_members');
 
 INSERT INTO sites (id, tenant_id, name, status) VALUES
   ('site-http-a', 'tenant-http-a', 'CI Site A', 'active'),
