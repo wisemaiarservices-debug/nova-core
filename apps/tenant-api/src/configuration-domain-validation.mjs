@@ -182,15 +182,24 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
           if (typeof measurement.method !== "string" || !measurement.method.trim()) {
             issues.push(issue("soil_hydraulic.method_missing", measurementPath + ".method", "verification_required"));
           }
-          if (typeof measurement.sampled_at !== "string" || !Number.isFinite(Date.parse(measurement.sampled_at)) || !/(Z|[+-]\\d{2}:\\d{2})$/.test(measurement.sampled_at)) {
-          if (typeof measurement.sampled_at !== "string" || !Number.isFinite(Date.parse(measurement.sampled_at)) || !/(Z|[+-]\d{2}:\d{2})$/.test(measurement.sampled_at)) {
+          const hydraulicTimestamp = typeof measurement.sampled_at === "string"
+            ? measurement.sampled_at.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)
+            : null;
+          const timestampYear = hydraulicTimestamp ? Number(hydraulicTimestamp[1]) : 0;
+          const timestampMonth = hydraulicTimestamp ? Number(hydraulicTimestamp[2]) : 0;
+          const timestampDay = hydraulicTimestamp ? Number(hydraulicTimestamp[3]) : 0;
+          const timestampLeap = timestampYear % 4 === 0 && (timestampYear % 100 !== 0 || timestampYear % 400 === 0);
+          const timestampMonthDays = [31, timestampLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][timestampMonth - 1];
+          if (!hydraulicTimestamp || timestampMonth < 1 || timestampMonth > 12 || timestampDay < 1 ||
+              !timestampMonthDays || timestampDay > timestampMonthDays || !Number.isFinite(Date.parse(measurement.sampled_at))) {
+            errors.push(issue("soil_hydraulic.timestamp_invalid", measurementPath + ".sampled_at", "verification_required"));
           }
           if (!measurement.evidence_ref) issues.push(issue("soil_hydraulic.evidence_missing", measurementPath + ".evidence_ref", "verification_required"));
           if (measurement.parameter === "field_capacity" || measurement.parameter === "wilting_point") {
             const volumetric = ["m3/m3", "cm3/cm3"].includes(measurement.unit);
             const gravimetric = ["kg/kg", "g/g"].includes(measurement.unit);
             if (!volumetric && !gravimetric) issues.push(issue("soil_hydraulic.water_content_unit_unsupported", measurementPath + ".unit", "verification_required"));
-            if ((volumetric || gravimetric) && measurement.value > 1) {
+            if (volumetric && measurement.value > 1) {
               errors.push(issue("soil_hydraulic.water_content_out_of_range", measurementPath + ".value", "verification_required"));
             }
           }
