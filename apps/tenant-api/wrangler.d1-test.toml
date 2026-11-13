@@ -1,5 +1,5 @@
 name = "nova-core-tenant-api"
-main = "src/index.mjs"
+main = "src/local-write-test-entry.mjs"
 compatibility_date = "2026-11-01"
 workers_dev = false
 preview_urls = false
@@ -17,3 +17,5 @@ migrations_dir = "../api/migrations"
 ACCESS_ISSUER = "https://nova-ci.cloudflareaccess.com"
 ACCESS_AUDIENCE = "nova-ci-test-audience"
 INTERNAL_AUTH_SECRET = "local-ci-only-secret-not-for-any-deployment"
+
+CI_TEST_CONFIGURATION_WRITES = "true"
