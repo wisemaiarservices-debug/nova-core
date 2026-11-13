@@ -179,3 +179,15 @@ export async function assessObservationCalibration(db, tenantId, observation) {
     calibrated_range: { minimum: calibration.range_min, maximum: calibration.range_max,
       unit: observation.unit } };
 }
+
+export async function readSourceCalibration(db, tenantId, siteId, sourceId, calibrationId) {
+  const records = await db.prepare(
+    "SELECT id, tenant_id, site_id, source_id, instrument_serial, metric, unit, calibration_method, calibration_standard, calibrated_at, valid_until, range_min, range_max, uncertainty, evidence_ref, created_by_subject, status, created_at FROM source_calibrations WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND id = ? LIMIT 2"
+  ).bind(tenantId, siteId, sourceId, calibrationId).all();
+  if (!Array.isArray(records?.results) || records.results.length !== 1) return null;
+  const events = await db.prepare(
+    "SELECT event_type, actor_subject, reviewer_role, evidence_ref, reason, request_id, occurred_at FROM source_calibration_events WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND calibration_id = ? ORDER BY occurred_at, id LIMIT 100"
+  ).bind(tenantId, siteId, sourceId, calibrationId).all();
+  if (!Array.isArray(events?.results)) throw new Error("source_calibration_events_query_invalid");
+  return { ...records.results[0], events: events.results };
+}
