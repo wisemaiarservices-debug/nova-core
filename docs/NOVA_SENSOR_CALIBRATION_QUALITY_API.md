@@ -4,7 +4,7 @@
 
 POST /api/v1/tenants/{tenant_id}/sites/{site_id}/sources/{source_id}/calibrations
 
-Requires a verified Cloudflare Access identity, active tenant membership, tenant owner/admin role and exact site read grant. The source must belong to the requested tenant/site and the site must be active.
+Requires a verified Cloudflare Access identity, active tenant membership, tenant owner/admin role and exact site read grant. The source must belong to the requested tenant/site, the site must be active, and disabled sources cannot receive new calibration records.
 
 Example body:
 
