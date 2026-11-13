@@ -134,7 +134,7 @@ export function assessDomainConfiguration(payload) {
           if (!plainObject(record)) errors.push(issue("inventory.record_invalid", "inventory." + kind + "[" + i + "]", "verification_required"));
           else {
             if (record.protocol !== undefined && !PROTOCOLS.has(record.protocol)) issues.push(issue("inventory.protocol_unrecognized", "inventory." + kind + "[" + i + "].protocol", "verification_required"));
-            if (record.protocol === undefined || record.protocol === "unknown") issues.push(issue("inventory.protocol_unknown", "inventory." + kind + "[" + i + "].protocol"));
+            if (record.protocol === undefined || record.protocol === "unknown") issues.push(issue("inventory.protocol_unknown", "inventory." + kind + "[" + i + "].protocol", "verification_required"));
             if (record.manufacturer === undefined || record.model === undefined) issues.push(issue("inventory.identity_incomplete", "inventory." + kind + "[" + i + "]"));
           }
         });
@@ -157,7 +157,7 @@ export function assessDomainConfiguration(payload) {
       if (record?.parameter_scope === "global_model" || record?.scope === "global_model") {
         errors.push(issue("calibration.global_model_parameter_forbidden", path, "verification_required"));
       }
-      if (!record?.evidence_ref) issues.push(issue("calibration.evidence_missing", path + ".evidence_ref"));
+      if (!record?.evidence_ref) issues.push(issue("calibration.evidence_missing", path + ".evidence_ref", "verification_required"));
     });
   }
   if (payload.evidence !== undefined && !Array.isArray(payload.evidence)) errors.push(issue("evidence.invalid_type", "evidence", "verification_required"));
@@ -170,7 +170,7 @@ export function assessDomainConfiguration(payload) {
   if (payload.extensions !== undefined) {
     if (!plainObject(payload.extensions)) errors.push(issue("extensions.invalid_type", "extensions", "verification_required"));
     else for (const [namespace, value] of Object.entries(payload.extensions)) {
-      if (!/^[a-z][a-z0-9.-]{1,63}$/.test(namespace) || !plainObject(value)) {
+      if (!/^[a-z][a-z0-9-]{0,31}(\\.[a-z][a-z0-9-]{0,31})+$/.test(namespace) || !plainObject(value)) {
         errors.push(issue("extensions.namespace_invalid", "extensions." + namespace, "verification_required"));
       } else issues.push(issue("extensions.requires_client_schema_review", "extensions." + namespace, "verification_required"));
     }
