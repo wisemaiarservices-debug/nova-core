@@ -109,7 +109,8 @@ async function createCriteriaDraft(db, tenant, subject, requestId, entry) {
   return { data: { id: entry.id, version: entry.version, jurisdiction: entry.jurisdiction,
     site_id: siteId, status: "draft", created_by_subject: subject }, status: 201 };
 }
-\nasync function readCriteriaRegistry(db, tenant, entryId, version) {
+ 
+async function readCriteriaRegistry(db, tenant, entryId, version) {
   if (entryId === null) {
     const result = await rows(db.prepare(
       "SELECT id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at FROM water_quality_criteria_entries WHERE tenant_id = ? ORDER BY jurisdiction, id, version LIMIT 100"
@@ -129,7 +130,8 @@ export default {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
     const url = new URL(request.url);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
-    const criteriaList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
+    const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
+    const criteriaList = request.method === "GET" ? criteriaCreate : null;
     const criteriaDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/([^/]+)\/([^/]+)$/);
     if ((!match && !criteriaCreate && !criteriaDetail) || url.search || url.hash ||
         (request.method === "POST" && (!criteriaCreate || criteriaDetail || match))) return error("not_found", 404);
