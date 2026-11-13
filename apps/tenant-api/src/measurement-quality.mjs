@@ -51,12 +51,12 @@ async function assessmentResult(db,tenant,observation,requestId,status,reason,ma
  const result=await db.prepare("INSERT INTO measurement_quality_assessments(id,tenant_id,site_id,observation_id,mapping_id,calibration_id,policy_id,status,reason_code,observed_value,unit,method_version,request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
  .bind(id,tenant,observation.site_id,observation.id,mapping?.id??null,calibration?.id??null,policy?.id??null,status,reason,Number.isFinite(observation.value)?observation.value:null,observation.unit??null,"1.0.0",requestId).run();
  if(result?.meta?.changes!==1)throw new Error("measurement_quality_assessment_write_failed");
- return {data:{id,observation_id:observation.id,status,reason_code:reason,mapping_id:mapping?.id??null,calibration_id:calibration?.id??null,policy_id:policy?.id??null,method_version:"1.0.0"},status:201};
+ return {data:{id,tenant_id:tenant,observation_id:observation.id,status,reason_code:reason,mapping_id:mapping?.id??null,calibration_id:calibration?.id??null,policy_id:policy?.id??null,method_version:"1.0.0"},status:201};
 }
 
 export async function assessMeasurementQuality(db,tenant,observationId,requestId){
  if(!validId(observationId)||!validText(requestId,80))return {error:"measurement_quality_assessment_request_invalid",status:400};
- const prior=await db.prepare("SELECT id,observation_id,status,reason_code,mapping_id,calibration_id,policy_id,method_version FROM measurement_quality_assessments WHERE tenant_id=? AND request_id=? LIMIT 1").bind(tenant,requestId).all();
+ const prior=await db.prepare("SELECT id,tenant_id,observation_id,status,reason_code,mapping_id,calibration_id,policy_id,method_version FROM measurement_quality_assessments WHERE tenant_id=? AND request_id=? LIMIT 1").bind(tenant,requestId).all();
  if(!Array.isArray(prior?.results))throw new Error("measurement_quality_idempotency_lookup_invalid");
  if(prior.results.length===1)return {data:prior.results[0],status:200};
  const observation=await exactlyOne(db,"SELECT id,tenant_id,site_id,source_id,metric,value,unit,observed_at,verification_status,provenance_json FROM observations WHERE tenant_id=? AND id=? LIMIT 2",[tenant,observationId]);
