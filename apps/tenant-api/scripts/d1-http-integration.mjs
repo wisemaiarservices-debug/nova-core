@@ -341,7 +341,7 @@ try {
 
   const configurationPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/configurations";
   const reviewerPath = configurationPath + "/reviewers";
-  const engineeringReviewer = { reviewer_subject: "ci-engineering-reviewer",
+  const engineeringReviewer = { reviewer_subject: "ci-config-reviewer",
     reviewer_role: "engineering_reviewer", evidence_ref: "fixture:engineering-appointment" };
   const operationsReviewer = { reviewer_subject: "ci-operations-reviewer",
     reviewer_role: "operations_reviewer", evidence_ref: "fixture:operations-appointment" };
