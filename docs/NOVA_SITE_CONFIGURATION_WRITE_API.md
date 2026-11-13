@@ -6,7 +6,14 @@
 
 The route is exposed only through the human Cloudflare Access gateway and its private Service Binding to the tenant API. The private tenant Worker remains without a public route.
 
-## Request
+## Read routes
+
+- `GET /api/v1/tenants/{tenant_id}/sites/{site_id}/configurations` returns the latest 100 immutable versions, newest first.
+- `GET /api/v1/tenants/{tenant_id}/sites/{site_id}/configurations/{version}` returns one exact version.
+
+Both reads require an active tenant membership with read capability and an exact site-scoped `read` grant. Cross-tenant and ungranted-site requests return not found. The stored JSON is returned as `configuration`, alongside its digest, schema, version and creation provenance. The route does not infer or expose another site's records.
+
+## Write request
 
 Headers:
 - `Cf-Access-Jwt-Assertion`: human Access JWT, verified by the gateway.
@@ -18,7 +25,7 @@ Body:
 - `schema_id`: currently only `nova.client-config.v1`.
 - `content_sha256`: optional caller-provided digest; if present, it must equal the server-computed canonical payload digest.
 
-The route tenant and site identifiers must exactly match `payload.tenant.tenant_id` and `payload.site.site_id`. The caller cannot nominate an actor, review state, configuration version, or tenant ownership.
+The write route tenant and site identifiers must exactly match `payload.tenant.tenant_id` and `payload.site.site_id`. The caller cannot nominate an actor, review state, configuration version, or tenant ownership.
 
 ## Authorization and persistence
 
