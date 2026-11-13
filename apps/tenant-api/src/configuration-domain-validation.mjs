@@ -155,7 +155,7 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
               issues.push(issue("crop.root_depth_growth_stage_missing", observationPath + ".growth_stage", "verification_required"));
             }
             const observedAt = typeof observation.observed_at === "string"
-              ? observation.observed_at.match(/^(\\d{4})-(\\d{2})-(\\d{2})T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/)
+              ? observation.observed_at.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)
               : null;
             const year = observedAt ? Number(observedAt[1]) : 0;
             const month = observedAt ? Number(observedAt[2]) : 0;
