@@ -71,6 +71,6 @@ test("rejects unsupported schema IDs and digest mismatch", async () => {
 });
 
 test("does not silently accept a caller-selected payload size limit above policy", () => {
-  assert.throws(() => canonicalizeConfiguration({ ok: true }, DEFAULT_MAX_BYTES + 1),
+  assert.throws(() => canonicalizeConfiguration({ ok: true }, 65_537),
     /configuration_limit_invalid/);
 });
