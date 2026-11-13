@@ -1,5 +1,5 @@
 import { json, error } from "./http.mjs";
-import { validateWaterQualityCriteriaRegistryEntry } from "./water-quality-criteria-registry.mjs";
+import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -238,6 +238,46 @@ async function recordCriteriaReview(db, tenant, entryId, version, reviewerSubjec
   } catch {
     return { error: "criteria_lifecycle_conflict", status: 409 };
   }
+}
+
+
+async function resolveStoredCriteria(db, tenant, entryId, version, context, sampledAt) {
+  if (!onlyKeys(context, ["tenant_id", "site_id", "jurisdiction", "crop_id", "irrigation_method", "intended_use"]) ||
+      context.tenant_id !== tenant ||
+      ["site_id", "jurisdiction", "crop_id", "irrigation_method", "intended_use"].some(key =>
+        typeof context[key] !== "string" || context[key].trim() !== context[key] || context[key].length < 1 || context[key].length > 200) ||
+      typeof sampledAt !== "string") {
+    return { error: "criteria_resolution_context_invalid", status: 400 };
+  }
+  const entries = await rows(db.prepare(
+    "SELECT id, tenant_id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at FROM water_quality_criteria_entries WHERE tenant_id = ? AND id = ? AND version = ? LIMIT 1"
+  ).bind(tenant, entryId, version));
+  if (entries.length !== 1 || entries[0].tenant_id !== tenant ||
+      entries[0].id !== entryId || entries[0].version !== version) {
+    return { error: "criteria_entry_not_found", status: 404 };
+  }
+  const [events, approvals] = await Promise.all([
+    rows(db.prepare(
+      "SELECT event_type FROM water_quality_criteria_events WHERE tenant_id = ? AND entry_id = ? AND entry_version = ? ORDER BY rowid ASC LIMIT 100"
+    ).bind(tenant, entryId, version)),
+    rows(db.prepare(
+      "SELECT reviewer_subject, reviewer_role, decision, evidence_ref, reviewed_at FROM water_quality_criteria_approvals WHERE tenant_id = ? AND entry_id = ? AND entry_version = ? ORDER BY reviewed_at, id LIMIT 20"
+    ).bind(tenant, entryId, version)),
+  ]);
+  const latest = events.at(-1)?.event_type ?? "unknown";
+  const status = latest === "draft_created" ? "draft" :
+    latest === "submitted_for_review" ? "review_pending" : latest;
+  const entry = JSON.parse(entries[0].entry_json);
+  entry.review = {
+    status,
+    approvals: approvals.filter(item => item.decision === "approve").map(item => ({
+      reviewer_id: item.reviewer_subject, role: item.reviewer_role,
+      reviewed_at: item.reviewed_at, evidence_ref: item.evidence_ref,
+    })),
+  };
+  const resolution = resolveApprovedWaterQualityCriteria(entry, context, sampledAt);
+  return { data: { ...resolution, tenant_id: tenant, site_id: entries[0].site_id,
+    lifecycle_status: latest }, status: 200 };
 }
 
 async function readCriteriaReviewers(db, tenant) {
