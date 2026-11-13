@@ -1,4 +1,5 @@
 """SQLite contract tests for tenant-scoped observation verification migration."""
+import hashlib
 import sqlite3
 from pathlib import Path
 
