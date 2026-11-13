@@ -149,14 +149,18 @@ test("routes tenant water-quality criteria list and version reads through the ve
       assert.equal(await forwarded.text(), payload);
       assert.equal(forwarded.headers.get("x-nova-verified-subject"), "criteria-reader");
     }
-    for (const action of ["submit", "review", "resolve"]) {
+    for (const action of ["submit", "review", "resolve", "assess"]) {
       let forwarded;
       const payload = action === "submit" ? "{}" : action === "review" ? JSON.stringify({
         reviewer_role: "domain_expert", decision: "approve", evidence_ref: "evidence:review",
-      }) : JSON.stringify({
+      }) : action === "resolve" ? JSON.stringify({
         context: { tenant_id: "tenant-a", site_id: "site-a", jurisdiction: "TN",
           crop_id: "olive", irrigation_method: "drip", intended_use: "agricultural_irrigation" },
         sampled_at: "2026-05-10T10:00:00Z",
+      }) : JSON.stringify({
+        context: { tenant_id: "tenant-a", site_id: "site-a", jurisdiction: "TN",
+          crop_id: "olive", irrigation_method: "drip", intended_use: "agricultural_irrigation" },
+        samples: [{ id: "sample-1", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" }],
       });
       const response = await worker.fetch(new Request(
         "https://gateway.test/api/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/" + action,
