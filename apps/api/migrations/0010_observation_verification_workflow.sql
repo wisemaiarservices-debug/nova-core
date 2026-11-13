@@ -83,14 +83,42 @@ BEGIN SELECT RAISE(ABORT, 'reviewer assignments are retained; revoke instead'); 
 CREATE TRIGGER observation_reviewer_event_state_guard
 BEFORE INSERT ON observation_reviewer_events
 WHEN NOT EXISTS (
-  SELECT 1 FROM observation_reviewers r JOIN tenants t
-    ON t.id = r.tenant_id AND t.status = 'active'
+  SELECT 1 FROM observation_reviewers r
+  JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active'
   WHERE r.tenant_id = NEW.tenant_id AND r.site_id = NEW.site_id
     AND r.reviewer_subject = NEW.reviewer_subject AND r.reviewer_role = NEW.reviewer_role
-    AND ((NEW.event_type = 'assigned' AND r.status = 'active')
-      OR (NEW.event_type = 'revoked' AND r.status = 'revoked'))
+    AND r.status = 'active'
+    AND (
+      (NEW.event_type = 'assigned' AND NOT EXISTS (
+        SELECT 1 FROM observation_reviewer_events e
+        WHERE e.tenant_id = NEW.tenant_id AND e.site_id = NEW.site_id
+          AND e.reviewer_subject = NEW.reviewer_subject AND e.reviewer_role = NEW.reviewer_role
+      ))
+      OR
+      (NEW.event_type = 'revoked' AND (
+        SELECT e.event_type FROM observation_reviewer_events e
+        WHERE e.tenant_id = NEW.tenant_id AND e.site_id = NEW.site_id
+          AND e.reviewer_subject = NEW.reviewer_subject AND e.reviewer_role = NEW.reviewer_role
+        ORDER BY e.rowid DESC LIMIT 1
+      ) = 'assigned')
+    )
 )
 BEGIN SELECT RAISE(ABORT, 'reviewer event must match active tenant and assignment state'); END;
+
+CREATE TRIGGER observation_reviewer_status_guard
+BEFORE UPDATE OF status ON observation_reviewers
+WHEN NEW.status IS NOT OLD.status
+AND NOT (
+  OLD.status = 'active' AND NEW.status = 'revoked'
+  AND EXISTS (
+    SELECT 1 FROM observation_reviewer_events e
+    WHERE e.tenant_id = OLD.tenant_id AND e.site_id = OLD.site_id
+      AND e.reviewer_subject = OLD.reviewer_subject AND e.reviewer_role = OLD.reviewer_role
+      AND e.event_type = 'revoked'
+    ORDER BY e.rowid DESC LIMIT 1
+  )
+)
+BEGIN SELECT RAISE(ABORT, 'reviewer status change requires a matching append-only event'); END;
 CREATE TRIGGER observation_reviewer_events_immutable_update_guard
 BEFORE UPDATE ON observation_reviewer_events
 BEGIN SELECT RAISE(ABORT, 'reviewer assignment history is immutable'); END;
