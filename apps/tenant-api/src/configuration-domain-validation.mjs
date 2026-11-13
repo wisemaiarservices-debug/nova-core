@@ -7,8 +7,8 @@ const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at",
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
   irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
-  energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "pv_strings", "design_min_temperature_c", "design_max_temperature_c", "battery_min_voltage_v", "battery_max_voltage_v", "battery_charge_power_kw", "battery_discharge_power_kw", "evidence_ref"]),
-  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a", "battery_min_voltage_v", "battery_max_voltage_v", "battery_max_charge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_charge_power_kw", "inverter_max_battery_discharge_power_kw", "evidence_ref"]),
+  energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "pv_strings", "design_min_temperature_c", "design_max_temperature_c", "battery_min_voltage_v", "battery_max_voltage_v", "battery_charge_power_kw", "battery_discharge_power_kw", "grid_export_limit_kw", "grid_import_limit_kw", "evidence_ref"]),
+  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "pv_power_w", "battery_capacity_kwh", "voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a", "battery_min_voltage_v", "battery_max_voltage_v", "battery_max_charge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_charge_power_kw", "inverter_max_battery_discharge_power_kw", "evidence_ref"]),
   sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "gateway_id", "calibration_record_id", "evidence_ref"]),
   gateways: new Set(["id", "manufacturer", "model", "protocol", "supported_protocols", "connectivity_status", "evidence_ref"]),
 };
@@ -142,11 +142,19 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
         if (!plainObject(record)) return;
         const positiveFields = field === "irrigation_systems"
           ? ["design_flow_m3_per_hour"]
-          : ["pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v"];
+          : ["pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_export_limit_kw", "grid_import_limit_kw"];
         for (const key of positiveFields) {
           if (record[key] !== undefined && record[key] !== null && !finitePositive(record[key])) {
             errors.push(issue("engineering.rating_must_be_positive", "site." + field + "[" + index + "]." + key, "verification_required"));
           }
+        }
+        if (field === "energy_systems" && record.grid_connected !== undefined && typeof record.grid_connected !== "boolean") {
+          errors.push(issue("energy.grid_connected_invalid", "site.energy_systems[" + index + "].grid_connected", "verification_required"));
+        }
+        if (field === "energy_systems" && record.grid_connected === false &&
+            (record.grid_export_limit_kw !== undefined || record.grid_import_limit_kw !== undefined)) {
+          issues.push(issue("energy.grid_limits_conflict_with_off_grid",
+            "site.energy_systems[" + index + "]", "verification_required"));
         }
         if (field === "energy_systems" && record.grid_phase !== undefined &&
             !["single_phase", "three_phase", "dc", "unknown"].includes(record.grid_phase)) {
@@ -249,7 +257,7 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
               }
             }
             if (kind === "equipment") {
-              for (const key of ["rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a"]) {
+              for (const key of ["rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "pv_power_w", "battery_capacity_kwh", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a"]) {
                 if (record[key] !== undefined && record[key] !== null && !finitePositive(record[key])) {
                   errors.push(issue("engineering.rating_must_be_positive", "inventory.equipment[" + i + "]." + key, "verification_required"));
                 }
@@ -500,6 +508,55 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
           system.battery_power_kw > battery.rated_power_kw) {
         issues.push(issue("energy.battery_power_exceeds_equipment_rating",
           "site.energy_systems[" + i + "].battery_power_kw", "verification_required"));
+      }
+      // Cross-check declared system capacities against referenced nameplate data.
+      const systemPath = "site.energy_systems[" + i + "]";
+      if (system.inverter_capacity_kw !== undefined && finitePositive(inverter?.rated_power_kw)) {
+        const tolerance = Math.max(0.01, system.inverter_capacity_kw * 0.01);
+        if (Math.abs(system.inverter_capacity_kw - inverter.rated_power_kw) > tolerance) {
+          issues.push(issue("energy.inverter_capacity_mismatch",
+            systemPath + ".inverter_capacity_kw", "verification_required"));
+        }
+      }
+      if (system.battery_capacity_kwh !== undefined && finitePositive(battery?.battery_capacity_kwh)) {
+        const tolerance = Math.max(0.01, system.battery_capacity_kwh * 0.01);
+        if (Math.abs(system.battery_capacity_kwh - battery.battery_capacity_kwh) > tolerance) {
+          issues.push(issue("energy.battery_capacity_mismatch",
+            systemPath + ".battery_capacity_kwh", "verification_required"));
+        }
+      }
+      if (system.grid_connected === true && finitePositive(system.grid_export_limit_kw) &&
+          finitePositive(inverter?.rated_power_kw) &&
+          system.grid_export_limit_kw > inverter.rated_power_kw) {
+        issues.push(issue("energy.grid_export_limit_exceeds_inverter_rating",
+          systemPath + ".grid_export_limit_kw", "verification_required"));
+      }
+      if (Array.isArray(system.pv_strings) && system.pv_strings.length > 0 &&
+          finitePositive(system.pv_capacity_kw)) {
+        let derivedPvKw = 0;
+        let completePvCapacity = true;
+        for (const pvString of system.pv_strings) {
+          if (!plainObject(pvString)) { completePvCapacity = false; break; }
+          const moduleId = pvString.module_equipment_id ?? system.pv_equipment_id;
+          const module = moduleId ? equipmentById(moduleId) : undefined;
+          if (!finitePositive(module?.pv_power_w) ||
+              !Number.isInteger(pvString.modules_per_string) || pvString.modules_per_string <= 0 ||
+              !Number.isInteger(pvString.parallel_strings) || pvString.parallel_strings <= 0) {
+            completePvCapacity = false;
+            break;
+          }
+          derivedPvKw += module.pv_power_w * pvString.modules_per_string *
+            pvString.parallel_strings / 1000;
+        }
+        if (completePvCapacity) {
+          const tolerance = Math.max(0.01, system.pv_capacity_kw * 0.01);
+          if (Math.abs(system.pv_capacity_kw - derivedPvKw) > tolerance) {
+            issues.push(issue("energy.pv_capacity_mismatch", systemPath + ".pv_capacity_kw", "verification_required"));
+          }
+        } else {
+          issues.push(issue("energy.pv_capacity_comparison_incomplete",
+            systemPath + ".pv_capacity_kw", "verification_required"));
+        }
       }
       for (const [field, role] of [["inverter_id", "inverter"], ["battery_id", "battery"], ["pv_equipment_id", "pv"]]) {
         if (system[field] && !inventoryByKind.equipment.has(system[field])) {
