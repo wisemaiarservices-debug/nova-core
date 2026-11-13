@@ -67,7 +67,7 @@ try {
 
   // Exercise the real persistence helper through a test-only entrypoint backed
   // by the same disposable local D1 used by the Service Binding integration.
-  async function writeConfiguration(key, requestId, payload, tenantId = "tenant-http-a", siteId = "site-http-a") {
+  function configurationPayload(label, tenantId = "tenant-http-a", siteId = "site-http-a") {\n    return { tenant: { tenant_id: tenantId }, site: { site_id: siteId, timezone: "Africa/Tunis",\n      crops: [{ id: "crop-1", species: label }], irrigation_systems: [{ id: "irrigation-1", method: "unknown" }],\n      energy_systems: [{ id: "energy-1", type: "unknown" }] } };\n  }\n  async function writeConfiguration(key, requestId, payload, tenantId = "tenant-http-a", siteId = "site-http-a") {
     const response = await fetch(base + "/__ci/configuration-write", {
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": key },
@@ -84,7 +84,7 @@ try {
     return response.json();
   }
 
-  const firstPayload = { crop: "olive", irrigation: { method: "drip" } };
+  const firstPayload = configurationPayload("olive");
   const created = await writeConfiguration("ci-config-key-1", "req-config-1", firstPayload);
   assert.equal(created.response.status, 200, JSON.stringify(created.body));
   assert.equal(created.body.data.replayed, false);
@@ -98,13 +98,13 @@ try {
   assert.equal(replay.body.data.configuration_version, "v1");
 
   const second = await writeConfiguration("ci-config-key-2", "req-config-2",
-    { crop: "citrus", irrigation: { method: "sprinkler" } });
+    configurationPayload("citrus"));
   assert.equal(second.response.status, 200, JSON.stringify(second.body));
   assert.equal(second.body.data.configuration_version, "v2");
 
   // Two simultaneous requests with the same idempotency key must commit once
   // and return the same immutable configuration result to both callers.
-  const concurrentPayload = { crop: "date-palm", irrigation: { method: "subsurface-drip" } };
+  const concurrentPayload = configurationPayload("date-palm");
   const concurrent = await Promise.all([
     writeConfiguration("ci-config-key-concurrent", "req-config-concurrent-a", concurrentPayload),
     writeConfiguration("ci-config-key-concurrent", "req-config-concurrent-b", concurrentPayload),
@@ -119,9 +119,9 @@ try {
   // Distinct concurrent keys must still receive distinct contiguous versions.
   const parallelVersions = await Promise.all([
     writeConfiguration("ci-config-key-parallel-a", "req-config-parallel-a",
-      { crop: "fig", irrigation: { method: "drip" } }),
+      configurationPayload("fig")),
     writeConfiguration("ci-config-key-parallel-b", "req-config-parallel-b",
-      { crop: "almond", irrigation: { method: "drip" } }),
+      configurationPayload("almond")),
   ]);
   assert.equal(parallelVersions.every(item => item.response.status === 200), true,
     JSON.stringify(parallelVersions.map(item => item.body)));
@@ -135,7 +135,7 @@ try {
   // The same verified subject cannot write to another tenant merely by
   // substituting tenant/site IDs in the request body.
   const crossTenant = await writeConfiguration("ci-cross-tenant-key", "req-cross-tenant",
-    { crop: "unauthorized" }, "tenant-http-b", "site-http-b");
+    configurationPayload("unauthorized", "tenant-http-b", "site-http-b"), "tenant-http-b", "site-http-b");
   assert.equal(crossTenant.response.status, 403);
   assert.equal(crossTenant.body.error, "configuration_authorization_denied");
   const tenantBState = await configurationState("ci-cross-tenant-key", "tenant-http-b");
@@ -145,7 +145,7 @@ try {
   assert.equal(tenantBState.audits.length, 0);
 
   const conflict = await writeConfiguration("ci-config-key-1", "req-config-conflict",
-    { crop: "different-payload" });
+    configurationPayload("different-payload"));
   assert.equal(conflict.response.status, 409);
   assert.equal(conflict.body.error, "configuration_idempotency_conflict");
 
@@ -159,7 +159,7 @@ try {
   assert.equal(committed.audits.every(row => row.action === "configuration.created_for_review"), true);
 
   const failed = await writeConfiguration("ci-config-key-fail", "req-fail",
-    { crop: "must-rollback" });
+    configurationPayload("must-rollback"));
   assert.notEqual(failed.response.status, 200);
   const rolledBack = await configurationState("ci-config-key-fail");
   assert.equal(rolledBack.idempotency.length, 0);
