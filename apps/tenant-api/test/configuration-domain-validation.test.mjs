@@ -273,6 +273,77 @@ test("flags irrigation equipment role mismatches and unresolved controller refer
   assert.ok(result.issues.some(item => item.code === "irrigation.equipment_role_mismatch"));
 });
 
+test("checks PV string cold Voc, hot Vmp and inverter current operating limits", () => {
+  const value = valid();
+  const system = value.site.energy_systems[0];
+  system.pv_equipment_id = "module-1";
+  system.inverter_id = "inverter-1";
+  system.design_min_temperature_c = -10;
+  system.design_max_temperature_c = 70;
+  system.pv_strings = [{
+    id: "string-1", modules_per_string: 12, parallel_strings: 3,
+  }];
+  value.inventory.equipment.push({
+    id: "module-1", manufacturer: "PV maker", model: "M-450",
+    asset_class: "pv_module", pv_voc_v: 49.5, pv_vmp_v: 41.5,
+    pv_isc_a: 14, pv_imp_a: 13.2,
+    voc_temp_coefficient_pct_per_c: -0.28,
+    vmp_temp_coefficient_pct_per_c: -0.35,
+  });
+  value.inventory.equipment.push({
+    id: "inverter-1", manufacturer: "Inverter maker", model: "INV-10",
+    asset_class: "inverter", inverter_max_input_voltage_v: 550,
+    inverter_mppt_min_voltage_v: 300, inverter_mppt_max_voltage_v: 500,
+    inverter_max_input_current_a: 35, inverter_max_short_circuit_current_a: 40,
+  });
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.pv_string_cold_voc_exceeds_inverter"));
+  assert.ok(result.issues.some(item => item.code === "energy.pv_string_hot_vmp_below_mppt_min"));
+  assert.ok(result.issues.some(item => item.code === "energy.pv_string_operating_current_exceeds_inverter"));
+  assert.ok(result.issues.some(item => item.code === "energy.pv_string_short_circuit_current_exceeds_inverter"));
+  assert.equal(result.status.operational_review, "not_started");
+});
+
+test("accepts declared PV string values inside inverter limits", () => {
+  const value = valid();
+  const system = value.site.energy_systems[0];
+  system.pv_equipment_id = "module-1";
+  system.inverter_id = "inverter-1";
+  system.design_min_temperature_c = 0;
+  system.design_max_temperature_c = 45;
+  system.pv_strings = [{ id: "string-1", modules_per_string: 8, parallel_strings: 1 }];
+  value.inventory.equipment.push({
+    id: "module-1", manufacturer: "PV maker", model: "M-400",
+    asset_class: "pv_module", pv_voc_v: 45, pv_vmp_v: 37,
+    pv_isc_a: 11, pv_imp_a: 10.5,
+    voc_temp_coefficient_pct_per_c: -0.25,
+    vmp_temp_coefficient_pct_per_c: -0.30,
+  });
+  value.inventory.equipment.push({
+    id: "inverter-1", manufacturer: "Inverter maker", model: "INV-5",
+    asset_class: "inverter", inverter_max_input_voltage_v: 600,
+    inverter_mppt_min_voltage_v: 200, inverter_mppt_max_voltage_v: 500,
+    inverter_max_input_current_a: 15, inverter_max_short_circuit_current_a: 16,
+  });
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.issues.some(item => item.code.startsWith("energy.pv_string_")), false);
+});
+
+test("flags unresolved PV module/inverter links and invalid string counts or temperature ranges", () => {
+  const value = valid();
+  value.site.energy_systems[0].pv_strings = [{
+    id: "string-1", module_equipment_id: "missing-module",
+    inverter_id: "missing-inverter", modules_per_string: 0, parallel_strings: 1,
+  }];
+  value.site.energy_systems[0].design_min_temperature_c = 60;
+  value.site.energy_systems[0].design_max_temperature_c = -10;
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.pv_module_reference_unresolved"));
+  assert.ok(result.issues.some(item => item.code === "energy.pv_inverter_reference_unresolved"));
+  assert.ok(result.errors.some(item => item.code === "energy.pv_string_integer_invalid"));
+  assert.ok(result.errors.some(item => item.code === "energy.design_temperature_order_invalid"));
+});
+
 test("resolves energy equipment references and flags declared voltage or phase mismatches", () => {
   const value = valid();
   value.site.energy_systems[0].inverter_id = "inverter-1";
