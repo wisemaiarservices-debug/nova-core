@@ -248,6 +248,7 @@ test("flags unresolved or role-mismatched energy equipment references", () => {
   const value = valid();
   value.site.energy_systems[0].battery_id = "missing-battery";
   value.site.energy_systems[0].pv_equipment_id = "pump-1";
+  value.inventory.equipment[0].asset_class = "pump";
   const result = assessDomainConfiguration(value);
   assert.ok(result.issues.some(item => item.code === "energy.equipment_reference_unresolved"));
   assert.ok(result.issues.some(item => item.code === "energy.equipment_role_mismatch"));
