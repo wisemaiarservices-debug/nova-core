@@ -6,7 +6,7 @@ const CALIBRATION_KEYS = new Set(["id", "scope", "scope_id", "unit", "method", "
 const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at", "issuer", "digest"]);
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
-  water_sources: new Set(["id", "source_type", "name", "available_flow_m3_per_hour", "permitted_abstraction_m3_per_day", "evidence_ref"]),
+  water_sources: new Set(["id", "source_type", "name", "available_flow_m3_per_hour", "permitted_abstraction_m3_per_day", "quality_samples", "evidence_ref"]),
   irrigation_systems: new Set(["id", "method", "water_source", "water_source_id", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
   energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "pv_strings", "design_min_temperature_c", "design_max_temperature_c", "battery_min_voltage_v", "battery_max_voltage_v", "battery_charge_power_kw", "battery_discharge_power_kw", "grid_export_limit_kw", "grid_import_limit_kw", "evidence_ref"]),
   equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "pv_power_w", "battery_capacity_kwh", "voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a", "battery_min_voltage_v", "battery_max_voltage_v", "battery_max_charge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_charge_power_kw", "inverter_max_battery_discharge_power_kw", "evidence_ref"]),
@@ -154,6 +154,43 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
       for (const key of ["available_flow_m3_per_hour", "permitted_abstraction_m3_per_day"]) {
         if (source[key] !== undefined && source[key] !== null && !finitePositive(source[key])) {
           errors.push(issue("engineering.rating_must_be_positive", path + "." + key, "verification_required"));
+        }
+      }
+      if (source.quality_samples !== undefined) {
+        if (!Array.isArray(source.quality_samples)) {
+          errors.push(issue("water_source.quality_samples_invalid_type", path + ".quality_samples", "verification_required"));
+        } else {
+          const sampleIds = new Set();
+          source.quality_samples.forEach((sample, sampleIndex) => {
+            const samplePath = path + ".quality_samples[" + sampleIndex + "]";
+            if (!plainObject(sample) || typeof sample.id !== "string" || !TOKEN.test(sample.id) || sampleIds.has(sample.id)) {
+              errors.push(issue("water_quality.sample_id_missing_or_duplicate", samplePath + ".id", "verification_required"));
+              return;
+            }
+            sampleIds.add(sample.id);
+            unknownKeys(sample, new Set(["id", "parameter", "value", "unit", "sampled_at", "method", "laboratory", "evidence_ref"]), samplePath, issues);
+            if (typeof sample.parameter !== "string" || !sample.parameter.trim()) {
+              errors.push(issue("water_quality.parameter_required", samplePath + ".parameter", "verification_required"));
+            }
+            if (typeof sample.value !== "number" || !Number.isFinite(sample.value)) {
+              errors.push(issue("water_quality.value_invalid", samplePath + ".value", "verification_required"));
+            }
+            if (typeof sample.unit !== "string" || !sample.unit.trim()) {
+              errors.push(issue("water_quality.unit_required", samplePath + ".unit", "verification_required"));
+            }
+            if (typeof sample.sampled_at !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(sample.sampled_at) || !Number.isFinite(Date.parse(sample.sampled_at))) {
+              errors.push(issue("water_quality.sample_timestamp_invalid", samplePath + ".sampled_at", "verification_required"));
+            }
+            if (typeof sample.method !== "string" || !sample.method.trim()) {
+              issues.push(issue("water_quality.method_missing", samplePath + ".method", "verification_required"));
+            }
+            if (typeof sample.laboratory !== "string" || !sample.laboratory.trim()) {
+              issues.push(issue("water_quality.laboratory_missing", samplePath + ".laboratory", "verification_required"));
+            }
+            if (!sample.evidence_ref) {
+              issues.push(issue("water_quality.evidence_missing", samplePath + ".evidence_ref", "verification_required"));
+            }
+          });
         }
       }
     });
@@ -693,7 +730,12 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
     ["gateways", payload.inventory?.gateways],
   ]) {
     if (Array.isArray(records)) records.forEach((record, i) => {
-      if (plainObject(record)) checkEvidenceReference(record.evidence_ref, "configuration." + kind + "[" + i + "].evidence_ref");
+      if (plainObject(record)) {
+        checkEvidenceReference(record.evidence_ref, "configuration." + kind + "[" + i + "].evidence_ref");
+        if (kind === "water_sources" && Array.isArray(record.quality_samples)) record.quality_samples.forEach((sample, j) => {
+          if (plainObject(sample)) checkEvidenceReference(sample.evidence_ref, "configuration.water_sources[" + i + "].quality_samples[" + j + "].evidence_ref");
+        });
+      }
     });
   }
   if (payload.extensions !== undefined) {
