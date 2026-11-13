@@ -120,6 +120,19 @@ try {
   assert.equal(submitted.response.status, 200, JSON.stringify(submitted.body));
   assert.equal(submitted.body.data.status, "submitted_for_review");
 
+  const reviewerContext = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0",
+    accessToken(regulatoryReviewer.reviewer_subject));
+  assert.equal(reviewerContext.response.status, 200, JSON.stringify(reviewerContext.body));
+  assert.equal(reviewerContext.body.data.lifecycle.status, "submitted_for_review");
+  assert.equal(reviewerContext.body.data.approvals.length, 0);
+  assert.equal(reviewerContext.body.data.legal_status, "not_verified");
+
+  const unassignedContext = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0",
+    accessToken("unassigned-reviewer"));
+  assert.equal(unassignedContext.response.status, 404);
+
   const firstApproval = await throughGateway(
     "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/review",
     accessToken(regulatoryReviewer.reviewer_subject), { "content-type": "application/json" }, "POST",
@@ -293,7 +306,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and dual-role approval lifecycle, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and reviewer-readable evidence context and dual-role approval lifecycle, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
