@@ -28,7 +28,7 @@ function validDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 function validateGeoJSON(boundary, path, errors) {
-  if (!plainObject(boundary) || !["Polygon", "MultiPolygon"].includes(boundary.type) ||
+  if (!plainObject(boundary) || !["Polygon", "MultiPolygon", "Feature"].includes(boundary.type) ||
       !plainObject(boundary.geometry) && boundary.type === "Feature") {
     errors.push(issue("geometry.invalid_structure", path, "verification_required"));
     return;
