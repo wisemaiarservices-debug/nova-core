@@ -30,8 +30,7 @@ async function signEnvelope(secret, method, path, headers) {
   return Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 export function createGateway({ verifyAccessToken = (token, config) => verifyHumanAccessToken(token, config) } = {}) {
-  return {
-    async fetch(request, env) {
+  const handle = async (request, env) => {
       if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
       const url = new URL(request.url);
       const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
@@ -149,6 +148,34 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       } catch {
         return error("tenant_api_unavailable", 503);
       }
+  };
+  return {
+    async fetch(request, env) {
+      const origin = request.headers.get("origin");
+      const configuredOrigins = typeof env.CORS_ALLOWED_ORIGINS === "string"
+        ? env.CORS_ALLOWED_ORIGINS.split(",").map(value => value.trim()).filter(Boolean)
+        : [];
+      if (origin && !configuredOrigins.includes(origin)) return error("origin_not_allowed", 403);
+      if (request.method === "OPTIONS") {
+        if (!origin) return error("origin_not_allowed", 403);
+        return new Response(null, { status: 204, headers: {
+          "access-control-allow-origin": origin,
+          "access-control-allow-credentials": "true",
+          "access-control-allow-methods": "GET, POST, OPTIONS",
+          "access-control-allow-headers": "Accept, Content-Type",
+          "access-control-max-age": "600",
+          "vary": "Origin",
+        }});
+      }
+      const response = await handle(request, env);
+      if (!origin) return response;
+      const headers = new Headers(response.headers);
+      headers.set("access-control-allow-origin", origin);
+      headers.set("access-control-allow-credentials", "true");
+      headers.set("access-control-expose-headers", "x-request-id");
+      headers.set("vary", "Origin");
+      return new Response(response.body, { status: response.status,
+        statusText: response.statusText, headers });
     },
   };
 }
