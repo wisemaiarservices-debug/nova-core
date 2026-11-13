@@ -244,3 +244,46 @@ test("routes site-scoped observation reviewer assignment and verification throug
   });
   assert.equal(forbiddenMethod.status, 404);
 });
+
+
+test("routes bounded laboratory report uploads and larger evidence reads through Access", async () => {
+  let captured;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "lab-admin", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const payload = JSON.stringify({ document_base64: "A".repeat(90000) });
+  const upload = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/laboratory-reports",
+    { method: "POST", headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+      body: payload }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      captured = request;
+      return new Response(JSON.stringify({ data: { id: "lab-1" } }), {
+        status: 201, headers: { "content-type": "application/json" },
+      });
+    } },
+  });
+  assert.equal(upload.status, 201);
+  assert.equal(captured.method, "POST");
+  assert.equal(new URL(captured.url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports");
+  assert.equal(await captured.text(), payload);
+
+  const largeJson = JSON.stringify({ data: { document_base64: "A".repeat(90000) } });
+  const download = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/laboratory-reports/lab-1",
+    { headers: { "Cf-Access-Jwt-Assertion": "valid" } }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      captured = request;
+      return new Response(largeJson, { headers: { "content-type": "application/json" } });
+    } },
+  });
+  assert.equal(download.status, 200);
+  assert.equal(new URL(captured.url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports/lab-1");
+  assert.equal((await download.json()).data.document_base64.length, 90000);
+});
