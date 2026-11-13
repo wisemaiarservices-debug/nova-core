@@ -19,7 +19,7 @@ def database():
         "0006_site_configuration_idempotency.sql",
         "0007_water_quality_criteria_registry.sql",
         "0008_water_quality_criteria_reviewer_events.sql",
-        "0010_observation_verification_workflow.sql",
+        "0010_observation_verification_workflow.sql",\n        "0011_laboratory_report_evidence.sql",
     ):
         db.executescript((MIGRATIONS / name).read_text(encoding="utf-8"))
     db.execute("INSERT INTO tenants (id, display_name) VALUES ('tenant-a', 'Tenant A')")
@@ -126,3 +126,69 @@ def test_reviewer_status_cannot_be_changed_without_a_matching_event():
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("""UPDATE observation_reviewers SET status='revoked'
           WHERE tenant_id='tenant-a' AND site_id='site-a' AND reviewer_subject='reviewer-a'""")
+
+
+def test_laboratory_report_evidence_stores_original_bytes_and_server_digest():
+    db = database()
+    document = b"%PDF-1.4\\nlab report fixture\\n%%EOF"
+    digest = hashlib.sha256(document).hexdigest()
+    db.execute("""INSERT INTO laboratory_report_evidence
+      (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
+       sha256, document_bytes, laboratory_name, report_number, issued_at, uploaded_by_subject)
+      VALUES (?, 'tenant-a', 'site-a', 'laboratory_report', 'report.pdf',
+       'application/pdf', ?, ?, ?, 'Declared Lab', 'RPT-001',
+       '2026-10-01T10:30:00Z', 'owner-a')""",
+       ("lab-report-a", len(document), digest, sqlite3.Binary(document)))
+    stored = db.execute("""SELECT document_bytes, byte_length, sha256,
+      verification_status FROM laboratory_report_evidence WHERE id='lab-report-a'""").fetchone()
+    assert bytes(stored[0]) == document
+    assert stored[1] == len(document)
+    assert hashlib.sha256(bytes(stored[0])).hexdigest() == stored[2]
+    assert stored[3] == "registered_unverified"
+
+
+def test_laboratory_report_evidence_requires_matching_registration_event():
+    db = database()
+    document = b"%PDF-1.4\\nlab report fixture\\n%%EOF"
+    digest = hashlib.sha256(document).hexdigest()
+    db.execute("""INSERT INTO laboratory_report_evidence
+      (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
+       sha256, document_bytes, laboratory_name, report_number, issued_at, uploaded_by_subject)
+      VALUES ('lab-report-a', 'tenant-a', 'site-a', 'laboratory_report', 'report.pdf',
+       'application/pdf', ?, ?, ?, 'Declared Lab', 'RPT-001',
+       '2026-10-01T10:30:00Z', 'owner-a')""",
+       (len(document), digest, sqlite3.Binary(document)))
+    db.execute("""INSERT INTO laboratory_report_evidence_events
+      (id, evidence_id, tenant_id, site_id, event_type, actor_subject, request_id)
+      VALUES ('lab-event-a', 'lab-report-a', 'tenant-a', 'site-a',
+       'registered', 'owner-a', 'request-a')""")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("""INSERT INTO laboratory_report_evidence_events
+          (id, evidence_id, tenant_id, site_id, event_type, actor_subject, request_id)
+          VALUES ('lab-event-forged', 'lab-report-a', 'tenant-a', 'site-a',
+           'registered', 'other-actor', 'request-b')""")
+
+
+def test_laboratory_report_evidence_and_history_are_immutable():
+    db = database()
+    document = b"%PDF-1.4\\nlab report fixture\\n%%EOF"
+    digest = hashlib.sha256(document).hexdigest()
+    db.execute("""INSERT INTO laboratory_report_evidence
+      (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
+       sha256, document_bytes, laboratory_name, report_number, issued_at, uploaded_by_subject)
+      VALUES ('lab-report-a', 'tenant-a', 'site-a', 'laboratory_report', 'report.pdf',
+       'application/pdf', ?, ?, ?, 'Declared Lab', 'RPT-001',
+       '2026-10-01T10:30:00Z', 'owner-a')""",
+       (len(document), digest, sqlite3.Binary(document)))
+    db.execute("""INSERT INTO laboratory_report_evidence_events
+      (id, evidence_id, tenant_id, site_id, event_type, actor_subject, request_id)
+      VALUES ('lab-event-a', 'lab-report-a', 'tenant-a', 'site-a',
+       'registered', 'owner-a', 'request-a')""")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE laboratory_report_evidence SET file_name='changed.pdf' WHERE id='lab-report-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("DELETE FROM laboratory_report_evidence WHERE id='lab-report-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE laboratory_report_evidence_events SET actor_subject='forged' WHERE id='lab-event-a'")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("DELETE FROM laboratory_report_evidence_events WHERE id='lab-event-a'")
