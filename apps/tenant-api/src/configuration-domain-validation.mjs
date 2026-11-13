@@ -50,10 +50,24 @@ function validateGeoJSON(boundary, path, errors) {
     return;
   }
   const rings = geometry.type === "Polygon" ? geometry.coordinates : geometry.coordinates.flat(1);
-  if (!rings.length || rings.some(ring => !Array.isArray(ring) || ring.length < 4 ||
-      ring.some(point => !Array.isArray(point) || point.length < 2 ||
-        !point.slice(0, 2).every(n => typeof n === "number" && Number.isFinite(n))) ||
-      JSON.stringify(ring[0]) !== JSON.stringify(ring[ring.length - 1]))) {
+  const geographic = /^(EPSG:4326|urn:ogc:def:crs:OGC:1\.3:CRS84|OGC:CRS84)$/i.test(boundary.crs.trim());
+  const invalidRing = ring => {
+    if (!Array.isArray(ring) || ring.length < 4 ||
+        ring.some(point => !Array.isArray(point) || point.length < 2 ||
+          !point.slice(0, 2).every(n => typeof n === "number" && Number.isFinite(n))) ||
+        JSON.stringify(ring[0]) !== JSON.stringify(ring[ring.length - 1])) return true;
+    const unique = new Set(ring.slice(0, -1).map(point => JSON.stringify(point.slice(0, 2))));
+    if (unique.size < 3) return true;
+    let twiceArea = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+      twiceArea += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+    }
+    if (Math.abs(twiceArea) < Number.EPSILON) return true;
+    if (geographic && ring.some(([longitude, latitude]) =>
+      longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90)) return true;
+    return false;
+  };
+  if (!rings.length || rings.some(invalidRing)) {
     errors.push(issue("geometry.invalid_ring", path, "verification_required"));
   }
 }
