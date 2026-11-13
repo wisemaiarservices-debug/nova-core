@@ -853,6 +853,12 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
         if (kind === "water_sources" && Array.isArray(record.quality_samples)) record.quality_samples.forEach((sample, j) => {
           if (plainObject(sample)) checkEvidenceReference(sample.evidence_ref, "configuration.water_sources[" + i + "].quality_samples[" + j + "].evidence_ref");
         });
+        if (kind === "soil_profiles" && Array.isArray(record.samples)) record.samples.forEach((sample, j) => {
+          if (plainObject(sample)) checkEvidenceReference(sample.evidence_ref, "configuration.soil_profiles[" + i + "].samples[" + j + "].evidence_ref");
+          if (plainObject(sample) && Array.isArray(sample.analytes)) sample.analytes.forEach((analyte, k) => {
+            if (plainObject(analyte)) checkEvidenceReference(analyte.evidence_ref, "configuration.soil_profiles[" + i + "].samples[" + j + "].analytes[" + k + "].evidence_ref");
+          });
+        });
       }
     });
   }
