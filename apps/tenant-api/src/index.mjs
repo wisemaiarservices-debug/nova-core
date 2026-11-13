@@ -483,6 +483,7 @@ export default {
               reason.startsWith("configuration_digest_") ||
               reason.startsWith("configuration_must_be_") ||
               reason.startsWith("configuration_forbidden_") ||
+              reason === "configuration_value_not_json" ||
               reason.startsWith("configuration_non_") ||
               reason.startsWith("configuration_depth_") ||
               reason.startsWith("configuration_complexity_") ||
