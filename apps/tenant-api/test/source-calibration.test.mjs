@@ -33,9 +33,9 @@ function dbFixture({ sourceExists = true, evidenceExists = true, recordStatus = 
             ? [{ reviewer_subject: reviewer, membership_status: "active", tenant_status: "active" }] : [] };
           if (sql.includes("FROM source_calibrations WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND metric")) {
             return { results: calibrations };
+          }
           if (sql.includes("FROM source_calibrations WHERE tenant_id")) return { results: state.record
             ? [{ ...state.record, status: state.recordStatus }] : [] };
-          }
           throw new Error("unexpected query: " + sql);
         },
       };
