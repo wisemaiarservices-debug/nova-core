@@ -39,6 +39,9 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const configurationCreate = request.method === "POST" ? configurationPath : null;
       const configurationList = request.method === "GET" ? configurationPath : null;
       const configurationDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/(v[1-9][0-9]{0,30})$/);
+      const configurationReviewers = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/reviewers$/);
+      const configurationReviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/reviewers\/assign$/);
+      const configurationReviewerRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/reviewers\/revoke$/);
       const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
       const reviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
       const reviewerList = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers$/);
@@ -49,12 +52,12 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const criteriaReview = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
       const criteriaResolve = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
       const criteriaAssess = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
-      if ((!match && !configurationCreate && !configurationList && !configurationDetail && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
-          (request.method === "POST" && (!configurationCreate && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
-          (request.method === "GET" && (configurationCreate || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
-      const tenant = match?.[1] ?? configurationCreate?.[1] ?? configurationList?.[1] ?? configurationDetail?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
+      if ((!match && !configurationCreate && !configurationList && !configurationDetail && !configurationReviewers && !configurationReviewerAssign && !configurationReviewerRevoke && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
+          (request.method === "POST" && (!configurationCreate && !configurationReviewerAssign && !configurationReviewerRevoke && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
+          (request.method === "GET" && (configurationCreate || configurationReviewerAssign || configurationReviewerRevoke || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
+      const tenant = match?.[1] ?? configurationCreate?.[1] ?? configurationList?.[1] ?? configurationDetail?.[1] ?? configurationReviewers?.[1] ?? configurationReviewerAssign?.[1] ?? configurationReviewerRevoke?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
       const resourceId = match?.[3];
-      const configurationSiteId = configurationCreate?.[2] ?? configurationList?.[2] ?? configurationDetail?.[2] ?? null;
+      const configurationSiteId = configurationCreate?.[2] ?? configurationList?.[2] ?? configurationDetail?.[2] ?? configurationReviewers?.[2] ?? configurationReviewerAssign?.[2] ?? configurationReviewerRevoke?.[2] ?? null;
       const configurationVersion = configurationDetail?.[3] ?? null;
       const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
       const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
@@ -91,7 +94,13 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
           ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations/${configurationVersion}`
           : configurationList
             ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations`
-            : match
+            : configurationReviewerAssign
+              ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations/reviewers/assign`
+              : configurationReviewerRevoke
+                ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations/reviewers/revoke`
+                : configurationReviewers
+                  ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations/reviewers`
+                  : match
         ? `/internal/v1/tenants/${tenant}/${match[2]}/${resourceId}`
         : criteriaDetail
           ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${entryId}/${version}`
