@@ -103,6 +103,29 @@ test("routes tenant water-quality criteria list and version reads through the ve
       assert.equal(captured.headers.get("cookie"), null);
       assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
     }
+    const draftPayload = JSON.stringify({ entry: { id: "criteria-draft" } });
+    let capturedPost;
+    const postResponse = await worker.fetch(new Request(
+      "https://gateway.test/api/v1/tenants/tenant-a/water-quality-criteria",
+      { method: "POST", body: draftPayload, headers: {
+        "content-type": "application/json", "Cf-Access-Jwt-Assertion": token,
+        cookie: "session=secret", "x-nova-verified-subject": "attacker",
+      } }), {
+      ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience,
+      INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+      TENANT_API: { fetch: async request => {
+        capturedPost = request;
+        return new Response(JSON.stringify({ data: { status: "draft" } }), {
+          status: 201, headers: { "content-type": "application/json" },
+        });
+      } },
+    });
+    assert.equal(postResponse.status, 201);
+    assert.equal(capturedPost.method, "POST");
+    assert.equal(await capturedPost.text(), draftPayload);
+    assert.equal(capturedPost.headers.get("x-nova-verified-subject"), "criteria-reader");
+    assert.equal(capturedPost.headers.get("cookie"), null);
+    assert.match(capturedPost.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
   } finally { globalThis.fetch = oldFetch; }
 });
 
