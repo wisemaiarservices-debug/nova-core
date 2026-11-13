@@ -1,4 +1,5 @@
 const ROOT_KEYS = new Set(["tenant", "site", "inventory", "calibration_records", "evidence", "extensions"]);
+const TENANT_KEYS = new Set(["tenant_id"]);
 const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crops", "irrigation_systems", "energy_systems", "metadata"]);
 const INVENTORY_KEYS = new Set(["equipment", "sensors", "gateways"]);
 const RECORD_KEYS = {
@@ -85,6 +86,7 @@ export function assessDomainConfiguration(payload) {
         operational_review: "not_started", model_applicability: "not_assessed" }) });
   }
   unknownKeys(payload, ROOT_KEYS, "$", issues);
+  unknownKeys(payload.tenant, TENANT_KEYS, "tenant", issues);
   if (!plainObject(payload.tenant) || typeof payload.tenant.tenant_id !== "string" ||
       !TOKEN.test(payload.tenant.tenant_id)) {
     errors.push(issue("tenant.identity_required", "tenant.tenant_id", "information_required"));
@@ -108,6 +110,7 @@ export function assessDomainConfiguration(payload) {
     const crops = payload.site.crops ?? [];
     validateUniqueRecords(crops, "site.crops", errors);
     crops.forEach((crop, i) => {
+      unknownKeys(crop, RECORD_KEYS.crops, "site.crops[" + i + "]", issues);
       if (!plainObject(crop) || typeof crop.species !== "string" || !crop.species.trim()) {
         errors.push(issue("crop.species_required", "site.crops[" + i + "].species", "verification_required"));
       }
@@ -120,6 +123,18 @@ export function assessDomainConfiguration(payload) {
     for (const field of ["irrigation_systems", "energy_systems"]) {
       const list = payload.site[field] ?? [];
       validateUniqueRecords(list, "site." + field, errors);
+      list.forEach((record, index) => {
+        unknownKeys(record, RECORD_KEYS[field], "site." + field + "[" + index + "]", issues);
+        if (!plainObject(record)) return;
+        const positiveFields = field === "irrigation_systems"
+          ? ["design_flow_m3_per_hour"]
+          : ["pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v"];
+        for (const key of positiveFields) {
+          if (record[key] !== undefined && record[key] !== null && !finitePositive(record[key])) {
+            errors.push(issue("engineering.rating_must_be_positive", "site." + field + "[" + index + "]." + key, "verification_required"));
+          }
+        }
+      });
       if (!list.length) issues.push(issue("site." + field + "_missing", "site." + field));
     }
   }
@@ -133,6 +148,7 @@ export function assessDomainConfiguration(payload) {
         records.forEach((record, i) => {
           if (!plainObject(record)) errors.push(issue("inventory.record_invalid", "inventory." + kind + "[" + i + "]", "verification_required"));
           else {
+            unknownKeys(record, RECORD_KEYS[kind], "inventory." + kind + "[" + i + "]", issues);
             if (record.protocol !== undefined && !PROTOCOLS.has(record.protocol)) issues.push(issue("inventory.protocol_unrecognized", "inventory." + kind + "[" + i + "].protocol", "verification_required"));
             if (record.protocol === undefined || record.protocol === "unknown") issues.push(issue("inventory.protocol_unknown", "inventory." + kind + "[" + i + "].protocol", "verification_required"));
             if (record.manufacturer === undefined || record.model === undefined) issues.push(issue("inventory.identity_incomplete", "inventory." + kind + "[" + i + "]"));
@@ -145,6 +161,7 @@ export function assessDomainConfiguration(payload) {
     if (!Array.isArray(payload.calibration_records)) errors.push(issue("calibration.invalid_type", "calibration_records", "verification_required"));
     else payload.calibration_records.forEach((record, i) => {
       const path = "calibration_records[" + i + "]";
+      unknownKeys(record, new Set(["scope", "scope_id", "unit", "method", "effective_from", "effective_to", "evidence_ref"]), path, issues);
       if (!plainObject(record) || !["site", "asset", "sensor"].includes(record.scope) ||
           typeof record.scope_id !== "string" || !TOKEN.test(record.scope_id) ||
           typeof record.unit !== "string" || !record.unit.trim() ||
@@ -162,6 +179,7 @@ export function assessDomainConfiguration(payload) {
   }
   if (payload.evidence !== undefined && !Array.isArray(payload.evidence)) errors.push(issue("evidence.invalid_type", "evidence", "verification_required"));
   if (Array.isArray(payload.evidence)) payload.evidence.forEach((entry, i) => {
+    unknownKeys(entry, new Set(["source_class", "reference", "observed_at", "issuer", "digest"]), "evidence[" + i + "]", issues);
     if (!plainObject(entry) || typeof entry.source_class !== "string" ||
         typeof entry.reference !== "string" || !entry.reference.trim()) {
       errors.push(issue("evidence.record_invalid", "evidence[" + i + "]", "verification_required"));
