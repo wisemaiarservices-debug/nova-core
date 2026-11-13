@@ -70,7 +70,7 @@ export function calculatePlantAvailableWater(profile, { top_depth_cm, bottom_dep
     return insufficient("converted_water_content_out_of_physical_range");
   }
   if (fcTheta < pwpTheta) return insufficient("field_capacity_below_wilting_point");
-  const availableWaterMm = (fcTheta - pwpTheta) * (bottom_depth_cm - top_depth_cm) * 10;
+  const availableWaterMm = Math.round((fcTheta - pwpTheta) * (bottom_depth_cm - top_depth_cm) * 10 * 1e9) / 1e9;
   if (!Number.isFinite(availableWaterMm) || availableWaterMm < 0) {
     return insufficient("calculation_not_finite");
   }
