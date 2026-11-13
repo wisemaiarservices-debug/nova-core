@@ -70,6 +70,8 @@ def test_configuration_versions_are_unique_per_tenant_site_and_immutable():
     with pytest.raises(sqlite3.IntegrityError):
         insert_configuration(db, config_id="duplicate", version="v1")
     insert_configuration(db, config_id="cfg-a-v2", version="v2")
+    with pytest.raises(sqlite3.IntegrityError, match="next sequential"):
+        insert_configuration(db, config_id="cfg-a-v4", version="v4")
     with pytest.raises(sqlite3.IntegrityError, match="configuration versions are immutable"):
         db.execute("UPDATE tenant_site_configurations SET configuration_version='v3' WHERE id='cfg-a'")
     with pytest.raises(sqlite3.IntegrityError, match="configuration history cannot be deleted"):
@@ -100,6 +102,12 @@ def test_approval_is_an_append_only_review_event_not_activation():
     insert_configuration(db)
     db.execute(
         """INSERT INTO tenant_site_configuration_events
+           (id, configuration_id, tenant_id, site_id, event_type, actor_subject, request_id)
+           VALUES ('event-submit','cfg-a','tenant-a','site-a',
+                   'submitted_for_review','operator-a','req-1')"""
+    )
+    db.execute(
+        """INSERT INTO tenant_site_configuration_events
            (id, configuration_id, tenant_id, site_id, event_type,
             actor_subject, reason, request_id)
            VALUES ('event-1','cfg-a','tenant-a','site-a',
@@ -113,6 +121,37 @@ def test_approval_is_an_append_only_review_event_not_activation():
         db.execute("UPDATE tenant_site_configuration_events SET reason='changed' WHERE id='event-1'")
     with pytest.raises(sqlite3.IntegrityError, match="configuration history events cannot be deleted"):
         db.execute("DELETE FROM tenant_site_configuration_events WHERE id='event-1'")
+
+
+def test_review_events_must_follow_a_valid_append_only_state_transition():
+    db = database()
+    insert_configuration(db)
+    with pytest.raises(sqlite3.IntegrityError, match="invalid configuration review state"):
+        db.execute(
+            """INSERT INTO tenant_site_configuration_events
+               (id, configuration_id, tenant_id, site_id, event_type, actor_subject, request_id)
+               VALUES ('early-approval','cfg-a','tenant-a','site-a',
+                       'approved_for_review','reviewer-a','req-1')"""
+        )
+    db.execute(
+        """INSERT INTO tenant_site_configuration_events
+           (id, configuration_id, tenant_id, site_id, event_type, actor_subject, request_id)
+           VALUES ('submitted','cfg-a','tenant-a','site-a',
+                   'submitted_for_review','operator-a','req-2')"""
+    )
+    db.execute(
+        """INSERT INTO tenant_site_configuration_events
+           (id, configuration_id, tenant_id, site_id, event_type, actor_subject, request_id)
+           VALUES ('rejected','cfg-a','tenant-a','site-a',
+                   'rejected','reviewer-a','req-3')"""
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="invalid configuration review state"):
+        db.execute(
+            """INSERT INTO tenant_site_configuration_events
+               (id, configuration_id, tenant_id, site_id, event_type, actor_subject, request_id)
+               VALUES ('reopened','cfg-a','tenant-a','site-a',
+                       'submitted_for_review','operator-a','req-4')"""
+        )
 
 
 def test_suspended_tenant_cannot_create_configuration_or_review_events():
