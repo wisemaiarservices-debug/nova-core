@@ -39,6 +39,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const configurationCreate = request.method === "POST" ? configurationPath : null;
       const configurationList = request.method === "GET" ? configurationPath : null;
       const configurationDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/(v[1-9][0-9]{0,30})$/);
+      const configurationReview = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations\/(v[1-9][0-9]{0,30})\/review$/);
       const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
       const reviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
       const reviewerList = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers$/);
@@ -49,13 +50,13 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const criteriaReview = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
       const criteriaResolve = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
       const criteriaAssess = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
-      if ((!match && !configurationCreate && !configurationList && !configurationDetail && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
-          (request.method === "POST" && (!configurationCreate && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
-          (request.method === "GET" && (configurationCreate || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
-      const tenant = match?.[1] ?? configurationCreate?.[1] ?? configurationList?.[1] ?? configurationDetail?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
+      if ((!match && !configurationCreate && !configurationList && !configurationDetail && !configurationReview && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
+          (request.method === "POST" && (!configurationCreate && !configurationReview && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
+          (request.method === "GET" && (configurationCreate || configurationReview || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
+      const tenant = match?.[1] ?? configurationCreate?.[1] ?? configurationList?.[1] ?? configurationDetail?.[1] ?? configurationReview?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
       const resourceId = match?.[3];
-      const configurationSiteId = configurationCreate?.[2] ?? configurationList?.[2] ?? configurationDetail?.[2] ?? null;
-      const configurationVersion = configurationDetail?.[3] ?? null;
+      const configurationSiteId = configurationCreate?.[2] ?? configurationList?.[2] ?? configurationDetail?.[2] ?? configurationReview?.[2] ?? null;
+      const configurationVersion = configurationDetail?.[3] ?? configurationReview?.[3] ?? null;
       const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
       const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
       if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
@@ -85,7 +86,9 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const requestId = crypto.randomUUID();
       const idempotencyKey = request.headers.get("idempotency-key");
       if (configurationCreate && !validPathId(idempotencyKey, 200)) return error("idempotency_key_required", 400);
-      const internalPath = configurationCreate
+      const internalPath = configurationReview
+        ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations/${configurationVersion}/review`
+        : configurationCreate
         ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations`
         : configurationDetail
           ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations/${configurationVersion}`
