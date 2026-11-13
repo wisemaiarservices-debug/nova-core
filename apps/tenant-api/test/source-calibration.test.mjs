@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   createSourceCalibration,
   reviewSourceCalibration,
+  readSourceCalibration,
   assessObservationCalibration,
 } from "../src/source-calibration.mjs";
 
@@ -29,6 +30,7 @@ function dbFixture({ sourceExists = true, evidenceExists = true, recordStatus = 
             ? [{ id: source, tenant_id: tenant, site_id: site, site_status: "active" }] : [] };
           if (sql.includes("FROM laboratory_report_evidence")) return { results: evidenceExists
             ? [{ id: "lab-001" }] : [] };
+          if (sql.includes("FROM source_calibration_events")) return { results: state.events };
           if (sql.includes("FROM observation_reviewers r JOIN tenant_memberships")) return { results: reviewerActive
             ? [{ reviewer_subject: reviewer, membership_status: "active", tenant_status: "active" }] : [] };
           if (sql.includes("FROM source_calibrations WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND metric")) {
@@ -156,4 +158,14 @@ test("assessment fails closed for missing, pending, ambiguous and out-of-range c
   assert.equal(ambiguous.reason, "multiple_verified_calibrations_cover_observation_time");
   const outOfRange = await assessObservationCalibration(dbFixture({ calibrations: [base] }), tenant, observation);
   assert.equal(outOfRange.reason, "observation_outside_verified_calibration_range");
+});
+
+test("returns scoped calibration metadata and append-only review history", async () => {
+  const db = dbFixture();
+  const created = await createSourceCalibration(db, tenant, site, source, owner, "request-1", body);
+  const result = await readSourceCalibration(db, tenant, site, source, created.data.id);
+  assert.equal(result.id, created.data.id);
+  assert.equal(result.tenant_id, tenant);
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].event_type, "registered");
 });
