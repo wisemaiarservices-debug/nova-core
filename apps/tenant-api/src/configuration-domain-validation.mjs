@@ -178,7 +178,16 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
             if (typeof sample.unit !== "string" || !sample.unit.trim()) {
               errors.push(issue("water_quality.unit_required", samplePath + ".unit", "verification_required"));
             }
-            if (typeof sample.sampled_at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(sample.sampled_at) || !Number.isFinite(Date.parse(sample.sampled_at))) {
+            const timestampMatch = typeof sample.sampled_at === "string"
+              ? sample.sampled_at.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)
+              : null;
+            const timestampYear = timestampMatch ? Number(timestampMatch[1]) : 0;
+            const timestampMonth = timestampMatch ? Number(timestampMatch[2]) : 0;
+            const timestampDay = timestampMatch ? Number(timestampMatch[3]) : 0;
+            const leapYear = timestampYear % 4 === 0 && (timestampYear % 100 !== 0 || timestampYear % 400 === 0);
+            const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][timestampMonth - 1];
+            if (!timestampMatch || timestampMonth < 1 || timestampMonth > 12 || timestampDay < 1 ||
+                !daysInMonth || timestampDay > daysInMonth || !Number.isFinite(Date.parse(sample.sampled_at))) {
               errors.push(issue("water_quality.sample_timestamp_invalid", samplePath + ".sampled_at", "verification_required"));
             }
             if (typeof sample.method !== "string" || !sample.method.trim()) {
