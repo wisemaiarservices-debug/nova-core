@@ -170,6 +170,13 @@ test("flags unresolved calibration targets, sensor calibration links and evidenc
   assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved"));
 });
 
+test("rejects identifier collisions across equipment, sensors and gateways", () => {
+  const value = valid();
+  value.inventory.sensors[0].id = value.inventory.equipment[0].id;
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(item => item.code === "inventory.id_duplicate_across_types"));
+});
 test("rejects calibration records without stable unique identifiers", () => {
   const missing = valid();
   delete missing.calibration_records[0].id;
