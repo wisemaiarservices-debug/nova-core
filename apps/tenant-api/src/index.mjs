@@ -1,3 +1,4 @@
+    const reviewerList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers$/);
 import { json, error } from "./http.mjs";
 import { validateWaterQualityCriteriaRegistryEntry } from "./water-quality-criteria-registry.mjs";
 
@@ -171,6 +172,16 @@ async function provisionCriteriaReviewer(db, tenant, actor, requestId, body, act
     status: action === "assign" ? 201 : 200 };
 }
 
+async function readCriteriaReviewers(db, tenant) {
+  const reviewers = await rows(db.prepare(
+    "SELECT reviewer_subject, reviewer_role, jurisdiction, status, assigned_by_subject, assignment_evidence_ref, created_at FROM water_quality_criteria_reviewers WHERE tenant_id = ? ORDER BY jurisdiction, reviewer_role, reviewer_subject LIMIT 200"
+  ).bind(tenant));
+  const events = await rows(db.prepare(
+    "SELECT reviewer_subject, reviewer_role, jurisdiction, event_type, actor_subject, evidence_ref, reason, request_id, occurred_at FROM water_quality_criteria_reviewer_events WHERE tenant_id = ? ORDER BY occurred_at DESC LIMIT 500"
+  ).bind(tenant));
+  return { reviewers, events };
+}
+
 async function readCriteriaRegistry(db, tenant, entryId, version) {
   if (entryId === null) {
     const result = await rows(db.prepare(
@@ -196,10 +207,10 @@ export default {
     const reviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/revoke$/);
     const criteriaList = request.method === "GET" ? criteriaCreate : null;
     const criteriaDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/([^/]+)\/([^/]+)$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke) || url.search || url.hash ||
+    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList) || url.search || url.hash ||
         (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke || criteriaDetail || match)) ||
         (request.method === "GET" && (reviewerAssign || reviewerRevoke))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1];
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? null;
@@ -234,7 +245,7 @@ export default {
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
-      if (criteriaCreate || criteriaDetail || reviewerAssign || reviewerRevoke) {
+      if (criteriaCreate || criteriaDetail || reviewerAssign || reviewerRevoke || reviewerList) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
@@ -255,6 +266,11 @@ export default {
           return provisioned.error
             ? json({ error: provisioned.error }, provisioned.status)
             : json({ data: provisioned.data, request_id: requestId }, provisioned.status);
+        }
+        if (reviewerList) {
+          if (!["tenant_owner", "tenant_admin"].includes(membership[0].role)) return error("not_found", 404);
+          const data = await readCriteriaReviewers(env.DB, tenant);
+          return json({ data, request_id: requestId });
         }
         if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
         const data = await readCriteriaRegistry(env.DB, tenant, entryId, version);
