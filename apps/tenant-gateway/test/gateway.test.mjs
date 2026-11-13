@@ -326,3 +326,45 @@ test("routes source calibration registration, review and observation quality thr
     assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
   }
 });
+
+
+test("allows only exact configured browser origins with credentialed CORS", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "operator@example.test", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const origin = "https://nova-os.example.test";
+  const env = {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    CORS_ALLOWED_ORIGINS: origin,
+    TENANT_API: { fetch: async () => new Response(JSON.stringify({
+      data: { id: "site-a", tenant_id: "tenant-a" }, request_id: "req-cors",
+    }), { headers: { "content-type": "application/json" } }) },
+  };
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
+      headers: { Origin: origin, "Cf-Access-Jwt-Assertion": "valid" },
+    }), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), origin);
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+  assert.equal(response.headers.get("access-control-expose-headers"), "x-request-id");
+  assert.equal(response.headers.get("vary"), "Origin");
+
+  const denied = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
+      headers: { Origin: "https://attacker.example.test", "Cf-Access-Jwt-Assertion": "valid" },
+    }), env);
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers.get("access-control-allow-origin"), null);
+
+  const preflight = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/observations/obs-a/measurement-quality", {
+      method: "OPTIONS",
+      headers: { Origin: origin, "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "accept" },
+    }), env);
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), origin);
+  assert.equal(preflight.headers.get("access-control-allow-methods"), "GET, POST, OPTIONS");
+});
