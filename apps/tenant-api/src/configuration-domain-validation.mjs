@@ -217,11 +217,13 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
               const zoneIds = new Set();
               record.zones.forEach((zone, zoneIndex) => {
                 const zonePath = "site.irrigation_systems[" + index + "].zones[" + zoneIndex + "]";
-                if (!plainObject(zone) || typeof zone.id !== "string" || !TOKEN.test(zone.id) || zoneIds.has(zone.id)) {
+                if (!plainObject(zone) || typeof zone.id !== "string" || !TOKEN.test(zone.id)) {
                   errors.push(issue("irrigation.zone_id_missing_or_duplicate", zonePath + ".id", "verification_required"));
                   return;
                 }
-                zoneIds.add(zone.id);
+                if (zoneIds.has(zone.id)) {
+                  errors.push(issue("irrigation.zone_id_missing_or_duplicate", zonePath + ".id", "verification_required"));
+                } else zoneIds.add(zone.id);
                 unknownKeys(zone, new Set(["id", "pump_id", "controller_id", "design_flow_m3_per_hour", "area_ha"]), zonePath, issues);
                 for (const key of ["design_flow_m3_per_hour", "area_ha"]) {
                   if (zone[key] !== undefined && zone[key] !== null && !finitePositive(zone[key])) {
