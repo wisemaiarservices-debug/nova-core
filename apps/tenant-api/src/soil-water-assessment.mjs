@@ -86,3 +86,77 @@ export function calculatePlantAvailableWater(profile, { top_depth_cm, bottom_dep
     advisory: "Deterministic layer calculation only; not an irrigation schedule or crop recommendation.",
   };
 }
+
+
+/**
+ * Aggregates measured/model-labelled layer calculations to one explicitly
+ * selected crop root-depth observation. Requires complete, contiguous coverage
+ * from the soil surface to the observed root depth; never extrapolates.
+ */
+export function calculateRootZoneAvailableWater(profile, crop, { observation_id } = {}) {
+  const insufficient = (reason, details = {}) => ({ status: "insufficient_inputs", reason, ...details });
+  if (!profile || !Array.isArray(profile.hydraulic_measurements)) {
+    return insufficient("hydraulic_measurements_missing");
+  }
+  if (!crop || !Array.isArray(crop.root_depth_observations)) {
+    return insufficient("root_depth_observations_missing");
+  }
+  if (typeof observation_id !== "string" || !observation_id) {
+    return insufficient("root_depth_observation_selection_required");
+  }
+  const observations = crop.root_depth_observations.filter(item =>
+    item && typeof item === "object" && item.id === observation_id);
+  if (observations.length !== 1) {
+    return insufficient(observation_id ? "root_depth_observation_not_found_or_ambiguous" : "root_depth_observation_selection_required");
+  }
+  const observation = observations[0];
+  if (!Number.isFinite(observation.root_depth_cm) || observation.root_depth_cm <= 0) {
+    return insufficient("root_depth_value_invalid");
+  }
+  const intervals = [...new Map(profile.hydraulic_measurements
+    .filter(validMeasurement)
+    .filter(item => item.parameter === "field_capacity" || item.parameter === "wilting_point")
+    .map(item => [item.top_depth_cm + ":" + item.bottom_depth_cm, {
+      top_depth_cm: item.top_depth_cm, bottom_depth_cm: item.bottom_depth_cm,
+    }])).values()]
+    .sort((a, b) => a.top_depth_cm - b.top_depth_cm);
+  const layers = [];
+  let cursor = 0;
+  for (const interval of intervals) {
+    if (interval.bottom_depth_cm <= cursor) continue;
+    if (interval.top_depth_cm !== cursor || interval.bottom_depth_cm > observation.root_depth_cm) {
+      if (interval.top_depth_cm > cursor || interval.bottom_depth_cm > observation.root_depth_cm) break;
+      continue;
+    }
+    const result = calculatePlantAvailableWater(profile, interval);
+    if (result.status !== "calculated") {
+      return insufficient("soil_layer_calculation_incomplete", { layer: interval, detail: result.reason });
+    }
+    layers.push(result);
+    cursor = interval.bottom_depth_cm;
+    if (cursor === observation.root_depth_cm) break;
+  }
+  if (cursor !== observation.root_depth_cm || layers.length === 0) {
+    return insufficient("soil_profile_does_not_cover_root_depth", {
+      covered_depth_cm: cursor, required_root_depth_cm: observation.root_depth_cm,
+    });
+  }
+  const value = Math.round(layers.reduce((sum, layer) => sum + layer.value, 0) * 1e9) / 1e9;
+  return {
+    status: "calculated",
+    quantity: "root_zone_plant_available_water",
+    value,
+    unit: "mm",
+    crop_id: crop.id,
+    root_depth_observation_id: observation.id,
+    root_depth_cm: observation.root_depth_cm,
+    growth_stage: observation.growth_stage,
+    source_type: observation.source_type,
+    evidence_refs: [...new Set([
+      observation.evidence_ref,
+      ...layers.flatMap(layer => layer.evidence_refs),
+    ].filter(Boolean))],
+    layers,
+    advisory: "Evidence-gated root-zone calculation only; not crop demand, irrigation scheduling or a recommendation.",
+  };
+}

@@ -913,3 +913,45 @@ test("flags invalid hydraulic calendar dates and unresolved irrigation soil link
   assert.ok(result.issues.some(item => item.code === "irrigation.zone_soil_profile_reference_unresolved"));
   assert.ok(result.issues.some(item => item.code === "irrigation.zone_soil_horizon_reference_unresolved"));
 });
+
+
+test("validates crop root-depth observation provenance and evidence references", () => {
+  const value = valid();
+  value.site.crops = [{
+    id: "crop-root-depth",
+    species: "example crop",
+    root_depth_observations: [{
+      id: "root-observation",
+      root_depth_cm: 45,
+      growth_stage: "vegetative",
+      source_type: "measured",
+      method: "field_root_sampling",
+      observed_at: "2026-10-20T09:30:00Z",
+      evidence_ref: "root-depth-report",
+    }],
+  }];
+  value.evidence.push({ source_class: "field_observation", reference: "root-depth-report" });
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.errors.some(item => item.code.startsWith("crop.root_depth_")), false);
+  assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("root_depth_observations")), false);
+});
+
+test("flags impossible root-depth dates and unresolved crop references from irrigation zones", () => {
+  const value = valid();
+  value.site.crops = [{
+    id: "crop-root-depth",
+    species: "example crop",
+    root_depth_observations: [{
+      id: "root-observation", root_depth_cm: 45, growth_stage: "vegetative",
+      source_type: "measured", method: "field_root_sampling",
+      observed_at: "2026-02-30T09:30:00Z", evidence_ref: "root-depth-report",
+    }],
+  }];
+  value.site.irrigation_systems = [{
+    id: "irrigation-1",
+    zones: [{ id: "zone-1", crop_ids: ["missing-crop"] }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "crop.root_depth_timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_crop_reference_unresolved"));
+});
