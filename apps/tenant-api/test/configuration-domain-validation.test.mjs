@@ -360,7 +360,7 @@ test("checks PV string cold Voc, hot Vmp and inverter current operating limits",
   value.inventory.equipment.push({
     id: "inverter-1", manufacturer: "Inverter maker", model: "INV-10",
     asset_class: "inverter", inverter_max_input_voltage_v: 550,
-    inverter_mppt_min_voltage_v: 300, inverter_mppt_max_voltage_v: 500,
+    inverter_mppt_min_voltage_v: 450, inverter_mppt_max_voltage_v: 500,
     inverter_max_input_current_a: 35, inverter_max_short_circuit_current_a: 40,
   });
   const result = assessDomainConfiguration(value);
