@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
-import { createHmac, createPrivateKey, randomUUID, sign } from "node:crypto";
+import { createHash, createHmac, createPrivateKey, randomUUID, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const base = "http://127.0.0.1:8787";
@@ -302,6 +302,35 @@ try {
     row.reviewer_subject === reviewer.reviewer_subject).status, "revoked");
   assert.equal(reviewerHistory.body.data.events.filter(row =>
     row.reviewer_subject === reviewer.reviewer_subject).length, 2);
+
+  // Register an actual bounded PDF byte sequence; the API computes SHA-256
+  // from those bytes and returns the same immutable record on an exact retry.
+  const labReportBytes = Buffer.from("%PDF-1.4\\nNOVA local CI lab report\\n%%EOF");
+  const labReportPayload = {
+    file_name: "ci-laboratory-report.pdf", media_type: "application/pdf",
+    laboratory_name: "CI fixture laboratory", report_number: "CI-RPT-001",
+    sample_reference: "ci-sample-001", issued_at: "2026-10-01T10:30:00Z",
+    document_base64: labReportBytes.toString("base64"),
+  };
+  const labReportPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/laboratory-reports";
+  const labReport = await throughGateway(labReportPath, accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify(labReportPayload));
+  assert.equal(labReport.response.status, 201, JSON.stringify(labReport.body));
+  assert.equal(labReport.body.data.sha256, createHash("sha256").update(labReportBytes).digest("hex"));
+  assert.equal(labReport.body.data.byte_length, labReportBytes.length);
+  assert.equal(labReport.body.data.verification_status, "registered_unverified");
+  const labReportReplay = await throughGateway(labReportPath, accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify(labReportPayload));
+  assert.equal(labReportReplay.response.status, 200, JSON.stringify(labReportReplay.body));
+  assert.equal(labReportReplay.body.data.id, labReport.body.data.id);
+  assert.equal(labReportReplay.body.data.idempotent, true);
+  const labReportRead = await throughGateway(labReportPath + "/" + labReport.body.data.id);
+  assert.equal(labReportRead.response.status, 200, JSON.stringify(labReportRead.body));
+  assert.equal(Buffer.from(labReportRead.body.data.document_base64, "base64").compare(labReportBytes), 0);
+  assert.equal(labReportRead.body.data.sha256, labReport.body.data.sha256);
+  const labReportCrossTenant = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b/laboratory-reports/" + labReport.body.data.id);
+  assert.equal(labReportCrossTenant.response.status, 404);
 
   const forgedHeaders = await throughGateway(sitePath, accessToken(), {
     "x-nova-verified-subject": "attacker-subject",
