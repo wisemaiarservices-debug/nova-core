@@ -74,11 +74,28 @@ async function readResource(db, subject, tenant, type, id) {
   return record[0];
 }
 
+function onlyKeys(value, allowed) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).every(key => allowed.includes(key));
+}
 async function createCriteriaDraft(db, tenant, subject, requestId, entry) {
-  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+  if (!onlyKeys(entry, ["id", "jurisdiction", "title", "version", "published_on",
+      "effective_from", "effective_to", "authority", "scope", "criteria", "review",
+      "supersedes_id", "supersedes_version"])) {
     return { error: "criteria_entry_invalid", status: 422, details: [{ code: "entry.invalid_type", path: "$" }] };
   }
-  if (entry.scope?.tenant_id !== tenant || entry.review?.status !== "draft" ||
+  if (!validId(entry.id) || !validId(entry.version, 80) ||
+      typeof entry.jurisdiction !== "string" || entry.jurisdiction.trim() !== entry.jurisdiction ||
+      entry.jurisdiction.length < 1 || entry.jurisdiction.length > 120 ||
+      typeof entry.title !== "string" || entry.title.trim() !== entry.title ||
+      entry.title.length < 1 || entry.title.length > 300 ||
+      !onlyKeys(entry.authority, ["name", "source_evidence_ref", "document_digest"]) ||
+      !onlyKeys(entry.scope, ["tenant_id", "site_id", "crop_ids", "irrigation_methods", "intended_uses"]) ||
+      !onlyKeys(entry.review, ["status", "approvals"]) ||
+      !Array.isArray(entry.criteria) ||
+      entry.criteria.some(rule => !onlyKeys(rule, ["parameter", "unit", "operator", "reference_clause",
+        "evidence_ref", "value", "minimum", "maximum"])) ||
+      entry.scope?.tenant_id !== tenant || entry.review?.status !== "draft" ||
       (entry.review.approvals !== undefined &&
        (!Array.isArray(entry.review.approvals) || entry.review.approvals.length !== 0))) {
     return { error: "criteria_draft_scope_or_state_invalid", status: 400 };
