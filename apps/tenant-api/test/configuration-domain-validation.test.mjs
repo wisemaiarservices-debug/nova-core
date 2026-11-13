@@ -218,6 +218,61 @@ test("rejects malformed and duplicate gateway protocol capability declarations",
   assert.ok(duplicateResult.errors.some(item => item.code === "gateway.supported_protocols_duplicate"));
 });
 
+test("validates irrigation pump and controller references, roles and declared protocols", () => {
+  const value = valid();
+  value.site.irrigation_systems[0].controller_id = "controller-1";
+  value.site.irrigation_systems[0].pump_id = "pump-1";
+  value.site.irrigation_systems[0].control_protocol = "modbus_tcp";
+  value.site.irrigation_systems[0].design_flow_m3_per_hour = 8;
+  value.inventory.equipment[0].asset_class = "pump";
+  value.inventory.equipment[0].rated_flow_m3_per_hour = 6;
+  value.inventory.equipment.push({
+    id: "controller-1", manufacturer: "Vendor", model: "CTRL-1",
+    asset_class: "controller", protocol: "mqtt",
+  });
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "irrigation.controller_protocol_mismatch"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.pump_flow_rating_exceeded"));
+
+  const matching = valid();
+  matching.site.irrigation_systems[0].controller_id = "controller-1";
+  matching.site.irrigation_systems[0].pump_id = "pump-1";
+  matching.site.irrigation_systems[0].control_protocol = "modbus_tcp";
+  matching.site.irrigation_systems[0].design_flow_m3_per_hour = 5;
+  matching.inventory.equipment[0].asset_class = "pump";
+  matching.inventory.equipment[0].rated_flow_m3_per_hour = 6;
+  matching.inventory.equipment.push({
+    id: "controller-1", manufacturer: "Vendor", model: "CTRL-1",
+    asset_class: "controller", protocol: "modbus_tcp",
+  });
+  const matchingResult = assessDomainConfiguration(matching);
+  assert.equal(matchingResult.issues.some(item => item.code === "irrigation.controller_protocol_mismatch"), false);
+  assert.equal(matchingResult.issues.some(item => item.code === "irrigation.pump_flow_rating_exceeded"), false);
+});
+
+test("validates irrigation zone identifiers, equipment links and declared flow limits", () => {
+  const value = valid();
+  value.site.irrigation_systems[0].pump_id = "pump-1";
+  value.site.irrigation_systems[0].design_flow_m3_per_hour = 10;
+  value.site.irrigation_systems[0].zones = [
+    { id: "zone-a", pump_id: "missing-pump", design_flow_m3_per_hour: 12 },
+    { id: "zone-a", area_ha: -1 },
+  ];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "irrigation.zone_id_missing_or_duplicate"));
+  assert.ok(result.errors.some(item => item.code === "engineering.rating_must_be_positive"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_equipment_reference_unresolved"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_flow_exceeds_system"));
+});
+
+test("flags irrigation equipment role mismatches and unresolved controller references", () => {
+  const value = valid();
+  value.site.irrigation_systems[0].controller_id = "pump-1";
+  value.inventory.equipment[0].asset_class = "pump";
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "irrigation.equipment_role_mismatch"));
+});
+
 test("resolves energy equipment references and flags declared voltage or phase mismatches", () => {
   const value = valid();
   value.site.energy_systems[0].inverter_id = "inverter-1";
