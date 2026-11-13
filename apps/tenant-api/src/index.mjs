@@ -333,7 +333,25 @@ export default {
         return reviewed.error ? json({ error: reviewed.error }, reviewed.status)
           : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
       }
-      if (criteriaCreate || criteriaDetail || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit) {
+      if (criteriaDetail) {
+        const data = await readCriteriaRegistry(env.DB, tenant, entryId, version);
+        if (data === null) return error("not_found", 404);
+        const membership = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        const memberCanRead = membership.length === 1 &&
+          membership[0].subject === subject && membership[0].tenant_id === tenant &&
+          membership[0].membership_status === "active" && membership[0].tenant_status === "active" &&
+          ROLE_ACTIONS[membership[0].role]?.has("read");
+        if (memberCanRead) return json({ data, request_id: requestId });
+        const reviewer = await rows(env.DB.prepare(
+          "SELECT r.reviewer_subject, r.jurisdiction FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = ? AND r.reviewer_subject = ? AND r.jurisdiction = ? AND r.status = 'active' LIMIT 2"
+        ).bind(tenant, subject, data.jurisdiction));
+        return reviewer.length === 1 && reviewer[0].reviewer_subject === subject &&
+          reviewer[0].jurisdiction === data.jurisdiction
+          ? json({ data, request_id: requestId }) : error("not_found", 404);
+      }
+      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
