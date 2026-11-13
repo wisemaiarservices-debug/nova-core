@@ -249,6 +249,12 @@ async function resolveStoredCriteria(db, tenant, entryId, version, context, samp
       typeof sampledAt !== "string") {
     return { error: "criteria_resolution_context_invalid", status: 400 };
   }
+  const siteRows = await rows(db.prepare(
+    "SELECT id, tenant_id FROM sites WHERE tenant_id = ? AND id = ? LIMIT 1"
+  ).bind(tenant, context.site_id));
+  if (siteRows.length !== 1 || siteRows[0].id !== context.site_id || siteRows[0].tenant_id !== tenant) {
+    return { error: "criteria_site_not_found", status: 404 };
+  }
   const entries = await rows(db.prepare(
     "SELECT id, tenant_id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at FROM water_quality_criteria_entries WHERE tenant_id = ? AND id = ? AND version = ? LIMIT 1"
   ).bind(tenant, entryId, version));
