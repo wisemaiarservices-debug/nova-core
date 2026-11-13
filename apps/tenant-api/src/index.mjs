@@ -417,8 +417,7 @@ async function provisionSiteConfigurationReviewer(db, tenant, site, actor, reque
     return { error: "site_configuration_reviewer_request_invalid", status: 400 };
   }
   const memberships = await rows(db.prepare(
-    "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status " +
-    "FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+    "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
   ).bind(actor, tenant));
   const grants = await rows(db.prepare(
     "SELECT subject, tenant_id, resource_type, resource_id, action FROM tenant_resource_grants " +
