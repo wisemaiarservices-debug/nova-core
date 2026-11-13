@@ -58,6 +58,30 @@ try {
   const invalidIdentity = await throughGateway(sitePath, "not.a.valid.jwt");
   assert.equal(invalidIdentity.response.status, 401);
 
+  const configurationPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/configurations";
+  const configurationPayload = {
+    tenant: { tenant_id: "tenant-http-a" },
+    site: { site_id: "site-http-a", timezone: "Africa/Tunis", crops: [],
+      irrigation_systems: [], energy_systems: [] },
+  };
+  const configurationBody = { payload: configurationPayload, schema_id: "nova.client-config.v1" };
+  const configurationHeaders = { "content-type": "application/json",
+    "idempotency-key": "ci-site-config-create-001" };
+  const configurationCreated = await throughGateway(configurationPath, accessToken(),
+    configurationHeaders, "POST", JSON.stringify(configurationBody));
+  assert.equal(configurationCreated.response.status, 201, JSON.stringify(configurationCreated.body));
+  assert.equal(configurationCreated.body.data.configuration_version, "v1");
+  assert.equal(configurationCreated.body.data.site_id, "site-http-a");
+  const configurationReplay = await throughGateway(configurationPath, accessToken(),
+    configurationHeaders, "POST", JSON.stringify(configurationBody));
+  assert.equal(configurationReplay.response.status, 200, JSON.stringify(configurationReplay.body));
+  assert.equal(configurationReplay.body.data.replayed, true);
+  const configurationConflict = await throughGateway(configurationPath, accessToken(),
+    configurationHeaders, "POST", JSON.stringify({ payload: {
+      ...configurationPayload, site: { ...configurationPayload.site, timezone: "UTC" },
+    }, schema_id: "nova.client-config.v1" }));
+  assert.equal(configurationConflict.response.status, 409);
+
   const criteriaList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
   assert.equal(criteriaList.response.status, 200, JSON.stringify(criteriaList.body));
   assert.equal(criteriaList.body.data.length, 1);
