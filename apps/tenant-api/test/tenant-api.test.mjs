@@ -7,7 +7,7 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.batchCalls = []; this.batchResult = null; this.batchError = null;
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
@@ -31,7 +31,7 @@ class DB {
             resource_id: siteGrantQuery ? args[2] : args[3], action: "read",
           }] : []) };
         }
-        if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
+        if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };\n        if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };\n        if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
@@ -765,4 +765,38 @@ test("criteria sample assessment rejects oversized batches and caller scope inje
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/assess",
     "POST", JSON.stringify({ context: { ...resolutionContext, tenant_id: "tenant-b" }, samples: [{}] })), env(db));
   assert.equal(badContext.status, 400);
+});
+
+
+test("tenant admin registers PDF bytes through the site-scoped evidence route", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
+  const bytes = Buffer.from("%PDF-1.4\\nlab evidence\\n%%EOF");
+  const payload = { file_name: "report.pdf", media_type: "application/pdf",
+    laboratory_name: "Declared lab", report_number: "RPT-1",
+    issued_at: "2026-10-01T10:30:00Z", document_base64: bytes.toString("base64") };
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports",
+    "POST", JSON.stringify(payload)), env(db));
+  assert.equal(response.status, 201);
+  assert.equal(db.batchCalls.length, 1);
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO laboratory_report_evidence/);
+  assert.match(db.batchCalls[0][1].sql, /INSERT INTO laboratory_report_evidence_events/);
+  assert.equal(db.batchCalls[0][0].args[1], "tenant-a");
+  assert.equal(db.batchCalls[0][0].args[2], "site-a");
+  assert.equal(db.batchCalls[0][0].args[3], "report.pdf");
+  assert.equal(db.batchCalls[0][0].args[4], bytes.length);
+});
+
+test("read-only tenant members cannot register laboratory report evidence", async () => {
+  const db = new DB();
+  const payload = { file_name: "report.pdf", media_type: "application/pdf",
+    laboratory_name: "Declared lab", report_number: "RPT-1",
+    issued_at: "2026-10-01", document_base64: Buffer.from("%PDF-1.4").toString("base64") };
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports",
+    "POST", JSON.stringify(payload)), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.batchCalls.length, 0);
 });
