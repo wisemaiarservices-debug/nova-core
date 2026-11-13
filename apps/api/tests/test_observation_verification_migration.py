@@ -132,9 +132,7 @@ def test_reviewer_status_cannot_be_changed_without_a_matching_event():
 
 def test_laboratory_report_evidence_stores_original_bytes_and_server_digest():
     db = database()
-    document = b"%PDF-1.4\
-lab report fixture\
-%%EOF"
+    document = b"%PDF-1.4\nlab report fixture\n%%EOF"
     digest = hashlib.sha256(document).hexdigest()
     db.execute("""INSERT INTO laboratory_report_evidence
       (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
@@ -153,9 +151,7 @@ lab report fixture\
 
 def test_laboratory_report_evidence_requires_matching_registration_event():
     db = database()
-    document = b"%PDF-1.4\
-lab report fixture\
-%%EOF"
+    document = b"%PDF-1.4\nlab report fixture\n%%EOF"
     digest = hashlib.sha256(document).hexdigest()
     db.execute("""INSERT INTO laboratory_report_evidence
       (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
@@ -177,9 +173,7 @@ lab report fixture\
 
 def test_laboratory_report_evidence_and_history_are_immutable():
     db = database()
-    document = b"%PDF-1.4\
-lab report fixture\
-%%EOF"
+    document = b"%PDF-1.4\nlab report fixture\n%%EOF"
     digest = hashlib.sha256(document).hexdigest()
     db.execute("""INSERT INTO laboratory_report_evidence
       (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
