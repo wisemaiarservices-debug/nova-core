@@ -600,7 +600,7 @@ const resolutionApprovals = [
 test("resolves approved database criteria only after persisted dual-role approval and exact scope match", async () => {
   const db = new DB();
   db.criteriaRows = [{ id: resolutionEntry.id, tenant_id: "tenant-a", version: "1.0",
-    entry_json: JSON.stringify(resolutionEntry) }];
+    title: resolutionEntry.title, site_id: "site-a", entry_json: JSON.stringify(resolutionEntry) }];
   db.criteriaEventRows = [{ event_type: "draft_created" }, { event_type: "submitted_for_review" },
     { event_type: "approved" }];
   db.approvalRows = resolutionApprovals;
@@ -656,7 +656,7 @@ test("criteria resolution rejects cross-tenant and malformed caller context", as
 test("assesses sample values only against the approved tenant criteria and preserves comparison-only meaning", async () => {
   const db = new DB();
   db.criteriaRows = [{ id: resolutionEntry.id, tenant_id: "tenant-a", version: "1.0",
-    entry_json: JSON.stringify(resolutionEntry) }];
+    title: resolutionEntry.title, site_id: "site-a", entry_json: JSON.stringify(resolutionEntry) }];
   db.criteriaEventRows = [{ event_type: "draft_created" }, { event_type: "submitted_for_review" },
     { event_type: "approved" }];
   db.approvalRows = resolutionApprovals;
@@ -682,7 +682,7 @@ test("assesses sample values only against the approved tenant criteria and prese
 test("does not assess samples against draft or pending criteria and leaves invalid samples not assessed", async () => {
   const db = new DB();
   db.criteriaRows = [{ id: resolutionEntry.id, tenant_id: "tenant-a", version: "1.0",
-    entry_json: JSON.stringify(resolutionEntry) }];
+    title: resolutionEntry.title, site_id: "site-a", entry_json: JSON.stringify(resolutionEntry) }];
   db.criteriaEventRows = [{ event_type: "submitted_for_review" }];
   db.approvalRows = resolutionApprovals;
   db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
