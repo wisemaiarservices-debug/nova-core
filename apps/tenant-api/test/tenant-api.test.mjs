@@ -7,11 +7,11 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.batchCalls = [];
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.batchCalls = []; this.batchResult = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
-    return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+    return this.batchResult ?? [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
   }
   prepare(sql) {
     const db = this;
@@ -27,6 +27,8 @@ class DB {
           resource_id: args[3], action: "read",
         }] : []) };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_reviewers")) return { results: db.reviewerRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_reviewer_events")) return { results: db.reviewerEventRows ?? [] };
         if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) return { results: db.resourceRows ?? (db.resource ? [{
           id: args[1], tenant_id: args[0], name: "Test resource",
         }] : []) };
@@ -334,4 +336,82 @@ test("rejects malformed draft request envelopes and payload sizes", async () => 
   const headers = new Headers(wrongType.headers); headers.set("content-type", "text/plain");
   assert.equal((await worker.fetch(new Request(wrongType.url, { method: "POST", headers, body: JSON.stringify({ entry: draftEntry }) }), env(db))).status, 400);
   assert.equal(db.batchCalls.length, 0);
+});
+
+
+const reviewerPayload = {
+  reviewer_subject: "independent-reviewer@example.test",
+  reviewer_role: "regulatory_reviewer",
+  jurisdiction: "TN",
+  evidence_ref: "evidence:reviewer-appointment",
+};
+
+test("tenant owner/admin can assign an independent scoped reviewer with append-only history", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_owner", membership_status: "active", tenant_status: "active" }];
+  const response = await worker.fetch(await request({ "x-nova-request-id": "assign-reviewer-1" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers/assign",
+    "POST", JSON.stringify(reviewerPayload)), env(db));
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.data.reviewer_subject, reviewerPayload.reviewer_subject);
+  assert.equal(body.data.status, "active");
+  assert.equal(db.batchCalls.length, 1);
+  assert.equal(db.batchCalls[0].length, 2);
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO water_quality_criteria_reviewers/);
+  assert.match(db.batchCalls[0][1].sql, /water_quality_criteria_reviewer_events/);
+  assert.match(db.batchCalls[0][1].sql, /WHERE changes\(\) = 1/);
+  assert.equal(db.batchCalls[0][0].args[4], "operator@example.test");
+});
+
+test("denies reviewer provisioning to operators and rejects self-assignment or malformed scope", async () => {
+  const db = new DB();
+  const denied = await worker.fetch(await request({ "x-nova-request-id": "assign-denied-1" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers/assign",
+    "POST", JSON.stringify(reviewerPayload)), env(db));
+  assert.equal(denied.status, 404);
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
+  const self = await worker.fetch(await request({ "x-nova-request-id": "assign-self-1" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers/assign",
+    "POST", JSON.stringify({ ...reviewerPayload, reviewer_subject: "operator@example.test" })), env(db));
+  assert.equal(self.status, 400);
+  const badRole = await worker.fetch(await request({ "x-nova-request-id": "assign-role-1" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers/assign",
+    "POST", JSON.stringify({ ...reviewerPayload, reviewer_role: "tenant_admin" })), env(db));
+  assert.equal(badRole.status, 400);
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("tenant admin can revoke only an active exact-scope reviewer with reason and evidence", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
+  const payload = { ...reviewerPayload, evidence_ref: "evidence:revocation", reason: "Appointment ended" };
+  const response = await worker.fetch(await request({ "x-nova-request-id": "revoke-reviewer-1" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers/revoke",
+    "POST", JSON.stringify(payload)), env(db));
+  assert.equal(response.status, 200);
+  assert.match(db.batchCalls[0][0].sql, /UPDATE water_quality_criteria_reviewers SET status = 'revoked'/);
+  assert.match(db.batchCalls[0][1].sql, /event_type/);
+  assert.match(db.batchCalls[0][1].sql, /WHERE changes\(\) = 1/);
+});
+
+test("reviewer list and immutable assignment history are restricted to tenant owners/admins", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
+  db.reviewerRows = [{ reviewer_subject: reviewerPayload.reviewer_subject, reviewer_role: "regulatory_reviewer", status: "active" }];
+  db.reviewerEventRows = [{ event_type: "assigned", actor_subject: "operator@example.test" }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers"), env(db));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.data.reviewers.length, 1);
+  assert.equal(body.data.events[0].event_type, "assigned");
+  const viewer = new DB();
+  const denied = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers"), env(viewer));
+  assert.equal(denied.status, 404);
 });
