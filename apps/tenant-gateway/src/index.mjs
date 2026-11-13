@@ -77,8 +77,6 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       }
       if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
 
-      const idempotencyKey = request.headers.get("idempotency-key");
-      if (configurationCreate && !validPathId(idempotencyKey, 200)) return error("idempotency_key_required", 400);
       const requestId = crypto.randomUUID();
       const idempotencyKey = request.headers.get("idempotency-key");
       if (configurationCreate && !validPathId(idempotencyKey, 200)) return error("idempotency_key_required", 400);
