@@ -287,3 +287,40 @@ test("routes bounded laboratory report uploads and larger evidence reads through
     "/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports/lab-1");
   assert.equal((await download.json()).data.document_base64.length, 90000);
 });
+
+
+test("routes source calibration registration, review and observation quality through Access", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "calibration-reviewer", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const cases = [
+    ["POST", "/api/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations",
+      "/internal/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations"],
+    ["POST", "/api/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations/cal-1/review",
+      "/internal/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations/cal-1/review"],
+    ["GET", "/api/v1/tenants/tenant-a/observations/obs-1/measurement-quality",
+      "/internal/v1/tenants/tenant-a/observations/obs-1/measurement-quality"],
+  ];
+  for (const [method, publicPath, internalPath] of cases) {
+    let captured;
+    const response = await gateway.fetch(new Request("https://gateway.test" + publicPath, {
+      method, headers: { "Cf-Access-Jwt-Assertion": "valid",
+        ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+      ...(method === "POST" ? { body: JSON.stringify({ decision: "verify", evidence_ref: "inspection:1" }) } : {}),
+    }), {
+      ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud",
+      INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+      TENANT_API: { fetch: async request => {
+        captured = request;
+        return new Response(JSON.stringify({ data: { status: "ok" } }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      } },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(captured.method, method);
+    assert.equal(new URL(captured.url).pathname, internalPath);
+    assert.equal(captured.headers.get("x-nova-verified-subject"), "calibration-reviewer");
+    assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+  }
+});
