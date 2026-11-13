@@ -326,6 +326,8 @@ test("rejects criteria drafts with cross-tenant scope, non-draft state or invali
 
 test("rejects malformed draft request envelopes and payload sizes", async () => {
   const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
   const wrongShape = await worker.fetch(await request({}, 
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria",
     "POST", JSON.stringify({ tenant_id: "tenant-a", reviewer_subject: "forged" })), env(db));
