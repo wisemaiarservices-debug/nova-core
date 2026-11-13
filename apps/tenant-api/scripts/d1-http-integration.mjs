@@ -23,9 +23,10 @@ function accessToken(subject = "ci-human-subject") {
   const input = head + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
 }
-async function throughGateway(path, token = accessToken(), extraHeaders = {}) {
+async function throughGateway(path, token = accessToken(), extraHeaders = {}, method = "GET", body = undefined) {
   const response = await fetch(base + path, {
-    method: "GET", headers: { "Cf-Access-Jwt-Assertion": token, ...extraHeaders },
+    method, headers: { "Cf-Access-Jwt-Assertion": token, ...extraHeaders },
+    body,
   });
   return { response, body: await response.json() };
 }
@@ -56,6 +57,160 @@ try {
 
   const invalidIdentity = await throughGateway(sitePath, "not.a.valid.jwt");
   assert.equal(invalidIdentity.response.status, 401);
+
+  const criteriaList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
+  assert.equal(criteriaList.response.status, 200, JSON.stringify(criteriaList.body));
+  assert.equal(criteriaList.body.data.length, 1);
+  assert.equal(criteriaList.body.data[0].id, "criteria-http-a");
+  assert.equal(criteriaList.body.data[0].entry.criteria[0].parameter, "ec");
+
+  const criteriaVersion = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-a/1.0");
+  assert.equal(criteriaVersion.response.status, 200, JSON.stringify(criteriaVersion.body));
+  assert.equal(criteriaVersion.body.data.id, "criteria-http-a");
+  assert.equal(criteriaVersion.body.data.version, "1.0");
+
+  const criteriaCrossTenant = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/water-quality-criteria");
+  assert.equal(criteriaCrossTenant.response.status, 404);
+  const criteriaUnknownVersion = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-a/9.9");
+  assert.equal(criteriaUnknownVersion.response.status, 404);
+
+  const draftEntry = {
+    id: "criteria-http-draft", jurisdiction: "TN", title: "CI draft fixture only",
+    version: "1.0.0", published_on: "2026-01-01", effective_from: "2026-02-01",
+    authority: { name: "CI fixture source", source_evidence_ref: "fixture:source",
+      document_digest: "sha256:" + "c".repeat(64) },
+    scope: { tenant_id: "tenant-http-a", site_id: "site-http-a",
+      crop_ids: ["olive"], irrigation_methods: ["drip"],
+      intended_uses: ["agricultural_irrigation"] },
+    criteria: [{ parameter: "ec", unit: "dS/m", operator: "max", value: 2,
+      reference_clause: "fixture clause 1", evidence_ref: "fixture:clause-1" }],
+    review: { status: "draft", approvals: [] },
+  };
+  const draftCreated = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria", accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify({ entry: draftEntry }));
+  assert.equal(draftCreated.response.status, 201, JSON.stringify(draftCreated.body));
+  assert.equal(draftCreated.body.data.id, "criteria-http-draft");
+  assert.equal(draftCreated.body.data.created_by_subject, "ci-human-subject");
+
+  const draftListed = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
+  assert.equal(draftListed.response.status, 200, JSON.stringify(draftListed.body));
+  assert.equal(draftListed.body.data.some(row => row.id === "criteria-http-draft" && row.entry.review.status === "draft"), true);
+
+  const regulatoryReviewer = {
+    reviewer_subject: "ci-regulatory-reviewer", reviewer_role: "regulatory_reviewer",
+    jurisdiction: "TN", evidence_ref: "fixture:regulatory-appointment",
+  };
+  const domainReviewer = {
+    reviewer_subject: "ci-domain-reviewer", reviewer_role: "domain_expert",
+    jurisdiction: "TN", evidence_ref: "fixture:domain-appointment",
+  };
+  for (const reviewer of [regulatoryReviewer, domainReviewer]) {
+    const assigned = await throughGateway(
+      "/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers/assign",
+      accessToken(), { "content-type": "application/json" }, "POST", JSON.stringify(reviewer));
+    assert.equal(assigned.response.status, 201, JSON.stringify(assigned.body));
+  }
+  const submitted = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/submit",
+    accessToken(), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(submitted.response.status, 200, JSON.stringify(submitted.body));
+  assert.equal(submitted.body.data.status, "submitted_for_review");
+
+  const reviewerContext = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0",
+    accessToken(regulatoryReviewer.reviewer_subject));
+  assert.equal(reviewerContext.response.status, 200, JSON.stringify(reviewerContext.body));
+  assert.equal(reviewerContext.body.data.lifecycle.status, "submitted_for_review");
+  assert.equal(reviewerContext.body.data.approvals.length, 0);
+  assert.equal(reviewerContext.body.data.legal_status, "not_verified");
+
+  const resolverContext = { tenant_id: "tenant-http-a", site_id: "site-http-a",
+    jurisdiction: "TN", crop_id: "olive", irrigation_method: "drip",
+    intended_use: "agricultural_irrigation" };
+  const pendingResolution = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/resolve",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, sampled_at: "2026-05-10T10:00:00Z" }));
+  assert.equal(pendingResolution.response.status, 200);
+  assert.equal(pendingResolution.body.data.status, "not_assessed");
+  assert.equal(pendingResolution.body.data.reason, "registry_entry_not_approved");
+
+  const unassignedContext = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0",
+    accessToken("unassigned-reviewer"));
+  assert.equal(unassignedContext.response.status, 404);
+
+  const firstApproval = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/review",
+    accessToken(regulatoryReviewer.reviewer_subject), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ reviewer_role: regulatoryReviewer.reviewer_role, decision: "approve",
+      evidence_ref: "fixture:regulatory-review" }));
+  assert.equal(firstApproval.response.status, 201, JSON.stringify(firstApproval.body));
+  assert.equal(firstApproval.body.data.status, "submitted_for_review");
+
+  const secondApproval = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/review",
+    accessToken(domainReviewer.reviewer_subject), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ reviewer_role: domainReviewer.reviewer_role, decision: "approve",
+      evidence_ref: "fixture:domain-review" }));
+  assert.equal(secondApproval.response.status, 201, JSON.stringify(secondApproval.body));
+  assert.equal(secondApproval.body.data.status, "approved");
+
+  const approvedResolution = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/resolve",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, sampled_at: "2026-05-10T10:00:00Z" }));
+  assert.equal(approvedResolution.response.status, 200, JSON.stringify(approvedResolution.body));
+  assert.equal(approvedResolution.body.data.status, "approved_entry_scope_match");
+  assert.equal(approvedResolution.body.data.lifecycle_status, "approved");
+  assert.equal(approvedResolution.body.data.operational_decision, "not_authorized");
+
+  const sampleAssessment = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/assess",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, samples: [
+      { id: "ci-sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+      { id: "ci-sample-outside", parameter: "ec", value: 3, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+    ] }));
+  assert.equal(sampleAssessment.response.status, 200, JSON.stringify(sampleAssessment.body));
+  assert.equal(sampleAssessment.body.data.status, "declared_criteria_comparison_complete");
+  assert.equal(sampleAssessment.body.data.results[0].status, "within_declared_criterion");
+  assert.equal(sampleAssessment.body.data.results[1].status, "outside_declared_criterion");
+  assert.equal(sampleAssessment.body.data.operational_decision, "not_authorized");
+
+  const reviewer = {
+    reviewer_subject: "independent-reviewer@example.test",
+    reviewer_role: "regulatory_reviewer", jurisdiction: "TN",
+    evidence_ref: "fixture:reviewer-appointment",
+  };
+  const assigned = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers/assign",
+    accessToken(), { "content-type": "application/json" }, "POST", JSON.stringify(reviewer));
+  assert.equal(assigned.response.status, 201, JSON.stringify(assigned.body));
+  assert.equal(assigned.body.data.status, "active");
+  const reviewerList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers");
+  assert.equal(reviewerList.response.status, 200, JSON.stringify(reviewerList.body));
+  assert.equal(reviewerList.body.data.reviewers.some(row =>
+    row.reviewer_subject === reviewer.reviewer_subject && row.status === "active"), true);
+  assert.equal(reviewerList.body.data.events.some(row => row.event_type === "assigned" &&
+    row.reviewer_subject === reviewer.reviewer_subject), true);
+
+  const revoked = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers/revoke",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ ...reviewer, evidence_ref: "fixture:reviewer-revocation", reason: "CI revocation fixture" }));
+  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+  assert.equal(revoked.body.data.status, "revoked");
+  const reviewerHistory = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers");
+  assert.equal(reviewerHistory.response.status, 200);
+  assert.equal(reviewerHistory.body.data.reviewers.find(row =>
+    row.reviewer_subject === reviewer.reviewer_subject).status, "revoked");
+  assert.equal(reviewerHistory.body.data.events.filter(row =>
+    row.reviewer_subject === reviewer.reviewer_subject).length, 2);
 
   const forgedHeaders = await throughGateway(sitePath, accessToken(), {
     "x-nova-verified-subject": "attacker-subject",
@@ -184,7 +339,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized read, missing grant, cross-tenant denial, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and reviewer-readable evidence context, dual-role approval and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
