@@ -3,6 +3,7 @@ import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityC
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
 import { assignObservationReviewer, reviewObservation } from "./observation-verification.mjs";
+import { registerLaboratoryReportEvidence, readLaboratoryReportEvidence } from "./laboratory-report-evidence.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -430,16 +431,16 @@ export default {
     const observationReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/reviewers\/assign$/);
     const observationReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/reviewers\/revoke$/);
     const observationVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/verification$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification) || url.search || url.hash ||
-        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification || criteriaDetail || match)) ||
-        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1];
+    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
+        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || labReportUpload))) return error("not_found", 404);
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
     if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
         (entryId && (!validId(entryId) || !validId(version, 80))) ||
-        (observationVerification && !validId(observationVerification[2]))) return error("not_found", 404);
+        (observationVerification && !validId(observationVerification[2])) ||\n        ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||\n        (labReportDetail && !validId(labReportDetail[3]))) return error("not_found", 404);
 
     const subject = request.headers.get("x-nova-verified-subject");
     const issuer = request.headers.get("x-nova-verified-issuer");
@@ -462,7 +463,7 @@ export default {
           !Number.isFinite(declaredLength) || declaredLength > 65536) return error("invalid_request_body", 400);
       try {
         const raw = await request.text();
-        if (new TextEncoder().encode(raw).byteLength > 65536) return error("invalid_request_body", 400);
+        if (new TextEncoder().encode(raw).byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
         draftBody = JSON.parse(raw);
       } catch { return error("invalid_request_body", 400); }
       if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody)) return error("invalid_request_body", 400);
@@ -494,7 +495,7 @@ export default {
           reviewer[0].jurisdiction === data.jurisdiction
           ? json({ data, request_id: requestId }) : error("not_found", 404);
       }
-      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification) {
+      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || labReportUpload || labReportDetail) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
@@ -508,6 +509,22 @@ export default {
             draftBody, observationReviewerAssign ? "assign" : "revoke");
           return assigned.error ? json({ error: assigned.error }, assigned.status)
             : json({ data: assigned.data, request_id: requestId }, assigned.status);
+        }
+        if (labReportUpload || labReportDetail) {
+          const siteId = (labReportUpload ?? labReportDetail)[2];
+          if (!await hasSiteReadGrant(env.DB, tenant, subject, siteId)) return error("not_found", 404);
+          if (labReportUpload) {
+            if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role)) {
+              return error("not_found", 404);
+            }
+            const registered = await registerLaboratoryReportEvidence(env.DB, tenant, subject,
+              requestId, { ...draftBody, site_id: siteId });
+            return registered.error ? json({ error: registered.error }, registered.status)
+              : json({ data: registered.data, request_id: requestId }, registered.status);
+          }
+          if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
+          const evidence = await readLaboratoryReportEvidence(env.DB, tenant, subject, siteId, labReportDetail[3]);
+          return evidence ? json({ data: evidence, request_id: requestId }) : error("not_found", 404);
         }
         if (observationVerification) {
           if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
