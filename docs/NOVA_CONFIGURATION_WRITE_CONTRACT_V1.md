@@ -34,3 +34,7 @@ This module is a pure validation boundary for the future private tenant configur
 
 
 The completed idempotent response includes the immutable configuration version as well as the configuration ID, site, schema, digest, request ID and creation timestamp. The idempotency completion update reads these values back from the inserted immutable snapshot within the same D1 batch.
+
+## Persistence completion invariant
+
+Migration 0006 enforces that pending idempotency rows have no response body and completed rows must have a valid non-null response body. The D1 batch helper also requires each of its five statements to report exactly one changed row; a successful SQL execution that silently updates zero rows is treated as a failed write. CI's ordered local D1 migration gate validates the migration syntax and the query-preparation gate validates the statements.
