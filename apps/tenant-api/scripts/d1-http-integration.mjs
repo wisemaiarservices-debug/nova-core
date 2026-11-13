@@ -361,6 +361,21 @@ try {
   assert.equal(reviewerRoster.response.status, 200, JSON.stringify(reviewerRoster.body));
   assert.equal(reviewerRoster.body.data.assignments.length, 2);
   assert.equal(reviewerRoster.body.data.events.filter(row => row.event_type === "assigned").length, 2);
+  const temporaryReviewer = { reviewer_subject: "ci-temporary-reviewer",
+    reviewer_role: "engineering_reviewer", evidence_ref: "fixture:temporary-appointment" };
+  const temporaryAssigned = await throughGateway(reviewerPath + "/assign", accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify(temporaryReviewer));
+  assert.equal(temporaryAssigned.response.status, 201, JSON.stringify(temporaryAssigned.body));
+  const temporaryRevoked = await throughGateway(reviewerPath + "/revoke", accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify({
+      ...temporaryReviewer, evidence_ref: "fixture:temporary-revocation", reason: "CI fixture revocation",
+    }));
+  assert.equal(temporaryRevoked.response.status, 200, JSON.stringify(temporaryRevoked.body));
+  assert.equal(temporaryRevoked.body.data.status, "revoked");
+  const reviewerHistory = await throughGateway(reviewerPath);
+  const temporaryEvents = reviewerHistory.body.data.events.filter(row =>
+    row.reviewer_subject === "ci-temporary-reviewer");
+  assert.deepEqual(temporaryEvents.map(row => row.event_type), ["assigned", "revoked"]);
 
   const routeConfigurationPayload = {
     tenant: { tenant_id: "tenant-http-a" },
