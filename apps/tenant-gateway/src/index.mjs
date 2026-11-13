@@ -32,13 +32,15 @@ async function signEnvelope(secret, method, path, headers) {
 export function createGateway({ verifyAccessToken = (token, config) => verifyHumanAccessToken(token, config) } = {}) {
   return {
     async fetch(request, env) {
-      if (request.method !== "GET") return error("not_found", 404);
+      if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
       const url = new URL(request.url);
       const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
-      const criteriaList = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
+      const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
+      const criteriaList = request.method === "GET" ? criteriaCreate : null;
       const criteriaDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/([^/]+)\/([^/]+)$/);
-      if ((!match && !criteriaList && !criteriaDetail) || url.search || url.hash) return error("not_found", 404);
-      const tenant = match?.[1] ?? criteriaList?.[1] ?? criteriaDetail?.[1];
+      if ((!match && !criteriaCreate && !criteriaDetail) || url.search || url.hash ||
+          (request.method === "POST" && (!criteriaCreate || criteriaDetail || match))) return error("not_found", 404);
+      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1];
       const resourceId = match?.[3];
       const entryId = criteriaDetail?.[2];
       const version = criteriaDetail?.[3];
@@ -80,9 +82,16 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       });
       try {
         headers.set("x-nova-internal-signature",
-          await signEnvelope(env.INTERNAL_AUTH_SECRET, "GET", internalPath, headers));
+          await signEnvelope(env.INTERNAL_AUTH_SECRET, request.method, internalPath, headers));
+        if (request.method === "POST") {
+          const declaredLength = Number(request.headers.get("content-length") ?? "0");
+          if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
+              !Number.isFinite(declaredLength) || declaredLength > 65536) return error("invalid_request_body", 400);
+          headers.set("content-type", "application/json");
+        }
         const upstream = await env.TENANT_API.fetch(new Request(
-          "https://nova-core-tenant-api.internal" + internalPath, { method: "GET", headers },
+          "https://nova-core-tenant-api.internal" + internalPath,
+          { method: request.method, headers, body: request.method === "POST" ? request.body : undefined },
         ));
         return await boundedJsonResponse(upstream, requestId);
       } catch {
