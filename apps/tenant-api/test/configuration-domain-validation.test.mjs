@@ -681,3 +681,34 @@ test("validates water-source inventory identity and declared flow limits without
   assert.ok(unknownResult.issues.some(item => item.code === "water_source.type_unknown"));
   assert.equal(unknownResult.issues.some(item => item.code === "irrigation.water_source_reference_unresolved"), false);
 });
+
+
+test("validates water-quality sample identity, units, timestamp and evidence without applying suitability thresholds", () => {
+  const value = valid();
+  value.site.water_sources = [{
+    id: "well-1", source_type: "groundwater", quality_samples: [{
+      id: "sample-1", parameter: "electrical_conductivity", value: 2.1, unit: "dS/m",
+      sampled_at: "2026-10-20T09:30:00Z", method: "laboratory_method_1",
+      laboratory: "Regional Lab", evidence_ref: "water-report-1",
+    }],
+  }];
+  value.evidence.push({ source_class: "laboratory_report", reference: "water-report-1" });
+  let result = assessDomainConfiguration(value);
+  assert.equal(result.errors.some(item => item.code.startsWith("water_quality.")), false);
+  assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("quality_samples")), false);
+
+  value.site.water_sources[0].quality_samples[0].value = Number.NaN;
+  result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "water_quality.value_invalid"));
+});
+
+test("keeps water-quality sample evidence and laboratory metadata as verification gates", () => {
+  const value = valid();
+  value.site.water_sources = [{ id: "well-1", quality_samples: [{
+    id: "sample-1", parameter: "pH", value: 7.2, unit: "pH", sampled_at: "2026-10-20T09:30:00Z",
+  }] }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "water_quality.method_missing"));
+  assert.ok(result.issues.some(item => item.code === "water_quality.laboratory_missing"));
+  assert.ok(result.issues.some(item => item.code === "water_quality.evidence_missing"));
+});
