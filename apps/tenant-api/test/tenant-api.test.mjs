@@ -574,3 +574,80 @@ test("unassigned and wrong-jurisdiction identities cannot read criteria review c
     assert.equal(response.status, 404);
   }
 });
+
+
+const resolutionEntry = {
+  id: "criteria-resolve-1", jurisdiction: "TN", title: "Fixture criteria",
+  version: "1.0", published_on: "2026-01-01", effective_from: "2026-02-01",
+  authority: { name: "Declared source", source_evidence_ref: "evidence:source",
+    document_digest: "sha256:" + "a".repeat(64) },
+  scope: { tenant_id: "tenant-a", site_id: "site-a", crop_ids: ["olive"],
+    irrigation_methods: ["drip"], intended_uses: ["agricultural_irrigation"] },
+  criteria: [{ parameter: "ec", unit: "dS/m", operator: "max", value: 2,
+    reference_clause: "clause 1", evidence_ref: "evidence:clause-1" }],
+  review: { status: "draft", approvals: [] },
+};
+const resolutionContext = { tenant_id: "tenant-a", site_id: "site-a",
+  jurisdiction: "TN", crop_id: "olive", irrigation_method: "drip",
+  intended_use: "agricultural_irrigation" };
+const resolutionApprovals = [
+  { reviewer_subject: "regulatory@example.test", reviewer_role: "regulatory_reviewer",
+    decision: "approve", evidence_ref: "evidence:regulatory", reviewed_at: "2026-11-13T10:00:00Z" },
+  { reviewer_subject: "domain@example.test", reviewer_role: "domain_expert",
+    decision: "approve", evidence_ref: "evidence:domain", reviewed_at: "2026-11-13T11:00:00Z" },
+];
+
+test("resolves approved database criteria only after persisted dual-role approval and exact scope match", async () => {
+  const db = new DB();
+  db.criteriaRows = [{ id: resolutionEntry.id, tenant_id: "tenant-a", version: "1.0",
+    entry_json: JSON.stringify(resolutionEntry) }];
+  db.criteriaEventRows = [{ event_type: "draft_created" }, { event_type: "submitted_for_review" },
+    { event_type: "approved" }];
+  db.approvalRows = resolutionApprovals;
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "viewer", membership_status: "active", tenant_status: "active" }];
+  const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-resolve-approved" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-resolve-1/1.0/resolve",
+    "POST", JSON.stringify({ context: resolutionContext, sampled_at: "2026-05-10T10:00:00Z" })), env(db));
+  assert.equal(response.status, 200);
+  const result = (await response.json()).data;
+  assert.equal(result.status, "approved_entry_scope_match");
+  assert.equal(result.lifecycle_status, "approved");
+  assert.equal(result.criteria[0].parameter, "ec");
+  assert.equal(result.legal_status, "not_independently_verified");
+  assert.equal(result.operational_decision, "not_authorized");
+});
+
+test("does not resolve draft, pending, rejected, expired or mismatched registry entries", async () => {
+  for (const { event, context, sampled_at, expected } of [
+    { event: "draft_created", context: resolutionContext, sampled_at: "2026-05-10T10:00:00Z", expected: "registry_entry_not_approved" },
+    { event: "submitted_for_review", context: resolutionContext, sampled_at: "2026-05-10T10:00:00Z", expected: "registry_entry_not_approved" },
+    { event: "rejected", context: resolutionContext, sampled_at: "2026-05-10T10:00:00Z", expected: "registry_entry_not_approved" },
+    { event: "approved", context: { ...resolutionContext, crop_id: "other" }, sampled_at: "2026-05-10T10:00:00Z", expected: "registry_scope_mismatch" },
+    { event: "approved", context: resolutionContext, sampled_at: "2025-12-31T10:00:00Z", expected: "registry_entry_not_effective_on_sample_date" },
+  ]) {
+    const db = new DB();
+    db.criteriaRows = [{ id: resolutionEntry.id, tenant_id: "tenant-a", version: "1.0",
+      entry_json: JSON.stringify(resolutionEntry) }];
+    db.criteriaEventRows = [{ event_type: event }];
+    db.approvalRows = resolutionApprovals;
+    db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+      role: "viewer", membership_status: "active", tenant_status: "active" }];
+    const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-resolve-" + event },
+      "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-resolve-1/1.0/resolve",
+      "POST", JSON.stringify({ context, sampled_at })), env(db));
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.reason, expected);
+  }
+});
+
+test("criteria resolution rejects cross-tenant and malformed caller context", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "viewer", membership_status: "active", tenant_status: "active" }];
+  const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-resolve-cross" },
+    "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-resolve-1/1.0/resolve",
+    "POST", JSON.stringify({ context: { ...resolutionContext, tenant_id: "tenant-b" },
+      sampled_at: "2026-05-10T10:00:00Z" })), env(db));
+  assert.equal(response.status, 400);
+});
