@@ -10,7 +10,7 @@ const RECORD_KEYS = {
   energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "evidence_ref"]),
   equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "evidence_ref"]),
   sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "gateway_id", "calibration_record_id", "evidence_ref"]),
-  gateways: new Set(["id", "manufacturer", "model", "protocol", "connectivity_status", "evidence_ref"]),
+  gateways: new Set(["id", "manufacturer", "model", "protocol", "supported_protocols", "connectivity_status", "evidence_ref"]),
 };
 const PROTOCOLS = new Set(["modbus_tcp", "modbus_rtu", "mqtt", "http_rest", "opc_ua", "lorawan", "bacnet_ip", "can_bus", "serial", "manual", "unknown"]);
 const AREA_UNITS = new Set(["m2", "ha", "km2", "acre"]);
@@ -164,6 +164,14 @@ export function assessDomainConfiguration(payload) {
             unknownKeys(record, RECORD_KEYS[kind], "inventory." + kind + "[" + i + "]", issues);
             if (record.protocol !== undefined && !PROTOCOLS.has(record.protocol)) issues.push(issue("inventory.protocol_unrecognized", "inventory." + kind + "[" + i + "].protocol", "verification_required"));
             if (record.protocol === undefined || record.protocol === "unknown") issues.push(issue("inventory.protocol_unknown", "inventory." + kind + "[" + i + "].protocol", "verification_required"));
+            if (kind === "gateways" && record.supported_protocols !== undefined) {
+              if (!Array.isArray(record.supported_protocols) ||
+                  record.supported_protocols.some(protocol => typeof protocol !== "string" || !PROTOCOLS.has(protocol) || protocol === "unknown")) {
+                errors.push(issue("gateway.supported_protocols_invalid", "inventory.gateways[" + i + "].supported_protocols", "verification_required"));
+              } else if (new Set(record.supported_protocols).size !== record.supported_protocols.length) {
+                errors.push(issue("gateway.supported_protocols_duplicate", "inventory.gateways[" + i + "].supported_protocols", "verification_required"));
+              }
+            }
             if (record.manufacturer === undefined || record.model === undefined) issues.push(issue("inventory.identity_incomplete", "inventory." + kind + "[" + i + "]"));
           }
         });
@@ -224,10 +232,21 @@ export function assessDomainConfiguration(payload) {
   }
   if (Array.isArray(payload.inventory?.sensors)) {
     payload.inventory.sensors.forEach((sensor, i) => {
-      if (plainObject(sensor) && sensor.gateway_id &&
-          !inventoryByKind.gateways.has(sensor.gateway_id)) {
+      if (!plainObject(sensor) || !sensor.gateway_id) return;
+      if (!inventoryByKind.gateways.has(sensor.gateway_id)) {
         issues.push(issue("sensor.gateway_reference_unresolved",
           "inventory.sensors[" + i + "].gateway_id", "verification_required"));
+        return;
+      }
+      const gateway = payload.inventory.gateways.find(item => plainObject(item) && item.id === sensor.gateway_id);
+      if (Array.isArray(gateway?.supported_protocols) &&
+          typeof sensor.protocol === "string" && PROTOCOLS.has(sensor.protocol) &&
+          sensor.protocol !== "unknown" && !gateway.supported_protocols.includes(sensor.protocol)) {
+        issues.push(issue("sensor.gateway_protocol_not_declared",
+          "inventory.sensors[" + i + "].protocol", "verification_required"));
+      } else if (gateway && gateway.supported_protocols === undefined) {
+        issues.push(issue("gateway.protocol_capabilities_unspecified",
+          "inventory.gateways[" + payload.inventory.gateways.indexOf(gateway) + "].supported_protocols", "verification_required"));
       }
     });
   }
