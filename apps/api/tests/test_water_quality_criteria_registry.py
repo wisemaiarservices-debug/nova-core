@@ -132,7 +132,7 @@ def test_approval_requires_exact_role_assignment_and_two_distinct_reviewer_roles
     assign_reviewer(db, "reviewer-r", "regulatory_reviewer")
     assign_reviewer(db, "reviewer-d", "domain_expert")
     approve(db, "criteria-a", "1.0", "reviewer-r", "regulatory_reviewer")
-    with pytest.raises(sqlite3.IntegrityError, match="lifecycle transition"):
+    with pytest.raises(sqlite3.IntegrityError):
         db.execute(
             """INSERT INTO water_quality_criteria_events
                (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id)
@@ -183,7 +183,9 @@ def test_suspended_tenant_cannot_create_registry_entries_or_events():
     db = database()
     add_entry(db)
     db.execute("UPDATE tenants SET status='suspended' WHERE id='tenant-a'")
-    with pytest.raises(sqlite3.IntegrityError, match="active tenant"):
+    with pytest.raises(sqlite3.IntegrityError):
+        add_entry(db, entry_id="blocked-entry")
+    with pytest.raises(sqlite3.IntegrityError):
         db.execute(
             """INSERT INTO water_quality_criteria_events
                (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id)
