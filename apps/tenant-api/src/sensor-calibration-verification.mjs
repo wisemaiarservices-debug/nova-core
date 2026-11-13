@@ -33,6 +33,7 @@ export async function reviewSensorCalibration(db,tenant,siteId,assetId,calibrati
  if(calibration.registered_by_subject===reviewer)return {error:"calibration_submitter_cannot_review",status:409};
  const assignments=await db.prepare("SELECT reviewer_subject FROM sensor_calibration_reviewers WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND reviewer_role='calibration_reviewer' AND status='active' LIMIT 2").bind(tenant,siteId,reviewer).all();
  if(!Array.isArray(assignments?.results)||assignments.results.length!==1)return {error:"calibration_reviewer_assignment_not_found",status:404};
+ if(body.decision==="verify"&&!calibration.certificate_evidence_id)return {error:"calibration_certificate_evidence_required",status:409};
  if(calibration.certificate_evidence_id){
   const evidence=await db.prepare("SELECT verification_status FROM laboratory_report_evidence WHERE tenant_id=? AND site_id=? AND id=? LIMIT 2").bind(tenant,siteId,calibration.certificate_evidence_id).all();
   if(!Array.isArray(evidence?.results)||evidence.results.length!==1)return {error:"calibration_certificate_evidence_not_found",status:409};
