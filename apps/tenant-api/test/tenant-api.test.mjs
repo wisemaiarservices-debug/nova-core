@@ -429,6 +429,7 @@ test("tenant owner/admin submits only an existing draft into review", async () =
   const db = new DB();
   db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
     role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
+  db.batchResult = [{ meta: { changes: 1 } }];
   const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-submit-1" },
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/submit",
     "POST", JSON.stringify({})), env(db));
@@ -495,16 +496,18 @@ test("second distinct assigned reviewer role completes approval; rejection recor
 });
 
 test("unassigned, revoked, wrong-scope and author identities cannot review criteria", async () => {
+  let deniedIndex = 0;
   for (const { subject, assignment } of [
     { subject: "unassigned@example.test", assignment: [] },
     { subject: "criteria-author@example.test", assignment: [reviewAssignmentRow("criteria-author@example.test", "domain_expert")] },
     { subject: "wrong-jurisdiction@example.test", assignment: [reviewAssignmentRow("wrong-jurisdiction@example.test", "domain_expert", "FR")] },
   ]) {
+    deniedIndex += 1;
     const db = new DB();
     db.criteriaRows = [reviewEntryRow];
     db.reviewerRows = assignment;
     const response = await worker.fetch(await request({ "x-nova-verified-subject": subject,
-      "x-nova-request-id": "criteria-review-denied-" + subject },
+      "x-nova-request-id": "criteria-review-denied-" + deniedIndex },
       "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/review",
       "POST", JSON.stringify({ reviewer_role: "domain_expert", decision: "approve",
         evidence_ref: "evidence:review" })), env(db));
