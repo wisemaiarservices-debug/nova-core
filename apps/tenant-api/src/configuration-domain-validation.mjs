@@ -7,8 +7,8 @@ const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at",
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
   irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
-  energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "pv_strings", "design_min_temperature_c", "design_max_temperature_c", "evidence_ref"]),
-  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a", "evidence_ref"]),
+  energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "pv_strings", "design_min_temperature_c", "design_max_temperature_c", "battery_min_voltage_v", "battery_max_voltage_v", "battery_charge_power_kw", "battery_discharge_power_kw", "evidence_ref"]),
+  equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a", "battery_min_voltage_v", "battery_max_voltage_v", "battery_max_charge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_charge_power_kw", "inverter_max_battery_discharge_power_kw", "evidence_ref"]),
   sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "gateway_id", "calibration_record_id", "evidence_ref"]),
   gateways: new Set(["id", "manufacturer", "model", "protocol", "supported_protocols", "connectivity_status", "evidence_ref"]),
 };
@@ -177,6 +177,17 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
             });
           }
         }
+        if (field === "energy_systems") {
+          for (const key of ["battery_min_voltage_v", "battery_max_voltage_v", "battery_charge_power_kw", "battery_discharge_power_kw"]) {
+            if (record[key] !== undefined && !finitePositive(record[key])) {
+              errors.push(issue("engineering.rating_must_be_positive", "site.energy_systems[" + index + "]." + key, "verification_required"));
+            }
+          }
+          if (finitePositive(record.battery_min_voltage_v) && finitePositive(record.battery_max_voltage_v) &&
+              record.battery_min_voltage_v > record.battery_max_voltage_v) {
+            errors.push(issue("energy.battery_voltage_window_invalid", "site.energy_systems[" + index + "]", "verification_required"));
+          }
+        }
         for (const key of ["design_min_temperature_c", "design_max_temperature_c"]) {
           if (record[key] !== undefined && (typeof record[key] !== "number" || !Number.isFinite(record[key]) || record[key] < -100 || record[key] > 100)) {
             errors.push(issue("energy.design_temperature_invalid", "site.energy_systems[" + index + "]." + key, "verification_required"));
@@ -242,6 +253,19 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
                 if (record[key] !== undefined && record[key] !== null && !finitePositive(record[key])) {
                   errors.push(issue("engineering.rating_must_be_positive", "inventory.equipment[" + i + "]." + key, "verification_required"));
                 }
+              }
+              for (const key of ["battery_min_voltage_v", "battery_max_voltage_v", "battery_max_charge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_charge_power_kw", "inverter_max_battery_discharge_power_kw"]) {
+                if (record[key] !== undefined && record[key] !== null && !finitePositive(record[key])) {
+                  errors.push(issue("engineering.rating_must_be_positive", "inventory.equipment[" + i + "]." + key, "verification_required"));
+                }
+              }
+              if (finitePositive(record.battery_min_voltage_v) && finitePositive(record.battery_max_voltage_v) &&
+                  record.battery_min_voltage_v > record.battery_max_voltage_v) {
+                errors.push(issue("energy.battery_voltage_window_invalid", "inventory.equipment[" + i + "]", "verification_required"));
+              }
+              if (finitePositive(record.inverter_mppt_min_voltage_v) && finitePositive(record.inverter_mppt_max_voltage_v) &&
+                  record.inverter_mppt_min_voltage_v > record.inverter_mppt_max_voltage_v) {
+                errors.push(issue("energy.inverter_mppt_window_invalid", "inventory.equipment[" + i + "]", "verification_required"));
               }
               for (const key of ["voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c"]) {
                 if (record[key] !== undefined && (typeof record[key] !== "number" || !Number.isFinite(record[key]) || record[key] >= 0 || record[key] < -2)) {
@@ -440,6 +464,43 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
           issues.push(issue("energy.pv_string_short_circuit_current_exceeds_inverter", path, "verification_required"));
         }
       });
+      const battery = system.battery_id && equipmentById(system.battery_id);
+      const inverter = system.inverter_id && equipmentById(system.inverter_id);
+      if (system.battery_id && battery && system.nominal_voltage_v !== undefined) {
+        const low = battery.battery_min_voltage_v;
+        const high = battery.battery_max_voltage_v;
+        if (finitePositive(low) && finitePositive(high) &&
+            (system.nominal_voltage_v < low || system.nominal_voltage_v > high)) {
+          issues.push(issue("energy.battery_nominal_voltage_outside_battery_window",
+            "site.energy_systems[" + i + "].nominal_voltage_v", "verification_required"));
+        }
+        if (finitePositive(inverter?.battery_min_voltage_v) && finitePositive(inverter?.battery_max_voltage_v) &&
+            (system.nominal_voltage_v < inverter.battery_min_voltage_v || system.nominal_voltage_v > inverter.battery_max_voltage_v)) {
+          issues.push(issue("energy.battery_nominal_voltage_outside_inverter_window",
+            "site.energy_systems[" + i + "].nominal_voltage_v", "verification_required"));
+        }
+      }
+      for (const [systemField, batteryField, inverterField, code] of [
+        ["battery_charge_power_kw", "battery_max_charge_power_kw", "inverter_max_battery_charge_power_kw", "charge"],
+        ["battery_discharge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_discharge_power_kw", "discharge"],
+      ]) {
+        const requested = system[systemField];
+        if (requested === undefined) continue;
+        if (!finitePositive(requested)) continue;
+        if (finitePositive(battery?.[batteryField]) && requested > battery[batteryField]) {
+          issues.push(issue("energy.battery_" + code + "_power_exceeds_battery_rating",
+            "site.energy_systems[" + i + "]." + systemField, "verification_required"));
+        }
+        if (finitePositive(inverter?.[inverterField]) && requested > inverter[inverterField]) {
+          issues.push(issue("energy.battery_" + code + "_power_exceeds_inverter_rating",
+            "site.energy_systems[" + i + "]." + systemField, "verification_required"));
+        }
+      }
+      if (finitePositive(system.battery_power_kw) && finitePositive(battery?.rated_power_kw) &&
+          system.battery_power_kw > battery.rated_power_kw) {
+        issues.push(issue("energy.battery_power_exceeds_equipment_rating",
+          "site.energy_systems[" + i + "].battery_power_kw", "verification_required"));
+      }
       for (const [field, role] of [["inverter_id", "inverter"], ["battery_id", "battery"], ["pv_equipment_id", "pv"]]) {
         if (system[field] && !inventoryByKind.equipment.has(system[field])) {
           issues.push(issue("energy.equipment_reference_unresolved",
