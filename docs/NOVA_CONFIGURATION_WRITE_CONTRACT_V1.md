@@ -122,3 +122,25 @@ short-circuit ratings, protection coordination, conductor sizing, grid-code
 compliance, PV string limits, or system safety. A matching voltage or phase
 label is not an engineering approval; qualified review and manufacturer
 documentation remain necessary.
+
+
+## Declared irrigation equipment and zone checks
+
+Irrigation profiles may reference controller and pump equipment IDs. When the
+equipment declares an `asset_class`, the validator checks the requested role.
+A declared controller protocol can be compared with the irrigation system's
+declared control protocol. A declared pump flow rating can be compared with
+the system's declared design flow; a requested flow above that rating is
+flagged for review.
+
+Optional irrigation zones require unique IDs. Zone-level pump/controller
+references are resolved against equipment, with system-level references used
+only when a zone does not override them. Positive zone flow and area values
+are checked, and a declared zone flow above the system flow is flagged.
+
+These checks are configuration consistency checks, not hydraulic engineering.
+They do not calculate total dynamic head, pressure losses, pump curves, pipe
+diameters, emitter uniformity, simultaneous zone demand, water quality,
+controller I/O capacity, valve sizing or field commissioning. Missing pump
+curves, head data, zone topology or manufacturer evidence remain unresolved;
+no operational suitability is inferred.
