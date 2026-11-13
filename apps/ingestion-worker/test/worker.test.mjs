@@ -48,13 +48,13 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
         values: [],
         bind(...values) { this.values = values; return this; },
         async first() {
-          if (sql.includes("FROM sites")) return { id: this.values[0], status: siteStatus };
+          if (sql.includes("FROM sites")) return { id: this.values[0], tenant_id: "tenant-a", status: siteStatus };
           if (sql.includes("FROM sources")) return {
-            id: this.values[0], site_id: sourceSiteId, module: sourceModule,
+            id: this.values[0], tenant_id: "tenant-a", site_id: sourceSiteId, module: sourceModule,
             verification_status: sourceStatus,
           };
           if (sql.includes("FROM assets")) return {
-            id: this.values[0], site_id: assetSiteId, status: assetStatus,
+            id: this.values[0], tenant_id: "tenant-a", site_id: assetSiteId, status: assetStatus,
           };
           if (sql.includes("FROM observations WHERE source_id")) return state.observation;
           throw new Error("unexpected_query");
@@ -73,7 +73,7 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
           verification_status: "unverified", provenance_json: v[10],
           quality_flags_json: v[11],
         };
-        state.audit.push({ id: statements[1].values[0], actor_id: statements[1].values[1] });
+        state.audit.push({ id: statements[1].values[0], tenant_id: statements[1].values[1], actor_id: statements[1].values[2] });
         inserted = true;
       }
       return [{ success: true, meta: { changes: inserted ? 1 : 0 } }, { success: true }];
@@ -189,7 +189,7 @@ test("valid service identity and D1 ownership checks persist an unverified obser
   assert.equal(body.status, "accepted");
   assert.equal(body.accepted, true);
   assert.equal(body.verification_status, "unverified");
-  assert.equal(body.idempotent, false);
+  assert.equal(body.idempotent, false);\n  assert.equal(DB_NOT_USED, undefined);
 });
 
 test("D1 ownership mismatch is denied without revealing which record failed", async () => {
