@@ -262,7 +262,7 @@ test("does not return criteria belonging to another tenant or unknown versions",
   const db = new DB(); db.criteriaRows = [];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
   assert.equal(response.status, 404);
-  assert.deepEqual(db.calls[2].args, ["tenant-a", "criteria-tn-1", "9.9"]);
+  assert.deepEqual(db.calls[1].args, ["tenant-a", "criteria-tn-1", "9.9"]);
 });
 
 
