@@ -297,7 +297,7 @@ async function assessStoredCriteria(db, tenant, entryId, version, context, sampl
     return { error: "criteria_resolution_context_invalid", status: 400 };
   }
   if (!Array.isArray(samples) || samples.length < 1 || samples.length > 50 ||
-      samples.some(sample => !onlyKeys(sample, ["id", "parameter", "value", "unit", "sampled_at"]))) {
+      samples.some(sample => !onlyKeys(sample, ["id", "parameter", "value", "unit", "sampled_at", "provenance"]))) {
     return { error: "criteria_assessment_samples_invalid", status: 400 };
   }
   const results = [];

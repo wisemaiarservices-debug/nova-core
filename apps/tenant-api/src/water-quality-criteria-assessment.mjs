@@ -57,6 +57,29 @@ export function assessWaterQualityAgainstDeclaredCriteria(samples, context, crit
         !validTimestamp(sample.sampled_at)) {
       return { sample_id: sample?.id ?? null, status: "not_assessed", reason: "sample_value_unit_or_date_invalid", index };
     }
+    const provenance = sample.provenance;
+    if (!object(provenance) ||
+        !["measured", "laboratory", "modelled", "synthetic"].includes(provenance.source_type) ||
+        typeof provenance.method !== "string" || !provenance.method.trim() ||
+        typeof provenance.evidence_ref !== "string" || !provenance.evidence_ref.trim() ||
+        Object.keys(provenance).some(key => !["source_type", "method", "evidence_ref", "laboratory", "model"].includes(key))) {
+      return { sample_id: sample.id ?? null, parameter: sample.parameter,
+        status: "not_assessed", reason: "sample_provenance_incomplete_or_invalid", index };
+    }
+    if (provenance.source_type === "laboratory" &&
+        (typeof provenance.laboratory !== "string" || !provenance.laboratory.trim())) {
+      return { sample_id: sample.id ?? null, parameter: sample.parameter,
+        status: "not_assessed", reason: "laboratory_identity_missing", index };
+    }
+    if (provenance.source_type === "modelled" &&
+        (typeof provenance.model !== "string" || !provenance.model.trim())) {
+      return { sample_id: sample.id ?? null, parameter: sample.parameter,
+        status: "not_assessed", reason: "model_identity_missing", index };
+    }
+    if (provenance.source_type === "synthetic") {
+      return { sample_id: sample.id ?? null, parameter: sample.parameter,
+        status: "not_assessed", reason: "synthetic_sample_not_eligible_for_field_assessment", index };
+    }
     const matches = criteriaSet.criteria.filter(rule => object(rule) &&
       rule.parameter === sample.parameter && rule.unit === sample.unit &&
       rule.jurisdiction === context.jurisdiction &&
@@ -93,6 +116,14 @@ export function assessWaterQualityAgainstDeclaredCriteria(samples, context, crit
       parameter: sample.parameter,
       unit: sample.unit,
       observed_value: sample.value,
+      sample_provenance: {
+        source_type: provenance.source_type,
+        method: provenance.method,
+        evidence_ref: provenance.evidence_ref,
+        ...(provenance.laboratory ? { laboratory: provenance.laboratory } : {}),
+        ...(provenance.model ? { model: provenance.model } : {}),
+        verification_status: "not_independently_verified",
+      },
       status: comparison ? "within_declared_criterion" : "outside_declared_criterion",
       criterion: {
         set_id: criteriaSet.id,

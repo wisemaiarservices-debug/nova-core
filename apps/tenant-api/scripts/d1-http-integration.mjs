@@ -173,13 +173,15 @@ try {
     "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/assess",
     accessToken(), { "content-type": "application/json" }, "POST",
     JSON.stringify({ context: resolverContext, samples: [
-      { id: "ci-sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
-      { id: "ci-sample-outside", parameter: "ec", value: 3, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+      { id: "ci-sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z", provenance: { source_type: "synthetic", method: "local_ci_fixture", evidence_ref: "fixture:within" } },
+      { id: "ci-sample-outside", parameter: "ec", value: 3, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z", provenance: { source_type: "synthetic", method: "local_ci_fixture", evidence_ref: "fixture:outside" } },
     ] }));
   assert.equal(sampleAssessment.response.status, 200, JSON.stringify(sampleAssessment.body));
-  assert.equal(sampleAssessment.body.data.status, "declared_criteria_comparison_complete");
-  assert.equal(sampleAssessment.body.data.results[0].status, "within_declared_criterion");
-  assert.equal(sampleAssessment.body.data.results[1].status, "outside_declared_criterion");
+  assert.equal(sampleAssessment.body.data.status, "partial_criteria_comparison");
+  assert.equal(sampleAssessment.body.data.results[0].status, "not_assessed");
+  assert.equal(sampleAssessment.body.data.results[0].reason, "synthetic_sample_not_eligible_for_field_assessment");
+  assert.equal(sampleAssessment.body.data.results[1].status, "not_assessed");
+  assert.equal(sampleAssessment.body.data.results[1].reason, "synthetic_sample_not_eligible_for_field_assessment");
   assert.equal(sampleAssessment.body.data.operational_decision, "not_authorized");
 
   const reviewer = {
