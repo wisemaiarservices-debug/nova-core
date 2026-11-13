@@ -116,6 +116,22 @@ try {
   assert.equal(concurrent[0].body.data.configuration_version, "v3");
   assert.equal(concurrent[1].body.data.configuration_version, "v3");
 
+  // Distinct concurrent keys must still receive distinct contiguous versions.
+  const parallelVersions = await Promise.all([
+    writeConfiguration("ci-config-key-parallel-a", "req-config-parallel-a",
+      { crop: "fig", irrigation: { method: "drip" } }),
+    writeConfiguration("ci-config-key-parallel-b", "req-config-parallel-b",
+      { crop: "almond", irrigation: { method: "drip" } }),
+  ]);
+  assert.equal(parallelVersions.every(item => item.response.status === 200), true,
+    JSON.stringify(parallelVersions.map(item => item.body)));
+  assert.deepEqual(
+    parallelVersions.map(item => item.body.data.configuration_version).sort(),
+    ["v4", "v5"],
+  );
+  assert.notEqual(parallelVersions[0].body.data.configuration_id,
+    parallelVersions[1].body.data.configuration_id);
+
   const conflict = await writeConfiguration("ci-config-key-1", "req-config-conflict",
     { crop: "different-payload" });
   assert.equal(conflict.response.status, 409);
@@ -124,10 +140,10 @@ try {
   const committed = await configurationState("ci-config-key-1");
   assert.equal(committed.idempotency.length, 1);
   assert.equal(committed.idempotency[0].status, "completed");
-  assert.deepEqual(committed.configurations.map(row => row.configuration_version), ["v1", "v2", "v3"]);
-  assert.equal(committed.events.length, 3);
+  assert.deepEqual(committed.configurations.map(row => row.configuration_version), ["v1", "v2", "v3", "v4", "v5"]);
+  assert.equal(committed.events.length, 5);
   assert.equal(committed.events.every(row => row.event_type === "submitted_for_review"), true);
-  assert.equal(committed.audits.length, 3);
+  assert.equal(committed.audits.length, 5);
   assert.equal(committed.audits.every(row => row.action === "configuration.created_for_review"), true);
 
   const failed = await writeConfiguration("ci-config-key-fail", "req-fail",
@@ -135,11 +151,11 @@ try {
   assert.notEqual(failed.response.status, 200);
   const rolledBack = await configurationState("ci-config-key-fail");
   assert.equal(rolledBack.idempotency.length, 0);
-  assert.equal(rolledBack.configurations.length, 3);
-  assert.equal(rolledBack.events.length, 3);
-  assert.equal(rolledBack.audits.length, 3);
+  assert.equal(rolledBack.configurations.length, 5);
+  assert.equal(rolledBack.events.length, 5);
+  assert.equal(rolledBack.audits.length, 5);
 
-  console.log("Local D1 configuration persistence integration passed: transactional authorization, v1/v2/v3 sequencing, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
+  console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized read, missing grant, cross-tenant denial, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
