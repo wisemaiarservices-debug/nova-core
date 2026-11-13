@@ -21,6 +21,18 @@ export async function assignObservationReviewer(db, tenant, actor, requestId, bo
   if (!Array.isArray(site?.results) || site.results.length !== 1) {
     return { error: "site_not_found", status: 404 };
   }
+  if (action === "assign") {
+    const memberships = await db.prepare(
+      "SELECT m.subject, m.tenant_id, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+    ).bind(body.reviewer_subject, tenant).all();
+    if (!Array.isArray(memberships?.results) || memberships.results.length !== 1 ||
+        memberships.results[0].subject !== body.reviewer_subject ||
+        memberships.results[0].tenant_id !== tenant ||
+        memberships.results[0].membership_status !== "active" ||
+        memberships.results[0].tenant_status !== "active") {
+      return { error: "observation_reviewer_membership_not_active", status: 409 };
+    }
+  }
   const eventId = crypto.randomUUID();
   const first = action === "assign"
     ? db.prepare("INSERT INTO observation_reviewers (tenant_id, site_id, reviewer_subject, reviewer_role, status, assigned_by_subject, assignment_evidence_ref) VALUES (?, ?, ?, 'measurement_reviewer', 'active', ?, ?) ON CONFLICT(tenant_id, site_id, reviewer_subject, reviewer_role) DO NOTHING")
