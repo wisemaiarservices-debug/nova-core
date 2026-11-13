@@ -573,3 +573,77 @@ test("accepts resolved calibration and evidence links while keeping approval sep
   assert.equal(result.issues.some(item => item.code === "sensor.calibration_reference_unresolved"), false);
   assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved"), false);
 });
+
+
+test("cross-checks declared inverter and battery system capacities against equipment nameplates", () => {
+  const value = valid();
+  value.inventory.equipment.push(
+    { id: "inverter-1", manufacturer: "Vendor", model: "I1", protocol: "modbus_tcp",
+      asset_class: "inverter", rated_power_kw: 8, rated_voltage_v: 230, phase: "single_phase" },
+    { id: "battery-1", manufacturer: "Vendor", model: "B1", protocol: "modbus_tcp",
+      asset_class: "battery", battery_capacity_kwh: 12, rated_power_kw: 5 },
+  );
+  Object.assign(value.site.energy_systems[0], {
+    inverter_id: "inverter-1", battery_id: "battery-1",
+    inverter_capacity_kw: 10, battery_capacity_kwh: 15,
+  });
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.inverter_capacity_mismatch"));
+  assert.ok(result.issues.some(item => item.code === "energy.battery_capacity_mismatch"));
+});
+
+test("screens PV array nameplate capacity and flags incomplete comparison without assuming ratings", () => {
+  const value = valid();
+  value.inventory.equipment.push(
+    { id: "pv-module-1", manufacturer: "Vendor", model: "PV1", protocol: "manual",
+      asset_class: "pv_module", pv_power_w: 400, pv_voc_v: 49, pv_vmp_v: 41 },
+    { id: "inverter-1", manufacturer: "Vendor", model: "I1", protocol: "modbus_tcp",
+      asset_class: "inverter", rated_power_kw: 5 },
+  );
+  Object.assign(value.site.energy_systems[0], {
+    pv_equipment_id: "pv-module-1", inverter_id: "inverter-1", pv_capacity_kw: 3.2,
+    pv_strings: [{ id: "string-1", modules_per_string: 10, parallel_strings: 1 }],
+  });
+  let result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.pv_capacity_mismatch"));
+
+  value.site.energy_systems[0].pv_capacity_kw = 4;
+  delete value.inventory.equipment[1].pv_power_w;
+  result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.pv_capacity_comparison_incomplete"));
+});
+
+test("checks grid interconnection declarations against off-grid and inverter limits", () => {
+  const value = valid();
+  value.inventory.equipment.push({
+    id: "inverter-1", manufacturer: "Vendor", model: "I1", protocol: "modbus_tcp",
+    asset_class: "inverter", rated_power_kw: 5,
+  });
+  Object.assign(value.site.energy_systems[0], {
+    inverter_id: "inverter-1", grid_connected: false, grid_export_limit_kw: 2,
+  });
+  let result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.grid_limits_conflict_with_off_grid"));
+
+  value.site.energy_systems[0].grid_connected = true;
+  value.site.energy_systems[0].grid_export_limit_kw = 6;
+  result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.grid_export_limit_exceeds_inverter_rating"));
+
+  value.site.energy_systems[0].grid_connected = "yes";
+  result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "energy.grid_connected_invalid"));
+});
+
+test("leaves cross-system capacity compatibility unknown when component ratings are absent", () => {
+  const value = valid();
+  Object.assign(value.site.energy_systems[0], {
+    inverter_capacity_kw: 4, battery_capacity_kwh: 10, grid_connected: true,
+    grid_export_limit_kw: 3,
+  });
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.issues.some(item => [
+    "energy.inverter_capacity_mismatch", "energy.battery_capacity_mismatch",
+    "energy.grid_export_limit_exceeds_inverter_rating",
+  ].includes(item.code)), false);
+});
