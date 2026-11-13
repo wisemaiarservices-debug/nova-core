@@ -1,0 +1,11 @@
+name = "nova-core-tenant-gateway"
+main = "src/index.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+
+# Bind only to the private tenant API Worker. Configure an Access-protected custom
+# hostname separately after identity settings and the private target are reviewed.
+[[services]]
+binding = "TENANT_API"
+service = "nova-core-tenant-api"

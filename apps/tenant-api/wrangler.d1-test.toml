@@ -1,0 +1,21 @@
+name = "nova-core-tenant-api"
+main = "src/local-write-test-entry.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+
+# CI-only local D1 emulator configuration. This UUID is a placeholder and is
+# never used with --remote or for provisioning a Cloudflare database.
+[[d1_databases]]
+binding = "DB"
+database_name = "nova-core-tenant-api-contract-test"
+database_id = "00000000-0000-4000-8000-000000000001"
+migrations_dir = "../api/migrations"
+
+# Test-only values for local CI. Never reuse these for a deployed environment.
+[vars]
+ACCESS_ISSUER = "https://nova-ci.cloudflareaccess.com"
+ACCESS_AUDIENCE = "nova-ci-test-audience"
+INTERNAL_AUTH_SECRET = "local-ci-only-secret-not-for-any-deployment"
+
+CI_TEST_CONFIGURATION_WRITES = "true"

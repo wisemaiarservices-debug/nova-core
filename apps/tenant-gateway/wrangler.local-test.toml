@@ -1,0 +1,15 @@
+name = "nova-core-tenant-gateway-local-test"
+main = "src/local-test-entry.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+
+[vars]
+ACCESS_ISSUER = "https://nova-ci.cloudflareaccess.com"
+ACCESS_AUDIENCE = "nova-ci-test-audience"
+INTERNAL_AUTH_SECRET = "local-ci-only-secret-not-for-any-deployment"
+
+[[services]]
+binding = "TENANT_API"
+service = "nova-core-tenant-api"
+
