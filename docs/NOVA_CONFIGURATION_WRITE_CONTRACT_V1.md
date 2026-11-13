@@ -243,3 +243,23 @@ temperature/irradiance derating, module tolerances, battery usable energy,
 charge scheduling, grid-code export controls, transformer capacity, phase
 balance, protection or utility interconnection approval. Matching declared
 capacities do not prove a commissioned or safe system.
+
+
+## Site water-source declarations and irrigation links
+
+A site may declare a `water_sources` collection with stable IDs, a source type
+(groundwater, surface water, rainwater, municipal, reclaimed water,
+desalinated, or explicitly unknown), optional available flow in m³/hour,
+permitted abstraction in m³/day, and an evidence reference. Irrigation profiles
+may link to a source using `water_source_id`; the ID must resolve within the
+same site's declared water-source collection. An unresolved reference is
+flagged for verification rather than treated as a confirmed supply connection.
+
+Declared flow and abstraction values must be finite and positive when present.
+The validator does not infer availability from source type, compare unlike
+flow/time units, assume daily operating hours, or decide legal water rights.
+It does not establish seasonal yield, aquifer sustainability, pumping head,
+water quality, salinity suitability, crop water demand, allocation compliance,
+or live source telemetry. Missing permits, source tests and measurements
+remain evidence/readiness gaps for a later water-specific schema and human
+review; these declarations do not authorize abstraction or irrigation.
