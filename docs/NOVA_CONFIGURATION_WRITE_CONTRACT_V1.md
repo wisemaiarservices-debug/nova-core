@@ -167,3 +167,31 @@ issuer, verify a laboratory's accreditation, validate a certificate signature
 or digest against an external authority, establish measurement uncertainty or
 traceability to national standards, or approve a sensor for operational use.
 Certificate and calibration acceptance remain a human verification gate.
+
+
+## Declared PV string and inverter operating-envelope checks
+
+Energy profiles may declare PV strings with a stable string ID, module count
+per series string, parallel string count, and optional module/inverter equipment
+references. System-level PV module and inverter references are used when a
+string does not override them. References are resolved against equipment
+inventory and declared equipment roles are checked.
+
+PV module equipment may declare open-circuit voltage (Voc), maximum-power
+voltage (Vmp), short-circuit current (Isc), maximum-power current (Imp), and
+negative Voc/Vmp temperature coefficients in percent per degree Celsius.
+Inverter equipment may declare maximum DC input voltage, MPPT minimum/maximum
+voltage, maximum operating input current and maximum short-circuit current.
+When the required values and site design minimum/maximum temperatures are
+present, the validator performs bounded first-order temperature-adjusted
+checks for cold-string Voc, hot-string Vmp and parallel-string operating and
+short-circuit current against the declared inverter limits. Missing inputs
+remain unknown; no standard module or climate assumptions are substituted.
+
+These calculations are screening checks based on declared nameplate values
+and linear temperature coefficients. They do not replace manufacturer design
+tools or electrical engineering. They do not evaluate module bin tolerances,
+irradiance-dependent current, bifacial gain, voltage transients, altitude,
+cable voltage drop, connector compatibility, string fusing, MPPT allocation,
+unequal string lengths, shading, degradation, code requirements or protection
+coordination. A passing result is not a design approval or safety certification.
