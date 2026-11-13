@@ -218,6 +218,52 @@ test("rejects malformed and duplicate gateway protocol capability declarations",
   assert.ok(duplicateResult.errors.some(item => item.code === "gateway.supported_protocols_duplicate"));
 });
 
+test("resolves energy equipment references and flags declared voltage or phase mismatches", () => {
+  const value = valid();
+  value.site.energy_systems[0].inverter_id = "inverter-1";
+  value.site.energy_systems[0].nominal_voltage_v = 230;
+  value.site.energy_systems[0].grid_phase = "single_phase";
+  value.inventory.equipment.push({
+    id: "inverter-1", manufacturer: "Vendor", model: "INV-1",
+    asset_class: "inverter", rated_voltage_v: 400, phase: "three_phase",
+  });
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.inverter_voltage_mismatch"));
+  assert.ok(result.issues.some(item => item.code === "energy.inverter_phase_mismatch"));
+
+  const matching = valid();
+  matching.site.energy_systems[0].inverter_id = "inverter-1";
+  matching.site.energy_systems[0].nominal_voltage_v = 230;
+  matching.site.energy_systems[0].grid_phase = "single_phase";
+  matching.inventory.equipment.push({
+    id: "inverter-1", manufacturer: "Vendor", model: "INV-1",
+    asset_class: "inverter", rated_voltage_v: 230, phase: "single_phase",
+  });
+  const matchingResult = assessDomainConfiguration(matching);
+  assert.equal(matchingResult.issues.some(item => item.code === "energy.inverter_voltage_mismatch"), false);
+  assert.equal(matchingResult.issues.some(item => item.code === "energy.inverter_phase_mismatch"), false);
+});
+
+test("flags unresolved or role-mismatched energy equipment references", () => {
+  const value = valid();
+  value.site.energy_systems[0].battery_id = "missing-battery";
+  value.site.energy_systems[0].pv_equipment_id = "pump-1";
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.equipment_reference_unresolved"));
+  assert.ok(result.issues.some(item => item.code === "energy.equipment_role_mismatch"));
+});
+
+test("rejects invalid declared equipment ratings and phase values", () => {
+  const value = valid();
+  value.inventory.equipment[0].rated_voltage_v = 0;
+  value.inventory.equipment[0].phase = "five_phase";
+  value.site.energy_systems[0].grid_phase = "unknown_phase";
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "engineering.rating_must_be_positive"));
+  assert.ok(result.errors.some(item => item.code === "equipment.phase_invalid"));
+  assert.ok(result.errors.some(item => item.code === "energy.grid_phase_invalid"));
+});
+
 test("does not resolve a sensor calibration against an equipment identifier", () => {
   const value = valid();
   value.calibration_records[0].scope = "sensor";
