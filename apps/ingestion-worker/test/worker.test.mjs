@@ -173,6 +173,7 @@ test("valid service identity and D1 ownership checks persist an unverified obser
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
     status: 200, headers: { "content-type": "application/json" },
   });
+  const db = ownershipDb();
   const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
     method: "POST",
     headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
@@ -183,13 +184,13 @@ test("valid service identity and D1 ownership checks persist an unverified obser
       idempotency_key: "test-observation-owned-001",
       provenance: { provider: "test station", acquisition_method: "sensor" },
     }),
-  }), { ...envFor(issuer, fixture.audience), DB: ownershipDb() });
+  }), { ...envFor(issuer, fixture.audience), DB: db });
   assert.equal(response.status, 201);
   const body = await response.json();
   assert.equal(body.status, "accepted");
   assert.equal(body.accepted, true);
   assert.equal(body.verification_status, "unverified");
-  assert.equal(body.idempotent, false);\n  assert.equal(DB_NOT_USED, undefined);
+  assert.equal(body.idempotent, false);\n  assert.equal(db.state.observation.tenant_id, "tenant-a");\n  assert.equal(db.state.audit[0].tenant_id, "tenant-a");
 });
 
 test("D1 ownership mismatch is denied without revealing which record failed", async () => {
