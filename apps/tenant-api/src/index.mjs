@@ -130,6 +130,47 @@ async function createCriteriaDraft(db, tenant, subject, requestId, entry) {
     site_id: siteId, status: "draft", created_by_subject: subject }, status: 201 };
 }
  
+
+async function provisionCriteriaReviewer(db, tenant, actor, requestId, body, action) {
+  const allowed = action === "assign"
+    ? ["reviewer_subject", "reviewer_role", "jurisdiction", "evidence_ref"]
+    : ["reviewer_subject", "reviewer_role", "jurisdiction", "evidence_ref", "reason"];
+  if (!onlyKeys(body, allowed) || !validSubject(body.reviewer_subject) ||
+      body.reviewer_subject === actor ||
+      !["regulatory_reviewer", "domain_expert"].includes(body.reviewer_role) ||
+      typeof body.jurisdiction !== "string" || body.jurisdiction.trim() !== body.jurisdiction ||
+      body.jurisdiction.length < 1 || body.jurisdiction.length > 120 ||
+      typeof body.evidence_ref !== "string" || body.evidence_ref.trim() !== body.evidence_ref ||
+      body.evidence_ref.length < 1 || body.evidence_ref.length > 500 ||
+      (action === "revoke" && (typeof body.reason !== "string" ||
+        body.reason.trim() !== body.reason || body.reason.length < 1 || body.reason.length > 2000))) {
+    return { error: "reviewer_provisioning_request_invalid", status: 400 };
+  }
+  const eventId = crypto.randomUUID();
+  const first = action === "assign"
+    ? db.prepare("INSERT INTO water_quality_criteria_reviewers (tenant_id, reviewer_subject, reviewer_role, jurisdiction, status, assigned_by_subject, assignment_evidence_ref) VALUES (?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(tenant_id, reviewer_subject, reviewer_role) DO NOTHING")
+        .bind(tenant, body.reviewer_subject, body.reviewer_role, body.jurisdiction, actor, body.evidence_ref)
+    : db.prepare("UPDATE water_quality_criteria_reviewers SET status = 'revoked' WHERE tenant_id = ? AND reviewer_subject = ? AND reviewer_role = ? AND jurisdiction = ? AND status = 'active'")
+        .bind(tenant, body.reviewer_subject, body.reviewer_role, body.jurisdiction);
+  const second = action === "assign"
+    ? db.prepare("INSERT INTO water_quality_criteria_reviewer_events (id, tenant_id, reviewer_subject, reviewer_role, jurisdiction, event_type, actor_subject, evidence_ref, request_id) SELECT ?, ?, ?, ?, ?, 'assigned', ?, ?, ? WHERE changes() = 1")
+        .bind(eventId, tenant, body.reviewer_subject, body.reviewer_role, body.jurisdiction, actor, body.evidence_ref, requestId)
+    : db.prepare("INSERT INTO water_quality_criteria_reviewer_events (id, tenant_id, reviewer_subject, reviewer_role, jurisdiction, event_type, actor_subject, evidence_ref, reason, request_id) SELECT ?, ?, ?, ?, ?, 'revoked', ?, ?, ?, ? WHERE changes() = 1")
+        .bind(eventId, tenant, body.reviewer_subject, body.reviewer_role, body.jurisdiction, actor, body.evidence_ref, body.reason, requestId);
+  const results = await db.batch([first, second]);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("criteria_reviewer_batch_invalid");
+  }
+  if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
+    return { error: action === "assign" ? "reviewer_assignment_conflict" : "active_reviewer_not_found", status: action === "assign" ? 409 : 404 };
+  }
+  return { data: { reviewer_subject: body.reviewer_subject, reviewer_role: body.reviewer_role,
+    jurisdiction: body.jurisdiction, status: action === "assign" ? "active" : "revoked",
+    event_type: action === "assign" ? "assigned" : "revoked", actor_subject: actor },
+    status: action === "assign" ? 201 : 200 };
+}
+
 async function readCriteriaRegistry(db, tenant, entryId, version) {
   if (entryId === null) {
     const result = await rows(db.prepare(
@@ -151,11 +192,14 @@ export default {
     const url = new URL(request.url);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
     const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
+    const reviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
+    const reviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/revoke$/);
     const criteriaList = request.method === "GET" ? criteriaCreate : null;
     const criteriaDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/([^/]+)\/([^/]+)$/);
-    if ((!match && !criteriaCreate && !criteriaDetail) || url.search || url.hash ||
-        (request.method === "POST" && (!criteriaCreate || criteriaDetail || match))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1];
+    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke) || url.search || url.hash ||
+        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke || criteriaDetail || match)) ||
+        (request.method === "GET" && (reviewerAssign || reviewerRevoke))) return error("not_found", 404);
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? null;
@@ -186,12 +230,11 @@ export default {
         if (new TextEncoder().encode(raw).byteLength > 65536) return error("invalid_request_body", 400);
         draftBody = JSON.parse(raw);
       } catch { return error("invalid_request_body", 400); }
-      if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody) ||
-          Object.keys(draftBody).length !== 1 || !Object.hasOwn(draftBody, "entry")) return error("invalid_request_body", 400);
+      if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody)) return error("invalid_request_body", 400);
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
-      if (criteriaCreate || criteriaDetail) {
+      if (criteriaCreate || criteriaDetail || reviewerAssign || reviewerRevoke) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
@@ -200,10 +243,18 @@ export default {
             membership[0].tenant_status !== "active") return error("not_found", 404);
         if (request.method === "POST") {
           if (!["tenant_owner", "tenant_admin"].includes(membership[0].role)) return error("not_found", 404);
-          const created = await createCriteriaDraft(env.DB, tenant, subject, requestId, draftBody.entry);
-          return created.error
-            ? json({ error: created.error, details: created.details }, created.status)
-            : json({ data: created.data, request_id: requestId }, created.status);
+          if (criteriaCreate) {
+            if (!onlyKeys(draftBody, ["entry"]) || !Object.hasOwn(draftBody, "entry")) return error("invalid_request_body", 400);
+            const created = await createCriteriaDraft(env.DB, tenant, subject, requestId, draftBody.entry);
+            return created.error
+              ? json({ error: created.error, details: created.details }, created.status)
+              : json({ data: created.data, request_id: requestId }, created.status);
+          }
+          const action = reviewerAssign ? "assign" : "revoke";
+          const provisioned = await provisionCriteriaReviewer(env.DB, tenant, subject, requestId, draftBody, action);
+          return provisioned.error
+            ? json({ error: provisioned.error }, provisioned.status)
+            : json({ data: provisioned.data, request_id: requestId }, provisioned.status);
         }
         if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
         const data = await readCriteriaRegistry(env.DB, tenant, entryId, version);
