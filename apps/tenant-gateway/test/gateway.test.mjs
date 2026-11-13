@@ -298,6 +298,8 @@ test("routes source calibration registration, review and observation quality thr
       "/internal/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations"],
     ["POST", "/api/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations/cal-1/review",
       "/internal/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations/cal-1/review"],
+    ["GET", "/api/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations/cal-1",
+      "/internal/v1/tenants/tenant-a/sites/site-a/sources/source-a/calibrations/cal-1"],
     ["GET", "/api/v1/tenants/tenant-a/observations/obs-1/measurement-quality",
       "/internal/v1/tenants/tenant-a/observations/obs-1/measurement-quality"],
   ];
