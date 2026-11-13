@@ -19,6 +19,7 @@ def database():
         "0006_site_configuration_idempotency.sql",
         "0007_water_quality_criteria_registry.sql",
         "0008_water_quality_criteria_reviewer_events.sql",
+        "0009_site_configuration_reviewers.sql",
     ):
         db.executescript((MIGRATIONS / name).read_text(encoding="utf-8"))
     db.executemany(

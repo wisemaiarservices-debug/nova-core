@@ -8,7 +8,7 @@ INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
 
 INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) VALUES
   ('grant-http-a-site', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'read'),
-  ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create');
+  ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create'),\n  ('grant-http-a-site-manage', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'manage_members');
 
 INSERT INTO sites (id, tenant_id, name, status) VALUES
   ('site-http-a', 'tenant-http-a', 'CI Site A', 'active'),
