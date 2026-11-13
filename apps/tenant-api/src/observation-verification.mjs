@@ -1,6 +1,6 @@
 const validText = (value, max) => typeof value === "string" &&
   value.length > 0 && value.length <= max && value.trim() === value &&
-  !/[\\u0000-\\u001f\\u007f]/.test(value);
+  !/[\u0000-\u001f\u007f]/.test(value);
 const validId = value => validText(value, 160) && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 const onlyKeys = (value, allowed) => value !== null && typeof value === "object" &&
   !Array.isArray(value) && Object.keys(value).every(key => allowed.includes(key));
