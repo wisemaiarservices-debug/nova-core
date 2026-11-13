@@ -19,6 +19,10 @@ def test_private_tenant_api_sql_compiles_against_ordered_schema_migrations():
         MIGRATIONS / "0002_tenant_isolation.sql",
         MIGRATIONS / "0003_internal_request_nonces.sql",
         MIGRATIONS / "0004_tenant_ownership_immutability.sql",
+        MIGRATIONS / "0005_tenant_site_configuration_history.sql",
+        MIGRATIONS / "0006_site_configuration_idempotency.sql",
+        MIGRATIONS / "0007_water_quality_criteria_registry.sql",
+        MIGRATIONS / "0008_water_quality_criteria_reviewer_events.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
 
@@ -45,6 +49,9 @@ def _migrated_tenant_db():
         MIGRATIONS / "0002_tenant_isolation.sql",
         MIGRATIONS / "0003_internal_request_nonces.sql",
         MIGRATIONS / "0004_tenant_ownership_immutability.sql",
+        MIGRATIONS / "0005_tenant_site_configuration_history.sql",
+        MIGRATIONS / "0006_site_configuration_idempotency.sql",
+        MIGRATIONS / "0007_water_quality_criteria_registry.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
     return db
