@@ -100,6 +100,42 @@ try {
   assert.equal(draftListed.response.status, 200, JSON.stringify(draftListed.body));
   assert.equal(draftListed.body.data.some(row => row.id === "criteria-http-draft" && row.entry.review.status === "draft"), true);
 
+  const regulatoryReviewer = {
+    reviewer_subject: "ci-regulatory-reviewer", reviewer_role: "regulatory_reviewer",
+    jurisdiction: "TN", evidence_ref: "fixture:regulatory-appointment",
+  };
+  const domainReviewer = {
+    reviewer_subject: "ci-domain-reviewer", reviewer_role: "domain_expert",
+    jurisdiction: "TN", evidence_ref: "fixture:domain-appointment",
+  };
+  for (const reviewer of [regulatoryReviewer, domainReviewer]) {
+    const assigned = await throughGateway(
+      "/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers/assign",
+      accessToken(), { "content-type": "application/json" }, "POST", JSON.stringify(reviewer));
+    assert.equal(assigned.response.status, 201, JSON.stringify(assigned.body));
+  }
+  const submitted = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/submit",
+    accessToken(), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(submitted.response.status, 200, JSON.stringify(submitted.body));
+  assert.equal(submitted.body.data.status, "submitted_for_review");
+
+  const firstApproval = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/review",
+    accessToken(regulatoryReviewer.reviewer_subject), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ reviewer_role: regulatoryReviewer.reviewer_role, decision: "approve",
+      evidence_ref: "fixture:regulatory-review" }));
+  assert.equal(firstApproval.response.status, 201, JSON.stringify(firstApproval.body));
+  assert.equal(firstApproval.body.data.status, "submitted_for_review");
+
+  const secondApproval = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/review",
+    accessToken(domainReviewer.reviewer_subject), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ reviewer_role: domainReviewer.reviewer_role, decision: "approve",
+      evidence_ref: "fixture:domain-review" }));
+  assert.equal(secondApproval.response.status, 201, JSON.stringify(secondApproval.body));
+  assert.equal(secondApproval.body.data.status, "approved");
+
   const reviewer = {
     reviewer_subject: "independent-reviewer@example.test",
     reviewer_role: "regulatory_reviewer", jurisdiction: "TN",
@@ -257,7 +293,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and persisted lifecycle events, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and dual-role approval lifecycle, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
