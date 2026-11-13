@@ -67,11 +67,11 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
       let inserted = false;
       if (!state.observation) {
         state.observation = {
-          id: v[0], site_id: v[1], asset_id: v[2], source_id: v[3],
-          module: v[4], metric: v[5], value: v[6], unit: v[7],
-          observed_at: v[8], idempotency_key: v[9],
-          verification_status: "unverified", provenance_json: v[10],
-          quality_flags_json: v[11],
+          id: v[0], site_id: v[1], tenant_id: v[2], asset_id: v[3], source_id: v[4],
+          module: v[5], metric: v[6], value: v[7], unit: v[8],
+          observed_at: v[9], idempotency_key: v[10],
+          verification_status: "unverified", provenance_json: v[11],
+          quality_flags_json: v[12],
         };
         state.audit.push({ id: statements[1].values[0], tenant_id: statements[1].values[1], actor_id: statements[1].values[2] });
         inserted = true;
