@@ -252,7 +252,8 @@ export function assessDomainConfiguration(payload) {
           issues.push(issue("energy.equipment_reference_unresolved",
             "site.energy_systems[" + i + "]." + field, "verification_required"));
         } else if (system[field]) {
-          const equipment = payload.inventory?.equipment?.find(item => plainObject(item) && item.id === system[field]);
+          const equipment = Array.isArray(payload.inventory?.equipment)
+            ? payload.inventory.equipment.find(item => plainObject(item) && item.id === system[field]) : undefined;
           if (equipment && equipment.asset_class && equipment.asset_class !== role) {
             issues.push(issue("energy.equipment_role_mismatch",
               "site.energy_systems[" + i + "]." + field, "verification_required"));
