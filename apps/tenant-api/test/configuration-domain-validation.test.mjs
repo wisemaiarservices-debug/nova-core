@@ -112,3 +112,23 @@ test("flags unrecognized protocols and client-specific equipment fields", () => 
   assert.ok(result.issues.some(item => item.code === "inventory.protocol_unrecognized"));
   assert.ok(result.issues.some(item => item.code === "field.unsupported"));
 });
+
+test("validates positive engineering ratings without assuming a fixed equipment design", () => {
+  const value = valid();
+  value.site.irrigation_systems[0].design_flow_m3_per_hour = -3;
+  value.site.energy_systems[0].battery_capacity_kwh = 0;
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, false);
+  assert.equal(result.errors.filter(item => item.code === "engineering.rating_must_be_positive").length, 2);
+});
+
+test("allows tenant identity while surfacing unsupported nested crop and equipment fields", () => {
+  const value = valid();
+  value.site.crops[0].cultivar_code_from_vendor = "X7";
+  value.inventory.equipment[0].rated_voltage = 24;
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.ok(result.issues.some(item => item.path === "site.crops[0].cultivar_code_from_vendor"));
+  assert.ok(result.issues.some(item => item.path === "inventory.equipment[0].rated_voltage"));
+  assert.equal(result.issues.some(item => item.path === "tenant.tenant_id"), false);
+});
