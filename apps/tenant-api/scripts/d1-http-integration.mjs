@@ -57,6 +57,25 @@ try {
   const invalidIdentity = await throughGateway(sitePath, "not.a.valid.jwt");
   assert.equal(invalidIdentity.response.status, 401);
 
+  const criteriaList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
+  assert.equal(criteriaList.response.status, 200, JSON.stringify(criteriaList.body));
+  assert.equal(criteriaList.body.data.length, 1);
+  assert.equal(criteriaList.body.data[0].id, "criteria-http-a");
+  assert.equal(criteriaList.body.data[0].entry.criteria[0].parameter, "ec");
+
+  const criteriaVersion = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-a/1.0");
+  assert.equal(criteriaVersion.response.status, 200, JSON.stringify(criteriaVersion.body));
+  assert.equal(criteriaVersion.body.data.id, "criteria-http-a");
+  assert.equal(criteriaVersion.body.data.version, "1.0");
+
+  const criteriaCrossTenant = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/water-quality-criteria");
+  assert.equal(criteriaCrossTenant.response.status, 404);
+  const criteriaUnknownVersion = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-a/9.9");
+  assert.equal(criteriaUnknownVersion.response.status, 404);
+
   const forgedHeaders = await throughGateway(sitePath, accessToken(), {
     "x-nova-verified-subject": "attacker-subject",
     "x-nova-verified-issuer": "https://attacker.example",
@@ -184,7 +203,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized read, missing grant, cross-tenant denial, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
