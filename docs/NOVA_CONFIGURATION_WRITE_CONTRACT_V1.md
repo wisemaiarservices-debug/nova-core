@@ -27,3 +27,7 @@ This module is a pure validation boundary for the future private tenant configur
 - A digest proves content consistency, not truth, source provenance, calibration, scientific validity, or site suitability.
 - No write route is exposed and no D1 binding or migration is applied remotely.
 - Review approval remains separate from equipment activation or autonomous control.
+
+## Exact authorization decision helper
+
+`apps/tenant-api/src/configuration-write-authorization.mjs` provides a pure fail-closed decision function for a future handler. It requires exactly one active membership for the verified principal and exactly one exact site-level `create` grant. The tenant role must independently permit `create`. Wildcard grants, duplicate grants, cross-tenant rows, inactive memberships, and roles without create authority are denied. The function is not an identity verifier and must receive membership/grant rows from parameterized D1 queries after gateway envelope verification.
