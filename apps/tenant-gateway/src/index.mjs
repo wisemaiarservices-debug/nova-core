@@ -89,9 +89,11 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
               !Number.isFinite(declaredLength) || declaredLength > 65536) return error("invalid_request_body", 400);
           headers.set("content-type", "application/json");
         }
+        const forwardedBody = request.method === "POST" ? await request.arrayBuffer() : undefined;
+        if (forwardedBody && forwardedBody.byteLength > 65536) return error("invalid_request_body", 400);
         const upstream = await env.TENANT_API.fetch(new Request(
           "https://nova-core-tenant-api.internal" + internalPath,
-          { method: request.method, headers, body: request.method === "POST" ? request.body : undefined },
+          { method: request.method, headers, body: forwardedBody },
         ));
         return await boundedJsonResponse(upstream, requestId);
       } catch {
