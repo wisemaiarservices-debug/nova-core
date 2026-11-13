@@ -83,7 +83,6 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const internalPath = configurationCreate
         ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations`
         : match
-      const internalPath = match
         ? `/internal/v1/tenants/${tenant}/${match[2]}/${resourceId}`
         : criteriaDetail
           ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${entryId}/${version}`
