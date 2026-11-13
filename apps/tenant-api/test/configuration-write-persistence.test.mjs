@@ -94,3 +94,11 @@ test("does not accept a successful-looking batch when a required statement chang
   }));
   await assert.rejects(()=>createSiteConfiguration({db,...input}),/configuration_atomic_write_failed/);
 });
+
+test("rejects schema IDs outside the server-owned allowlist before any write",async()=>{
+  const db=fakeDb();
+  await assert.rejects(()=>createSiteConfiguration({
+    db,...input,schemaId:"nova.client-config.unapproved.v99",
+  }),/configuration_schema_not_supported/);
+  assert.equal(db.calls.some(c=>c.kind==="batch"),false);
+});
