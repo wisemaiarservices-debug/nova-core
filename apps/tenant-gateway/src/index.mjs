@@ -35,6 +35,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
       const url = new URL(request.url);
       const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
+      const configurationRead = request.method === "GET" ? url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations(?:\/([^/]+))?$/) : null;
       const configurationCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/configurations$/);
       const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
       const reviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
@@ -46,16 +47,18 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const criteriaReview = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
       const criteriaResolve = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
       const criteriaAssess = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/assess$/);
-      if ((!match && !configurationCreate && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
+      if ((!match && !configurationRead && !configurationCreate && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess) || url.search || url.hash ||
           (request.method === "POST" && (!configurationCreate && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess || criteriaDetail || match)) ||
           (request.method === "GET" && (configurationCreate || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess))) return error("not_found", 404);
-      const tenant = match?.[1] ?? configurationCreate?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
+      const tenant = match?.[1] ?? configurationRead?.[1] ?? configurationCreate?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1];
       const resourceId = match?.[3];
-      const configurationSiteId = configurationCreate?.[2] ?? null;
+      const configurationSiteId = configurationCreate?.[2] ?? configurationRead?.[2] ?? null;
+      const configurationVersion = configurationRead?.[3] ?? null;
       const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
       const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
       if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
           (configurationSiteId && !validPathId(configurationSiteId, 160)) ||
+          (configurationVersion && !validPathId(configurationVersion, 32)) ||
           ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess) && (!validPathId(entryId) || !validPathId(version, 80)))) return error("not_found", 404);
       if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
           typeof env.ACCESS_AUDIENCE !== "string" || !env.ACCESS_AUDIENCE) {
@@ -80,9 +83,10 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const requestId = crypto.randomUUID();
       const idempotencyKey = request.headers.get("idempotency-key");
       if (configurationCreate && !validPathId(idempotencyKey, 200)) return error("idempotency_key_required", 400);
-      const internalPath = configurationCreate
-        ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations`
-        : match
+      const internalPath = configurationRead
+        ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations${configurationVersion ? `/${configurationVersion}` : ""}`
+        : configurationCreate
+          ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations`
         ? `/internal/v1/tenants/${tenant}/${match[2]}/${resourceId}`
         : criteriaDetail
           ? `/internal/v1/tenants/${tenant}/water-quality-criteria/${entryId}/${version}`
