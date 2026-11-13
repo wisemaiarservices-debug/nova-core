@@ -708,8 +708,8 @@ test("assesses sample values only against the approved tenant criteria and prese
   db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
     role: "viewer", membership_status: "active", tenant_status: "active" }];
   const samples = [
-    { id: "sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
-    { id: "sample-outside", parameter: "ec", value: 3, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
+    { id: "sample-within", parameter: "ec", value: 1.5, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z", provenance: { source_type: "measured", method: "field_meter", evidence_ref: "evidence:sample-1" } },
+    { id: "sample-outside", parameter: "ec", value: 3, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z", provenance: { source_type: "laboratory", method: "ion_chromatography", laboratory: "Declared lab", evidence_ref: "report:sample-2" } },
   ];
   const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-assess-approved" },
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-resolve-1/1.0/assess",
@@ -735,8 +735,8 @@ test("does not assess samples against draft or pending criteria and leaves inval
   const response = await worker.fetch(await request({ "x-nova-request-id": "criteria-assess-pending" },
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-resolve-1/1.0/assess",
     "POST", JSON.stringify({ context: resolutionContext, samples: [
-      { id: "pending-sample", parameter: "ec", value: 1, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z" },
-      { id: "missing-time", parameter: "ec", value: 1, unit: "dS/m" },
+      { id: "pending-sample", parameter: "ec", value: 1, unit: "dS/m", sampled_at: "2026-05-10T10:00:00Z", provenance: { source_type: "measured", method: "field_meter", evidence_ref: "evidence:pending" } },
+      { id: "missing-time", parameter: "ec", value: 1, unit: "dS/m", provenance: { source_type: "measured", method: "field_meter", evidence_ref: "evidence:missing-time" } },
     ] })), env(db));
   assert.equal(response.status, 200);
   const result = (await response.json()).data;
