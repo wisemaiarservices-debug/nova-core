@@ -19,7 +19,8 @@ def database():
         "0006_site_configuration_idempotency.sql",
         "0007_water_quality_criteria_registry.sql",
         "0008_water_quality_criteria_reviewer_events.sql",
-        "0010_observation_verification_workflow.sql",\n        "0011_laboratory_report_evidence.sql",
+        "0010_observation_verification_workflow.sql",
+        "0011_laboratory_report_evidence.sql",
     ):
         db.executescript((MIGRATIONS / name).read_text(encoding="utf-8"))
     db.execute("INSERT INTO tenants (id, display_name) VALUES ('tenant-a', 'Tenant A')")
@@ -130,7 +131,9 @@ def test_reviewer_status_cannot_be_changed_without_a_matching_event():
 
 def test_laboratory_report_evidence_stores_original_bytes_and_server_digest():
     db = database()
-    document = b"%PDF-1.4\\nlab report fixture\\n%%EOF"
+    document = b"%PDF-1.4\
+lab report fixture\
+%%EOF"
     digest = hashlib.sha256(document).hexdigest()
     db.execute("""INSERT INTO laboratory_report_evidence
       (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
@@ -149,7 +152,9 @@ def test_laboratory_report_evidence_stores_original_bytes_and_server_digest():
 
 def test_laboratory_report_evidence_requires_matching_registration_event():
     db = database()
-    document = b"%PDF-1.4\\nlab report fixture\\n%%EOF"
+    document = b"%PDF-1.4\
+lab report fixture\
+%%EOF"
     digest = hashlib.sha256(document).hexdigest()
     db.execute("""INSERT INTO laboratory_report_evidence
       (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
@@ -171,7 +176,9 @@ def test_laboratory_report_evidence_requires_matching_registration_event():
 
 def test_laboratory_report_evidence_and_history_are_immutable():
     db = database()
-    document = b"%PDF-1.4\\nlab report fixture\\n%%EOF"
+    document = b"%PDF-1.4\
+lab report fixture\
+%%EOF"
     digest = hashlib.sha256(document).hexdigest()
     db.execute("""INSERT INTO laboratory_report_evidence
       (id, tenant_id, site_id, evidence_type, file_name, media_type, byte_length,
