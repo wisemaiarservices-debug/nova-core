@@ -331,6 +331,50 @@ try {
   const labReportCrossTenant = await throughGateway(
     "/api/v1/tenants/tenant-http-b/sites/site-http-b/laboratory-reports/" + labReport.body.data.id);
   assert.equal(labReportCrossTenant.response.status, 404);
+  // A calibration record stays unverified until a separate assigned reviewer acts.
+  const calibrationReviewer = { site_id: "site-http-a",
+    reviewer_subject: "ci-calibration-reviewer", evidence_ref: "fixture:calibration-reviewer-appointment" };
+  const reviewerAssigned = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/observations/reviewers/assign", accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify(calibrationReviewer));
+  assert.equal(reviewerAssigned.response.status, 201, JSON.stringify(reviewerAssigned.body));
+  const calibrationPayload = { instrument_serial: "CI-SENSOR-001", metric: "ec", unit: "dS/m",
+    calibration_method: "laboratory", calibration_standard: "CI EC reference standard",
+    calibrated_at: "2026-05-01T10:00:00Z", valid_until: "2027-05-01T10:00:00Z",
+    range_min: 0, range_max: 2, uncertainty: 0.05,
+    evidence_ref: "lab-report:" + labReport.body.data.id };
+  const calibrationPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/sources/source-http-a/calibrations";
+  const calibration = await throughGateway(calibrationPath, accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify(calibrationPayload));
+  assert.equal(calibration.response.status, 201, JSON.stringify(calibration.body));
+  assert.equal(calibration.body.data.status, "unverified");
+  const calibrationDetail = await throughGateway(calibrationPath + "/" + calibration.body.data.id, accessToken());
+  assert.equal(calibrationDetail.response.status, 200, JSON.stringify(calibrationDetail.body));
+  assert.equal(calibrationDetail.body.data.events[0].event_type, "registered");
+  assert.equal(calibrationDetail.body.data.instrument_serial, "CI-SENSOR-001");
+  const calibrationReviewPath = calibrationPath + "/" + calibration.body.data.id + "/review";
+  const calibrationVerified = await throughGateway(calibrationReviewPath,
+    accessToken("ci-calibration-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "verify", evidence_ref: "inspection:calibration-review" }));
+  assert.equal(calibrationVerified.response.status, 201, JSON.stringify(calibrationVerified.body));
+  assert.equal(calibrationVerified.body.data.status, "verified");
+  const measurementQualityPath = "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/measurement-quality";
+  const measurementQuality = await throughGateway(measurementQualityPath, accessToken());
+  assert.equal(measurementQuality.response.status, 200, JSON.stringify(measurementQuality.body));
+  assert.equal(measurementQuality.body.data.status, "covered_by_verified_calibration");
+  assert.equal(measurementQuality.body.data.observation_verification_status, "unverified");
+  const calibrationRevoked = await throughGateway(calibrationReviewPath,
+    accessToken("ci-calibration-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "revoke", evidence_ref: "inspection:calibration-withdrawal",
+      reason: "Calibration certificate withdrawn in CI fixture" }));
+  assert.equal(calibrationRevoked.response.status, 201, JSON.stringify(calibrationRevoked.body));
+  const qualityAfterRevocation = await throughGateway(measurementQualityPath, accessToken());
+  assert.equal(qualityAfterRevocation.response.status, 200);
+  assert.equal(qualityAfterRevocation.body.data.status, "not_assessed");
+  assert.equal(qualityAfterRevocation.body.data.reason, "calibration_pending_human_review");
+  const crossTenantQuality = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/observations/obs-http-verified/measurement-quality");
+  assert.equal(crossTenantQuality.response.status, 404);
 
   const forgedHeaders = await throughGateway(sitePath, accessToken(), {
     "x-nova-verified-subject": "attacker-subject",

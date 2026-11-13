@@ -6,13 +6,15 @@ INSERT INTO tenants (id, display_name, status) VALUES
 INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
   ('membership-http-a', 'tenant-http-a', 'ci-human-subject', 'tenant_owner', 'active'),
   ('membership-http-reviewer', 'tenant-http-a', 'ci-measurement-reviewer', 'viewer', 'active'),
-  ('membership-http-service-subject', 'tenant-http-a', 'neoagro-ingestion-service', 'viewer', 'active');
+  ('membership-http-service-subject', 'tenant-http-a', 'neoagro-ingestion-service', 'viewer', 'active'),
+  ('membership-http-calibration-reviewer', 'tenant-http-a', 'ci-calibration-reviewer', 'viewer', 'active');
 
 INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) VALUES
   ('grant-http-a-site', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'read'),
   ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create'),
   ('grant-http-a-reviewer-site', 'tenant-http-a', 'ci-measurement-reviewer', 'site', 'site-http-a', 'read'),
-  ('grant-http-a-service-subject-site', 'tenant-http-a', 'neoagro-ingestion-service', 'site', 'site-http-a', 'read');
+  ('grant-http-a-service-subject-site', 'tenant-http-a', 'neoagro-ingestion-service', 'site', 'site-http-a', 'read'),
+  ('grant-http-a-calibration-reviewer-site', 'tenant-http-a', 'ci-calibration-reviewer', 'site', 'site-http-a', 'read');
 
 INSERT INTO sites (id, tenant_id, name, status) VALUES
   ('site-http-a', 'tenant-http-a', 'CI Site A', 'active'),
