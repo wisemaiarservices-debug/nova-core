@@ -26,6 +26,12 @@ Methods are laboratory, field_comparison, manufacturer, reference_instrument or 
 
 New records are always unverified. The uploader cannot review their own calibration.
 
+## Read calibration details and review history
+
+GET /api/v1/tenants/{tenant_id}/sites/{site_id}/sources/{source_id}/calibrations/{calibration_id}
+
+Requires active tenant membership with read capability and an exact site read grant. Returns the immutable calibration metadata and its append-only registration, verification, rejection and revocation events.
+
 ## Verify, reject or revoke
 
 POST /api/v1/tenants/{tenant_id}/sites/{site_id}/sources/{source_id}/calibrations/{calibration_id}/review
