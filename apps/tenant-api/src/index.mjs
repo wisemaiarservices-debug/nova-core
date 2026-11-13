@@ -205,7 +205,7 @@ async function recordCriteriaReview(db, tenant, entryId, version, reviewerSubjec
   }
   const jurisdiction = entryRows[0].jurisdiction;
   const assignments = await rows(db.prepare(
-    "SELECT reviewer_subject, reviewer_role, jurisdiction FROM water_quality_criteria_reviewers WHERE tenant_id = ? AND reviewer_subject = ? AND reviewer_role = ? AND jurisdiction = ? AND status = 'active' LIMIT 2"
+    "SELECT r.reviewer_subject, r.reviewer_role, r.jurisdiction FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = ? AND r.reviewer_subject = ? AND r.reviewer_role = ? AND r.jurisdiction = ? AND r.status = 'active' LIMIT 2"
   ).bind(tenant, reviewerSubject, body.reviewer_role, jurisdiction));
   if (assignments.length !== 1 || assignments[0].reviewer_subject !== reviewerSubject ||
       assignments[0].reviewer_role !== body.reviewer_role || assignments[0].jurisdiction !== jurisdiction) {
