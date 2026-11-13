@@ -186,6 +186,38 @@ test("validates irrigation controller and sensor gateway references by resource 
   assert.equal(resolvedResult.issues.some(item => item.code === "sensor.gateway_reference_unresolved"), false);
 });
 
+test("checks declared sensor protocol against gateway capabilities without inferring connectivity", () => {
+  const compatible = valid();
+  compatible.inventory.sensors[0].gateway_id = "gateway-1";
+  compatible.inventory.gateways[0].supported_protocols = ["mqtt", "lorawan"];
+  const compatibleResult = assessDomainConfiguration(compatible);
+  assert.equal(compatibleResult.issues.some(item => item.code === "sensor.gateway_protocol_not_declared"), false);
+  assert.equal(compatibleResult.status.operational_review, "not_started");
+
+  const incompatible = valid();
+  incompatible.inventory.sensors[0].gateway_id = "gateway-1";
+  incompatible.inventory.gateways[0].supported_protocols = ["lorawan"];
+  const incompatibleResult = assessDomainConfiguration(incompatible);
+  assert.ok(incompatibleResult.issues.some(item => item.code === "sensor.gateway_protocol_not_declared"));
+
+  const unspecified = valid();
+  unspecified.inventory.sensors[0].gateway_id = "gateway-1";
+  const unspecifiedResult = assessDomainConfiguration(unspecified);
+  assert.ok(unspecifiedResult.issues.some(item => item.code === "gateway.protocol_capabilities_unspecified"));
+});
+
+test("rejects malformed and duplicate gateway protocol capability declarations", () => {
+  const malformed = valid();
+  malformed.inventory.gateways[0].supported_protocols = "mqtt";
+  const malformedResult = assessDomainConfiguration(malformed);
+  assert.ok(malformedResult.errors.some(item => item.code === "gateway.supported_protocols_invalid"));
+
+  const duplicate = valid();
+  duplicate.inventory.gateways[0].supported_protocols = ["mqtt", "mqtt"];
+  const duplicateResult = assessDomainConfiguration(duplicate);
+  assert.ok(duplicateResult.errors.some(item => item.code === "gateway.supported_protocols_duplicate"));
+});
+
 test("does not resolve a sensor calibration against an equipment identifier", () => {
   const value = valid();
   value.calibration_records[0].scope = "sensor";
