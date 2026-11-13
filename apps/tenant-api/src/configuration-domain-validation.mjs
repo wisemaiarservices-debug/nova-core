@@ -7,7 +7,7 @@ const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at",
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
   water_sources: new Set(["id", "source_type", "name", "available_flow_m3_per_hour", "permitted_abstraction_m3_per_day", "quality_samples", "evidence_ref"]),
-  soil_profiles: new Set(["id", "name", "classification_system", "classification", "horizons", "samples", "evidence_ref"]),
+  soil_profiles: new Set(["id", "name", "classification_system", "classification", "horizons", "samples", "hydraulic_measurements", "evidence_ref"]),
   irrigation_systems: new Set(["id", "method", "water_source", "water_source_id", "design_flow_m3_per_hour", "controller_id", "pump_id", "control_protocol", "zones", "evidence_ref"]),
   energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "inverter_id", "battery_id", "pv_equipment_id", "pv_strings", "design_min_temperature_c", "design_max_temperature_c", "battery_min_voltage_v", "battery_max_voltage_v", "battery_charge_power_kw", "battery_discharge_power_kw", "grid_export_limit_kw", "grid_import_limit_kw", "evidence_ref"]),
   equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "rated_voltage_v", "rated_power_kw", "rated_flow_m3_per_hour", "phase", "pv_voc_v", "pv_vmp_v", "pv_isc_a", "pv_imp_a", "pv_power_w", "battery_capacity_kwh", "voc_temp_coefficient_pct_per_c", "vmp_temp_coefficient_pct_per_c", "inverter_max_input_voltage_v", "inverter_mppt_min_voltage_v", "inverter_mppt_max_voltage_v", "inverter_max_input_current_a", "inverter_max_short_circuit_current_a", "battery_min_voltage_v", "battery_max_voltage_v", "battery_max_charge_power_kw", "battery_max_discharge_power_kw", "inverter_max_battery_charge_power_kw", "inverter_max_battery_discharge_power_kw", "evidence_ref"]),
@@ -151,6 +151,53 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
       }
       if (profile.classification_system && !profile.classification) {
         issues.push(issue("soil_profile.classification_missing", profilePath + ".classification", "verification_required"));
+      }
+      const hydraulicMeasurements = profile.hydraulic_measurements ?? [];
+      if (!Array.isArray(hydraulicMeasurements)) {
+        errors.push(issue("soil_hydraulic.measurements_invalid_type", profilePath + ".hydraulic_measurements", "verification_required"));
+      } else {
+        const measurementIds = new Set();
+        hydraulicMeasurements.forEach((measurement, measurementIndex) => {
+          const measurementPath = profilePath + ".hydraulic_measurements[" + measurementIndex + "]";
+          if (!plainObject(measurement) || typeof measurement.id !== "string" || !TOKEN.test(measurement.id) || measurementIds.has(measurement.id)) {
+            errors.push(issue("soil_hydraulic.id_missing_or_duplicate", measurementPath + ".id", "verification_required"));
+            return;
+          }
+          measurementIds.add(measurement.id);
+          unknownKeys(measurement, new Set(["id", "parameter", "value", "unit", "top_depth_cm", "bottom_depth_cm", "source_type", "method", "sampled_at", "evidence_ref"]), measurementPath, issues);
+          if (!["field_capacity", "wilting_point", "bulk_density"].includes(measurement.parameter)) {
+            errors.push(issue("soil_hydraulic.parameter_invalid", measurementPath + ".parameter", "verification_required"));
+          }
+          if (typeof measurement.value !== "number" || !Number.isFinite(measurement.value) || measurement.value < 0 ||
+              typeof measurement.unit !== "string" || !measurement.unit.trim()) {
+            errors.push(issue("soil_hydraulic.value_or_unit_invalid", measurementPath, "verification_required"));
+          }
+          if (typeof measurement.top_depth_cm !== "number" || !Number.isFinite(measurement.top_depth_cm) || measurement.top_depth_cm < 0 ||
+              typeof measurement.bottom_depth_cm !== "number" || !Number.isFinite(measurement.bottom_depth_cm) || measurement.bottom_depth_cm <= measurement.top_depth_cm) {
+            errors.push(issue("soil_hydraulic.depth_interval_invalid", measurementPath, "verification_required"));
+          }
+          if (!["measured", "laboratory", "modelled"].includes(measurement.source_type)) {
+            issues.push(issue("soil_hydraulic.source_type_unverified", measurementPath + ".source_type", "verification_required"));
+          }
+          if (typeof measurement.method !== "string" || !measurement.method.trim()) {
+            issues.push(issue("soil_hydraulic.method_missing", measurementPath + ".method", "verification_required"));
+          }
+          if (typeof measurement.sampled_at !== "string" || !Number.isFinite(Date.parse(measurement.sampled_at)) || !/(Z|[+-]\\d{2}:\\d{2})$/.test(measurement.sampled_at)) {
+            errors.push(issue("soil_hydraulic.timestamp_invalid", measurementPath + ".sampled_at", "verification_required"));
+          }
+          if (!measurement.evidence_ref) issues.push(issue("soil_hydraulic.evidence_missing", measurementPath + ".evidence_ref", "verification_required"));
+          if (measurement.parameter === "field_capacity" || measurement.parameter === "wilting_point") {
+            const volumetric = ["m3/m3", "cm3/cm3"].includes(measurement.unit);
+            const gravimetric = ["kg/kg", "g/g"].includes(measurement.unit);
+            if (!volumetric && !gravimetric) issues.push(issue("soil_hydraulic.water_content_unit_unsupported", measurementPath + ".unit", "verification_required"));
+            if ((volumetric || gravimetric) && measurement.value > 1) {
+              errors.push(issue("soil_hydraulic.water_content_out_of_range", measurementPath + ".value", "verification_required"));
+            }
+          }
+          if (measurement.parameter === "bulk_density" && !["g/cm3", "kg/m3"].includes(measurement.unit)) {
+            issues.push(issue("soil_hydraulic.bulk_density_unit_unsupported", measurementPath + ".unit", "verification_required"));
+          }
+        });
       }
       const horizons = profile.horizons ?? [];
       if (!Array.isArray(horizons)) {
@@ -403,7 +450,16 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
                 if (zoneIds.has(zone.id)) {
                   errors.push(issue("irrigation.zone_id_missing_or_duplicate", zonePath + ".id", "verification_required"));
                 } else zoneIds.add(zone.id);
-                unknownKeys(zone, new Set(["id", "pump_id", "controller_id", "design_flow_m3_per_hour", "area_ha"]), zonePath, issues);
+                unknownKeys(zone, new Set(["id", "pump_id", "controller_id", "design_flow_m3_per_hour", "area_ha", "soil_profile_id", "soil_horizon_id"]), zonePath, issues);
+                if (zone.soil_profile_id !== undefined && !soilProfiles.some(profile => plainObject(profile) && profile.id === zone.soil_profile_id)) {
+                  issues.push(issue("irrigation.zone_soil_profile_reference_unresolved", zonePath + ".soil_profile_id", "verification_required"));
+                }
+                if (zone.soil_horizon_id !== undefined) {
+                  const linkedProfile = soilProfiles.find(profile => plainObject(profile) && profile.id === zone.soil_profile_id);
+                  if (!linkedProfile || !Array.isArray(linkedProfile.horizons) || !linkedProfile.horizons.some(horizon => plainObject(horizon) && horizon.id === zone.soil_horizon_id)) {
+                    issues.push(issue("irrigation.zone_soil_horizon_reference_unresolved", zonePath + ".soil_horizon_id", "verification_required"));
+                  }
+                }
                 for (const key of ["design_flow_m3_per_hour", "area_ha"]) {
                   if (zone[key] !== undefined && zone[key] !== null && !finitePositive(zone[key])) {
                     errors.push(issue("engineering.rating_must_be_positive", zonePath + "." + key, "verification_required"));
@@ -852,6 +908,9 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
         checkEvidenceReference(record.evidence_ref, "configuration." + kind + "[" + i + "].evidence_ref");
         if (kind === "water_sources" && Array.isArray(record.quality_samples)) record.quality_samples.forEach((sample, j) => {
           if (plainObject(sample)) checkEvidenceReference(sample.evidence_ref, "configuration.water_sources[" + i + "].quality_samples[" + j + "].evidence_ref");
+        });
+        if (kind === "soil_profiles" && Array.isArray(record.hydraulic_measurements)) record.hydraulic_measurements.forEach((measurement, j) => {
+          if (plainObject(measurement)) checkEvidenceReference(measurement.evidence_ref, "configuration.soil_profiles[" + i + "].hydraulic_measurements[" + j + "].evidence_ref");
         });
         if (kind === "soil_profiles" && Array.isArray(record.horizons)) record.horizons.forEach((horizon, j) => {
           if (plainObject(horizon)) checkEvidenceReference(horizon.evidence_ref, "configuration.soil_profiles[" + i + "].horizons[" + j + "].evidence_ref");
