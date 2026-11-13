@@ -45,3 +45,36 @@ The persistence service now owns the supported schema allowlist internally (`nov
 ## Local D1 persistence integration
 
 The disposable CI-only Wrangler configuration points to `src/local-write-test-entry.mjs`, not the production Worker entrypoint. That test harness invokes the same `createSiteConfiguration()` helper against local D1 and is excluded from the production Wrangler configuration. The local integration verifies sequential versions, exact replay, conflicting idempotency-key reuse, matching review/audit records, and rollback after a deliberately injected late audit-statement failure. The fixture grant is exact to the CI tenant and site; no production identity or data is used.
+
+
+## Adaptive domain envelope
+
+Before canonicalization and the atomic D1 batch, the write helper now calls
+`assessDomainConfiguration()` from
+`apps/tenant-api/src/configuration-domain-validation.mjs`. The accepted
+`nova.client-config.v1` payload is an envelope with tenant and site identity,
+optional multi-valued crop/irrigation/energy profiles, equipment/sensor/gateway
+declarations, calibration records, evidence references and namespaced client
+extensions. The payload tenant/site IDs must exactly match the separately
+authorized tenant/site request context.
+
+Known structural errors reject the write before any idempotency or snapshot
+record is created. Missing specifications are reported as readiness issues,
+not defaulted or inferred. Unknown fields are flagged; namespaced extensions
+are preserved but require client-schema review. Calibration is scoped to
+customer site/asset/sensor and cannot represent global model parameters.
+
+The validator returns four independent states: structural validity, evidence
+readiness, operational review and model applicability. It never marks
+operational review approved and never assesses model applicability. Presence
+of an evidence reference, equipment declaration or protocol does not establish
+its truth, commissioning, calibration validity, live connectivity or telemetry.
+
+The validator deliberately does not claim full GIS topology/CRS transformation,
+engineering sizing, hydraulic/electrical compatibility, device commissioning,
+certificate verification or scientific model validity. These remain separate
+review gates. Node tests cover multi-system profiles, missing values, explicit
+CRS, geometry/range/date errors, tenant/site binding, client extensions,
+calibration scope and evidence gaps. The disposable local D1 integration also
+proves a structurally invalid configuration creates no idempotency, snapshot,
+review or audit rows.
