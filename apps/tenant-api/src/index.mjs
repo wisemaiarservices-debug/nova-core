@@ -521,6 +521,7 @@ export default {
             if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role)) {
               return error("not_found", 404);
             }
+            if (Object.hasOwn(draftBody, "site_id")) return error("invalid_request_body", 400);
             const registered = await registerLaboratoryReportEvidence(env.DB, tenant, subject,
               requestId, { ...draftBody, site_id: siteId });
             return registered.error ? json({ error: registered.error }, registered.status)
