@@ -4,7 +4,7 @@ import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-crite
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
 import { assignObservationReviewer, reviewObservation } from "./observation-verification.mjs";
 import { registerLaboratoryReportEvidence, readLaboratoryReportEvidence } from "./laboratory-report-evidence.mjs";
-import { createSourceCalibration, reviewSourceCalibration, assessObservationCalibration } from "./source-calibration.mjs";
+import { createSourceCalibration, reviewSourceCalibration, readSourceCalibration, assessObservationCalibration } from "./source-calibration.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -436,11 +436,12 @@ export default {
     const labReportDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
     const sourceCalibrationCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/calibrations$/);
     const sourceCalibrationReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/calibrations\/([^/]+)\/review$/);
+    const sourceCalibrationDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/calibrations\/([^/]+)$/);
     const observationQuality = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/measurement-quality$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !labReportDetail && !sourceCalibrationCreate && !sourceCalibrationReview && !observationQuality) || url.search || url.hash ||
+    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !labReportDetail && !sourceCalibrationCreate && !sourceCalibrationReview && !sourceCalibrationDetail && !observationQuality) || url.search || url.hash ||
         (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !labReportUpload && !sourceCalibrationCreate && !sourceCalibrationReview || criteriaDetail || match || labReportDetail || observationQuality)) ||
         (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || labReportUpload || sourceCalibrationCreate || sourceCalibrationReview))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1] ?? sourceCalibrationCreate?.[1] ?? sourceCalibrationReview?.[1] ?? observationQuality?.[1];
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1] ?? sourceCalibrationCreate?.[1] ?? sourceCalibrationReview?.[1] ?? sourceCalibrationDetail?.[1] ?? observationQuality?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
@@ -506,7 +507,7 @@ export default {
           reviewer[0].jurisdiction === data.jurisdiction
           ? json({ data, request_id: requestId }) : error("not_found", 404);
       }
-      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || labReportUpload || labReportDetail || sourceCalibrationCreate || sourceCalibrationReview || observationQuality) {
+      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || labReportUpload || labReportDetail || sourceCalibrationCreate || sourceCalibrationReview || sourceCalibrationDetail || observationQuality) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
@@ -520,6 +521,13 @@ export default {
             draftBody, observationReviewerAssign ? "assign" : "revoke");
           return assigned.error ? json({ error: assigned.error }, assigned.status)
             : json({ data: assigned.data, request_id: requestId }, assigned.status);
+        }
+        if (sourceCalibrationDetail) {
+          if (request.method !== "GET" || !ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
+          const siteId = sourceCalibrationDetail[2], sourceId = sourceCalibrationDetail[3];
+          if (!await hasSiteReadGrant(env.DB, tenant, subject, siteId)) return error("not_found", 404);
+          const record = await readSourceCalibration(env.DB, tenant, siteId, sourceId, sourceCalibrationDetail[4]);
+          return record ? json({ data: record, request_id: requestId }) : error("not_found", 404);
         }
         if (sourceCalibrationCreate || sourceCalibrationReview) {
           const route = sourceCalibrationCreate ?? sourceCalibrationReview;
