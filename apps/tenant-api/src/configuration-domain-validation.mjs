@@ -447,7 +447,8 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
         } else if (system[field]) {
           const equipment = Array.isArray(payload.inventory?.equipment)
             ? payload.inventory.equipment.find(item => plainObject(item) && item.id === system[field]) : undefined;
-          if (equipment && equipment.asset_class && equipment.asset_class !== role) {
+          if (equipment && equipment.asset_class &&
+              !(role === "pv" ? ["pv", "pv_module", "pv_array"].includes(equipment.asset_class) : equipment.asset_class === role)) {
             issues.push(issue("energy.equipment_role_mismatch",
               "site.energy_systems[" + i + "]." + field, "verification_required"));
           }
