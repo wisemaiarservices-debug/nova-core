@@ -1,4 +1,5 @@
 import { json, error } from "./http.mjs";
+import { validateWaterQualityCriteriaRegistryEntry } from "./water-quality-criteria-registry.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -72,7 +73,43 @@ async function readResource(db, subject, tenant, type, id) {
   if (record.length !== 1 || record[0].tenant_id !== tenant || record[0].id !== id) return null;
   return record[0];
 }
-async function readCriteriaRegistry(db, tenant, entryId, version) {
+
+async function createCriteriaDraft(db, tenant, subject, requestId, entry) {
+  if (entry.scope?.tenant_id !== tenant || entry.review?.status !== "draft" ||
+      (entry.review.approvals !== undefined &&
+       (!Array.isArray(entry.review.approvals) || entry.review.approvals.length !== 0))) {
+    return { error: "criteria_draft_scope_or_state_invalid", status: 400 };
+  }
+  const siteId = entry.scope.site_id ?? null;
+  if (siteId !== null && !validId(siteId)) return { error: "criteria_site_id_invalid", status: 400 };
+  const supersedesId = entry.supersedes_id ?? null;
+  const supersedesVersion = entry.supersedes_version ?? null;
+  if ((supersedesId === null) !== (supersedesVersion === null) ||
+      (supersedesId !== null && (!validId(supersedesId) || !validId(supersedesVersion, 80)))) {
+    return { error: "criteria_supersession_reference_invalid", status: 400 };
+  }
+  const validation = validateWaterQualityCriteriaRegistryEntry(entry);
+  if (!validation.valid) return { error: "criteria_entry_invalid", status: 422, details: validation.errors };
+  const documentDigest = entry.authority.document_digest.slice("sha256:".length).toLowerCase();
+  const eventId = crypto.randomUUID();
+  const insertEntry = db.prepare(
+    "INSERT INTO water_quality_criteria_entries (id, tenant_id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(entry.id, tenant, siteId, entry.jurisdiction, entry.version, entry.title,
+    JSON.stringify(entry), documentDigest, entry.authority.source_evidence_ref,
+    entry.published_on, entry.effective_from, entry.effective_to ?? null,
+    supersedesId, supersedesVersion, subject);
+  const insertEvent = db.prepare(
+    "INSERT INTO water_quality_criteria_events (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id) VALUES (?, ?, ?, ?, 'draft_created', ?, ?)"
+  ).bind(eventId, tenant, entry.id, entry.version, subject, requestId);
+  const results = await db.batch([insertEntry, insertEvent]);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || result.meta.changes !== 1)) {
+    throw new Error("criteria_draft_batch_incomplete");
+  }
+  return { data: { id: entry.id, version: entry.version, jurisdiction: entry.jurisdiction,
+    site_id: siteId, status: "draft", created_by_subject: subject }, status: 201 };
+}
+\nasync function readCriteriaRegistry(db, tenant, entryId, version) {
   if (entryId === null) {
     const result = await rows(db.prepare(
       "SELECT id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at FROM water_quality_criteria_entries WHERE tenant_id = ? ORDER BY jurisdiction, id, version LIMIT 100"
@@ -89,13 +126,14 @@ async function readCriteriaRegistry(db, tenant, entryId, version) {
 
 export default {
   async fetch(request, env) {
-    if (request.method !== "GET") return error("not_found", 404);
+    if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
     const url = new URL(request.url);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
     const criteriaList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
     const criteriaDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/([^/]+)\/([^/]+)$/);
-    if ((!match && !criteriaList && !criteriaDetail) || url.search || url.hash) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaList?.[1] ?? criteriaDetail?.[1];
+    if ((!match && !criteriaCreate && !criteriaDetail) || url.search || url.hash ||
+        (request.method === "POST" && (!criteriaCreate || criteriaDetail || match))) return error("not_found", 404);
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? null;
@@ -115,17 +153,37 @@ export default {
       return error("request_not_authorized", 401);
     }
     if (!env.DB) return error("storage_unavailable", 503);
+
+    let draftBody = null;
+    if (request.method === "POST") {
+      const declaredLength = Number(request.headers.get("content-length") ?? "0");
+      if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
+          !Number.isFinite(declaredLength) || declaredLength > 65536) return error("invalid_request_body", 400);
+      try {
+        const raw = await request.text();
+        if (new TextEncoder().encode(raw).byteLength > 65536) return error("invalid_request_body", 400);
+        draftBody = JSON.parse(raw);
+      } catch { return error("invalid_request_body", 400); }
+      if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody) ||
+          Object.keys(draftBody).length !== 1 || !Object.hasOwn(draftBody, "entry")) return error("invalid_request_body", 400);
+    }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
-      if (criteriaList || criteriaDetail) {
+      if (criteriaCreate || criteriaDetail) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
         if (membership.length !== 1 || membership[0].subject !== subject ||
             membership[0].tenant_id !== tenant || membership[0].membership_status !== "active" ||
-            membership[0].tenant_status !== "active" || !ROLE_ACTIONS[membership[0].role]?.has("read")) {
-          return error("not_found", 404);
+            membership[0].tenant_status !== "active") return error("not_found", 404);
+        if (request.method === "POST") {
+          if (!["tenant_owner", "tenant_admin"].includes(membership[0].role)) return error("not_found", 404);
+          const created = await createCriteriaDraft(env.DB, tenant, subject, requestId, draftBody.entry);
+          return created.error
+            ? json({ error: created.error, details: created.details }, created.status)
+            : json({ data: created.data, request_id: requestId }, created.status);
         }
+        if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
         const data = await readCriteriaRegistry(env.DB, tenant, entryId, version);
         return data === null ? error("not_found", 404) : json({ data, request_id: requestId });
       }
