@@ -34,15 +34,18 @@ CREATE TABLE water_quality_criteria_entries (
   effective_from TEXT NOT NULL CHECK (date(effective_from) = effective_from),
   effective_to TEXT CHECK (effective_to IS NULL OR date(effective_to) = effective_to),
   supersedes_entry_id TEXT,
+  supersedes_entry_version TEXT,
   created_by_subject TEXT NOT NULL CHECK (length(trim(created_by_subject)) BETWEEN 1 AND 200),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   PRIMARY KEY (tenant_id, id, version),
   UNIQUE (tenant_id, id, version, jurisdiction),
   CHECK (effective_to IS NULL OR effective_to >= effective_from),
-  CHECK (supersedes_entry_id IS NULL OR supersedes_entry_id <> id),
+  CHECK ((supersedes_entry_id IS NULL AND supersedes_entry_version IS NULL) OR
+         (supersedes_entry_id IS NOT NULL AND supersedes_entry_version IS NOT NULL AND supersedes_entry_id <> id)),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
   FOREIGN KEY (site_id, tenant_id) REFERENCES sites(id, tenant_id) ON DELETE RESTRICT,
-  FOREIGN KEY (tenant_id, supersedes_entry_id) REFERENCES water_quality_criteria_entries(tenant_id, id) ON DELETE RESTRICT
+  FOREIGN KEY (tenant_id, supersedes_entry_id, supersedes_entry_version)
+    REFERENCES water_quality_criteria_entries(tenant_id, id, version) ON DELETE RESTRICT
 );
 CREATE INDEX idx_water_quality_criteria_entries_scope
   ON water_quality_criteria_entries(tenant_id, site_id, jurisdiction, effective_from, effective_to);
@@ -126,6 +129,9 @@ WHEN NOT EXISTS (
     AND r.reviewer_role = NEW.reviewer_role
     AND r.jurisdiction = NEW.jurisdiction
     AND r.status = 'active'
+    AND (SELECT ev.event_type FROM water_quality_criteria_events ev
+         WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version
+         ORDER BY ev.rowid DESC LIMIT 1) = 'submitted_for_review'
     AND e.created_by_subject <> NEW.reviewer_subject
     AND e.tenant_id = NEW.tenant_id
 )
