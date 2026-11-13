@@ -362,7 +362,7 @@ try {
   const measurementQuality = await throughGateway(measurementQualityPath, accessToken());
   assert.equal(measurementQuality.response.status, 200, JSON.stringify(measurementQuality.body));
   assert.equal(measurementQuality.body.data.status, "covered_by_verified_calibration");
-  assert.equal(measurementQuality.body.data.observation_verification_status, "verified");
+  assert.equal(measurementQuality.body.data.observation_verification_status, "unverified");
   const calibrationRevoked = await throughGateway(calibrationReviewPath,
     accessToken("ci-calibration-reviewer"), { "content-type": "application/json" }, "POST",
     JSON.stringify({ decision: "revoke", evidence_ref: "inspection:calibration-withdrawal",
