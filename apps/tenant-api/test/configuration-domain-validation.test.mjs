@@ -273,6 +273,73 @@ test("flags irrigation equipment role mismatches and unresolved controller refer
   assert.ok(result.issues.some(item => item.code === "irrigation.equipment_role_mismatch"));
 });
 
+test("screens battery voltage and charge/discharge power against battery and inverter ratings", () => {
+  const value = valid();
+  const system = value.site.energy_systems[0];
+  system.battery_id = "battery-1";
+  system.inverter_id = "inverter-1";
+  system.nominal_voltage_v = 48;
+  system.battery_charge_power_kw = 8;
+  system.battery_discharge_power_kw = 9;
+  system.battery_power_kw = 8;
+  value.inventory.equipment.push({
+    id: "battery-1", manufacturer: "Battery maker", model: "BAT-10",
+    asset_class: "battery", battery_min_voltage_v: 44,
+    battery_max_voltage_v: 58, battery_max_charge_power_kw: 6,
+    battery_max_discharge_power_kw: 7, rated_power_kw: 7,
+  });
+  value.inventory.equipment.push({
+    id: "inverter-1", manufacturer: "Inverter maker", model: "INV-HYB",
+    asset_class: "inverter", battery_min_voltage_v: 40,
+    battery_max_voltage_v: 60, inverter_max_battery_charge_power_kw: 5,
+    inverter_max_battery_discharge_power_kw: 8,
+  });
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "energy.battery_charge_power_exceeds_battery_rating"));
+  assert.ok(result.issues.some(item => item.code === "energy.battery_charge_power_exceeds_inverter_rating"));
+  assert.ok(result.issues.some(item => item.code === "energy.battery_discharge_power_exceeds_battery_rating"));
+  assert.ok(result.issues.some(item => item.code === "energy.battery_discharge_power_exceeds_inverter_rating"));
+  assert.ok(result.issues.some(item => item.code === "energy.battery_power_exceeds_equipment_rating"));
+  assert.equal(result.status.operational_review, "not_started");
+});
+
+test("accepts declared battery voltage and power values inside component limits", () => {
+  const value = valid();
+  const system = value.site.energy_systems[0];
+  system.battery_id = "battery-1";
+  system.inverter_id = "inverter-1";
+  system.nominal_voltage_v = 48;
+  system.battery_charge_power_kw = 4;
+  system.battery_discharge_power_kw = 5;
+  value.inventory.equipment.push({
+    id: "battery-1", manufacturer: "Battery maker", model: "BAT-10",
+    asset_class: "battery", battery_min_voltage_v: 44,
+    battery_max_voltage_v: 58, battery_max_charge_power_kw: 6,
+    battery_max_discharge_power_kw: 7,
+  });
+  value.inventory.equipment.push({
+    id: "inverter-1", manufacturer: "Inverter maker", model: "INV-HYB",
+    asset_class: "inverter", battery_min_voltage_v: 40,
+    battery_max_voltage_v: 60, inverter_max_battery_charge_power_kw: 5,
+    inverter_max_battery_discharge_power_kw: 8,
+  });
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.issues.some(item => item.code.startsWith("energy.battery_")), false);
+});
+
+test("rejects inverted battery and MPPT voltage windows and invalid power ratings", () => {
+  const value = valid();
+  value.inventory.equipment[0].battery_min_voltage_v = 60;
+  value.inventory.equipment[0].battery_max_voltage_v = 40;
+  value.inventory.equipment[0].inverter_mppt_min_voltage_v = 500;
+  value.inventory.equipment[0].inverter_mppt_max_voltage_v = 200;
+  value.inventory.equipment[0].battery_max_charge_power_kw = 0;
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "energy.battery_voltage_window_invalid"));
+  assert.ok(result.errors.some(item => item.code === "energy.inverter_mppt_window_invalid"));
+  assert.ok(result.errors.some(item => item.code === "engineering.rating_must_be_positive"));
+});
+
 test("checks PV string cold Voc, hot Vmp and inverter current operating limits", () => {
   const value = valid();
   const system = value.site.energy_systems[0];
