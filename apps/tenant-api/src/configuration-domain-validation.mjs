@@ -2,6 +2,8 @@ const ROOT_KEYS = new Set(["tenant", "site", "inventory", "calibration_records",
 const TENANT_KEYS = new Set(["tenant_id"]);
 const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crops", "irrigation_systems", "energy_systems", "metadata"]);
 const INVENTORY_KEYS = new Set(["equipment", "sensors", "gateways"]);
+const CALIBRATION_KEYS = new Set(["id", "scope", "scope_id", "unit", "method", "effective_from", "effective_to", "evidence_ref"]); 
+const EVIDENCE_KEYS = new Set(["id", "source_class", "reference", "observed_at", "issuer", "digest"]);
 const RECORD_KEYS = {
   crops: new Set(["id", "species", "cultivar", "growth_stage", "planting_date", "expected_harvest_date", "evidence_ref"]),
   irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "zones", "evidence_ref"]),
@@ -172,7 +174,7 @@ export function assessDomainConfiguration(payload) {
     if (!Array.isArray(payload.calibration_records)) errors.push(issue("calibration.invalid_type", "calibration_records", "verification_required"));
     else payload.calibration_records.forEach((record, i) => {
       const path = "calibration_records[" + i + "]";
-      unknownKeys(record, new Set(["scope", "scope_id", "unit", "method", "effective_from", "effective_to", "evidence_ref"]), path, issues);
+      unknownKeys(record, CALIBRATION_KEYS, path, issues);
       if (!plainObject(record) || !["site", "asset", "sensor"].includes(record.scope) ||
           typeof record.scope_id !== "string" || !TOKEN.test(record.scope_id) ||
           typeof record.unit !== "string" || !record.unit.trim() ||
@@ -190,12 +192,64 @@ export function assessDomainConfiguration(payload) {
   }
   if (payload.evidence !== undefined && !Array.isArray(payload.evidence)) errors.push(issue("evidence.invalid_type", "evidence", "verification_required"));
   if (Array.isArray(payload.evidence)) payload.evidence.forEach((entry, i) => {
-    unknownKeys(entry, new Set(["source_class", "reference", "observed_at", "issuer", "digest"]), "evidence[" + i + "]", issues);
+    unknownKeys(entry, EVIDENCE_KEYS, "evidence[" + i + "]", issues);
     if (!plainObject(entry) || typeof entry.source_class !== "string" ||
         typeof entry.reference !== "string" || !entry.reference.trim()) {
       errors.push(issue("evidence.record_invalid", "evidence[" + i + "]", "verification_required"));
     }
   });
+  // Resolve declared relationships without treating declarations as verified evidence.
+  const inventoryIds = new Set();
+  for (const kind of ["equipment", "sensors", "gateways"]) {
+    const records = plainObject(payload.inventory) && Array.isArray(payload.inventory[kind])
+      ? payload.inventory[kind] : [];
+    for (const record of records) if (plainObject(record) && typeof record.id === "string") inventoryIds.add(record.id);
+  }
+  const calibrationIds = new Set();
+  if (Array.isArray(payload.calibration_records)) {
+    for (const [i, record] of payload.calibration_records.entries()) {
+      if (plainObject(record) && typeof record.id === "string" && TOKEN.test(record.id)) {
+        if (calibrationIds.has(record.id)) errors.push(issue("calibration.id_duplicate", "calibration_records[" + i + "].id", "verification_required"));
+        calibrationIds.add(record.id);
+      }
+      if (plainObject(record) && record.scope === "site" && record.scope_id !== payload.site?.site_id) {
+        issues.push(issue("calibration.scope_reference_unresolved", "calibration_records[" + i + "].scope_id", "verification_required"));
+      }
+      if (plainObject(record) && ["asset", "sensor"].includes(record.scope) && !inventoryIds.has(record.scope_id)) {
+        issues.push(issue("calibration.scope_reference_unresolved", "calibration_records[" + i + "].scope_id", "verification_required"));
+      }
+    }
+  }
+  if (plainObject(payload.inventory) && Array.isArray(payload.inventory.sensors)) {
+    payload.inventory.sensors.forEach((sensor, i) => {
+      if (plainObject(sensor) && sensor.calibration_record_id &&
+          !calibrationIds.has(sensor.calibration_record_id)) {
+        issues.push(issue("sensor.calibration_reference_unresolved", "inventory.sensors[" + i + "].calibration_record_id", "verification_required"));
+      }
+    });
+  }
+  const evidenceReferences = new Set(Array.isArray(payload.evidence)
+    ? payload.evidence.filter(plainObject).map(entry => entry.reference) : []);
+  const checkEvidenceReference = (reference, path) => {
+    if (reference && !evidenceReferences.has(reference)) {
+      issues.push(issue("evidence.reference_unresolved", path, "verification_required"));
+    }
+  };
+  if (Array.isArray(payload.calibration_records)) payload.calibration_records.forEach((record, i) => {
+    if (plainObject(record)) checkEvidenceReference(record.evidence_ref, "calibration_records[" + i + "].evidence_ref");
+  });
+  for (const [kind, records] of [
+    ["crops", payload.site?.crops],
+    ["irrigation_systems", payload.site?.irrigation_systems],
+    ["energy_systems", payload.site?.energy_systems],
+    ["equipment", payload.inventory?.equipment],
+    ["sensors", payload.inventory?.sensors],
+    ["gateways", payload.inventory?.gateways],
+  ]) {
+    if (Array.isArray(records)) records.forEach((record, i) => {
+      if (plainObject(record)) checkEvidenceReference(record.evidence_ref, "configuration." + kind + "[" + i + "].evidence_ref");
+    });
+  }
   if (payload.extensions !== undefined) {
     if (!plainObject(payload.extensions)) errors.push(issue("extensions.invalid_type", "extensions", "verification_required"));
     else for (const [namespace, value] of Object.entries(payload.extensions)) {
