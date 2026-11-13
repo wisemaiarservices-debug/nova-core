@@ -170,6 +170,30 @@ test("flags unresolved calibration targets, sensor calibration links and evidenc
   assert.ok(result.issues.some(item => item.code === "evidence.reference_unresolved"));
 });
 
+test("validates irrigation controller and sensor gateway references by resource type", () => {
+  const value = valid();
+  value.site.irrigation_systems[0].controller_id = "missing-controller";
+  value.inventory.sensors[0].gateway_id = "missing-gateway";
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "irrigation.controller_reference_unresolved"));
+  assert.ok(result.issues.some(item => item.code === "sensor.gateway_reference_unresolved"));
+
+  const resolved = valid();
+  resolved.site.irrigation_systems[0].controller_id = "pump-1";
+  resolved.inventory.sensors[0].gateway_id = "gateway-1";
+  const resolvedResult = assessDomainConfiguration(resolved);
+  assert.equal(resolvedResult.issues.some(item => item.code === "irrigation.controller_reference_unresolved"), false);
+  assert.equal(resolvedResult.issues.some(item => item.code === "sensor.gateway_reference_unresolved"), false);
+});
+
+test("does not resolve a sensor calibration against an equipment identifier", () => {
+  const value = valid();
+  value.calibration_records[0].scope = "sensor";
+  value.calibration_records[0].scope_id = "pump-1";
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "calibration.scope_reference_unresolved"));
+});
+
 test("rejects identifier collisions across equipment, sensors and gateways", () => {
   const value = valid();
   value.inventory.sensors[0].id = value.inventory.equipment[0].id;
