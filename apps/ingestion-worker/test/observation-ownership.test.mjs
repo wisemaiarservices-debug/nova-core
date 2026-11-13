@@ -32,14 +32,14 @@ function mockDatabase(rows) {
 }
 
 const validRows = {
-  site: { id: "site-001", status: "active" },
-  source: { id: "source-001", site_id: "site-001", module: "neoagro", verification_status: "unverified" },
-  asset: { id: "asset-001", site_id: "site-001", status: "active" },
+  site: { id: "site-001", tenant_id: "tenant-a", status: "active" },
+  source: { id: "source-001", tenant_id: "tenant-a", site_id: "site-001", module: "neoagro", verification_status: "unverified" },
+  asset: { id: "asset-001", tenant_id: "tenant-a", site_id: "site-001", status: "active" },
 };
 
 test("allows active site, matching module source, and same-site active asset", async () => {
   const db = mockDatabase(validRows);
-  assert.equal(await resolveObservationOwnership(db, observation), true);
+  assert.equal(await resolveObservationOwnership(db, observation), "tenant-a");
   assert.equal(db.queries.length, 3);
 });
 
@@ -58,8 +58,10 @@ for (const [name, rows] of [
   ["source module mismatch", { ...validRows, source: { ...validRows.source, module: "neogrid" } }],
   ["disabled source", { ...validRows, source: { ...validRows.source, verification_status: "disabled" } }],
   ["source owned by another site", { ...validRows, source: { ...validRows.source, site_id: "site-elsewhere" } }],
+  ["source owned by another tenant", { ...validRows, source: { ...validRows.source, tenant_id: "tenant-b" } }],
   ["unknown asset", { ...validRows, asset: null }],
   ["asset owned by another site", { ...validRows, asset: { ...validRows.asset, site_id: "site-elsewhere" } }],
+  ["asset owned by another tenant", { ...validRows, asset: { ...validRows.asset, tenant_id: "tenant-b" } }],
   ["inactive asset", { ...validRows, asset: { ...validRows.asset, status: "inactive" } }],
 ]) {
   test("denies " + name, async () => {
@@ -71,7 +73,7 @@ for (const [name, rows] of [
 test("site-level observation does not require an asset", async () => {
   const db = mockDatabase(validRows);
   const { asset_id, ...siteObservation } = observation;
-  assert.equal(await resolveObservationOwnership(db, siteObservation), true);
+  assert.equal(await resolveObservationOwnership(db, siteObservation), "tenant-a");
   assert.equal(db.queries.length, 2);
 });
 
