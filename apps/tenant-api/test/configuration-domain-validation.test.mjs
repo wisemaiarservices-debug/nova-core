@@ -132,3 +132,15 @@ test("allows tenant identity while surfacing unsupported nested crop and equipme
   assert.ok(result.issues.some(item => item.path === "inventory.equipment[0].rated_voltage"));
   assert.equal(result.issues.some(item => item.path === "tenant.tenant_id"), false);
 });
+
+test("returns structured errors for malformed collections instead of throwing", () => {
+  const value = valid();
+  value.site.crops = "olive";
+  value.site.irrigation_systems = { id: "bad" };
+  value.inventory.sensors = "sensor";
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(item => item.code === "collection.invalid_type" && item.path === "site.crops"));
+  assert.ok(result.errors.some(item => item.code === "collection.invalid_type" && item.path === "site.irrigation_systems"));
+  assert.ok(result.errors.some(item => item.code === "collection.invalid_type" && item.path === "inventory.sensors"));
+});
