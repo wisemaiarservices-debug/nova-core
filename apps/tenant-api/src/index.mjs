@@ -330,13 +330,14 @@ export default {
     const criteriaDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)$/);
     const criteriaSubmit = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/submit$/);
     const criteriaReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview) || url.search || url.hash ||
-        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview || criteriaDetail || match)) ||
-        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1];
+    const criteriaResolve = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/resolve$/);
+    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve) || url.search || url.hash ||
+        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve || criteriaDetail || match)) ||
+        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve))) return error("not_found", 404);
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1];
     const resourceId = match?.[3];
-    const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? null;
-    const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? null;
+    const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? null;
+    const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? null;
     if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
         (entryId && (!validId(entryId) || !validId(version, 80)))) return error("not_found", 404);
 
@@ -391,13 +392,21 @@ export default {
           reviewer[0].jurisdiction === data.jurisdiction
           ? json({ data, request_id: requestId }) : error("not_found", 404);
       }
-      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit) {
+      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
         if (membership.length !== 1 || membership[0].subject !== subject ||
             membership[0].tenant_id !== tenant || membership[0].membership_status !== "active" ||
             membership[0].tenant_status !== "active") return error("not_found", 404);
+        if (criteriaResolve) {
+          if (!ROLE_ACTIONS[membership[0].role]?.has("read") ||
+              !onlyKeys(draftBody, ["context", "sampled_at"]) ||
+              !Object.hasOwn(draftBody, "context") || !Object.hasOwn(draftBody, "sampled_at")) return error("not_found", 404);
+          const resolved = await resolveStoredCriteria(env.DB, tenant, entryId, version, draftBody.context, draftBody.sampled_at);
+          return resolved.error ? json({ error: resolved.error }, resolved.status)
+            : json({ data: resolved.data, request_id: requestId }, resolved.status);
+        }
         if (request.method === "POST") {
           if (!["tenant_owner", "tenant_admin"].includes(membership[0].role)) return error("not_found", 404);
           if (criteriaSubmit) {
