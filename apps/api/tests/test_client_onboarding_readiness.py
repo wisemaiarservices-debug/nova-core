@@ -98,3 +98,22 @@ def test_extra_unknown_fields_are_not_silently_accepted():
             tenant_id="tenant-a", site_id="site-a", registry_version="v1",
             unexpected="silently-ignored",
         )
+
+
+def test_expired_calibration_is_not_treated_as_current():
+    from datetime import date
+
+    expired = registry(complete=True)
+    sensor = expired.sensors[0].model_copy(update={
+        "calibration": CalibrationRecord(
+            status="current", last_calibrated_on=date(2025, 1, 1),
+            next_calibration_due=date(2026, 1, 1), independently_verified=True,
+            certificate_reference="certificate-1",
+        )
+    })
+    expired = expired.model_copy(update={"sensors": (sensor,)})
+    result = assess_client_onboarding_readiness(
+        configuration(complete=True), expired, assessed_on=date(2026, 11, 13)
+    )
+    assert result.status == "needs_verification"
+    assert "sensor.calibration_expired" in {issue.code for issue in result.issues}
