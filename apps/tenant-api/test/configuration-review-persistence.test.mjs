@@ -23,7 +23,7 @@ function database({ role = "tenant_admin", active = true, grant = true,
       if (sql.includes("tenant_site_configurations")) return { results: [{
         id: "configuration-1", created_by_subject: creator, configuration_version: "v1",
       }] };
-      if (sql.includes("tenant_site_configuration_events")) return [{ event_type: latest }];
+      if (sql.includes("tenant_site_configuration_events")) return { results: [{ event_type: latest }] };
       throw new Error("unexpected SQL");
     } }; } }; },
     async batch(statements) {
