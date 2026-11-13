@@ -190,7 +190,9 @@ test("valid service identity and D1 ownership checks persist an unverified obser
   assert.equal(body.status, "accepted");
   assert.equal(body.accepted, true);
   assert.equal(body.verification_status, "unverified");
-  assert.equal(body.idempotent, false);\n  assert.equal(db.state.observation.tenant_id, "tenant-a");\n  assert.equal(db.state.audit[0].tenant_id, "tenant-a");
+  assert.equal(body.idempotent, false);
+  assert.equal(db.state.observation.tenant_id, "tenant-a");
+  assert.equal(db.state.audit[0].tenant_id, "tenant-a");
 });
 
 test("D1 ownership mismatch is denied without revealing which record failed", async () => {
