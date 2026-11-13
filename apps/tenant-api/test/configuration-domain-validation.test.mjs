@@ -870,3 +870,88 @@ test("checks soil profile, horizon, sample and analyte evidence references indep
   const unresolved = result.issues.filter(item => item.code === "evidence.reference_unresolved" && item.path.includes("soil_profiles"));
   assert.equal(unresolved.length, 4);
 });
+
+
+test("validates hydraulic measurements with units, depth, method, timestamp and evidence provenance", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-hydraulic",
+    horizons: [{ id: "root-layer", top_depth_cm: 0, bottom_depth_cm: 30 }],
+    hydraulic_measurements: [
+      { id: "fc-1", parameter: "field_capacity", value: 0.30, unit: "m3/m3", top_depth_cm: 0, bottom_depth_cm: 30, source_type: "laboratory", method: "pressure_plate", sampled_at: "2026-10-20T09:30:00Z", evidence_ref: "fc-report" },
+      { id: "pwp-1", parameter: "wilting_point", value: 0.12, unit: "m3/m3", top_depth_cm: 0, bottom_depth_cm: 30, source_type: "laboratory", method: "pressure_plate", sampled_at: "2026-10-20T09:30:00Z", evidence_ref: "pwp-report" },
+      { id: "bd-1", parameter: "bulk_density", value: 1.3, unit: "g/cm3", top_depth_cm: 0, bottom_depth_cm: 30, source_type: "laboratory", method: "core_ring", sampled_at: "2026-10-20T09:30:00Z", evidence_ref: "bd-report" },
+    ],
+  }];
+  value.evidence.push(
+    { source_class: "laboratory_report", reference: "fc-report" },
+    { source_class: "laboratory_report", reference: "pwp-report" },
+    { source_class: "laboratory_report", reference: "bd-report" },
+  );
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.errors.some(item => item.code.startsWith("soil_hydraulic.")), false);
+  assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("hydraulic_measurements")), false);
+});
+
+test("flags invalid hydraulic calendar dates and unresolved irrigation soil links", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-hydraulic",
+    horizons: [{ id: "root-layer", top_depth_cm: 0, bottom_depth_cm: 30 }],
+    hydraulic_measurements: [{
+      id: "fc-1", parameter: "field_capacity", value: 0.3, unit: "m3/m3",
+      top_depth_cm: 0, bottom_depth_cm: 30, source_type: "measured",
+      method: "field_method", sampled_at: "2026-02-30T09:30:00Z", evidence_ref: "fc-report",
+    }],
+  }];
+  value.site.irrigation_systems = [{
+    id: "irrigation-1",
+    zones: [{ id: "zone-1", soil_profile_id: "missing-profile", soil_horizon_id: "missing-horizon" }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "soil_hydraulic.timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_soil_profile_reference_unresolved"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_soil_horizon_reference_unresolved"));
+});
+
+
+test("validates crop root-depth observation provenance and evidence references", () => {
+  const value = valid();
+  value.site.crops = [{
+    id: "crop-root-depth",
+    species: "example crop",
+    root_depth_observations: [{
+      id: "root-observation",
+      root_depth_cm: 45,
+      growth_stage: "vegetative",
+      source_type: "measured",
+      method: "field_root_sampling",
+      observed_at: "2026-10-20T09:30:00Z",
+      evidence_ref: "root-depth-report",
+    }],
+  }];
+  value.evidence.push({ source_class: "field_observation", reference: "root-depth-report" });
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.errors.some(item => item.code.startsWith("crop.root_depth_")), false);
+  assert.equal(result.issues.some(item => item.code === "evidence.reference_unresolved" && item.path.includes("root_depth_observations")), false);
+});
+
+test("flags impossible root-depth dates and unresolved crop references from irrigation zones", () => {
+  const value = valid();
+  value.site.crops = [{
+    id: "crop-root-depth",
+    species: "example crop",
+    root_depth_observations: [{
+      id: "root-observation", root_depth_cm: 45, growth_stage: "vegetative",
+      source_type: "measured", method: "field_root_sampling",
+      observed_at: "2026-02-30T09:30:00Z", evidence_ref: "root-depth-report",
+    }],
+  }];
+  value.site.irrigation_systems = [{
+    id: "irrigation-1",
+    zones: [{ id: "zone-1", crop_ids: ["missing-crop"] }],
+  }];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "crop.root_depth_timestamp_invalid"));
+  assert.ok(result.issues.some(item => item.code === "irrigation.zone_crop_reference_unresolved"));
+});
