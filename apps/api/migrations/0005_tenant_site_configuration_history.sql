@@ -11,8 +11,12 @@ CREATE TABLE tenant_site_configurations (
   tenant_id TEXT NOT NULL,
   site_id TEXT NOT NULL,
   configuration_version TEXT NOT NULL
-    CHECK (configuration_version GLOB 'v[1-9]*'
-      AND length(configuration_version) BETWEEN 2 AND 32),
+    CHECK (
+      length(configuration_version) BETWEEN 2 AND 32
+      AND substr(configuration_version, 1, 1) = 'v'
+      AND substr(configuration_version, 2) NOT GLOB '*[^0-9]*'
+      AND substr(configuration_version, 2, 1) BETWEEN '1' AND '9'
+    ),
   schema_id TEXT NOT NULL
     CHECK (length(trim(schema_id)) BETWEEN 1 AND 120),
   configuration_json TEXT NOT NULL
