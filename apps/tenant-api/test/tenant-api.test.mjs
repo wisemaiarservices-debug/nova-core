@@ -23,7 +23,7 @@ class DB {
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
         }] : []) };
-        if (sql.includes("FROM tenant_resource_grants")) {
+        if (sql.includes("FROM tenant_resource_grants") && !sql.includes("FROM water_quality_criteria_entries")) {
           const siteGrantQuery = sql.includes("resource_type = 'site'");
           return { results: db.grantRows ?? (db.grant ? [{
             subject: "operator@example.test", tenant_id: "tenant-a",
@@ -234,13 +234,13 @@ test("lists only the authenticated tenant's water-quality criteria entries", asy
   assert.equal(body.data[0].entry.criteria[0].parameter, "ec");
   assert.equal(body.data[0].entry_json, undefined);
   assert.deepEqual(db.calls[1].args, ["operator@example.test", "tenant-a"]);
-  assert.deepEqual(db.calls[2].args, ["tenant-a"]);
+  assert.deepEqual(db.calls[2].args, ["tenant-a", "operator@example.test", "operator@example.test"]);
 });
 
 test("reads one criteria version with tenant, entry and version selectors bound in SQL", async () => {
   const db = new DB();
   db.criteriaRows = [{
-    id: "criteria-tn-1", tenant_id: "tenant-a", version: "1.0",
+    id: "criteria-tn-1", tenant_id: "tenant-a", site_id: null, version: "1.0",
     entry_json: JSON.stringify({ id: "criteria-tn-1", version: "1.0" }),
   }];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/1.0"), env(db));
