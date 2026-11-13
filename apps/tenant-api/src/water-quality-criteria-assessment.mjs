@@ -6,7 +6,11 @@ function isoDate(value) {
   const date = new Date(value + "T00:00:00Z");
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
-function validTimestamp(value) {\n  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(value)) return false;\n  return isoDate(value.slice(0, 10)) && Number.isFinite(Date.parse(value));\n}\nfunction inRange(value, criterion) {
+function validTimestamp(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false;
+  return isoDate(value.slice(0, 10)) && Number.isFinite(Date.parse(value));
+}
+function inRange(value, criterion) {
   if (criterion.operator === "max") return value <= criterion.value;
   if (criterion.operator === "min") return value >= criterion.value;
   if (criterion.operator === "range") {
