@@ -31,7 +31,9 @@ class DB {
             resource_id: siteGrantQuery ? args[2] : args[3], action: "read",
           }] : []) };
         }
-        if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };\n        if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };\n        if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
+        if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };
+        if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
+        if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
@@ -772,7 +774,9 @@ test("tenant admin registers PDF bytes through the site-scoped evidence route", 
   const db = new DB();
   db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
     role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
-  const bytes = Buffer.from("%PDF-1.4\\nlab evidence\\n%%EOF");
+  const bytes = Buffer.from("%PDF-1.4\
+lab evidence\
+%%EOF");
   const payload = { file_name: "report.pdf", media_type: "application/pdf",
     laboratory_name: "Declared lab", report_number: "RPT-1",
     issued_at: "2026-10-01T10:30:00Z", document_base64: bytes.toString("base64") };
@@ -804,7 +808,9 @@ test("read-only tenant members cannot register laboratory report evidence", asyn
 
 test("site-granted reader retrieves laboratory report bytes only after stored digest verification", async () => {
   const db = new DB();
-  const bytes = Buffer.from("%PDF-1.4\\nretrievable report\\n%%EOF");
+  const bytes = Buffer.from("%PDF-1.4\
+retrievable report\
+%%EOF");
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   db.laboratoryEvidenceRows = [{
     id: "lab-report-a", tenant_id: "tenant-a", site_id: "site-a",
