@@ -996,6 +996,9 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
         if (kind === "crops" && Array.isArray(record.root_depth_observations)) record.root_depth_observations.forEach((observation, j) => {
           if (plainObject(observation)) checkEvidenceReference(observation.evidence_ref, "configuration.crops[" + i + "].root_depth_observations[" + j + "].evidence_ref");
         });
+        if (kind === "crops" && Array.isArray(record.water_demand_observations)) record.water_demand_observations.forEach((observation, j) => {
+          if (plainObject(observation)) checkEvidenceReference(observation.evidence_ref, "configuration.crops[" + i + "].water_demand_observations[" + j + "].evidence_ref");
+        });
         if (kind === "water_sources" && Array.isArray(record.quality_samples)) record.quality_samples.forEach((sample, j) => {
           if (plainObject(sample)) checkEvidenceReference(sample.evidence_ref, "configuration.water_sources[" + i + "].quality_samples[" + j + "].evidence_ref");
         });
