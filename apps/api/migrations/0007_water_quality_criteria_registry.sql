@@ -179,13 +179,14 @@ WHEN
           AND a.entry_version = NEW.entry_version AND a.decision = 'approve') < 2
   ))
   OR
-  (NEW.event_type IN ('rejected', 'retired') AND
+  (NEW.event_type IN ('rejected', 'retired') AND (
     (SELECT e.event_type FROM water_quality_criteria_events e
      WHERE e.tenant_id = NEW.tenant_id AND e.entry_id = NEW.entry_id AND e.entry_version = NEW.entry_version
      ORDER BY e.rowid DESC LIMIT 1) IS NULL
     OR (SELECT e.event_type FROM water_quality_criteria_events e
         WHERE e.tenant_id = NEW.tenant_id AND e.entry_id = NEW.entry_id AND e.entry_version = NEW.entry_version
-        ORDER BY e.rowid DESC LIMIT 1) NOT IN ('submitted_for_review', 'approved'))
+        ORDER BY e.rowid DESC LIMIT 1) NOT IN ('submitted_for_review', 'approved')
+  ))
   OR
   (NEW.event_type = 'superseded' AND
     (SELECT e.event_type FROM water_quality_criteria_events e
