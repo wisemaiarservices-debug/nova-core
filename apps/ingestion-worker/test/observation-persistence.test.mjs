@@ -54,7 +54,7 @@ function mockD1(existing = null) {
           verification_status: "unverified", provenance_json: v[10],
           quality_flags_json: v[11],
         };
-        state.audit.push({ id: audit.values[0], actor_id: audit.values[1] });
+        state.audit.push({ id: audit.values[0], tenant_id: audit.values[1], actor_id: audit.values[2] });
         inserted = true;
       } else if (state.observation.id === v[0]) {
         // A retry is ignored by the unique key and does not create a second audit event.
@@ -67,18 +67,18 @@ function mockD1(existing = null) {
 
 test("inserts observation and audit atomically with server-owned unverified state", async () => {
   const db = mockD1();
-  const result = await persistObservation(db, observation, principal, "request-001");
+  const result = await persistObservation(db, observation, principal, "request-001", "tenant-a");
   assert.equal(result.status, "accepted");
   assert.equal(result.accepted, true);
   assert.equal(result.verification_status, "unverified");
   assert.equal(db.state.batches, 1);
   assert.equal(db.state.audit.length, 1);
-  assert.equal(db.state.audit[0].actor_id, principal.serviceId);
+  assert.equal(db.state.audit[0].actor_id, principal.serviceId);\n  assert.equal(db.state.audit[0].tenant_id, "tenant-a");
 });
 
 test("retries return the original observation without duplicating the audit event", async () => {
   const db = mockD1();
-  const first = await persistObservation(db, observation, principal);
+  const first = await persistObservation(db, observation, principal, null, "tenant-a");
   const second = await persistObservation(db, observation, principal);
   assert.equal(first.observation_id, second.observation_id);
   assert.equal(second.status, "already_accepted");
@@ -91,17 +91,17 @@ test("rejects reuse of an idempotency key for different measurement content", as
   const db = mockD1();
   await persistObservation(db, observation, principal);
   const changed = { ...observation, value: 99 };
-  const result = await persistObservation(db, changed, principal);
+  const result = await persistObservation(db, changed, principal, null, "tenant-a");
   assert.deepEqual(result, { status: "idempotency_conflict", accepted: false });
 });
 
 test("rejects missing D1 batch support", async () => {
   await assert.rejects(
-    () => persistObservation({ prepare() {} }, observation, principal),
+    () => persistObservation({ prepare() {} }, observation, principal, null, "tenant-a"),
     /storage_not_configured/,
   );
 });
 
 test("rejects an absent service principal", async () => {
-  await assert.rejects(() => persistObservation(mockD1(), observation, null), /verified_service_principal_required/);
+  await assert.rejects(() => persistObservation(mockD1(), observation, null, null, "tenant-a"), /verified_service_principal_and_tenant_required/);
 });
