@@ -79,3 +79,11 @@ test("reports values outside a declared criterion without declaring them unsafe"
   assert.equal(result.scientific_suitability, "not_assessed");
   assert.equal(result.operational_decision, "not_authorized");
 });
+
+test("requires a valid timezone-qualified sample timestamp", () => {
+  for (const sampled_at of ["2026-05-10", "2026-02-30T10:00:00Z", "2026-05-10T10:00:00"]) {
+    const result = assessWaterQualityAgainstDeclaredCriteria(
+      [{ ...samples[0], sampled_at }], context, criteriaSet);
+    assert.equal(result.results[0].reason, "sample_value_unit_or_date_invalid");
+  }
+});
