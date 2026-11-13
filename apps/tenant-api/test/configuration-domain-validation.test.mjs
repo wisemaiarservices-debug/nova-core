@@ -1,0 +1,114 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { assessDomainConfiguration } from "../src/configuration-domain-validation.mjs";
+
+const valid = () => ({
+  tenant: { tenant_id: "tenant-a" },
+  site: {
+    site_id: "site-a", timezone: "Africa/Tunis",
+    land_area: { value: 2.5, unit: "ha" },
+    boundary: { type: "Polygon", crs: "EPSG:4326", coordinates: [[[10,36],[11,36],[11,37],[10,36]]] },
+    crops: [{ id: "crop-1", species: "olive", planting_date: "2026-01-01" }],
+    irrigation_systems: [{ id: "irrigation-1", method: "drip" }, { id: "irrigation-2", method: "rainfed" }],
+    energy_systems: [{ id: "energy-1", type: "solar" }, { id: "energy-2", type: "grid" }],
+  },
+  inventory: {
+    equipment: [{ id: "pump-1", manufacturer: "Vendor", model: "P1", protocol: "modbus_tcp" }],
+    sensors: [{ id: "sensor-1", manufacturer: "Vendor", model: "S1", protocol: "mqtt" }],
+    gateways: [{ id: "gateway-1", protocol: "lorawan" }],
+  },
+  calibration_records: [{
+    scope: "sensor", scope_id: "sensor-1", unit: "%", method: "two-point",
+    effective_from: "2026-01-01", effective_to: "2027-01-01", evidence_ref: "cert-1",
+  }],
+  evidence: [{ source_class: "manufacturer_document", reference: "datasheet-1" }],
+});
+
+test("accepts extensible multi-system configuration without implying operational approval", () => {
+  const result = assessDomainConfiguration(valid());
+  assert.equal(result.valid, true);
+  assert.equal(result.status.structural_validity, "valid");
+  assert.equal(result.status.operational_review, "not_started");
+  assert.equal(result.status.model_applicability, "not_assessed");
+});
+
+test("keeps incomplete specifications explicit rather than inventing values", () => {
+  const value = valid();
+  delete value.site.land_area;
+  delete value.site.boundary;
+  value.site.crops = [];
+  value.site.irrigation_systems = [];
+  value.site.energy_systems = [];
+  delete value.inventory;
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.equal(result.status.evidence_readiness, "incomplete");
+  assert.ok(result.issues.some(item => item.code === "site.land_area_missing"));
+  assert.ok(result.issues.some(item => item.code === "inventory.not_supplied"));
+});
+
+test("rejects geometry without explicit CRS and valid closed coordinate rings", () => {
+  const value = valid();
+  delete value.site.boundary.crs;
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(item => item.code === "geometry.crs_or_coordinates_missing"));
+});
+
+test("rejects invalid land-area units, duplicate IDs and impossible crop date order", () => {
+  const value = valid();
+  value.site.land_area.unit = "football_fields";
+  value.site.crops[0].expected_harvest_date = "2025-01-01";
+  value.site.crops.push({ id: "crop-1", species: "citrus" });
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(item => item.code === "site.land_area_invalid"));
+  assert.ok(result.errors.some(item => item.code === "record.id_missing_or_duplicate"));
+  assert.ok(result.errors.some(item => item.code === "crop.date_order_invalid"));
+});
+
+test("preserves namespaced client extensions but flags them for schema review", () => {
+  const value = valid();
+  value.extensions = { "client.alpha": { irrigation_zone_codes: ["A", "B"] } };
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.ok(result.issues.some(item => item.code === "extensions.requires_client_schema_review"));
+});
+
+test("flags unnamespaced extensions and unknown root fields rather than silently accepting them", () => {
+  const value = valid();
+  value.extensions = { custom: { field: true } };
+  value.unexpected = true;
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "extensions.namespace_invalid"));
+  assert.ok(result.issues.some(item => item.code === "field.unsupported"));
+});
+
+test("calibration requires explicit customer scope, unit, method and effective dates", () => {
+  const value = valid();
+  value.calibration_records[0].scope = "global_model";
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(item => item.code === "calibration.record_invalid"));
+});
+
+test("sensor declarations and missing evidence do not become verified telemetry", () => {
+  const value = valid();
+  value.inventory.sensors[0].protocol = "unknown";
+  value.calibration_records[0].evidence_ref = "";
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.equal(result.status.evidence_readiness, "needs_verification");
+  assert.ok(result.issues.some(item => item.code === "inventory.protocol_unknown"));
+  assert.ok(result.issues.some(item => item.code === "calibration.evidence_missing"));
+});
+
+test("flags unrecognized protocols and client-specific equipment fields", () => {
+  const value = valid();
+  value.inventory.equipment[0].protocol = "vendor-proprietary-bus";
+  value.inventory.equipment[0].custom_rating = { value: 12 };
+  const result = assessDomainConfiguration(value);
+  assert.equal(result.valid, true);
+  assert.ok(result.issues.some(item => item.code === "inventory.protocol_unrecognized"));
+  assert.ok(result.issues.some(item => item.code === "field.unsupported"));
+});
