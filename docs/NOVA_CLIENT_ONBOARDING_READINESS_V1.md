@@ -31,3 +31,24 @@ independent certificate reference.
   review remain separate gates.
 - This service does not persist records, create tenants, authenticate users,
   access D1, discover devices, call external providers, or control equipment.
+
+## Model applicability composition
+Callers may supply versioned model applicability contracts and separately
+evidence-qualified available features. Each contract is evaluated using the
+existing NOVA model applicability gate and returned independently in
+`model_assessments`.
+
+`model_readiness` is separate from site/inventory readiness:
+- `not_assessed`: no model contracts were supplied.
+- `blocked`: at least one model is outside scope, needs configuration, or
+  lacks required evidence.
+- `research_only`: model inputs/scope pass, but model lifecycle is not
+  independently validated.
+- `applicable_for_review`: all supplied contracts pass their declared
+  applicability gates and are independently validated; this still means
+  human review only.
+
+Sensor measurement capability declarations are never converted to
+`AvailableFeature` observations. The caller must provide evidence-qualified
+features separately. This service does not validate that evidence itself; the
+ingestion/provenance trust boundary remains responsible for verification.
