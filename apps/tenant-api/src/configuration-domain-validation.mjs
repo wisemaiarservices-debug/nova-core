@@ -9,7 +9,7 @@ const RECORD_KEYS = {
   irrigation_systems: new Set(["id", "method", "water_source", "design_flow_m3_per_hour", "controller_id", "zones", "evidence_ref"]),
   energy_systems: new Set(["id", "type", "pv_capacity_kw", "inverter_capacity_kw", "battery_capacity_kwh", "battery_power_kw", "nominal_voltage_v", "grid_phase", "grid_connected", "evidence_ref"]),
   equipment: new Set(["id", "manufacturer", "model", "protocol", "asset_class", "serial_number", "ratings", "evidence_ref"]),
-  sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "calibration_record_id", "evidence_ref"]),
+  sensors: new Set(["id", "manufacturer", "model", "protocol", "measurements", "connectivity_status", "gateway_id", "calibration_record_id", "evidence_ref"]),
   gateways: new Set(["id", "manufacturer", "model", "protocol", "connectivity_status", "evidence_ref"]),
 };
 const PROTOCOLS = new Set(["modbus_tcp", "modbus_rtu", "mqtt", "http_rest", "opc_ua", "lorawan", "bacnet_ip", "can_bus", "serial", "manual", "unknown"]);
@@ -201,6 +201,7 @@ export function assessDomainConfiguration(payload) {
   });
   // Resolve declared relationships without treating declarations as verified evidence.
   const inventoryIds = new Set();
+  const inventoryByKind = { equipment: new Set(), sensors: new Set(), gateways: new Set() };
   for (const kind of ["equipment", "sensors", "gateways"]) {
     const records = plainObject(payload.inventory) && Array.isArray(payload.inventory[kind])
       ? payload.inventory[kind] : [];
@@ -209,7 +210,26 @@ export function assessDomainConfiguration(payload) {
         errors.push(issue("inventory.id_duplicate_across_types", "inventory." + kind, "verification_required"));
       }
       inventoryIds.add(record.id);
+      inventoryByKind[kind].add(record.id);
     }
+  }
+  if (Array.isArray(payload.site?.irrigation_systems)) {
+    payload.site.irrigation_systems.forEach((system, i) => {
+      if (plainObject(system) && system.controller_id &&
+          !inventoryByKind.equipment.has(system.controller_id)) {
+        issues.push(issue("irrigation.controller_reference_unresolved",
+          "site.irrigation_systems[" + i + "].controller_id", "verification_required"));
+      }
+    });
+  }
+  if (Array.isArray(payload.inventory?.sensors)) {
+    payload.inventory.sensors.forEach((sensor, i) => {
+      if (plainObject(sensor) && sensor.gateway_id &&
+          !inventoryByKind.gateways.has(sensor.gateway_id)) {
+        issues.push(issue("sensor.gateway_reference_unresolved",
+          "inventory.sensors[" + i + "].gateway_id", "verification_required"));
+      }
+    });
   }
   const calibrationIds = new Set();
   if (Array.isArray(payload.calibration_records)) {
@@ -221,7 +241,10 @@ export function assessDomainConfiguration(payload) {
       if (plainObject(record) && record.scope === "site" && record.scope_id !== payload.site?.site_id) {
         issues.push(issue("calibration.scope_reference_unresolved", "calibration_records[" + i + "].scope_id", "verification_required"));
       }
-      if (plainObject(record) && ["asset", "sensor"].includes(record.scope) && !inventoryIds.has(record.scope_id)) {
+      if (plainObject(record) && record.scope === "asset" && !inventoryByKind.equipment.has(record.scope_id)) {
+        issues.push(issue("calibration.scope_reference_unresolved", "calibration_records[" + i + "].scope_id", "verification_required"));
+      }
+      if (plainObject(record) && record.scope === "sensor" && !inventoryByKind.sensors.has(record.scope_id)) {
         issues.push(issue("calibration.scope_reference_unresolved", "calibration_records[" + i + "].scope_id", "verification_required"));
       }
     }
