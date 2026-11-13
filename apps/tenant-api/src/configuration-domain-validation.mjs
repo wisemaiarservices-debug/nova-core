@@ -204,7 +204,12 @@ export function assessDomainConfiguration(payload) {
   for (const kind of ["equipment", "sensors", "gateways"]) {
     const records = plainObject(payload.inventory) && Array.isArray(payload.inventory[kind])
       ? payload.inventory[kind] : [];
-    for (const record of records) if (plainObject(record) && typeof record.id === "string") inventoryIds.add(record.id);
+    for (const record of records) if (plainObject(record) && typeof record.id === "string" && TOKEN.test(record.id)) {
+      if (inventoryIds.has(record.id)) {
+        errors.push(issue("inventory.id_duplicate_across_types", "inventory." + kind, "verification_required"));
+      }
+      inventoryIds.add(record.id);
+    }
   }
   const calibrationIds = new Set();
   if (Array.isArray(payload.calibration_records)) {
