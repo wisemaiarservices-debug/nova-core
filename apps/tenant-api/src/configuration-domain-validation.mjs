@@ -499,7 +499,8 @@ export function assessDomainConfiguration(payload, { assessedOn = new Date().toI
                 if (zoneIds.has(zone.id)) {
                   errors.push(issue("irrigation.zone_id_missing_or_duplicate", zonePath + ".id", "verification_required"));
                 } else zoneIds.add(zone.id);
-                unknownKeys(zone, new Set(["id", "pump_id", "controller_id", "design_flow_m3_per_hour", "area_ha", "soil_profile_id", "soil_horizon_id", "crop_ids"]), zonePath, issues);
+                unknownKeys(zone, new Set(["id", "pump_id", "controller_id", "design_flow_m3_per_hour", "area_ha", "soil_profile_id", "soil_horizon_id", "crop_ids", "boundary"]), zonePath, issues);
+                if (zone.boundary !== undefined && zone.boundary !== null) validateGeoJSON(zone.boundary, zonePath + ".boundary", errors);
                 if (zone.crop_ids !== undefined) {
                   if (!Array.isArray(zone.crop_ids)) errors.push(issue("irrigation.zone_crop_ids_invalid_type", zonePath + ".crop_ids", "verification_required"));
                   else zone.crop_ids.forEach(cropId => {
