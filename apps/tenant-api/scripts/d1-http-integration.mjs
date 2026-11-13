@@ -58,29 +58,6 @@ try {
   const invalidIdentity = await throughGateway(sitePath, "not.a.valid.jwt");
   assert.equal(invalidIdentity.response.status, 401);
 
-  const configurationPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/configurations";
-  const configurationPayload = {
-    tenant: { tenant_id: "tenant-http-a" },
-    site: { site_id: "site-http-a", timezone: "Africa/Tunis", crops: [],
-      irrigation_systems: [], energy_systems: [] },
-  };
-  const configurationBody = { payload: configurationPayload, schema_id: "nova.client-config.v1" };
-  const configurationHeaders = { "content-type": "application/json",
-    "idempotency-key": "ci-site-config-create-001" };
-  const configurationCreated = await throughGateway(configurationPath, accessToken(),
-    configurationHeaders, "POST", JSON.stringify(configurationBody));
-  assert.equal(configurationCreated.response.status, 201, JSON.stringify(configurationCreated.body));
-  assert.equal(configurationCreated.body.data.configuration_version, "v1");
-  assert.equal(configurationCreated.body.data.site_id, "site-http-a");
-  const configurationReplay = await throughGateway(configurationPath, accessToken(),
-    configurationHeaders, "POST", JSON.stringify(configurationBody));
-  assert.equal(configurationReplay.response.status, 200, JSON.stringify(configurationReplay.body));
-  assert.equal(configurationReplay.body.data.replayed, true);
-  const configurationConflict = await throughGateway(configurationPath, accessToken(),
-    configurationHeaders, "POST", JSON.stringify({ payload: {
-      ...configurationPayload, site: { ...configurationPayload.site, timezone: "UTC" },
-    }, schema_id: "nova.client-config.v1" }));
-  assert.equal(configurationConflict.response.status, 409);
 
   const criteriaList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
   assert.equal(criteriaList.response.status, 200, JSON.stringify(criteriaList.body));
@@ -361,6 +338,30 @@ try {
   assert.equal(rolledBack.configurations.length, 5);
   assert.equal(rolledBack.events.length, 5);
   assert.equal(rolledBack.audits.length, 5);
+
+  const configurationPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/configurations";
+  const routeConfigurationPayload = {
+    tenant: { tenant_id: "tenant-http-a" },
+    site: { site_id: "site-http-a", timezone: "Africa/Tunis", crops: [],
+      irrigation_systems: [], energy_systems: [] },
+  };
+  const configurationBody = { payload: routeConfigurationPayload, schema_id: "nova.client-config.v1" };
+  const configurationHeaders = { "content-type": "application/json",
+    "idempotency-key": "ci-site-config-create-001" };
+  const configurationCreated = await throughGateway(configurationPath, accessToken(),
+    configurationHeaders, "POST", JSON.stringify(configurationBody));
+  assert.equal(configurationCreated.response.status, 201, JSON.stringify(configurationCreated.body));
+  assert.equal(configurationCreated.body.data.configuration_version, "v6");
+  assert.equal(configurationCreated.body.data.site_id, "site-http-a");
+  const configurationReplay = await throughGateway(configurationPath, accessToken(),
+    configurationHeaders, "POST", JSON.stringify(configurationBody));
+  assert.equal(configurationReplay.response.status, 200, JSON.stringify(configurationReplay.body));
+  assert.equal(configurationReplay.body.data.replayed, true);
+  const configurationConflict = await throughGateway(configurationPath, accessToken(),
+    configurationHeaders, "POST", JSON.stringify({ payload: {
+      ...routeConfigurationPayload, site: { ...routeConfigurationPayload.site, timezone: "UTC" },
+    }, schema_id: "nova.client-config.v1" }));
+  assert.equal(configurationConflict.response.status, 409);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and reviewer-readable evidence context, dual-role approval and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
