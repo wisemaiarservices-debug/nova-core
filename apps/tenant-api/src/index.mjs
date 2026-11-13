@@ -319,7 +319,8 @@ async function assessStoredCriteria(db, tenant, entryId, version, context, sampl
     const criteriaSet = {
       id: criteria.entry_id, authority: criteria.authority_name, title: criteria.title,
       version: criteria.version, effective_from: criteria.effective_from,
-      effective_to: criteria.effective_to, evidence_ref: criteria.source_evidence_ref,
+      ...(criteria.effective_to ? { effective_to: criteria.effective_to } : {}),
+      evidence_ref: criteria.source_evidence_ref,
       criteria: criteria.criteria.map(rule => ({ ...rule,
         jurisdiction: context.jurisdiction, crop_id: context.crop_id,
         irrigation_method: context.irrigation_method, intended_use: context.intended_use,
