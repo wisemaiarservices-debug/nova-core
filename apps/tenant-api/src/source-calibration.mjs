@@ -147,7 +147,7 @@ export async function reviewSourceCalibration(db, tenantId, siteId, sourceId,
 }
 
 export async function assessObservationCalibration(db, tenantId, observation) {
-  if (!Number.isFinite(observation.value)) return { observation_id: observation.id, status: "not_assessed", reason: "observation_value_not_numeric" };
+  if (!Number.isFinite(observation.value)) return { id: observation.id, tenant_id: tenantId, observation_id: observation.id, source_id: observation.source_id, metric: observation.metric, unit: observation.unit, observation_verification_status: observation.verification_status, ingestion_quality_flags: [], status: "not_assessed", reason: "observation_value_not_numeric" };
   const rows = await db.prepare(
     "SELECT id, instrument_serial, calibration_method, calibration_standard, calibrated_at, valid_until, range_min, range_max, uncertainty, status, evidence_ref FROM source_calibrations WHERE tenant_id = ? AND site_id = ? AND source_id = ? AND metric = ? AND unit = ? AND calibrated_at <= ? AND valid_until >= ? ORDER BY calibrated_at DESC, id LIMIT 10"
   ).bind(tenantId, observation.site_id, observation.source_id, observation.metric,
