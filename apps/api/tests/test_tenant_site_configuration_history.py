@@ -132,5 +132,6 @@ def test_suspended_tenant_cannot_create_configuration_or_review_events():
 
 def test_invalid_version_and_unknown_fields_are_rejected_by_database_contract():
     db = database()
-    with pytest.raises(sqlite3.IntegrityError):
-        insert_configuration(db, version="latest")
+    for invalid in ("latest", "v1beta", "v01", "v0", "v"):
+        with pytest.raises(sqlite3.IntegrityError):
+            insert_configuration(db, config_id="invalid-" + invalid, version=invalid)
