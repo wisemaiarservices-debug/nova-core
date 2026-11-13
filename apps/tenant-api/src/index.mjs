@@ -523,6 +523,8 @@ export default {
         if (calibrationReviewerAssign || calibrationReviewerRevoke) {
           const route = calibrationReviewerAssign ?? calibrationReviewerRevoke;
           if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) || !await hasSiteReadGrant(env.DB, tenant, subject, route[2]) || draftBody?.site_id !== route[2]) return error("not_found", 404);
+          const asset = await rows(env.DB.prepare("SELECT id FROM assets WHERE tenant_id=? AND site_id=? AND id=? LIMIT 2").bind(tenant, route[2], route[3]));
+          if (asset.length !== 1 || asset[0].id !== route[3]) return error("not_found", 404);
           const assigned = await assignCalibrationReviewer(env.DB, tenant, subject, requestId, draftBody, calibrationReviewerAssign ? "assign" : "revoke");
           return assigned.error ? json({ error: assigned.error }, assigned.status) : json({ data: assigned.data, request_id: requestId }, assigned.status);
         }
