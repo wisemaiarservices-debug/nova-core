@@ -450,8 +450,9 @@ export default {
         (observationVerification && !validId(observationVerification[2])) ||
         ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||
         (labReportDetail && !validId(labReportDetail[3])) ||
-        ((sourceCalibrationCreate || sourceCalibrationReview) && (!validId((sourceCalibrationCreate ?? sourceCalibrationReview)[2]) || !validId((sourceCalibrationCreate ?? sourceCalibrationReview)[3]))) ||
+        ((sourceCalibrationCreate || sourceCalibrationReview || sourceCalibrationDetail) && (!validId((sourceCalibrationCreate ?? sourceCalibrationReview ?? sourceCalibrationDetail)[2]) || !validId((sourceCalibrationCreate ?? sourceCalibrationReview ?? sourceCalibrationDetail)[3]))) ||
         (sourceCalibrationReview && !validId(sourceCalibrationReview[4])) ||
+        (sourceCalibrationDetail && !validId(sourceCalibrationDetail[4])) ||
         (observationQuality && !validId(observationQuality[2]))) return error("not_found", 404);
 
     const subject = request.headers.get("x-nova-verified-subject");
