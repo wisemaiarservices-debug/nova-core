@@ -45,6 +45,18 @@ test("assigns a site-scoped measurement reviewer and writes an append-only event
   assert.match(db.state.batches[0][1].sql, /INSERT INTO observation_reviewer_events/);
 });
 
+test("revokes a site reviewer with an append-only event before the status change", async () => {
+  const db = database();
+  const result = await assignObservationReviewer(db, "tenant-a", "owner@example.test", "req-revoke", {
+    site_id: "site-a", reviewer_subject: reviewer, evidence_ref: "appointment:end",
+    reason: "Reviewer appointment ended",
+  }, "revoke");
+  assert.equal(result.status, 200);
+  assert.equal(result.data.status, "revoked");
+  assert.match(db.state.batches[0][0].sql, /INSERT INTO observation_reviewer_events/);
+  assert.match(db.state.batches[0][1].sql, /UPDATE observation_reviewers SET status = 'revoked'/);
+});
+
 test("requires an active tenant membership before reviewer assignment", async () => {
   const result = await assignObservationReviewer(database({ membership: false }), "tenant-a",
     "owner@example.test", "req-membership", {
