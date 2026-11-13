@@ -309,6 +309,8 @@ test("rejects criteria drafts with cross-tenant scope, non-draft state or invali
     { ...draftEntry, scope: { ...draftEntry.scope, tenant_id: "tenant-b" } },
     { ...draftEntry, review: { status: "approved", approvals: [] } },
     { ...draftEntry, authority: { name: "missing digest" } },
+    { ...draftEntry, reviewer_subject: "forged-reviewer" },
+    { ...draftEntry, review: { status: "draft", approvals: [{ reviewer_id: "forged", role: "domain_expert" }] } },
   ]) {
     const response = await worker.fetch(await request({}, 
       "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria",
