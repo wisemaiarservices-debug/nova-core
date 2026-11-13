@@ -104,6 +104,7 @@ test("rejects malformed payloads, non-PDF bytes, unsafe filenames and invalid da
     { ...body, document_base64: Buffer.from("not a pdf").toString("base64") },
     { ...body, document_base64: "!!!!" },
     { ...body, issued_at: "2026-99-99" },
+    { ...body, issued_at: "2026-02-30" },
     { ...body, extra: "untrusted" },
   ];
   for (const item of invalid) {
