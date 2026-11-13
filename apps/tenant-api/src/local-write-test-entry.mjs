@@ -50,16 +50,19 @@ export default {
         return response({ error: "not_found" }, 404);
       }
       const key = url.searchParams.get("key");
-      if (!key) return response({ error: "key_required" }, 400);
+      const tenantId = url.searchParams.get("tenant") || "tenant-http-a";
+      const siteId = tenantId === "tenant-http-a" ? "site-http-a" :
+        tenantId === "tenant-http-b" ? "site-http-b" : null;
+      if (!key || !siteId) return response({ error: "invalid_fixture_scope" }, 400);
       const [idem, configs, events, audits] = await Promise.all([
         env.DB.prepare("SELECT status, response_json FROM tenant_site_configuration_idempotency WHERE tenant_id = ? AND subject = ? AND idempotency_key = ?")
-          .bind("tenant-http-a", "ci-human-subject", key).all(),
+          .bind(tenantId, "ci-human-subject", key).all(),
         env.DB.prepare("SELECT id, configuration_version FROM tenant_site_configurations WHERE tenant_id = ? AND site_id = ? ORDER BY CAST(substr(configuration_version, 2) AS INTEGER)")
-          .bind("tenant-http-a", "site-http-a").all(),
+          .bind(tenantId, siteId).all(),
         env.DB.prepare("SELECT id, event_type FROM tenant_site_configuration_events WHERE tenant_id = ? AND site_id = ?")
-          .bind("tenant-http-a", "site-http-a").all(),
+          .bind(tenantId, siteId).all(),
         env.DB.prepare("SELECT id, action, request_id FROM audit_events WHERE tenant_id = ? AND entity_type = 'site' AND entity_id = ? AND action = 'configuration.created_for_review'")
-          .bind("tenant-http-a", "site-http-a").all(),
+          .bind(tenantId, siteId).all(),
       ]);
       return response({
         idempotency: idem.results,
