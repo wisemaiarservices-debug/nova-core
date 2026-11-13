@@ -12,6 +12,7 @@ class DB {
   prepare(sql) {
     const db = this;
     return { sql, args: [], bind(...args) { this.args = args; return this; },
+      async run() { return { meta: { changes: 1 } }; },
       async all() {
         db.calls.push({ sql, args: this.args });
         if (sql.includes("tenant_memberships")) return { results: db.authorized ? [{
