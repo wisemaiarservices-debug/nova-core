@@ -742,7 +742,20 @@ test("accepts timezone-qualified UTC and numeric-offset water-quality sample tim
     assert.equal(result.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"), false, sampledAt);
   }
 
-  value.site.water_sources[0].quality_samples[0].sampled_at = "2026-02-30T09:30:00Z";
-  const invalidDate = assessDomainConfiguration(value);
-  assert.ok(invalidDate.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"));
+  for (const sampledAt of [
+    "2026-02-30T09:30:00Z",
+    "2025-02-29T09:30:00Z",
+    "2026-04-31T09:30:00Z",
+    "2026-13-01T09:30:00Z",
+  ]) {
+    value.site.water_sources[0].quality_samples[0].sampled_at = sampledAt;
+    const invalidDate = assessDomainConfiguration(value);
+    assert.ok(invalidDate.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"), sampledAt);
+  }
+
+  for (const sampledAt of ["2024-02-29T09:30:00Z", "2000-02-29T09:30:00Z"]) {
+    value.site.water_sources[0].quality_samples[0].sampled_at = sampledAt;
+    const leapDate = assessDomainConfiguration(value);
+    assert.equal(leapDate.errors.some(item => item.code === "water_quality.sample_timestamp_invalid"), false, sampledAt);
+  }
 });
