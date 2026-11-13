@@ -31,7 +31,6 @@ test("requires explicit root-depth observation selection and complete contiguous
 test("does not extrapolate a layer beyond the observed root depth", () => {
   const data = profile();
   data.hydraulic_measurements = data.hydraulic_measurements.slice(0, 2);
-  crop().root_depth_observations[0].root_depth_cm = 30;
   const selectedCrop = crop();
   selectedCrop.root_depth_observations[0].root_depth_cm = 30;
   assert.equal(calculateRootZoneAvailableWater(data, selectedCrop, { observation_id: "root-observation-1" }).reason,
