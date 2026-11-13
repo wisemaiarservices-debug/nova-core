@@ -851,3 +851,22 @@ test("rejects malformed soil sampling coordinates and non-finite analyte results
   assert.ok(result.errors.some(item => item.code === "soil_sample.sampling_point_invalid"));
   assert.ok(result.errors.some(item => item.code === "soil_sample.analyte_invalid"));
 });
+
+
+test("checks soil profile, horizon, sample and analyte evidence references independently", () => {
+  const value = valid();
+  value.site.soil_profiles = [{
+    id: "soil-profile-1",
+    evidence_ref: "missing-profile-evidence",
+    horizons: [{ id: "horizon-a", top_depth_cm: 0, bottom_depth_cm: 20, evidence_ref: "missing-horizon-evidence" }],
+    samples: [{
+      id: "soil-sample-1", top_depth_cm: 0, bottom_depth_cm: 20,
+      sampled_at: "2026-10-20T09:30:00Z",
+      analytes: [{ parameter: "pH", value: 7, unit: "pH", evidence_ref: "missing-analyte-evidence" }],
+      evidence_ref: "missing-sample-evidence",
+    }],
+  }];
+  const result = assessDomainConfiguration(value);
+  const unresolved = result.issues.filter(item => item.code === "evidence.reference_unresolved" && item.path.includes("soil_profiles"));
+  assert.equal(unresolved.length, 4);
+});
