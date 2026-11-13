@@ -3,7 +3,7 @@ const SITE_KEYS = new Set(["site_id", "timezone", "land_area", "boundary", "crop
 const INVENTORY_KEYS = new Set(["equipment", "sensors", "gateways"]);
 const PROTOCOLS = new Set(["modbus_tcp", "modbus_rtu", "mqtt", "http_rest", "opc_ua", "lorawan", "bacnet_ip", "can_bus", "serial", "manual", "unknown"]);
 const AREA_UNITS = new Set(["m2", "ha", "km2", "acre"]);
-const DATE = /^\\d{4}-\\d{2}-\\d{2}$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
 
 function plainObject(value) {
