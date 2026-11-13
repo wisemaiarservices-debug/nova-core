@@ -41,7 +41,7 @@ function database() {
       state.batches += 1;
       assert.equal(statements.length, 2);
       const [insert, event] = statements;
-      assert.match(insert.sql, /INSERT INTO laboratory_report_evidence/);
+      assert.match(insert.sql, /INSERT(?: OR IGNORE)? INTO laboratory_report_evidence/);
       assert.match(event.sql, /INSERT INTO laboratory_report_evidence_events/);
       if (state.evidence) return [{ meta: { changes: 0 } }, { meta: { changes: 0 } }];
       const v = insert.values;
