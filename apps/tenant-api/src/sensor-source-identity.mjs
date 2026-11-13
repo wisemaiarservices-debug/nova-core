@@ -47,3 +47,20 @@ export async function resolveVerifiedSensorSourceMapping(db,tenant,observation){
  const row=result.results[0];
  return {mapping_id:row.id,sensor_id:row.sensor_id,parameter:row.parameter,unit:row.unit,effective_from:row.effective_from,effective_to:row.effective_to};
 }
+
+export async function assignSensorSourceMappingReviewer(db,tenant,siteId,actor,body,action){
+ if(!only(body,["reviewer_subject","evidence_ref","reason"])||!textOk(body.reviewer_subject,200)||body.reviewer_subject===actor||
+ !textOk(body.evidence_ref,500)||(action==="revoke"&&!textOk(body.reason,2000)))return {error:"sensor_source_mapping_reviewer_request_invalid",status:400};
+ if(action==="assign"){
+  const member=await db.prepare("SELECT m.subject FROM tenant_memberships m JOIN tenants t ON t.id=m.tenant_id WHERE m.subject=? AND m.tenant_id=? AND m.status='active' AND t.status='active' LIMIT 2").bind(body.reviewer_subject,tenant).all();
+  if(!Array.isArray(member?.results)||member.results.length!==1)return {error:"sensor_source_mapping_reviewer_membership_not_active",status:409};
+ }
+ const site=await db.prepare("SELECT id FROM sites WHERE tenant_id=? AND id=? LIMIT 2").bind(tenant,siteId).all();
+ if(!Array.isArray(site?.results)||site.results.length!==1)return {error:"site_not_found",status:404};
+ const first=action==="assign"
+ ?db.prepare("INSERT INTO sensor_source_mapping_reviewers(tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref) VALUES(?,?,?,'active',?,?) ON CONFLICT(tenant_id,site_id,reviewer_subject) DO NOTHING").bind(tenant,siteId,body.reviewer_subject,actor,body.evidence_ref)
+ :db.prepare("UPDATE sensor_source_mapping_reviewers SET status='revoked' WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND status='active'").bind(tenant,siteId,body.reviewer_subject);
+ const result=await first.run();
+ if(result?.meta?.changes!==1)return {error:"sensor_source_mapping_reviewer_state_conflict",status:409};
+ return {data:{site_id:siteId,reviewer_subject:body.reviewer_subject,status:action==="assign"?"active":"revoked"},status:action==="assign"?201:200};
+}
