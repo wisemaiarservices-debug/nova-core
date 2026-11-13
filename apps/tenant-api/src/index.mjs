@@ -171,6 +171,75 @@ async function provisionCriteriaReviewer(db, tenant, actor, requestId, body, act
     status: action === "assign" ? 201 : 200 };
 }
 
+
+async function submitCriteriaForReview(db, tenant, entryId, version, actor, requestId) {
+  try {
+    const result = await db.batch([db.prepare(
+      "INSERT INTO water_quality_criteria_events (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id) VALUES (?, ?, ?, ?, 'submitted_for_review', ?, ?)"
+    ).bind(crypto.randomUUID(), tenant, entryId, version, actor, requestId)]);
+    if (!Array.isArray(result) || result.length !== 1 || result[0]?.meta?.changes !== 1) {
+      return { error: "criteria_lifecycle_conflict", status: 409 };
+    }
+    return { data: { entry_id: entryId, version, status: "submitted_for_review" }, status: 200 };
+  } catch {
+    return { error: "criteria_lifecycle_conflict", status: 409 };
+  }
+}
+
+async function recordCriteriaReview(db, tenant, entryId, version, reviewerSubject, requestId, body) {
+  if (!onlyKeys(body, ["reviewer_role", "decision", "evidence_ref", "reason"]) ||
+      !["regulatory_reviewer", "domain_expert"].includes(body.reviewer_role) ||
+      !["approve", "reject"].includes(body.decision) ||
+      typeof body.evidence_ref !== "string" || body.evidence_ref.trim() !== body.evidence_ref ||
+      body.evidence_ref.length < 1 || body.evidence_ref.length > 500 ||
+      (body.reason !== undefined && (typeof body.reason !== "string" ||
+        body.reason.trim() !== body.reason || body.reason.length > 2000)) ||
+      (body.decision === "reject" && (typeof body.reason !== "string" || body.reason.length < 1))) {
+    return { error: "criteria_review_request_invalid", status: 400 };
+  }
+  const entryRows = await rows(db.prepare(
+    "SELECT jurisdiction, created_by_subject FROM water_quality_criteria_entries WHERE tenant_id = ? AND id = ? AND version = ? LIMIT 1"
+  ).bind(tenant, entryId, version));
+  if (entryRows.length !== 1 || entryRows[0].created_by_subject === reviewerSubject) {
+    return { error: "reviewer_assignment_not_found", status: 404 };
+  }
+  const jurisdiction = entryRows[0].jurisdiction;
+  const assignments = await rows(db.prepare(
+    "SELECT reviewer_subject, reviewer_role, jurisdiction FROM water_quality_criteria_reviewers WHERE tenant_id = ? AND reviewer_subject = ? AND reviewer_role = ? AND jurisdiction = ? AND status = 'active' LIMIT 2"
+  ).bind(tenant, reviewerSubject, body.reviewer_role, jurisdiction));
+  if (assignments.length !== 1 || assignments[0].reviewer_subject !== reviewerSubject ||
+      assignments[0].reviewer_role !== body.reviewer_role || assignments[0].jurisdiction !== jurisdiction) {
+    return { error: "reviewer_assignment_not_found", status: 404 };
+  }
+  const approvalId = crypto.randomUUID();
+  const eventId = crypto.randomUUID();
+  const reviewedAt = new Date().toISOString();
+  const approval = db.prepare(
+    "INSERT INTO water_quality_criteria_approvals (id, tenant_id, entry_id, entry_version, jurisdiction, reviewer_subject, reviewer_role, decision, evidence_ref, reason, reviewed_at, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(approvalId, tenant, entryId, version, jurisdiction, reviewerSubject,
+    body.reviewer_role, body.decision, body.evidence_ref, body.reason ?? null, reviewedAt, requestId);
+  const event = body.decision === "reject"
+    ? db.prepare("INSERT INTO water_quality_criteria_events (id, tenant_id, entry_id, entry_version, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, 'rejected', ?, ?, ? WHERE changes() = 1")
+        .bind(eventId, tenant, entryId, version, reviewerSubject, body.reason, requestId)
+    : db.prepare("INSERT INTO water_quality_criteria_events (id, tenant_id, entry_id, entry_version, event_type, actor_subject, request_id) SELECT ?, ?, ?, ?, 'approved', ?, ? WHERE changes() = 1 AND (SELECT COUNT(DISTINCT a.reviewer_subject) FROM water_quality_criteria_approvals a JOIN water_quality_criteria_reviewers r ON r.tenant_id = a.tenant_id AND r.reviewer_subject = a.reviewer_subject AND r.reviewer_role = a.reviewer_role AND r.status = 'active' WHERE a.tenant_id = ? AND a.entry_id = ? AND a.entry_version = ? AND a.decision = 'approve') >= 2 AND EXISTS (SELECT 1 FROM water_quality_criteria_approvals a JOIN water_quality_criteria_reviewers r ON r.tenant_id = a.tenant_id AND r.reviewer_subject = a.reviewer_subject AND r.reviewer_role = a.reviewer_role AND r.status = 'active' WHERE a.tenant_id = ? AND a.entry_id = ? AND a.entry_version = ? AND a.decision = 'approve' AND a.reviewer_role = 'regulatory_reviewer') AND EXISTS (SELECT 1 FROM water_quality_criteria_approvals a JOIN water_quality_criteria_reviewers r ON r.tenant_id = a.tenant_id AND r.reviewer_subject = a.reviewer_subject AND r.reviewer_role = a.reviewer_role AND r.status = 'active' WHERE a.tenant_id = ? AND a.entry_id = ? AND a.entry_version = ? AND a.decision = 'approve' AND a.reviewer_role = 'domain_expert')")
+        .bind(eventId, tenant, entryId, version, reviewerSubject, requestId,
+          tenant, entryId, version, tenant, entryId, version, tenant, entryId, version);
+  try {
+    const results = await db.batch([approval, event]);
+    if (!Array.isArray(results) || results.length !== 2 ||
+        !results[0]?.meta || results[0].meta.changes !== 1 ||
+        !results[1]?.meta || !Number.isInteger(results[1].meta.changes)) {
+      return { error: "criteria_lifecycle_conflict", status: 409 };
+    }
+    return { data: { entry_id: entryId, version, decision: body.decision,
+      status: body.decision === "reject" ? "rejected" :
+        results[1].meta.changes === 1 ? "approved" : "submitted_for_review",
+      approval_id: approvalId }, status: 201 };
+  } catch {
+    return { error: "criteria_lifecycle_conflict", status: 409 };
+  }
+}
+
 async function readCriteriaReviewers(db, tenant) {
   const reviewers = await rows(db.prepare(
     "SELECT reviewer_subject, reviewer_role, jurisdiction, status, assigned_by_subject, assignment_evidence_ref, created_at FROM water_quality_criteria_reviewers WHERE tenant_id = ? ORDER BY jurisdiction, reviewer_role, reviewer_subject LIMIT 200"
