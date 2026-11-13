@@ -169,6 +169,81 @@ try {
   assert.equal(approvedResolution.body.data.lifecycle_status, "approved");
   assert.equal(approvedResolution.body.data.operational_decision, "not_authorized");
 
+  const observationReviewer = {
+    site_id: "site-http-a", reviewer_subject: "ci-measurement-reviewer",
+    evidence_ref: "fixture:measurement-reviewer-appointment",
+  };
+  const observationReviewerAssigned = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/observations/reviewers/assign",
+    accessToken(), { "content-type": "application/json" }, "POST", JSON.stringify(observationReviewer));
+  assert.equal(observationReviewerAssigned.response.status, 201,
+    JSON.stringify(observationReviewerAssigned.body));
+  assert.equal(observationReviewerAssigned.body.data.reviewer_role, "measurement_reviewer");
+
+  const selfAssignment = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/observations/reviewers/assign",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ ...observationReviewer, reviewer_subject: "ci-human-subject" }));
+  assert.equal(selfAssignment.response.status, 400);
+
+  const verifiedObservation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/verification",
+    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "verify", evidence_ref: "fixture:physical-inspection" }));
+  assert.equal(verifiedObservation.response.status, 201, JSON.stringify(verifiedObservation.body));
+  assert.equal(verifiedObservation.body.data.verification_status, "verified");
+
+  const verifiedSampleAssessment = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/assess",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, samples: [{
+      id: "ci-verified-measured-sample", parameter: "ec", value: 1.5, unit: "dS/m",
+      sampled_at: "2026-05-10T10:00:00Z",
+      provenance: { source_type: "measured", method: "field_meter", evidence_ref: "observation:obs-http-verified" },
+    }] }));
+  assert.equal(verifiedSampleAssessment.response.status, 200, JSON.stringify(verifiedSampleAssessment.body));
+  assert.equal(verifiedSampleAssessment.body.data.results[0].status, "within_declared_criterion");
+  assert.equal(verifiedSampleAssessment.body.data.results[0].sample_provenance.verification_status,
+    "matched_to_verified_core_observation");
+
+  const revokedObservation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/verification",
+    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "revoke", evidence_ref: "fixture:withdrawn-inspection", reason: "CI revocation check" }));
+  assert.equal(revokedObservation.response.status, 201, JSON.stringify(revokedObservation.body));
+  assert.equal(revokedObservation.body.data.verification_status, "unverified");
+
+  const revokedSampleAssessment = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/assess",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ context: resolverContext, samples: [{
+      id: "ci-revoked-measured-sample", parameter: "ec", value: 1.5, unit: "dS/m",
+      sampled_at: "2026-05-10T10:00:00Z",
+      provenance: { source_type: "measured", method: "field_meter", evidence_ref: "observation:obs-http-verified" },
+    }] }));
+  assert.equal(revokedSampleAssessment.response.status, 200);
+  assert.equal(revokedSampleAssessment.body.data.results[0].status, "not_assessed");
+  assert.equal(revokedSampleAssessment.body.data.results[0].reason, "persisted_observation_not_verified");
+
+  const serviceIdentityAssignment = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/observations/reviewers/assign",
+    accessToken(), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ ...observationReviewer, reviewer_subject: "neoagro-ingestion-service",
+      evidence_ref: "fixture:service-identity-assignment" }));
+  assert.equal(serviceIdentityAssignment.response.status, 201);
+  const selfReviewByIngestionIdentity = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/verification",
+    accessToken("neoagro-ingestion-service"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "verify", evidence_ref: "fixture:self-review-attempt" }));
+  assert.equal(selfReviewByIngestionIdentity.response.status, 409);
+  assert.equal(selfReviewByIngestionIdentity.body.error, "observation_submitter_independence_not_established");
+
+  const crossTenantVerification = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/observations/obs-http-verified/verification",
+    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "verify", evidence_ref: "fixture:cross-tenant-attempt" }));
+  assert.equal(crossTenantVerification.response.status, 404);
+
   const sampleAssessment = await throughGateway(
     "/api/v1/tenants/tenant-http-a/water-quality-criteria/criteria-http-draft/1.0.0/assess",
     accessToken(), { "content-type": "application/json" }, "POST",
@@ -355,7 +430,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
-  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, and reviewer-readable evidence context, dual-role approval and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
+  console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
