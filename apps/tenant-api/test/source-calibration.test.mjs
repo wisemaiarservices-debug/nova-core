@@ -17,7 +17,7 @@ const body = {
 };
 
 function dbFixture({ sourceExists = true, evidenceExists = true, recordStatus = "unverified",
-  reviewerActive = true, calibrations = [] } = {}) {
+  reviewerActive = true, sourceVerificationStatus = "unverified", calibrations = [] } = {}) {
   const state = { record: null, events: [], batches: 0, statements: [], recordStatus };
   return {
     state,
@@ -27,7 +27,7 @@ function dbFixture({ sourceExists = true, evidenceExists = true, recordStatus = 
         bind(...args) { this.args = args; state.statements.push({ sql, args }); return this; },
         async all() {
           if (sql.includes("FROM sources s JOIN sites")) return { results: sourceExists
-            ? [{ id: source, tenant_id: tenant, site_id: site, site_status: "active" }] : [] };
+            ? [{ id: source, tenant_id: tenant, site_id: site, site_status: "active", verification_status: sourceVerificationStatus }] : [] };
           if (sql.includes("FROM laboratory_report_evidence")) return { results: evidenceExists
             ? [{ id: "lab-001" }] : [] };
           if (sql.includes("FROM source_calibration_events")) return { results: state.events };
@@ -168,4 +168,11 @@ test("returns scoped calibration metadata and append-only review history", async
   assert.equal(result.tenant_id, tenant);
   assert.equal(result.events.length, 1);
   assert.equal(result.events[0].event_type, "registered");
+});
+
+test("does not register a calibration against a disabled source", async () => {
+  const db = dbFixture({ sourceVerificationStatus: "disabled" });
+  const result = await createSourceCalibration(db, tenant, site, source, owner, "request-1", body);
+  assert.equal(result.error, "source_not_found_in_site_scope");
+  assert.equal(db.state.batches, 0);
 });
