@@ -647,3 +647,37 @@ test("leaves cross-system capacity compatibility unknown when component ratings 
     "energy.grid_export_limit_exceeds_inverter_rating",
   ].includes(item.code)), false);
 });
+
+
+test("resolves irrigation water-source references only against declared site water sources", () => {
+  const value = valid();
+  value.site.water_sources = [{
+    id: "well-1", source_type: "groundwater", name: "Borehole",
+    available_flow_m3_per_hour: 4, permitted_abstraction_m3_per_day: 30,
+  }];
+  value.site.irrigation_systems[0].water_source_id = "well-1";
+  let result = assessDomainConfiguration(value);
+  assert.equal(result.issues.some(item => item.code === "irrigation.water_source_reference_unresolved"), false);
+
+  value.site.irrigation_systems[0].water_source_id = "unknown-source";
+  result = assessDomainConfiguration(value);
+  assert.ok(result.issues.some(item => item.code === "irrigation.water_source_reference_unresolved"));
+});
+
+test("validates water-source inventory identity and declared flow limits without inventing availability", () => {
+  const value = valid();
+  value.site.water_sources = [
+    { id: "well-1", source_type: "groundwater", available_flow_m3_per_hour: 0 },
+    { id: "well-1", source_type: "unsupported" },
+  ];
+  const result = assessDomainConfiguration(value);
+  assert.ok(result.errors.some(item => item.code === "record.id_missing_or_duplicate"));
+  assert.ok(result.errors.some(item => item.code === "engineering.rating_must_be_positive"));
+  assert.ok(result.issues.some(item => item.code === "water_source.type_unrecognized"));
+
+  const unspecified = valid();
+  unspecified.site.water_sources = [{ id: "source-unknown" }];
+  const unknownResult = assessDomainConfiguration(unspecified);
+  assert.ok(unknownResult.issues.some(item => item.code === "water_source.type_unknown"));
+  assert.equal(unknownResult.issues.some(item => item.code === "irrigation.water_source_reference_unresolved"), false);
+});
