@@ -240,3 +240,11 @@ def test_reviewer_assignment_and_revocation_events_are_append_only_and_state_bou
         db.execute("UPDATE water_quality_criteria_reviewer_events SET reason='edited' WHERE id='review-event-2'")
     with pytest.raises(sqlite3.IntegrityError, match="cannot be deleted"):
         db.execute("DELETE FROM water_quality_criteria_reviewer_events WHERE id='review-event-1'")
+    with pytest.raises(sqlite3.IntegrityError, match="cannot be reactivated"):
+        db.execute(
+            "UPDATE water_quality_criteria_reviewers SET status='active' WHERE tenant_id='tenant-a' AND reviewer_subject='reviewer-r'"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="assignment evidence is immutable"):
+        db.execute(
+            "UPDATE water_quality_criteria_reviewers SET assignment_evidence_ref='evidence:changed' WHERE tenant_id='tenant-a' AND reviewer_subject='reviewer-r'"
+        )
