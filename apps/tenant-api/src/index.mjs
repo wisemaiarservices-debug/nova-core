@@ -473,7 +473,7 @@ export default {
           (data.site_id === null || await hasSiteReadGrant(env.DB, tenant, subject, data.site_id));
         if (memberHasSiteGrant) return json({ data, request_id: requestId });
         const reviewer = await rows(env.DB.prepare(
-          "SELECT r.reviewer_subject, r.jurisdiction FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = ? AND r.reviewer_subject = ? AND r.jurisdiction = ? AND r.status = 'active' LIMIT 2"
+          "SELECT DISTINCT r.reviewer_subject, r.jurisdiction FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = ? AND r.reviewer_subject = ? AND r.jurisdiction = ? AND r.status = 'active' LIMIT 1"
         ).bind(tenant, subject, data.jurisdiction));
         return reviewer.length === 1 && reviewer[0].reviewer_subject === subject &&
           reviewer[0].jurisdiction === data.jurisdiction
