@@ -84,6 +84,17 @@ try {
     return response.json();
   }
 
+  const invalidPayload = configurationPayload("invalid");
+  invalidPayload.site.boundary = { type: "Polygon", coordinates: [] };
+  const invalidWrite = await writeConfiguration("ci-invalid-domain-key", "req-invalid-domain", invalidPayload);
+  assert.equal(invalidWrite.response.status, 400);
+  assert.equal(invalidWrite.body.error, "configuration_domain_invalid");
+  const invalidState = await configurationState("ci-invalid-domain-key");
+  assert.equal(invalidState.idempotency.length, 0);
+  assert.equal(invalidState.configurations.length, 0);
+  assert.equal(invalidState.events.length, 0);
+  assert.equal(invalidState.audits.length, 0);
+
   const firstPayload = configurationPayload("olive");
   const created = await writeConfiguration("ci-config-key-1", "req-config-1", firstPayload);
   assert.equal(created.response.status, 200, JSON.stringify(created.body));
