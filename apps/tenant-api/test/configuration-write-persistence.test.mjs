@@ -106,3 +106,19 @@ test("rejects schema IDs outside the server-owned allowlist before any write",as
   }),/configuration_schema_not_supported/);
   assert.equal(db.calls.some(c=>c.kind==="batch"),false);
 });
+
+test("rejects structurally invalid domain configuration before any D1 write",async()=>{
+  const db=fakeDb();
+  const payload=configurationPayload();
+  payload.site.boundary={type:"Polygon",coordinates:[]};
+  await assert.rejects(()=>createSiteConfiguration({db,...input,payload}),/configuration_domain_invalid/);
+  assert.equal(db.calls.some(c=>c.kind==="batch"),false);
+});
+
+test("rejects tenant or site identity substitution inside the immutable payload",async()=>{
+  const db=fakeDb();
+  await assert.rejects(()=>createSiteConfiguration({
+    db,...input,payload:configurationPayload("tenant-b","site-b"),
+  }),/configuration_domain_invalid/);
+  assert.equal(db.calls.some(c=>c.kind==="batch"),false);
+});
