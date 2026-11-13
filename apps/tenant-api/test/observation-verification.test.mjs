@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { assignObservationReviewer, reviewObservation } from "../src/observation-verification.mjs";
 
 const observation = { id: "obs-1", tenant_id: "tenant-a", site_id: "site-a", verification_status: "unverified" };
-function database({ site = true, assignment = true, audit = true, status = "unverified", actorId = "ingestion-service", batchChanges = [1, 1] } = {}) {
+function database({ site = true, assignment = true, audit = true, membership = true, status = "unverified", actorId = "ingestion-service", batchChanges = [1, 1] } = {}) {
   const state = { calls: [], batches: [], batchChanges };
   return {
     state,
@@ -11,7 +11,7 @@ function database({ site = true, assignment = true, audit = true, status = "unve
       return { sql, args: [], bind(...args) { this.args = args; return this; },
         async all() {
           state.calls.push({ sql, args: this.args });
-          if (sql.includes("FROM sites")) return { results: site ? [{ id: "site-a" }] : [] };
+          if (sql.includes("FROM tenant_memberships")) return { results: membership ? [{ subject: reviewer, tenant_id: "tenant-a", membership_status: "active", tenant_status: "active" }] : [] };\n          if (sql.includes("FROM sites")) return { results: site ? [{ id: "site-a" }] : [] };
           if (sql.includes("FROM observations WHERE tenant_id")) return { results: [{ ...observation, verification_status: status }] };
           if (sql.includes("FROM observation_reviewers")) return { results: assignment ? [
             { reviewer_subject: "reviewer@example.test", reviewer_role: "measurement_reviewer" },
@@ -42,6 +42,14 @@ test("assigns a site-scoped measurement reviewer and writes an append-only event
   assert.equal(db.state.batches[0].length, 2);
   assert.match(db.state.batches[0][0].sql, /INSERT INTO observation_reviewers/);
   assert.match(db.state.batches[0][1].sql, /INSERT INTO observation_reviewer_events/);
+});
+
+test("requires an active tenant membership before reviewer assignment", async () => {
+  const result = await assignObservationReviewer(database({ membership: false }), "tenant-a",
+    "owner@example.test", "req-membership", {
+      site_id: "site-a", reviewer_subject: reviewer, evidence_ref: "appointment:123",
+    }, "assign");
+  assert.equal(result.error, "observation_reviewer_membership_not_active");
 });
 
 test("rejects self-assignment and unknown request fields", async () => {
