@@ -1,0 +1,29 @@
+# NOVA configuration write contract — v1
+
+This module is a pure validation boundary for the future private tenant configuration write endpoint. It does not perform HTTP, authentication, authorization, D1 writes, or operational activation.
+
+## Required order in the future handler
+
+1. Verify the gateway HMAC envelope and freshness; consume its nonce exactly once.
+2. Resolve exactly one active tenant membership for the verified subject.
+3. Check the exact tenant/site `create` grant and role ceiling before reading or writing configuration data.
+4. Parse a bounded JSON request body; reject unknown top-level request fields.
+5. Validate the versioned schema ID against a server-owned allowlist.
+6. Canonicalize the JSON object, enforce byte/depth/node/array bounds, and compute SHA-256 on the server.
+7. In one D1 batch/transaction, reserve the idempotency key, insert the immutable snapshot, and append the audit event.
+8. Return the existing result for an exact idempotent retry; reject reuse of the same key with a different canonical digest.
+
+## Module guarantees
+
+- Deterministic key ordering and JSON serialization.
+- Root must be a plain JSON object.
+- Rejects non-finite numbers, runtime objects, forbidden prototype keys, excessive nesting, arrays, node count, and encoded size.
+- Computes SHA-256 using Web Crypto; caller-supplied digest is optional and, when present, must match the server-computed digest.
+- The schema ID must exactly match the server-provided expected ID.
+
+## Explicit non-guarantees
+
+- This module does not authenticate a caller or grant tenant/site access.
+- A digest proves content consistency, not truth, source provenance, calibration, scientific validity, or site suitability.
+- No write route is exposed and no D1 binding or migration is applied remotely.
+- Review approval remains separate from equipment activation or autonomous control.
