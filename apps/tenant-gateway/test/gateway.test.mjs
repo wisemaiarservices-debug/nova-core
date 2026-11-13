@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker from "../src/index.mjs";
+import worker, { createGateway } from "../src/index.mjs";
 import { generateKeyPairSync, sign, webcrypto } from "node:crypto";
 globalThis.crypto ??= webcrypto;
 
@@ -195,4 +195,52 @@ test("rejects malformed criteria selectors and query-string expansion", async ()
     const response = await worker.fetch(new Request("https://gateway.test" + path), env);
     assert.equal(response.status, 404);
   }
+});
+
+test("routes site-scoped observation reviewer assignment and verification through the signed private API", async () => {
+  const calls = [];
+  const gateway = createGateway({ verifyAccessToken: async token => ({
+    subject: token, issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  for (const [publicPath, internalPath, subject, payload] of [
+    ["/api/v1/tenants/tenant-a/observations/reviewers/assign",
+      "/internal/v1/tenants/tenant-a/observations/reviewers/assign", "tenant-admin",
+      { site_id: "site-a", reviewer_subject: "reviewer-a", evidence_ref: "appointment:1" }],
+    ["/api/v1/tenants/tenant-a/observations/reviewers/revoke",
+      "/internal/v1/tenants/tenant-a/observations/reviewers/revoke", "tenant-admin",
+      { site_id: "site-a", reviewer_subject: "reviewer-a", evidence_ref: "appointment:2", reason: "Appointment ended" }],
+    ["/api/v1/tenants/tenant-a/observations/obs-1/verification",
+      "/internal/v1/tenants/tenant-a/observations/obs-1/verification", "reviewer-a",
+      { decision: "verify", evidence_ref: "inspection:1" }],
+  ]) {
+    const body = JSON.stringify(payload);
+    const response = await gateway.fetch(new Request("https://gateway.test" + publicPath, {
+      method: "POST", body, headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": subject },
+    }), {
+      ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud",
+      INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+      TENANT_API: { fetch: async request => {
+        calls.push(request);
+        return new Response(JSON.stringify({ data: { ok: true } }), {
+          status: 201, headers: { "content-type": "application/json" },
+        });
+      } },
+    });
+    assert.equal(response.status, 201);
+    const forwarded = calls.at(-1);
+    assert.equal(new URL(forwarded.url).pathname, internalPath);
+    assert.equal(forwarded.method, "POST");
+    assert.equal(await forwarded.text(), body);
+    assert.equal(forwarded.headers.get("x-nova-verified-subject"), subject);
+    assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+    assert.equal(forwarded.headers.get("cookie"), null);
+  }
+  const forbiddenMethod = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/observations/obs-1/verification",
+    { headers: { "Cf-Access-Jwt-Assertion": "reviewer-a" } }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async () => { throw new Error("must not forward GET"); } },
+  });
+  assert.equal(forbiddenMethod.status, 404);
 });

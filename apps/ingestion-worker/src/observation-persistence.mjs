@@ -19,8 +19,9 @@ async function stableId(sourceId, idempotencyKey) {
   return hex;
 }
 
-function sameAcceptedPayload(row, observation) {
-  return row.site_id === observation.site_id &&
+function sameAcceptedPayload(row, observation, tenantId) {
+  return row.tenant_id === tenantId &&
+    row.site_id === observation.site_id &&
     (row.asset_id ?? null) === (observation.asset_id ?? null) &&
     row.module === observation.module &&
     row.metric === observation.metric &&
@@ -32,17 +33,18 @@ function sameAcceptedPayload(row, observation) {
 }
 
 /**
- * Persist one already-authenticated, authorized and ownership-checked observation.
- * D1 batch is transactional. Both rows remain unverified; caller identity is
- * server-derived. Stable IDs and the unique source/idempotency index make retries safe.
+ * Persist one authenticated observation after tenant ownership was resolved
+ * from the stored site/source/asset records. Both observation and audit rows
+ * carry that server-derived tenant. Verification remains explicitly unverified.
  */
-export async function persistObservation(database, observation, principal, requestId = null) {
+export async function persistObservation(database, observation, principal, requestId = null, tenantId = null) {
   if (!database || typeof database.prepare !== "function" ||
       typeof database.batch !== "function") {
     throw new Error("storage_not_configured");
   }
-  if (!principal || typeof principal.serviceId !== "string" || !principal.serviceId.trim()) {
-    throw new Error("verified_service_principal_required");
+  if (!principal || typeof principal.serviceId !== "string" || !principal.serviceId.trim() ||
+      typeof tenantId !== "string" || !tenantId.trim()) {
+    throw new Error("verified_service_principal_and_tenant_required");
   }
 
   const digest = await stableId(observation.source_id, observation.idempotency_key);
@@ -60,12 +62,13 @@ export async function persistObservation(database, observation, principal, reque
 
   const insertObservation = database.prepare(
     "INSERT OR IGNORE INTO observations " +
-    "(id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
+    "(id, site_id, tenant_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
     "idempotency_key, verification_status, provenance_json, quality_flags_json) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?)",
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?)",
   ).bind(
     observationId,
     observation.site_id,
+    tenantId,
     observation.asset_id ?? null,
     observation.source_id,
     observation.module,
@@ -80,23 +83,24 @@ export async function persistObservation(database, observation, principal, reque
 
   const insertAudit = database.prepare(
     "INSERT OR IGNORE INTO audit_events " +
-    "(id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json) " +
-    "SELECT ?, 'service', ?, 'observation.accepted', 'observation', ?, " +
+    "(id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json) " +
+    "SELECT ?, ?, 'service', ?, 'observation.accepted', 'observation', ?, " +
     "strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ? " +
-    "WHERE EXISTS (SELECT 1 FROM observations WHERE id = ?)",
-  ).bind(auditId, principal.serviceId, observationId, requestId, detailsJson, observationId);
+    "WHERE EXISTS (SELECT 1 FROM observations WHERE id = ? AND tenant_id = ?)",
+  ).bind(auditId, tenantId, principal.serviceId, observationId, requestId,
+    detailsJson, observationId, tenantId);
 
   const batchResults = await database.batch([insertObservation, insertAudit]);
   const inserted = Number(batchResults?.[0]?.meta?.changes ?? 0) > 0;
 
   const existing = await database.prepare(
-    "SELECT id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
+    "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
     "idempotency_key, verification_status, provenance_json, quality_flags_json " +
     "FROM observations WHERE source_id = ? AND idempotency_key = ? LIMIT 1",
   ).bind(observation.source_id, observation.idempotency_key).first();
 
   if (!existing) throw new Error("observation_persistence_unconfirmed");
-  if (!sameAcceptedPayload(existing, observation)) {
+  if (!sameAcceptedPayload(existing, observation, tenantId)) {
     return { status: "idempotency_conflict", accepted: false };
   }
 

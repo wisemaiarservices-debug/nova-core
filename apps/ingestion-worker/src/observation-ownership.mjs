@@ -4,14 +4,14 @@ export async function resolveObservationOwnership(database, observation) {
   }
 
   const site = await database.prepare(
-    "SELECT id, status FROM sites WHERE id = ? LIMIT 1",
+    "SELECT id, tenant_id, status FROM sites WHERE id = ? LIMIT 1",
   ).bind(observation.site_id).first();
-  if (!site || site.status !== "active") return false;
+  if (!site || site.status !== "active" || typeof site.tenant_id !== "string" || !site.tenant_id.trim()) return false;
 
   const source = await database.prepare(
-    "SELECT id, site_id, module, verification_status FROM sources WHERE id = ? LIMIT 1",
+    "SELECT id, tenant_id, site_id, module, verification_status FROM sources WHERE id = ? LIMIT 1",
   ).bind(observation.source_id).first();
-  if (!source || source.module !== observation.module ||
+  if (!source || source.tenant_id !== site.tenant_id || source.module !== observation.module ||
       source.verification_status === "disabled" ||
       (source.site_id !== null && source.site_id !== observation.site_id)) {
     return false;
@@ -19,12 +19,12 @@ export async function resolveObservationOwnership(database, observation) {
 
   if (observation.asset_id !== undefined && observation.asset_id !== null) {
     const asset = await database.prepare(
-      "SELECT id, site_id, status FROM assets WHERE id = ? LIMIT 1",
+      "SELECT id, tenant_id, site_id, status FROM assets WHERE id = ? LIMIT 1",
     ).bind(observation.asset_id).first();
-    if (!asset || asset.site_id !== observation.site_id || asset.status !== "active") {
+    if (!asset || asset.tenant_id !== site.tenant_id || asset.site_id !== observation.site_id || asset.status !== "active") {
       return false;
     }
   }
 
-  return true;
+  return site.tenant_id;
 }
