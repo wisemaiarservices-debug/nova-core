@@ -276,13 +276,15 @@ export default {
     const reviewerList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers$/);
     const criteriaList = request.method === "GET" ? criteriaCreate : null;
     const criteriaDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList) || url.search || url.hash ||
-        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke || criteriaDetail || match)) ||
-        (request.method === "GET" && (reviewerAssign || reviewerRevoke))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1];
+    const criteriaSubmit = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/submit$/);
+    const criteriaReview = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/(?!reviewers\/)([^/]+)\/([^/]+)\/review$/);
+    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview) || url.search || url.hash ||
+        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview || criteriaDetail || match)) ||
+        (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview))) return error("not_found", 404);
+    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1];
     const resourceId = match?.[3];
-    const entryId = criteriaDetail?.[2] ?? null;
-    const version = criteriaDetail?.[3] ?? null;
+    const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? null;
+    const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? null;
     if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
         (entryId && (!validId(entryId) || !validId(version, 80)))) return error("not_found", 404);
 
@@ -314,7 +316,7 @@ export default {
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
-      if (criteriaCreate || criteriaDetail || reviewerAssign || reviewerRevoke || reviewerList) {
+      if (criteriaReview) {\n        const reviewed = await recordCriteriaReview(env.DB, tenant, entryId, version, subject, requestId, draftBody);\n        return reviewed.error ? json({ error: reviewed.error }, reviewed.status)\n          : json({ data: reviewed.data, request_id: requestId }, reviewed.status);\n      }\n      if (criteriaCreate || criteriaDetail || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
@@ -323,6 +325,12 @@ export default {
             membership[0].tenant_status !== "active") return error("not_found", 404);
         if (request.method === "POST") {
           if (!["tenant_owner", "tenant_admin"].includes(membership[0].role)) return error("not_found", 404);
+          if (criteriaSubmit) {
+            if (!onlyKeys(draftBody, [])) return error("invalid_request_body", 400);
+            const submitted = await submitCriteriaForReview(env.DB, tenant, entryId, version, subject, requestId);
+            return submitted.error ? json({ error: submitted.error }, submitted.status)
+              : json({ data: submitted.data, request_id: requestId }, submitted.status);
+          }
           if (criteriaCreate) {
             if (!onlyKeys(draftBody, ["entry"]) || !Object.hasOwn(draftBody, "entry")) return error("invalid_request_body", 400);
             const created = await createCriteriaDraft(env.DB, tenant, subject, requestId, draftBody.entry);
