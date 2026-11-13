@@ -80,6 +80,8 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const idempotencyKey = request.headers.get("idempotency-key");
       if (configurationCreate && !validPathId(idempotencyKey, 200)) return error("idempotency_key_required", 400);
       const requestId = crypto.randomUUID();
+      const idempotencyKey = request.headers.get("idempotency-key");
+      if (configurationCreate && !validPathId(idempotencyKey, 200)) return error("idempotency_key_required", 400);
       const internalPath = configurationCreate
         ? `/internal/v1/tenants/${tenant}/sites/${configurationSiteId}/configurations`
         : match
