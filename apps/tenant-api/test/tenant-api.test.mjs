@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import worker from "../src/index.mjs";
 
 const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.batchCalls = []; this.batchResult = null; this.batchError = null;
+    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
@@ -31,6 +31,8 @@ class DB {
             resource_id: siteGrantQuery ? args[2] : args[3], action: "read",
           }] : []) };
         }
+        if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };
+        if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
@@ -765,4 +767,65 @@ test("criteria sample assessment rejects oversized batches and caller scope inje
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/1.0/assess",
     "POST", JSON.stringify({ context: { ...resolutionContext, tenant_id: "tenant-b" }, samples: [{}] })), env(db));
   assert.equal(badContext.status, 400);
+});
+
+
+test("tenant admin registers PDF bytes through the site-scoped evidence route", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_admin", membership_status: "active", tenant_status: "active" }];
+  const bytes = Buffer.from("%PDF-1.4\
+lab evidence\
+%%EOF");
+  const payload = { file_name: "report.pdf", media_type: "application/pdf",
+    laboratory_name: "Declared lab", report_number: "RPT-1",
+    issued_at: "2026-10-01T10:30:00Z", document_base64: bytes.toString("base64") };
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports",
+    "POST", JSON.stringify(payload)), env(db));
+  assert.equal(response.status, 201);
+  assert.equal(db.batchCalls.length, 1);
+  assert.match(db.batchCalls[0][0].sql, /INSERT(?: OR IGNORE)? INTO laboratory_report_evidence/);
+  assert.match(db.batchCalls[0][1].sql, /INSERT INTO laboratory_report_evidence_events/);
+  assert.equal(db.batchCalls[0][0].args[1], "tenant-a");
+  assert.equal(db.batchCalls[0][0].args[2], "site-a");
+  assert.equal(db.batchCalls[0][0].args[3], "report.pdf");
+  assert.equal(db.batchCalls[0][0].args[4], bytes.length);
+});
+
+test("read-only tenant members cannot register laboratory report evidence", async () => {
+  const db = new DB();
+  const payload = { file_name: "report.pdf", media_type: "application/pdf",
+    laboratory_name: "Declared lab", report_number: "RPT-1",
+    issued_at: "2026-10-01", document_base64: Buffer.from("%PDF-1.4").toString("base64") };
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports",
+    "POST", JSON.stringify(payload)), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.batchCalls.length, 0);
+});
+
+
+test("site-granted reader retrieves laboratory report bytes only after stored digest verification", async () => {
+  const db = new DB();
+  const bytes = Buffer.from("%PDF-1.4\
+retrievable report\
+%%EOF");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  db.laboratoryEvidenceRows = [{
+    id: "lab-report-a", tenant_id: "tenant-a", site_id: "site-a",
+    evidence_type: "laboratory_report", file_name: "report.pdf", media_type: "application/pdf",
+    byte_length: bytes.length, sha256, document_bytes: new Uint8Array(bytes),
+    laboratory_name: "Declared lab", report_number: "RPT-1", sample_reference: null,
+    issued_at: "2026-10-01", verification_status: "registered_unverified",
+    uploaded_by_subject: "owner@example.test", created_at: "2026-11-13T10:00:00Z",
+  }];
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports/lab-report-a"),
+    env(db));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.data.sha256, sha256);
+  assert.equal(Buffer.from(result.data.document_base64, "base64").compare(bytes), 0);
+  assert.equal(result.data.verification_status, "registered_unverified");
 });

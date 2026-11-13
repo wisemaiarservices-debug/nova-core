@@ -5,11 +5,11 @@ export function error(code, status) {
     "x-content-type-options": "nosniff",
   }});
 }
-export async function boundedJsonResponse(response, requestId) {
+export async function boundedJsonResponse(response, requestId, maxResponseBytes = MAX_RESPONSE_BYTES) {
   const type = response.headers.get("content-type") || "";
   if (!/^application\/json(?:\s*;|\s*$)/i.test(type) || !response.body) return error("tenant_api_invalid_response", 502);
   const declared = response.headers.get("content-length");
-  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_RESPONSE_BYTES)) {
+  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > maxResponseBytes)) {
     await response.body.cancel();
     return error("tenant_api_response_too_large", 502);
   }
@@ -21,7 +21,7 @@ export async function boundedJsonResponse(response, requestId) {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_RESPONSE_BYTES) {
+      if (total > maxResponseBytes) {
         await reader.cancel();
         return error("tenant_api_response_too_large", 502);
       }
