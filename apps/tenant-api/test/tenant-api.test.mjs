@@ -1845,6 +1845,13 @@ class IdentityLinkRouteDB extends DB {
   }
   async batch(statements) {
     this.batchCalls.push(statements);
+    if (statements[0]?.sql?.includes("tenant_identity_link_rate_limits")) {
+      return [
+        { meta: { changes: 0 } },
+        { results: [{ request_count: 1 }] },
+        { results: [{ request_count: 1 }] },
+      ];
+    }
     if (statements.length === 3 && this.identityChallengeRow) {
       this.identityChallengeRow.status = "consumed";
       return statements.map(() => ({ meta: { changes: 1 } }));
@@ -1887,7 +1894,9 @@ test("dual-auth HTTP routes create and consume a challenge bound to both verifie
     assert.equal(consumedResponse.status, 201);
     assert.equal((await consumedResponse.json()).data.status, "pending");
     assert.equal(db.identityChallengeRow.status, "consumed");
-    assert.equal(db.batchCalls.length, 1);
-    assert.equal(db.batchCalls[0].length, 3);
+    assert.equal(db.batchCalls.length, 3, "two rate-limit batches and one atomic challenge-consumption batch");
+    assert.ok(db.batchCalls.slice(0, 2).every(batch =>
+      batch[0].sql.includes("tenant_identity_link_rate_limits")));
+    assert.equal(db.batchCalls[2].length, 3);
   } finally { globalThis.fetch = originalFetch; }
 });
