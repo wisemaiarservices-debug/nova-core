@@ -622,9 +622,9 @@ async function transferTenantOwnership(db, tenant, actor, actorMembershipId, req
       .bind(target.id, tenant, target.subject, target.role, targetEventId, targetEventRequestId),
     db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'role_changed', 'tenant_owner', 'tenant_admin', 'active', 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
       .bind(actorEventId, tenant, actorMembershipId, actor, actor, body.reason,
-        actorEventRequestId, body.actor_membership_id, tenant, actor),
+        actorEventRequestId, actorMembershipId, tenant, actor),
     db.prepare("UPDATE tenant_memberships SET role = 'tenant_admin', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active' AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ? AND event_type = 'role_changed')")
-      .bind(body.actor_membership_id, tenant, actor, actorEventId, actorEventRequestId),
+      .bind(actorMembershipId, tenant, actor, actorEventId, actorEventRequestId),
   ]);
   if (!Array.isArray(results) || results.length !== 4 ||
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
