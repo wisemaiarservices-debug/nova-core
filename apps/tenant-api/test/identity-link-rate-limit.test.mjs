@@ -105,7 +105,7 @@ test("rate-limit storage contains only identity digests and prunes expired windo
     assert.equal(stored.includes(supabase.subject), false);
     assert.equal(stored.includes(cloudflare.subject), false);
     await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-      "challenge_create", 1_800_100_000);
+      "challenge_create", 1_800_100_000, secret);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tenant_identity_link_rate_limits").get().count, 2);
   } finally { db.sqlite.close(); }
 });
@@ -114,8 +114,8 @@ test("rate limiter rejects malformed or duplicate identity inputs", async () => 
   const db = sqliteD1();
   try {
     await assert.rejects(() => consumeIdentityLinkRateLimit(db, [supabase, supabase],
-      "challenge_create", 1_800_000_000), /must_be_distinct/);
+      "challenge_create", 1_800_000_000, secret), /must_be_distinct/);
     await assert.rejects(() => consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-      "unknown", 1_800_000_000), /invalid_rate_limit_input/);
+      "unknown", 1_800_000_000, secret), /invalid_rate_limit_input/);
   } finally { db.sqlite.close(); }
 });
