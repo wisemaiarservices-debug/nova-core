@@ -40,7 +40,7 @@ Requires an active Core tenant owner authenticated through Cloudflare Access. Th
 Body is exactly:
 `{"decision":"approve|reject|revoke","reason":"...","idempotency_key":"..."}`
 
-The actor is derived from the verified Access gateway envelope, never from request JSON. Core checks active tenant-owner membership, the request's exact Cloudflare issuer, the requester's active membership in the selected tenant, independent review (no self-approval/rejection), allowed lifecycle transition, and idempotency key consistency. Approval activates only the identity-link record; it does not provision memberships, roles or grants.
+The actor is derived from the verified Access gateway envelope, never from request JSON. Core checks active tenant-owner membership, the request's exact Cloudflare issuer, the requester's active membership in the selected tenant for approval/rejection, independent review (no self-approval/rejection), allowed lifecycle transition, and idempotency key consistency. Revocation remains available to an active tenant owner even if the linked member has since been deactivated or removed. Approval activates only the identity-link record; it does not provision memberships, roles or grants.
 
 Revocation is an explicit owner action. It does not silently reactivate a revoked link.
 
