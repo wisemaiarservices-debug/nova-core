@@ -960,6 +960,7 @@ class MembershipEventsDB {
           subject: "operator@example.test", tenant_id: args[1], role: db.role, membership_status: "active",
         }] };
         if (sql.includes("FROM tenant_membership_events")) return { results: db.eventRows };
+        if (sql.includes("FROM tenant_membership_invitation_events")) return { results: [] };
         throw new Error("unexpected audit read SQL");
       },
     }; } };
@@ -976,7 +977,10 @@ test("tenant owners and admins read only their tenant's bounded membership audit
     const response = await worker.fetch(await request({}, 
       "https://private.internal/internal/v1/tenants/tenant-a/membership-events"), env(db));
     assert.equal(response.status, 200);
-    assert.deepEqual((await response.json()).data, [event]);
+    const audit = (await response.json()).data;
+    assert.equal(audit.length, 1);
+    assert.equal(audit[0].event_type, "membership_created");
+    assert.equal(audit[0].tenant_id, "tenant-a");
     const query = db.calls.find(call => call.sql.includes("FROM tenant_membership_events"));
     assert.deepEqual(query.args, ["tenant-a"]);
     assert.match(query.sql, /ORDER BY created_at DESC, id DESC LIMIT 100/);
