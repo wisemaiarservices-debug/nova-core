@@ -58,6 +58,209 @@ try {
   const invalidIdentity = await throughGateway(sitePath, "not.a.valid.jwt");
   assert.equal(invalidIdentity.response.status, 401);
 
+  // Exercise membership lifecycle and possession-based invitation using real
+  // D1 rows through the public Access gateway and private Worker binding.
+  const membershipActionsPath = "/api/v1/tenants/tenant-http-a/membership-actions";
+  async function membershipAction(subject, payload) {
+    return throughGateway(membershipActionsPath, accessToken(subject),
+      { "content-type": "application/json" }, "POST", JSON.stringify(payload));
+  }
+  const roleChanged = await membershipAction("ci-human-subject", {
+    membership_id: "membership-http-lifecycle", action: "change_role",
+    role: "analyst", reason: "CI role transition fixture",
+  });
+  assert.equal(roleChanged.response.status, 200, JSON.stringify(roleChanged.body));
+  assert.equal(roleChanged.body.data.role, "analyst");
+  assert.equal(roleChanged.body.data.event_type, "role_changed");
+
+  const adminRoleChange = await membershipAction("ci-http-admin", {
+    membership_id: "membership-http-lifecycle", action: "change_role",
+    role: "viewer", reason: "Admin role change must be denied",
+  });
+  assert.equal(adminRoleChange.response.status, 404);
+
+  const suspended = await membershipAction("ci-http-admin", {
+    membership_id: "membership-http-lifecycle", action: "suspend",
+    reason: "CI temporary suspension",
+  });
+  assert.equal(suspended.response.status, 200, JSON.stringify(suspended.body));
+  assert.equal(suspended.body.data.status, "inactive");
+
+  const reactivated = await membershipAction("ci-human-subject", {
+    membership_id: "membership-http-lifecycle", action: "reactivate",
+    reason: "CI access restoration",
+  });
+  assert.equal(reactivated.response.status, 200, JSON.stringify(reactivated.body));
+  assert.equal(reactivated.body.data.status, "active");
+
+  const membershipRevoked = await membershipAction("ci-human-subject", {
+    membership_id: "membership-http-lifecycle", action: "revoke",
+    reason: "CI final membership revocation",
+  });
+  assert.equal(membershipRevoked.response.status, 200, JSON.stringify(membershipRevoked.body));
+  assert.equal(membershipRevoked.body.data.status, "revoked");
+
+  const revokedAgain = await membershipAction("ci-human-subject", {
+    membership_id: "membership-http-lifecycle", action: "reactivate",
+    reason: "Illegal transition after revocation",
+  });
+  assert.equal(revokedAgain.response.status, 409);
+
+  const invitationCreated = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ role: "operator", reason: "CI invitation acceptance fixture" }));
+  assert.equal(invitationCreated.response.status, 201, JSON.stringify(invitationCreated.body));
+  assert.match(invitationCreated.body.data.invitation_token, /^[A-Za-z0-9_-]{43}$/);
+  const invitationAccepted = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+      invitationCreated.body.data.invitation_id + "/accept", accessToken("ci-invited-human"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ invitation_token: invitationCreated.body.data.invitation_token }));
+  assert.equal(invitationAccepted.response.status, 201, JSON.stringify(invitationAccepted.body));
+  assert.equal(invitationAccepted.body.data.subject, "ci-invited-human");
+  assert.equal(invitationAccepted.body.data.role, "operator");
+
+  const siteGrantPath = "/api/v1/tenants/tenant-http-a/site-grants";
+  async function siteGrant(subject, payload) {
+    return throughGateway(siteGrantPath, accessToken(subject),
+      { "content-type": "application/json" }, "POST", JSON.stringify(payload));
+  }
+  const siteGrantCreated = await siteGrant("ci-human-subject", {
+    action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI site access grant",
+  });
+  assert.equal(siteGrantCreated.response.status, 201, JSON.stringify(siteGrantCreated.body));
+  assert.equal(siteGrantCreated.body.data.status, "active");
+  assert.equal(siteGrantCreated.body.data.resource_type, "site");
+
+  const adminPrivilegedGrant = await siteGrant("ci-http-admin", {
+    action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "delete", reason: "Admin must not grant destructive access",
+  });
+  assert.equal(adminPrivilegedGrant.response.status, 404);
+
+  const siteGrantRevoked = await siteGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI site access revocation",
+  });
+  assert.equal(siteGrantRevoked.response.status, 200, JSON.stringify(siteGrantRevoked.body));
+  assert.equal(siteGrantRevoked.body.data.status, "revoked");
+
+  // Resource grants are exact (no site inheritance) and independently audited.
+  const resourceGrantPath = "/api/v1/tenants/tenant-http-a/resource-grants";
+  async function resourceGrant(subject, payload) {
+    return throughGateway(resourceGrantPath, accessToken(subject),
+      { "content-type": "application/json" }, "POST", JSON.stringify(payload));
+  }
+  const crossTenantTarget = await resourceGrant("ci-human-subject", {
+    action: "grant", subject: "ci-other-tenant-member", resource_type: "asset",
+    resource_id: "asset-http-grant", grant_action: "read",
+    reason: "Cross-tenant target must be denied",
+  });
+  assert.equal(crossTenantTarget.response.status, 404);
+  const crossTenantResource = await resourceGrant("ci-human-subject", {
+    action: "grant", subject: "ci-invited-human", resource_type: "asset",
+    resource_id: "asset-http-b", grant_action: "read",
+    reason: "Cross-tenant resource must be denied",
+  });
+  assert.equal(crossTenantResource.response.status, 404);
+
+  const auditFailure = await resourceGrant("ci-human-subject", {
+    action: "grant", subject: "ci-invited-human", resource_type: "asset",
+    resource_id: "asset-http-grant", grant_action: "read",
+    reason: "CI injected resource grant audit failure",
+  });
+  assert.equal(auditFailure.response.status, 503, JSON.stringify(auditFailure.body));
+  const auditFailureDidNotGrant = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/assets/asset-http-grant", accessToken("ci-invited-human"));
+  assert.equal(auditFailureDidNotGrant.response.status, 404);
+
+  const concurrentGrants = await Promise.all([1, 2].map(() =>
+    resourceGrant("ci-human-subject", {
+      action: "grant", subject: "ci-invited-human", resource_type: "asset",
+      resource_id: "asset-http-grant", grant_action: "read",
+      reason: "CI simultaneous exact grant",
+    })));
+  assert.deepEqual(concurrentGrants.map(result => result.response.status).sort(),
+    [201, 409]);
+  const concurrentGrantRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/assets/asset-http-grant", accessToken("ci-invited-human"));
+  assert.equal(concurrentGrantRead.response.status, 200, JSON.stringify(concurrentGrantRead.body));
+  const concurrentGrantRevoke = await resourceGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-invited-human", resource_type: "asset",
+    resource_id: "asset-http-grant", grant_action: "read",
+    reason: "CI cleanup after simultaneous grant",
+  });
+  assert.equal(concurrentGrantRevoke.response.status, 200, JSON.stringify(concurrentGrantRevoke.body));
+  const concurrentGrantDenied = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/assets/asset-http-grant", accessToken("ci-invited-human"));
+  assert.equal(concurrentGrantDenied.response.status, 404);
+
+  const resourceCases = [
+    ["asset", "asset-http-grant"],
+    ["source", "source-http-grant"],
+    ["observation", "obs-http-grant"],
+  ];
+  for (const [resource_type, resource_id] of resourceCases) {
+    const deniedBeforeGrant = await throughGateway(
+      "/api/v1/tenants/tenant-http-a/" + (resource_type === "observation" ? "observations" : resource_type === "source" ? "sources" : "assets") + "/" + resource_id,
+      accessToken("ci-invited-human"));
+    assert.equal(deniedBeforeGrant.response.status, 404);
+    const granted = await resourceGrant("ci-human-subject", {
+      action: "grant", subject: "ci-invited-human", resource_type, resource_id,
+      grant_action: "read", reason: "CI exact resource access grant",
+    });
+    assert.equal(granted.response.status, 201, JSON.stringify(granted.body));
+    assert.equal(granted.body.data.resource_type, resource_type);
+    const allowedResource = await throughGateway(
+      "/api/v1/tenants/tenant-http-a/" + (resource_type === "observation" ? "observations" : resource_type === "source" ? "sources" : "assets") + "/" + resource_id,
+      accessToken("ci-invited-human"));
+    assert.equal(allowedResource.response.status, 200, JSON.stringify(allowedResource.body));
+    const revoked = await resourceGrant("ci-human-subject", {
+      action: "revoke", subject: "ci-invited-human", resource_type, resource_id,
+      grant_action: "read", reason: "CI exact resource access revocation",
+    });
+    assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+    const deniedAfterRevoke = await throughGateway(
+      "/api/v1/tenants/tenant-http-a/" + (resource_type === "observation" ? "observations" : resource_type === "source" ? "sources" : "assets") + "/" + resource_id,
+      accessToken("ci-invited-human"));
+    assert.equal(deniedAfterRevoke.response.status, 404);
+  }
+  const adminResourceDelete = await resourceGrant("ci-http-admin", {
+    action: "grant", subject: "ci-invited-human", resource_type: "asset",
+    resource_id: "asset-http-grant", grant_action: "delete",
+    reason: "CI admin cannot grant destructive access",
+  });
+  assert.equal(adminResourceDelete.response.status, 404);
+
+  const membershipAudit = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-events", accessToken("ci-human-subject"));
+  assert.equal(membershipAudit.response.status, 200, JSON.stringify(membershipAudit.body));
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "membership_role_changed" &&
+    event.membership_id === "membership-http-lifecycle"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "membership_suspended" &&
+    event.membership_id === "membership-http-lifecycle"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "membership_reactivated" &&
+    event.membership_id === "membership-http-lifecycle"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "membership_revoked" &&
+    event.membership_id === "membership-http-lifecycle"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "invitation_accepted" &&
+    event.subject === "ci-invited-human"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "site_grant_granted" && event.subject === "ci-invited-human"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "site_grant_revoked" && event.subject === "ci-invited-human"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "resource_grant_granted" && event.subject === "ci-invited-human"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "resource_grant_revoked" && event.subject === "ci-invited-human"), true);
+
   const criteriaList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
   assert.equal(criteriaList.response.status, 200, JSON.stringify(criteriaList.body));
   assert.equal(criteriaList.body.data.length, 1);
@@ -457,6 +660,95 @@ try {
   assert.equal(rolledBack.configurations.length, 5);
   assert.equal(rolledBack.events.length, 5);
   assert.equal(rolledBack.audits.length, 5);
+
+  const adminCannotTransferOwnership = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-http-admin"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ target_membership_id: "membership-http-reviewer",
+      reason: "Admin must not transfer ownership" }));
+  assert.equal(adminCannotTransferOwnership.response.status, 404);
+
+  const ownershipTransfer = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ target_membership_id: "membership-http-reviewer",
+      reason: "CI designated tenant successor" }));
+  assert.equal(ownershipTransfer.response.status, 200, JSON.stringify(ownershipTransfer.body));
+  assert.equal(ownershipTransfer.body.data.new_owner_subject, "ci-measurement-reviewer");
+  assert.equal(ownershipTransfer.body.data.previous_owner_role, "tenant_admin");
+
+  const previousOwnerCannotTransferAgain = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ target_membership_id: "membership-http-reviewer",
+      reason: "Previous owner is now admin" }));
+  assert.equal(previousOwnerCannotTransferAgain.response.status, 404);
+
+  const newOwnerAudit = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-events", accessToken("ci-measurement-reviewer"));
+  assert.equal(newOwnerAudit.response.status, 200, JSON.stringify(newOwnerAudit.body));
+  assert.equal(newOwnerAudit.body.data.some(event =>
+    event.event_type === "membership_role_changed" &&
+    event.membership_id === "membership-http-reviewer" &&
+    event.previous_role === "viewer" && event.new_role === "tenant_owner"), true);
+  assert.equal(newOwnerAudit.body.data.some(event =>
+    event.event_type === "membership_role_changed" &&
+    event.membership_id === "membership-http-a" &&
+    event.previous_role === "tenant_owner" && event.new_role === "tenant_admin"), true);
+
+  const nonOwnerCannotSuspendTenant = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-other-tenant-member"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "suspend", reason: "Must be owner" }));
+  assert.equal(nonOwnerCannotSuspendTenant.response.status, 404);
+
+  const tenantSuspended = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-tenant-b-owner"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "suspend", reason: "CI lifecycle suspension" }));
+  assert.equal(tenantSuspended.response.status, 200, JSON.stringify(tenantSuspended.body));
+  assert.equal(tenantSuspended.body.data.status, "suspended");
+
+  const suspendedSiteRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b", accessToken("ci-tenant-b-owner"));
+  assert.equal(suspendedSiteRead.response.status, 404);
+
+  const suspendedAudit = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-events", accessToken("ci-tenant-b-owner"));
+  assert.equal(suspendedAudit.response.status, 200, JSON.stringify(suspendedAudit.body));
+  assert.equal(suspendedAudit.body.data.some(event => event.event_type === "suspended"), true);
+
+  const tenantReactivated = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-tenant-b-owner"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "reactivate", reason: "CI lifecycle reactivation" }));
+  assert.equal(tenantReactivated.response.status, 200, JSON.stringify(tenantReactivated.body));
+  assert.equal(tenantReactivated.body.data.status, "active");
+  const activeSiteRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b", accessToken("ci-tenant-b-owner"));
+  assert.equal(activeSiteRead.response.status, 200);
+
+  const tenantArchived = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-tenant-b-owner"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "archive", reason: "CI lifecycle archival" }));
+  assert.equal(tenantArchived.response.status, 200, JSON.stringify(tenantArchived.body));
+  assert.equal(tenantArchived.body.data.status, "archived");
+
+  const archivedReactivation = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-tenant-b-owner"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "reactivate", reason: "Archived tenants are terminal" }));
+  assert.equal(archivedReactivation.response.status, 409);
+  const archivedSiteRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b", accessToken("ci-tenant-b-owner"));
+  assert.equal(archivedSiteRead.response.status, 404);
+
+  const archivedAudit = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-events", accessToken("ci-tenant-b-owner"));
+  assert.equal(archivedAudit.response.status, 200, JSON.stringify(archivedAudit.body));
+  assert.deepEqual(archivedAudit.body.data.map(event => event.event_type).sort(),
+    ["archived", "reactivated", "suspended"]);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");

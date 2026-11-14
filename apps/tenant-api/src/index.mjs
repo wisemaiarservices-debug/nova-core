@@ -15,11 +15,16 @@ const ROLE_ACTIONS = {
   operator: new Set(["read", "ingest"]), analyst: new Set(["read"]),
   viewer: new Set(["read"]), service: new Set(["read", "ingest"]),
 };
+const RESOURCE_GRANT_INSERT_SQL = {
+  asset: "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'asset', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM assets a JOIN sites s ON s.id = a.site_id AND s.tenant_id = a.tenant_id AND s.status = 'active' WHERE a.id = ? AND a.tenant_id = ? AND a.status = 'active') ON CONFLICT(tenant_id, subject, resource_type, resource_id, action) DO NOTHING",
+  source: "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'source', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sources src LEFT JOIN sites s ON s.id = src.site_id AND s.tenant_id = src.tenant_id AND s.status = 'active' WHERE src.id = ? AND src.tenant_id = ? AND src.verification_status = 'verified' AND (src.site_id IS NULL OR s.id IS NOT NULL)) ON CONFLICT(tenant_id, subject, resource_type, resource_id, action) DO NOTHING",
+  observation: "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'observation', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.id = ? AND o.tenant_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL)) ON CONFLICT(tenant_id, subject, resource_type, resource_id, action) DO NOTHING",
+};
 const RESOURCE_SQL = {
   site: "SELECT id, tenant_id, name, description, latitude, longitude, timezone, status, metadata_json, created_at, updated_at FROM sites WHERE tenant_id = ? AND id = ? LIMIT 1",
-  asset: "SELECT id, tenant_id, site_id, name, asset_type, external_ref, status, metadata_json, created_at, updated_at FROM assets WHERE tenant_id = ? AND id = ? LIMIT 1",
-  source: "SELECT id, tenant_id, site_id, module, provider, source_type, display_name, verification_status, verification_method, license_reference, metadata_json, created_at, updated_at FROM sources WHERE tenant_id = ? AND id = ? LIMIT 1",
-  observation: "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, ingested_at, verification_status, provenance_json, quality_flags_json, retention_until FROM observations WHERE tenant_id = ? AND id = ? LIMIT 1",
+  asset: "SELECT id, tenant_id, site_id, name, asset_type, external_ref, status, metadata_json, created_at, updated_at FROM assets WHERE tenant_id = ? AND id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM sites s WHERE s.id = assets.site_id AND s.tenant_id = assets.tenant_id AND s.status = 'active') LIMIT 1",
+  source: "SELECT id, tenant_id, site_id, module, provider, source_type, display_name, verification_status, verification_method, license_reference, metadata_json, created_at, updated_at FROM sources WHERE tenant_id = ? AND id = ? AND verification_status = 'verified' AND (site_id IS NULL OR EXISTS (SELECT 1 FROM sites s WHERE s.id = sources.site_id AND s.tenant_id = sources.tenant_id AND s.status = 'active')) LIMIT 1",
+  observation: "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, ingested_at, verification_status, provenance_json, quality_flags_json, retention_until FROM observations WHERE tenant_id = ? AND id = ? AND EXISTS (SELECT 1 FROM sites s WHERE s.id = observations.site_id AND s.tenant_id = observations.tenant_id AND s.status = 'active') AND EXISTS (SELECT 1 FROM sources src WHERE src.id = observations.source_id AND src.tenant_id = observations.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = observations.site_id)) AND (asset_id IS NULL OR EXISTS (SELECT 1 FROM assets a WHERE a.id = observations.asset_id AND a.tenant_id = observations.tenant_id AND a.site_id = observations.site_id AND a.status = 'active')) LIMIT 1",
   audit_event: "SELECT id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json FROM audit_events WHERE tenant_id = ? AND id = ? LIMIT 1",
 };
 function validSubject(value) {
@@ -417,10 +422,535 @@ async function readCriteriaRegistry(db, tenant, entryId, version, subject) {
     operational_decision: "not_authorized" };
 }
 
+
+function configuredProvisioningSubjects(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 10000) return null;
+  const subjects = value.split(",").map(value => value.trim());
+  if (subjects.length === 0 || subjects.some(value => !validSubject(value)) ||
+      new Set(subjects).size !== subjects.length) return null;
+  return new Set(subjects);
+}
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+
+
+async function resolveGrantableResource(db, tenant, type, id) {
+  const queries = {
+    asset: "SELECT a.id, a.tenant_id, a.site_id FROM assets a JOIN sites s ON s.id = a.site_id AND s.tenant_id = a.tenant_id AND s.status = 'active' WHERE a.tenant_id = ? AND a.id = ? AND a.status = 'active' LIMIT 2",
+    source: "SELECT src.id, src.tenant_id, src.site_id FROM sources src LEFT JOIN sites s ON s.id = src.site_id AND s.tenant_id = src.tenant_id AND s.status = 'active' WHERE src.tenant_id = ? AND src.id = ? AND src.verification_status = 'verified' AND (src.site_id IS NULL OR s.id IS NOT NULL) LIMIT 2",
+    observation: "SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.tenant_id = ? AND o.id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL) LIMIT 2",
+  };
+  const sql = queries[type];
+  if (!sql) return null;
+  const found = await rows(db.prepare(sql).bind(tenant, id));
+  if (found.length !== 1 || found[0].tenant_id !== tenant || found[0].id !== id) return null;
+  return found[0];
+}
+
+async function changeTenantResourceGrant(db, tenant, actor, actorRole, requestId, body) {
+  const allowedActions = ["read", "create", "update", "delete", "ingest"];
+  if (!onlyKeys(body, ["action", "subject", "resource_type", "resource_id", "grant_action", "reason"]) ||
+      !["grant", "revoke"].includes(body.action) || !validSubject(body.subject) ||
+      !["asset", "source", "observation"].includes(body.resource_type) ||
+      !validId(body.resource_id, 160) || !allowedActions.includes(body.grant_action) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "resource_grant_request_invalid", status: 400 };
+  }
+  if (actorRole === "tenant_admin" &&
+      !["read", "create", "update", "ingest"].includes(body.grant_action)) {
+    return { error: "resource_grant_not_found", status: 404 };
+  }
+  const tenantRows = await rows(db.prepare(
+    "SELECT id FROM tenants WHERE id = ? AND status = 'active' LIMIT 2"
+  ).bind(tenant));
+  if (tenantRows.length !== 1 || tenantRows[0].id !== tenant) {
+    return { error: "resource_grant_not_found", status: 404 };
+  }
+  // Revocation is deliberately independent of current resource/member activity:
+  // administrators must be able to remove stale grants after suspension or retirement.
+  if (body.action === "grant") {
+    const resource = await resolveGrantableResource(db, tenant, body.resource_type, body.resource_id);
+    if (!resource) return { error: "resource_grant_not_found", status: 404 };
+  }
+  const targets = await rows(db.prepare(
+    "SELECT id, subject, status FROM tenant_memberships WHERE tenant_id = ? AND subject = ? LIMIT 2"
+  ).bind(tenant, body.subject));
+  if (targets.length !== 1 || targets[0].subject !== body.subject ||
+      (body.action === "grant" && targets[0].status !== "active")) {
+    return { error: "resource_grant_not_found", status: 404 };
+  }
+  const existing = await rows(db.prepare(
+    "SELECT id FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ? LIMIT 2"
+  ).bind(tenant, body.subject, body.resource_type, body.resource_id, body.grant_action));
+  if (body.action === "grant" && existing.length !== 0) {
+    return { error: "resource_grant_already_exists", status: 409 };
+  }
+  if (body.action === "revoke" && existing.length !== 1) {
+    return { error: "resource_grant_not_found", status: 404 };
+  }
+  const grantId = body.action === "grant" ? crypto.randomUUID() : existing[0].id;
+  const eventId = crypto.randomUUID();
+  const type = body.resource_type;
+  const resourceId = body.resource_id;
+  const action = body.grant_action;
+  const statements = body.action === "grant" ? [
+    db.prepare(RESOURCE_GRANT_INSERT_SQL[type])
+      .bind(grantId, tenant, body.subject, resourceId, action,
+        tenant, targets[0].id, tenant, body.subject, resourceId, tenant),
+    db.prepare("INSERT INTO tenant_resource_grant_events (id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, 'granted', ?, ?, ? WHERE changes() = 1 AND EXISTS (SELECT 1 FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ?)")
+      .bind(eventId, tenant, grantId, body.subject, type, resourceId, action,
+        actor, body.reason, requestId, grantId, tenant, body.subject, type, resourceId, action),
+  ] : [
+    db.prepare("DELETE FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ? AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active')")
+      .bind(grantId, tenant, body.subject, type, resourceId, action, tenant),
+    db.prepare("INSERT INTO tenant_resource_grant_events (id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, 'revoked', ?, ?, ? WHERE changes() = 1")
+      .bind(eventId, tenant, grantId, body.subject, type, resourceId, action,
+        actor, body.reason, requestId),
+  ];
+  const results = await db.batch(statements);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("resource_grant_batch_invalid");
+  }
+  if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
+    return { error: "resource_grant_transition_conflict", status: 409 };
+  }
+  return { data: { grant_id: grantId, tenant_id: tenant, subject: body.subject,
+    resource_type: type, resource_id: resourceId, action,
+    status: body.action === "grant" ? "active" : "revoked",
+    event_type: body.action === "grant" ? "granted" : "revoked" },
+    status: body.action === "grant" ? 201 : 200 };
+}
+
+async function changeTenantSiteGrant(db, tenant, actor, actorRole, requestId, body) {
+  const allowedActions = ["read", "create", "update", "delete", "ingest"];
+  if (!onlyKeys(body, ["action", "subject", "site_id", "grant_action", "reason"]) ||
+      !["grant", "revoke"].includes(body.action) || !validSubject(body.subject) ||
+      !validId(body.site_id, 160) || !allowedActions.includes(body.grant_action) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "site_grant_request_invalid", status: 400 };
+  }
+  if (actorRole === "tenant_admin" &&
+      !["read", "create", "update", "ingest"].includes(body.grant_action)) {
+    return { error: "site_grant_not_found", status: 404 };
+  }
+  const sites = await rows(db.prepare(
+    "SELECT id, tenant_id, status FROM sites WHERE id = ? AND tenant_id = ? LIMIT 2"
+  ).bind(body.site_id, tenant));
+  if (sites.length !== 1 || sites[0].id !== body.site_id ||
+      sites[0].tenant_id !== tenant || sites[0].status !== "active") {
+    return { error: "site_grant_not_found", status: 404 };
+  }
+  const targets = await rows(db.prepare(
+    "SELECT id, subject, status FROM tenant_memberships WHERE tenant_id = ? AND subject = ? LIMIT 2"
+  ).bind(tenant, body.subject));
+  if (targets.length !== 1 || targets[0].subject !== body.subject ||
+      (body.action === "grant" && targets[0].status !== "active")) return { error: "site_grant_not_found", status: 404 };
+  const existing = await rows(db.prepare(
+    "SELECT id FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = ? LIMIT 2"
+  ).bind(tenant, body.subject, body.site_id, body.grant_action));
+  if (body.action === "grant" && existing.length !== 0) {
+    return { error: "site_grant_already_exists", status: 409 };
+  }
+  if (body.action === "revoke" && existing.length !== 1) {
+    return { error: "site_grant_not_found", status: 404 };
+  }
+  const grantId = body.action === "grant" ? crypto.randomUUID() : existing[0].id;
+  const eventId = crypto.randomUUID();
+  const statements = body.action === "grant" ? [
+    db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'site', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND tenant_id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active')")
+      .bind(grantId, tenant, body.subject, body.site_id, body.grant_action,
+        tenant, body.site_id, tenant, targets[0].id, tenant, body.subject),
+    db.prepare("INSERT INTO tenant_site_grant_events (id, tenant_id, grant_id, subject, site_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, 'granted', ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = ?)")
+      .bind(eventId, tenant, grantId, body.subject, body.site_id, body.grant_action,
+        actor, body.reason, requestId, grantId, tenant, body.subject, body.site_id, body.grant_action),
+  ] : [
+    db.prepare("DELETE FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = ? AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND tenant_id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
+      .bind(grantId, tenant, body.subject, body.site_id, body.grant_action,
+        tenant, body.site_id, tenant, targets[0].id, tenant, body.subject),
+    db.prepare("INSERT INTO tenant_site_grant_events (id, tenant_id, grant_id, subject, site_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, 'revoked', ?, ?, ? WHERE changes() = 1")
+      .bind(eventId, tenant, grantId, body.subject, body.site_id, body.grant_action,
+        actor, body.reason, requestId),
+  ];
+  const results = await db.batch(statements);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("site_grant_batch_invalid");
+  }
+  if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
+    return { error: "site_grant_transition_conflict", status: 409 };
+  }
+  return { data: { grant_id: grantId, tenant_id: tenant, subject: body.subject,
+    site_id: body.site_id, resource_type: "site", action: body.grant_action,
+    status: body.action === "grant" ? "active" : "revoked",
+    event_type: body.action === "grant" ? "granted" : "revoked" },
+    status: body.action === "grant" ? 201 : 200 };
+}
+
+async function changeTenantLifecycle(db, tenant, actor, requestId, body) {
+  if (!onlyKeys(body, ["action", "reason"]) ||
+      !["suspend", "reactivate", "archive"].includes(body.action) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "tenant_lifecycle_request_invalid", status: 400 };
+  }
+  const currentRows = await rows(db.prepare(
+    "SELECT t.id, t.status, m.role, m.status AS membership_status FROM tenants t JOIN tenant_memberships m ON m.tenant_id = t.id WHERE t.id = ? AND m.subject = ? LIMIT 2"
+  ).bind(tenant, actor));
+  if (currentRows.length !== 1 || currentRows[0].id !== tenant ||
+      currentRows[0].role !== "tenant_owner" || currentRows[0].membership_status !== "active") {
+    return { error: "tenant_not_found", status: 404 };
+  }
+  const current = currentRows[0].status;
+  const transitions = {
+    suspend: { from: "active", to: "suspended", event: "suspended" },
+    reactivate: { from: "suspended", to: "active", event: "reactivated" },
+    archive: { from: ["active", "suspended"], to: "archived", event: "archived" },
+  };
+  const transition = transitions[body.action];
+  const allowedFrom = Array.isArray(transition.from) ? transition.from : [transition.from];
+  if (!allowedFrom.includes(current)) return { error: "tenant_lifecycle_conflict", status: 409 };
+  const eventId = crypto.randomUUID();
+  const result = await db.batch([
+    db.prepare("INSERT INTO tenant_lifecycle_events (id, tenant_id, actor_subject, event_type, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = ?) AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(eventId, tenant, actor, transition.event, current, transition.to, body.reason,
+        requestId, tenant, current, tenant, actor),
+    db.prepare("UPDATE tenants SET status = ?, last_lifecycle_event_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = ?")
+      .bind(transition.to, eventId, tenant, current),
+  ]);
+  if (!Array.isArray(result) || result.length !== 2 ||
+      result.some(item => !item?.meta || !Number.isInteger(item.meta.changes))) {
+    throw new Error("tenant_lifecycle_batch_invalid");
+  }
+  if (result[0].meta.changes !== 1) {
+    return { error: "tenant_lifecycle_event_conflict", status: 409 };
+  }
+  const persisted = await rows(db.prepare(
+    "SELECT status, last_lifecycle_event_id FROM tenants WHERE id = ? LIMIT 2"
+  ).bind(tenant));
+  if (persisted.length !== 1 || persisted[0].status !== transition.to ||
+      persisted[0].last_lifecycle_event_id !== eventId) {
+    return { error: "tenant_lifecycle_state_conflict", status: 409,
+      details: { expected_status: transition.to,
+        current_status: persisted[0]?.status ?? null,
+        event_recorded: result[0].meta.changes === 1 } };
+  }
+  return { data: { tenant_id: tenant, previous_status: current,
+    status: transition.to, event_type: transition.event, event_id: eventId }, status: 200 };
+}
+
+async function transferTenantOwnership(db, tenant, actor, actorMembershipId, requestId, body) {
+  if (!onlyKeys(body, ["target_membership_id", "reason"]) ||
+      !validId(body.target_membership_id, 160) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "ownership_transfer_request_invalid", status: 400 };
+  }
+  const targets = await rows(db.prepare(
+    "SELECT id, tenant_id, subject, role, status FROM tenant_memberships WHERE id = ? AND tenant_id = ? LIMIT 2"
+  ).bind(body.target_membership_id, tenant));
+  if (targets.length !== 1 || targets[0].id !== body.target_membership_id ||
+      targets[0].tenant_id !== tenant || targets[0].subject === actor ||
+      targets[0].status !== "active" ||
+      !["tenant_admin", "operator", "analyst", "viewer"].includes(targets[0].role)) {
+    return { error: "ownership_transfer_target_not_found", status: 404 };
+  }
+  if (!validId(actorMembershipId, 160)) throw new Error("ownership_transfer_actor_membership_invalid");
+  const target = targets[0];
+  const targetEventId = crypto.randomUUID();
+  const actorEventId = crypto.randomUUID();
+  const targetEventRequestId = requestId + ":target";
+  const actorEventRequestId = requestId + ":actor";
+  const results = await db.batch([
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'role_changed', ?, 'tenant_owner', 'active', 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(targetEventId, tenant, target.id, target.subject, actor, target.role,
+        body.reason, targetEventRequestId, target.id, tenant, target.subject, target.role,
+        actorMembershipId, tenant, actor),
+    db.prepare("UPDATE tenant_memberships SET role = 'tenant_owner', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = 'active' AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ? AND event_type = 'role_changed') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(target.id, tenant, target.subject, target.role, targetEventId, targetEventRequestId,
+        actorMembershipId, tenant, actor),
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'role_changed', 'tenant_owner', 'tenant_admin', 'active', 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(actorEventId, tenant, actorMembershipId, actor, actor, body.reason,
+        actorEventRequestId, actorMembershipId, tenant, actor),
+    db.prepare("UPDATE tenant_memberships SET role = 'tenant_admin', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active' AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ? AND event_type = 'role_changed')")
+      .bind(actorMembershipId, tenant, actor, actorEventId, actorEventRequestId),
+  ]);
+  if (!Array.isArray(results) || results.length !== 4 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("ownership_transfer_batch_invalid");
+  }
+  if (results.some(result => result.meta.changes !== 1)) {
+    return { error: "ownership_transfer_conflict", status: 409 };
+  }
+  return { data: { tenant_id: tenant, previous_owner_subject: actor,
+    previous_owner_role: "tenant_admin", new_owner_subject: target.subject,
+    new_owner_role: "tenant_owner", target_membership_id: target.id,
+    event_type: "ownership_transferred" }, status: 200 };
+}
+
+async function changeTenantMembership(db, tenant, actor, actorRole, requestId, body) {
+  if (!onlyKeys(body, ["membership_id", "action", "role", "reason"]) ||
+      typeof body.membership_id !== "string" || !validId(body.membership_id, 160) ||
+      !["change_role", "suspend", "revoke", "reactivate"].includes(body.action) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000 ||
+      (body.action === "change_role"
+        ? !["tenant_admin", "operator", "analyst", "viewer"].includes(body.role)
+        : body.role !== undefined)) return { error: "membership_change_request_invalid", status: 400 };
+  const targets = await rows(db.prepare(
+    "SELECT id, tenant_id, subject, role, status FROM tenant_memberships WHERE id = ? AND tenant_id = ? LIMIT 2"
+  ).bind(body.membership_id, tenant));
+  if (targets.length !== 1 || targets[0].tenant_id !== tenant ||
+      targets[0].id !== body.membership_id || targets[0].subject === actor) {
+    return { error: "membership_not_found", status: 404 };
+  }
+  const target = targets[0];
+  if (!["active", "inactive", "revoked"].includes(target.status) ||
+      !["tenant_owner", "tenant_admin", "operator", "analyst", "viewer", "service"].includes(target.role)) {
+    return { error: "membership_not_found", status: 404 };
+  }
+  if (actorRole === "tenant_admin" &&
+      (body.action === "change_role" || !["operator", "analyst", "viewer"].includes(target.role))) {
+    return { error: "membership_not_found", status: 404 };
+  }
+  if (!["tenant_owner", "tenant_admin"].includes(actorRole)) return { error: "membership_not_found", status: 404 };
+  let eventType, nextRole = target.role, nextStatus = target.status;
+  if (body.action === "change_role") {
+    if (actorRole !== "tenant_owner" || target.status !== "active" || target.role === body.role) {
+      return { error: "membership_transition_conflict", status: 409 };
+    }
+    eventType = "role_changed"; nextRole = body.role;
+  } else if (body.action === "suspend") {
+    if (target.status !== "active") return { error: "membership_transition_conflict", status: 409 };
+    eventType = "suspended"; nextStatus = "inactive";
+  } else if (body.action === "revoke") {
+    if (target.status === "revoked") return { error: "membership_transition_conflict", status: 409 };
+    eventType = "revoked"; nextStatus = "revoked";
+  } else {
+    if (target.status !== "inactive") return { error: "membership_transition_conflict", status: 409 };
+    eventType = "reactivated"; nextStatus = "active";
+  }
+  const eventId = crypto.randomUUID();
+  const results = await db.batch([
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = ?)")
+      .bind(eventId, tenant, target.id, target.subject, actor, eventType, target.role,
+        nextRole, target.status, nextStatus, body.reason, requestId, target.id, tenant,
+        target.subject, target.role, target.status),
+    db.prepare("UPDATE tenant_memberships SET role = ?, status = ? WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = ? AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ?)")
+      .bind(nextRole, nextStatus, target.id, tenant, target.subject, target.role,
+        target.status, eventId, requestId),
+  ]);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("membership_change_batch_invalid");
+  }
+  if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
+    return { error: "membership_transition_conflict", status: 409 };
+  }
+  return { data: { membership_id: target.id, tenant_id: tenant, subject: target.subject,
+    role: nextRole, status: nextStatus, event_type: eventType }, status: 200 };
+}
+
+function createInvitationToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+async function createMembershipInvitation(db, tenant, actor, requestId, body) {
+  if (!onlyKeys(body, ["role", "reason"]) ||
+      !["tenant_admin", "operator", "analyst", "viewer"].includes(body.role) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "membership_invitation_request_invalid", status: 400 };
+  }
+  const invitationId = crypto.randomUUID();
+  const eventId = crypto.randomUUID();
+  const token = createInvitationToken();
+  const tokenDigest = await sha256Hex(token);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const statements = [
+    db.prepare(
+      "INSERT INTO tenant_membership_invitations (id, tenant_id, role, token_sha256, created_by_subject, reason, request_id, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(invitationId, tenant, body.role, tokenDigest, actor, body.reason, requestId, expiresAt),
+    db.prepare(
+      "INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'created', ?, NULL, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND status = 'pending')"
+    ).bind(eventId, tenant, invitationId, actor, body.reason, requestId, invitationId, tenant),
+  ];
+  const results = await db.batch(statements);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => result?.meta?.changes !== 1)) throw new Error("membership_invitation_batch_incomplete");
+  return { data: { invitation_id: invitationId, role: body.role, status: "pending",
+    expires_at: expiresAt, invitation_token: token,
+    delivery: "Share this one-time token with the intended invitee through a trusted out-of-band channel. It is shown only once." },
+    status: 201 };
+}
+async function acceptMembershipInvitation(db, tenant, invitationId, subject, requestId, body) {
+  if (!onlyKeys(body, ["invitation_token"]) ||
+      typeof body.invitation_token !== "string" ||
+      !/^[A-Za-z0-9_-]{40,60}$/.test(body.invitation_token)) {
+    return { error: "membership_invitation_token_invalid", status: 400 };
+  }
+  const tokenDigest = await sha256Hex(body.invitation_token);
+  const invitations = await rows(db.prepare(
+    "SELECT id, tenant_id, role, status, reason, expires_at FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND token_sha256 = ? LIMIT 2"
+  ).bind(invitationId, tenant, tokenDigest));
+  if (invitations.length !== 1 || invitations[0].tenant_id !== tenant ||
+      invitations[0].id !== invitationId || invitations[0].status !== "pending") {
+    return { error: "membership_invitation_not_found", status: 404 };
+  }
+  const invitation = invitations[0];
+  const now = new Date().toISOString();
+  if (typeof invitation.expires_at !== "string" || invitation.expires_at <= now) {
+    const eventId = crypto.randomUUID();
+    const expiredAt = now;
+    const results = await db.batch([
+      db.prepare("UPDATE tenant_membership_invitations SET status = 'expired' WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at <= ?")
+        .bind(invitationId, tenant, expiredAt),
+      db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'expired', ?, NULL, 'Invitation expired before acceptance', ? WHERE changes() = 1")
+        .bind(eventId, tenant, invitationId, subject, requestId),
+    ]);
+    if (!Array.isArray(results) || results.length !== 2) throw new Error("membership_invitation_expiry_batch_invalid");
+    return { error: "membership_invitation_expired", status: 410 };
+  }
+  const existing = await rows(db.prepare(
+    "SELECT id, status FROM tenant_memberships WHERE tenant_id = ? AND subject = ? LIMIT 2"
+  ).bind(tenant, subject));
+  if (existing.length !== 0) return { error: "membership_already_exists", status: 409 };
+  const membershipId = crypto.randomUUID();
+  const grantId = crypto.randomUUID();
+  const membershipEventId = crypto.randomUUID();
+  const invitationEventId = crypto.randomUUID();
+  const results = await db.batch([
+    db.prepare("UPDATE tenant_membership_invitations SET status = 'accepted', accepted_by_subject = ?, accepted_at = ? WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ?")
+      .bind(subject, now, invitationId, tenant, now),
+    db.prepare("INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) SELECT ?, ?, ?, ?, 'active' WHERE changes() = 1")
+      .bind(membershipId, tenant, subject, invitation.role),
+    db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'tenant', ?, 'read' WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
+      .bind(grantId, tenant, subject, tenant, membershipId, tenant, subject),
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, ?, NULL, 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
+      .bind(membershipEventId, tenant, membershipId, subject, subject, invitation.role, "Accepted tenant membership invitation: " + invitation.reason.slice(0, 950), requestId, membershipId, tenant, subject),
+    db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'accepted', ?, ?, 'Invitation accepted by authenticated Access subject', ? WHERE EXISTS (SELECT 1 FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND status = 'accepted' AND accepted_by_subject = ?)")
+      .bind(invitationEventId, tenant, invitationId, subject, subject, requestId, invitationId, tenant, subject),
+  ]);
+  if (!Array.isArray(results) || results.length !== 5 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("membership_invitation_accept_batch_invalid");
+  }
+  if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1 ||
+      results[2].meta.changes !== 1 || results[3].meta.changes !== 1 ||
+      results[4].meta.changes !== 1) return { error: "membership_invitation_conflict", status: 409 };
+  return { data: { invitation_id: invitationId, membership_id: membershipId,
+    tenant_id: tenant, subject, role: invitation.role, status: "active" }, status: 201 };
+}
+async function revokeMembershipInvitation(db, tenant, invitationId, actor, requestId, body) {
+  if (!onlyKeys(body, ["reason"]) || typeof body.reason !== "string" ||
+      body.reason.trim() !== body.reason || body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "membership_invitation_request_invalid", status: 400 };
+  }
+  const eventId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const results = await db.batch([
+    db.prepare("UPDATE tenant_membership_invitations SET status = 'revoked', revoked_at = ? WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ?")
+      .bind(now, invitationId, tenant, now),
+    db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'revoked', ?, NULL, ?, ? WHERE changes() = 1")
+      .bind(eventId, tenant, invitationId, actor, body.reason, requestId),
+  ]);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("membership_invitation_revoke_batch_invalid");
+  }
+  return results[0].meta.changes === 1 && results[1].meta.changes === 1
+    ? { data: { invitation_id: invitationId, status: "revoked" }, status: 200 }
+    : { error: "membership_invitation_not_found", status: 404 };
+}
+
+async function createTenantForProvisioning(db, subject, body, requestId, allowlist) {
+  if (!allowlist || !allowlist.has(subject)) return { error: "not_found", status: 404 };
+  if (!onlyKeys(body, ["display_name", "idempotency_key"]) ||
+      typeof body.display_name !== "string" || body.display_name.trim() !== body.display_name ||
+      body.display_name.length < 1 || body.display_name.length > 160 ||
+      !validId(body.idempotency_key, 160)) {
+    return { error: "tenant_provisioning_request_invalid", status: 400 };
+  }
+  const requestDigest = await sha256Hex(JSON.stringify([subject, body.display_name]));
+  const tenantId = "tenant-" + crypto.randomUUID();
+  const membershipId = crypto.randomUUID();
+  const eventId = crypto.randomUUID();
+  const grantIds = Array.from({ length: 6 }, () => crypto.randomUUID());
+  const statements = [
+    db.prepare(
+      "INSERT INTO tenants (id, display_name, status) SELECT ?, ?, 'active' WHERE NOT EXISTS (SELECT 1 FROM tenant_provisioning_requests WHERE actor_subject = ? AND idempotency_key = ?)"
+    ).bind(tenantId, body.display_name, subject, body.idempotency_key),
+    db.prepare(
+      "INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) SELECT ?, ?, ?, 'tenant_owner', 'active' WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ?)"
+    ).bind(membershipId, tenantId, subject, tenantId),
+    db.prepare(
+      "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'tenant', ?, 'read' WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+    ).bind(grantIds[0], tenantId, subject, tenantId, membershipId, tenantId),
+    ...["create", "update", "delete", "ingest", "manage_members"].map((action, index) =>
+      db.prepare(
+        "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'tenant', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+      ).bind(grantIds[index + 1], tenantId, subject, tenantId, action, membershipId, tenantId)),
+    db.prepare(
+      "INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, 'tenant_owner', NULL, 'active', 'Initial owner assigned by allowlisted tenant provisioning', ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+    ).bind(eventId, tenantId, membershipId, subject, subject, requestId, membershipId, tenantId),
+    db.prepare(
+      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+    ).bind(requestId, subject, body.idempotency_key, requestDigest, tenantId, membershipId, tenantId),
+  ];
+  try {
+    const results = await db.batch(statements);
+    if (!Array.isArray(results) || results.length !== statements.length ||
+        results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+      throw new Error("tenant_provisioning_batch_invalid");
+    }
+    if (results[0].meta.changes === 1) {
+      if (results.some((result, index) => index > 0 && result.meta.changes !== 1)) {
+        throw new Error("tenant_provisioning_batch_incomplete");
+      }
+      return { data: { tenant_id: tenantId, display_name: body.display_name,
+        tenant_status: "active", membership_id: membershipId, membership_role: "tenant_owner",
+        membership_status: "active", created: true }, status: 201 };
+    }
+  } catch {
+    // A concurrent request with the same actor/key can win the unique key.
+    // Read the durable outcome below; all other batch failures remain 503.
+  }
+  const existing = await rows(db.prepare(
+    "SELECT r.request_sha256, r.tenant_id, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
+  ).bind(subject, body.idempotency_key));
+  if (existing.length !== 1) throw new Error("tenant_provisioning_storage_conflict");
+  const row = existing[0];
+  if (row.request_sha256 !== requestDigest) return { error: "idempotency_key_reused", status: 409 };
+  if (row.role !== "tenant_owner" || row.membership_status !== "active" || row.status !== "active") {
+    return { error: "tenant_provisioning_conflict", status: 409 };
+  }
+  return { data: { tenant_id: row.tenant_id, display_name: row.display_name,
+    tenant_status: row.status, membership_id: row.membership_id, membership_role: row.role,
+    membership_status: row.membership_status, created: false }, status: 200 };
+}
+
 export default {
   async fetch(request, env) {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
     const url = new URL(request.url);
+    const tenantProvision = url.pathname === "/internal/v1/tenants";
+    const ownershipTransfer = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/ownership-transfer$/);
+    const tenantLifecycle = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/lifecycle-actions$/);
+    const tenantLifecycleEvents = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/lifecycle-events$/);
+    const siteGrantChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/site-grants$/);
+    const resourceGrantChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/resource-grants$/);
+    const membershipChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-actions$/);
+    const membershipEvents = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-events$/);
+    const membershipInvitationCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-invitations$/);
+    const membershipInvitationAccept = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-invitations\/([^/]+)\/accept$/);
+    const membershipInvitationRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-invitations\/([^/]+)\/revoke$/);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
     const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
     const reviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
@@ -448,14 +978,14 @@ export default {
     const qualityAssessment = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/measurement-quality-assessment$/);
     const labReportUpload = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
     const labReportDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
-    if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
-        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
+    if ((tenantProvision && request.method !== "POST") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange || siteGrantChange || resourceGrantChange || ownershipTransfer || tenantLifecycle) && request.method !== "POST") || (tenantLifecycleEvents && request.method !== "GET") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle && !tenantLifecycleEvents && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+        (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !tenantProvision && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle || criteriaDetail || match || labReportDetail)) ||
         (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload))) return error("not_found", 404);
-    const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
+    const tenant = membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? resourceGrantChange?.[1] ?? ownershipTransfer?.[1] ?? tenantLifecycle?.[1] ?? tenantLifecycleEvents?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
-    if (!validId(tenant, 120) || (resourceId && !validId(resourceId)) ||
+    if ((!tenantProvision && !validId(tenant, 120)) || (resourceId && !validId(resourceId)) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validId((membershipInvitationAccept || membershipInvitationRevoke)[2])) ||
         (entryId && (!validId(entryId) || !validId(version, 80))) ||
         (observationVerification && !validId(observationVerification[2])) ||
         ((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && (!validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2]) || !validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[3]))) || (sensorMappingReview && !validId(sensorMappingReview[4])) || ((qualityPolicyRegister || qualityPolicyReview) && (!validId((qualityPolicyRegister || qualityPolicyReview)[2]) || !validId((qualityPolicyRegister || qualityPolicyReview)[3]))) || (qualityPolicyReview && !validId(qualityPolicyReview[4])) || (qualityAssessment && !validId(qualityAssessment[2])) || ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||
@@ -489,6 +1019,138 @@ export default {
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
+      if (membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke) {
+        const tenantRows = await rows(env.DB.prepare(
+          "SELECT status FROM tenants WHERE id = ? LIMIT 2"
+        ).bind(tenant));
+        if (tenantRows.length !== 1 || tenantRows[0].status !== "active") return error("not_found", 404);
+        if (membershipInvitationAccept) {
+          const accepted = await acceptMembershipInvitation(env.DB, tenant,
+            membershipInvitationAccept[2], subject, requestId, draftBody);
+          return accepted.error ? json({ error: accepted.error }, accepted.status)
+            : json({ data: accepted.data, request_id: requestId }, accepted.status);
+        }
+        const ownerRows = await rows(env.DB.prepare(
+          "SELECT subject, tenant_id, role, status FROM tenant_memberships WHERE subject = ? AND tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (ownerRows.length !== 1 || ownerRows[0].subject !== subject ||
+            ownerRows[0].tenant_id !== tenant || ownerRows[0].status !== "active" ||
+            ownerRows[0].role !== "tenant_owner") return error("not_found", 404);
+        const result = membershipInvitationCreate
+          ? await createMembershipInvitation(env.DB, tenant, subject, requestId, draftBody)
+          : await revokeMembershipInvitation(env.DB, tenant, membershipInvitationRevoke[2],
+              subject, requestId, draftBody);
+        return result.error ? json({ error: result.error }, result.status)
+          : json({ data: result.data, request_id: requestId }, result.status);
+      }
+      if (tenantLifecycle) {
+        const changed = await changeTenantLifecycle(env.DB, tenant, subject, requestId, draftBody);
+        return changed.error ? json({ error: changed.error, ...(changed.details ? { details: changed.details } : {}) }, changed.status)
+          : json({ data: changed.data, request_id: requestId }, changed.status);
+      }
+      if (tenantLifecycleEvents) {
+        const owners = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status FROM tenant_memberships m WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (owners.length !== 1 || owners[0].subject !== subject || owners[0].tenant_id !== tenant ||
+            owners[0].membership_status !== "active" ||
+            !["tenant_owner", "tenant_admin"].includes(owners[0].role)) return error("not_found", 404);
+        const events = await rows(env.DB.prepare(
+          "SELECT id, tenant_id, actor_subject, event_type, previous_status, new_status, reason, request_id, created_at FROM tenant_lifecycle_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
+        ).bind(tenant));
+        if (events.some(event => event.tenant_id !== tenant)) return error("not_found", 404);
+        return json({ data: events, request_id: requestId });
+      }
+      if (ownershipTransfer) {
+        const ownerRows = await rows(env.DB.prepare(
+          "SELECT m.id, m.subject, m.tenant_id, m.role, m.status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (ownerRows.length !== 1 || ownerRows[0].subject !== subject ||
+            ownerRows[0].tenant_id !== tenant || ownerRows[0].status !== "active" ||
+            ownerRows[0].tenant_status !== "active" || ownerRows[0].role !== "tenant_owner") {
+          return error("not_found", 404);
+        }
+        const transferred = await transferTenantOwnership(env.DB, tenant, subject,
+          ownerRows[0].id, requestId, draftBody);
+        return transferred.error ? json({ error: transferred.error }, transferred.status)
+          : json({ data: transferred.data, request_id: requestId }, transferred.status);
+      }
+      if (resourceGrantChange) {
+        const memberships = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (memberships.length !== 1 || memberships[0].subject !== subject ||
+            memberships[0].tenant_id !== tenant || memberships[0].status !== "active" ||
+            memberships[0].tenant_status !== "active" ||
+            !["tenant_owner", "tenant_admin"].includes(memberships[0].role)) return error("not_found", 404);
+        const changed = await changeTenantResourceGrant(env.DB, tenant, subject,
+          memberships[0].role, requestId, draftBody);
+        return changed.error ? json({ error: changed.error }, changed.status)
+          : json({ data: changed.data, request_id: requestId }, changed.status);
+      }
+      if (siteGrantChange) {
+        const memberships = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (memberships.length !== 1 || memberships[0].subject !== subject ||
+            memberships[0].tenant_id !== tenant || memberships[0].status !== "active" ||
+            memberships[0].tenant_status !== "active" ||
+            !["tenant_owner", "tenant_admin"].includes(memberships[0].role)) return error("not_found", 404);
+        const changed = await changeTenantSiteGrant(env.DB, tenant, subject,
+          memberships[0].role, requestId, draftBody);
+        return changed.error ? json({ error: changed.error }, changed.status)
+          : json({ data: changed.data, request_id: requestId }, changed.status);
+      }
+      if (membershipChange) {
+        const memberships = await rows(env.DB.prepare(
+          "SELECT subject, tenant_id, role, status FROM tenant_memberships WHERE subject = ? AND tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (memberships.length !== 1 || memberships[0].subject !== subject ||
+            memberships[0].tenant_id !== tenant || memberships[0].status !== "active" ||
+            !["tenant_owner", "tenant_admin"].includes(memberships[0].role)) return error("not_found", 404);
+        const changed = await changeTenantMembership(env.DB, tenant, subject,
+          memberships[0].role, requestId, draftBody);
+        return changed.error ? json({ error: changed.error }, changed.status)
+          : json({ data: changed.data, request_id: requestId }, changed.status);
+      }
+      if (membershipEvents) {
+        const memberships = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status FROM tenant_memberships m WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (memberships.length !== 1 || memberships[0].subject !== subject ||
+            memberships[0].tenant_id !== tenant || memberships[0].membership_status !== "active" ||
+            !["tenant_owner", "tenant_admin"].includes(memberships[0].role)) return error("not_found", 404);
+        const events = await rows(env.DB.prepare(
+          "SELECT id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id, created_at FROM tenant_membership_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
+        ).bind(tenant));
+        const invitationEvents = await rows(env.DB.prepare(
+          "SELECT id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id, created_at FROM tenant_membership_invitation_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
+        ).bind(tenant));
+        const siteGrantEvents = await rows(env.DB.prepare(
+          "SELECT id, tenant_id, grant_id, subject, site_id, grant_action, event_type, actor_subject, reason, request_id, created_at FROM tenant_site_grant_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
+        ).bind(tenant));
+        const resourceGrantEvents = await rows(env.DB.prepare(
+          "SELECT id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id, created_at FROM tenant_resource_grant_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
+        ).bind(tenant));
+        if (events.some(event => event.tenant_id !== tenant) ||
+            invitationEvents.some(event => event.tenant_id !== tenant) ||
+            siteGrantEvents.some(event => event.tenant_id !== tenant) ||
+            resourceGrantEvents.some(event => event.tenant_id !== tenant)) return error("not_found", 404);
+        const combined = [
+          ...events.map(event => ({ ...event, event_type: "membership_" + event.event_type })),
+          ...invitationEvents.map(event => ({ ...event, event_type: "invitation_" + event.event_type })),
+          ...siteGrantEvents.map(event => ({ ...event, event_type: "site_grant_" + event.event_type })),
+          ...resourceGrantEvents.map(event => ({ ...event, event_type: "resource_grant_" + event.event_type })),
+        ].sort((left, right) => right.created_at.localeCompare(left.created_at) ||
+          right.id.localeCompare(left.id)).slice(0, 100);
+        return json({ data: combined, request_id: requestId });
+      }
+      if (tenantProvision) {
+        const provisioned = await createTenantForProvisioning(env.DB, subject, draftBody, requestId,
+          configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS));
+        return provisioned.error ? json({ error: provisioned.error }, provisioned.status)
+          : json({ data: provisioned.data, request_id: requestId }, provisioned.status);
+      }
       if (criteriaReview) {
         const reviewed = await recordCriteriaReview(env.DB, tenant, entryId, version, subject, requestId, draftBody);
         return reviewed.error ? json({ error: reviewed.error }, reviewed.status)
