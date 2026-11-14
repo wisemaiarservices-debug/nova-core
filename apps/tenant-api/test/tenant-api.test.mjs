@@ -1324,6 +1324,75 @@ test("site grant API rejects unsupported tenant-level manage-members permission"
 });
 
 
+class OwnershipTransferDB {
+  constructor({ actorRole = "tenant_owner", targetStatus = "active", targetRole = "operator",
+    batchResult = null } = {}) {
+    this.actorRole = actorRole; this.targetStatus = targetStatus; this.targetRole = targetRole;
+    this.batchResult = batchResult; this.calls = []; this.batchCalls = []; this.nonces = new Set();
+  }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) { return { sql, args,
+      async all() {
+        db.calls.push({ sql, args });
+        if (sql.includes("FROM tenant_memberships m JOIN tenants t")) return { results: [{
+          id: "owner-membership", subject: "operator@example.test", tenant_id: "tenant-a",
+          role: db.actorRole, status: "active", tenant_status: "active",
+        }] };
+        if (sql.includes("FROM tenant_memberships WHERE id = ? AND tenant_id = ?")) return { results: [{
+          id: args[0], tenant_id: args[1], subject: "target@example.test",
+          role: db.targetRole, status: db.targetStatus,
+        }] };
+        throw new Error("unexpected ownership transfer SQL");
+      },
+      async run() {
+        if (sql.includes("INSERT INTO internal_request_nonces")) {
+          if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
+          db.nonces.add(args[0]); return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected ownership transfer write");
+      },
+    }; } };
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    return this.batchResult ?? Array.from({ length: 4 }, () => ({ meta: { changes: 1 } }));
+  }
+}
+
+test("tenant owner transfers ownership atomically and audits both role changes", async () => {
+  const db = new OwnershipTransferDB();
+  const response = await worker.fetch(await request({ "x-nova-request-id": "owner-transfer-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/ownership-transfer", "POST",
+    JSON.stringify({ target_membership_id: "membership-target", reason: "Designated successor" })), env(db));
+  assert.equal(response.status, 200);
+  const data = (await response.json()).data;
+  assert.equal(data.new_owner_subject, "target@example.test");
+  assert.equal(data.previous_owner_role, "tenant_admin");
+  assert.equal(db.batchCalls[0].length, 4);
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_membership_events/);
+  assert.match(db.batchCalls[0][1].sql, /SET role = 'tenant_owner'/);
+  assert.match(db.batchCalls[0][2].sql, /new_role, previous_status/);
+  assert.match(db.batchCalls[0][3].sql, /SET role = 'tenant_admin'/);
+  assert.deepEqual(db.batchCalls[0][2].args.slice(7, 10), ["owner-transfer-001:actor", "owner-membership", "tenant-a"]);
+});
+
+test("only active owners can transfer ownership to another active non-owner", async () => {
+  const admin = new OwnershipTransferDB({ actorRole: "tenant_admin" });
+  const denied = await worker.fetch(await request({ "x-nova-request-id": "owner-transfer-admin" },
+    "https://private.internal/internal/v1/tenants/tenant-a/ownership-transfer", "POST",
+    JSON.stringify({ target_membership_id: "membership-target", reason: "Should be denied" })), env(admin));
+  assert.equal(denied.status, 404);
+  assert.equal(admin.batchCalls.length, 0);
+
+  const inactiveTarget = new OwnershipTransferDB({ targetStatus: "inactive" });
+  const inactive = await worker.fetch(await request({ "x-nova-request-id": "owner-transfer-inactive" },
+    "https://private.internal/internal/v1/tenants/tenant-a/ownership-transfer", "POST",
+    JSON.stringify({ target_membership_id: "membership-target", reason: "Inactive target" })), env(inactiveTarget));
+  assert.equal(inactive.status, 404);
+  assert.equal(inactiveTarget.batchCalls.length, 0);
+});
+
 class ResourceGrantDB {
   constructor({ actorRole = "tenant_owner", targetStatus = "active", resourceRows = null,
     existing = [], batchResult = null } = {}) {
