@@ -934,3 +934,59 @@ test("tenant provisioning rejects idempotency key reuse with different content",
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error, "idempotency_key_reused");
 });
+
+
+class MembershipEventsDB {
+  constructor(role = "tenant_owner", eventRows = []) {
+    this.role = role;
+    this.eventRows = eventRows;
+    this.nonces = new Set();
+    this.calls = [];
+  }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) { return {
+      async run() {
+        if (sql.includes("INSERT INTO internal_request_nonces")) {
+          if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
+          db.nonces.add(args[0]);
+          return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected audit read write");
+      },
+      async all() {
+        db.calls.push({ sql, args });
+        if (sql.includes("FROM tenant_memberships")) return { results: [{
+          subject: "operator@example.test", tenant_id: args[1], role: db.role, membership_status: "active",
+        }] };
+        if (sql.includes("FROM tenant_membership_events")) return { results: db.eventRows };
+        throw new Error("unexpected audit read SQL");
+      },
+    }; } };
+  }
+}
+
+test("tenant owners and admins read only their tenant's bounded membership audit history", async () => {
+  const event = { id: "event-1", tenant_id: "tenant-a", membership_id: "membership-a",
+    subject: "owner-sub", actor_subject: "operator@example.test", event_type: "created",
+    previous_role: null, new_role: "tenant_owner", previous_status: null, new_status: "active",
+    reason: "Initial owner", request_id: "request-event-1", created_at: "2026-11-14T10:00:00Z" };
+  for (const role of ["tenant_owner", "tenant_admin"]) {
+    const db = new MembershipEventsDB(role, [event]);
+    const response = await worker.fetch(await request({}, 
+      "https://private.internal/internal/v1/tenants/tenant-a/membership-events"), env(db));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).data, [event]);
+    const query = db.calls.find(call => call.sql.includes("FROM tenant_membership_events"));
+    assert.deepEqual(query.args, ["tenant-a"]);
+    assert.match(query.sql, /ORDER BY created_at DESC, id DESC LIMIT 100/);
+  }
+});
+
+test("non-admin tenant members cannot read membership audit history", async () => {
+  const db = new MembershipEventsDB("operator", []);
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-events"), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM tenant_membership_events")), false);
+});
