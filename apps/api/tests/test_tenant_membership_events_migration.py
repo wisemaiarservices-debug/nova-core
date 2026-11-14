@@ -72,6 +72,10 @@ class TenantMembershipEventsMigrationTests(unittest.TestCase):
         self.assertEqual(role, "tenant_admin")
 
     def test_role_change_without_event_is_rejected(self):
+        self.db.execute("""
+            INSERT INTO tenant_memberships(id, tenant_id, subject, role, status)
+            VALUES ('membership-b', 'tenant-a', 'owner-two', 'tenant_owner', 'active')
+        """)
         with self.assertRaisesRegex(sqlite3.IntegrityError, "matching immutable event"):
             self.db.execute(
                 "UPDATE tenant_memberships SET role='tenant_admin' WHERE id='membership-a'"
