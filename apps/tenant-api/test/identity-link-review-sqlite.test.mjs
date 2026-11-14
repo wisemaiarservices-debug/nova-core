@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const migrationPath = fileURLToPath(new URL("../../api/migrations/0022_tenant_identity_link_challenges.sql", import.meta.url));
 const migration = readFileSync(migrationPath, "utf8");
-const distinctIssuerMigrationPath = fileURLToPath(new URL("../../api/migrations/0023_identity_link_distinct_issuers.sql", import.meta.url));
+const distinctIssuerMigrationPath = fileURLToPath(new URL("../../api/migrations/0024_identity_link_distinct_issuers.sql", import.meta.url));
 const distinctIssuerMigration = readFileSync(distinctIssuerMigrationPath, "utf8");
 const requester = {
   issuer: "https://team.cloudflareaccess.com",
