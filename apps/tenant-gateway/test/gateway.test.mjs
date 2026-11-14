@@ -297,14 +297,14 @@ test("handles credentialed CORS preflight only for exact configured origins and 
     headers: {
       Origin: "https://nova-os-pied.vercel.app",
       "Access-Control-Request-Method": "POST",
-      "Access-Control-Request-Headers": "accept,content-type",
+      "Access-Control-Request-Headers": "accept,authorization,content-type",
     },
   }), configured);
   assert.equal(response.status, 204);
   assert.equal(response.headers.get("access-control-allow-origin"), "https://nova-os-pied.vercel.app");
   assert.equal(response.headers.get("access-control-allow-credentials"), "true");
   assert.equal(response.headers.get("access-control-allow-methods"), "GET, POST, OPTIONS");
-  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Content-Type");
+  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Authorization, Content-Type");
   assert.match(response.headers.get("vary"), /Origin/);
   assert.match(response.headers.get("vary"), /Access-Control-Request-Method/);
 
@@ -318,7 +318,7 @@ test("handles credentialed CORS preflight only for exact configured origins and 
   const deniedHeader = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
     method: "OPTIONS",
     headers: { Origin: "https://nova-os-pied.vercel.app",
-      "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization" },
+      "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "x-unapproved-header" },
   }), configured);
   assert.equal(deniedHeader.status, 403);
 });
