@@ -643,14 +643,14 @@ export default {
     const qualityAssessment = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/measurement-quality-assessment$/);
     const labReportUpload = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
     const labReportDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
-    if ((tenantProvision && request.method !== "POST") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !membershipEvents && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+    if ((tenantProvision && request.method !== "POST") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke) && request.method !== "POST") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
         (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !tenantProvision || criteriaDetail || match || labReportDetail)) ||
         (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload))) return error("not_found", 404);
-    const tenant = membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
+    const tenant = membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
-    if ((!tenantProvision && !validId(tenant, 120)) || (resourceId && !validId(resourceId)) ||
+    if ((!tenantProvision && !validId(tenant, 120)) || (resourceId && !validId(resourceId)) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validId((membershipInvitationAccept || membershipInvitationRevoke)[2])) ||
         (entryId && (!validId(entryId) || !validId(version, 80))) ||
         (observationVerification && !validId(observationVerification[2])) ||
         ((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && (!validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2]) || !validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[3]))) || (sensorMappingReview && !validId(sensorMappingReview[4])) || ((qualityPolicyRegister || qualityPolicyReview) && (!validId((qualityPolicyRegister || qualityPolicyReview)[2]) || !validId((qualityPolicyRegister || qualityPolicyReview)[3]))) || (qualityPolicyReview && !validId(qualityPolicyReview[4])) || (qualityAssessment && !validId(qualityAssessment[2])) || ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||
@@ -684,6 +684,30 @@ export default {
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
+      if (membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke) {
+        const tenantRows = await rows(env.DB.prepare(
+          "SELECT status FROM tenants WHERE id = ? LIMIT 2"
+        ).bind(tenant));
+        if (tenantRows.length !== 1 || tenantRows[0].status !== "active") return error("not_found", 404);
+        if (membershipInvitationAccept) {
+          const accepted = await acceptMembershipInvitation(env.DB, tenant,
+            membershipInvitationAccept[2], subject, requestId, draftBody);
+          return accepted.error ? json({ error: accepted.error }, accepted.status)
+            : json({ data: accepted.data, request_id: requestId }, accepted.status);
+        }
+        const ownerRows = await rows(env.DB.prepare(
+          "SELECT subject, tenant_id, role, status FROM tenant_memberships WHERE subject = ? AND tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (ownerRows.length !== 1 || ownerRows[0].subject !== subject ||
+            ownerRows[0].tenant_id !== tenant || ownerRows[0].status !== "active" ||
+            ownerRows[0].role !== "tenant_owner") return error("not_found", 404);
+        const result = membershipInvitationCreate
+          ? await createMembershipInvitation(env.DB, tenant, subject, requestId, draftBody)
+          : await revokeMembershipInvitation(env.DB, tenant, membershipInvitationRevoke[2],
+              subject, requestId, draftBody);
+        return result.error ? json({ error: result.error }, result.status)
+          : json({ data: result.data, request_id: requestId }, result.status);
+      }
       if (membershipEvents) {
         const memberships = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status FROM tenant_memberships m WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
