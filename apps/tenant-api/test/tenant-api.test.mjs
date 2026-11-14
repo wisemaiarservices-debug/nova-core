@@ -1372,6 +1372,8 @@ test("tenant owner transfers ownership atomically and audits both role changes",
   assert.equal(db.batchCalls[0].length, 4);
   assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_membership_events/);
   assert.match(db.batchCalls[0][1].sql, /SET role = 'tenant_owner'/);
+  assert.match(db.batchCalls[0][0].sql, /role = 'tenant_owner' AND status = 'active'/);
+  assert.match(db.batchCalls[0][1].sql, /role = 'tenant_owner' AND status = 'active'/);
   assert.match(db.batchCalls[0][2].sql, /new_role, previous_status/);
   assert.match(db.batchCalls[0][3].sql, /SET role = 'tenant_admin'/);
   assert.equal(db.batchCalls[0][2].args[6], "owner-transfer-001:actor");
