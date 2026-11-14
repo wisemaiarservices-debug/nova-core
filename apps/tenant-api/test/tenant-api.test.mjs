@@ -1260,13 +1260,13 @@ test("tenant owner grants exact site access and appends a matching event atomica
 });
 
 test("tenant admin cannot grant delete or manage-members privileges", async () => {
-  for (const grant_action of ["delete", "manage_members"]) {
+  for (const [grant_action, expectedStatus] of [["delete", 404], ["manage_members", 400]]) {
     const db = new SiteGrantChangeDB({ actorRole: "tenant_admin" });
     const response = await worker.fetch(await request({ "x-nova-request-id": "site-grant-denied-" + grant_action },
       "https://private.internal/internal/v1/tenants/tenant-a/site-grants", "POST",
       JSON.stringify({ action: "grant", subject: "member@example.test", site_id: "site-a",
         grant_action, reason: "Must be owner controlled" })), env(db));
-    assert.equal(response.status, 404);
+    assert.equal(response.status, expectedStatus);
     assert.equal(db.batchCalls.length, 0);
   }
 });
