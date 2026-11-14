@@ -110,17 +110,12 @@ Remaining requirements before membership lifecycle implementation:
   membership for a verified stable subject with a bounded role.
 - `POST /api/v1/tenants/{tenant}/memberships/{membership}/transition`:
   active owner performs one explicit legal lifecycle transition.
-- `GET /api/v1/tenants/{tenant}/membership-events`: implemented as an
-  owner/admin-only read of the newest 100 append-only tenant membership events.
+- `POST /api/v1/tenants/{tenant}/membership-invitations`: implemented; active owner issues a one-time token for `tenant_admin`, `operator`, `analyst` or `viewer`.
+- `POST /api/v1/tenants/{tenant}/membership-invitations/{invitation}/accept`: implemented; authenticated Access subject claims the invitation and becomes the membership subject.
+- `POST /api/v1/tenants/{tenant}/membership-invitations/{invitation}/revoke`: implemented; active owner revokes a pending invitation.
+- `GET /api/v1/tenants/{tenant}/membership-events`: implemented as an owner/admin-only read of the newest 100 membership and invitation events.
 
-The future membership routes above are not yet implemented. The tenant-creation
-route is exact-path mapped by the public gateway, requires a separately
-configured exact-subject allowlist at both gateway and private Worker, and
-forwards only a verified Access identity in the signed envelope. POST bodies
-are bounded JSON; query strings, unknown fields and caller-supplied actor
-identities are rejected. The private Worker independently checks the allowlist
-and writes D1 records in one batch; gateway authentication alone never grants
-tenant membership.
+The tenant-creation and invitation routes are exact-path mapped by the public gateway. Tenant creation requires a separately configured exact-subject allowlist at both gateway and private Worker. Invitation acceptance binds the invitation to the verified Access subject; the body cannot nominate a subject. POST bodies are bounded JSON; query strings, unknown fields and caller-supplied actor identities are rejected. The private Worker independently checks authorization and writes D1 records in atomic batches; gateway authentication alone never grants tenant membership.
 
 ## Required adversarial tests
 
