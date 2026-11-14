@@ -50,22 +50,23 @@ function sqliteD1() {
 
 const supabase = { issuer: "https://project.example.test/auth/v1", subject: "supabase-subject" };
 const cloudflare = { issuer: "https://team.cloudflareaccess.com", subject: "cloudflare-subject" };
+const secret = "test-only-internal-secret-with-32-bytes-minimum";
 
 test("challenge creation is capped at five requests per verified identity per 15-minute window", async () => {
   const db = sqliteD1();
   try {
     for (let attempt = 1; attempt <= 5; attempt++) {
       const result = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-        "challenge_create", 1_800_000_000);
+        "challenge_create", 1_800_000_000, secret);
       assert.equal(result.allowed, true);
       assert.equal(result.limit, 5);
     }
     const blocked = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-      "challenge_create", 1_800_000_001);
+      "challenge_create", 1_800_000_001, secret);
     assert.equal(blocked.allowed, false);
     assert.equal(blocked.retryAfterSeconds, 899);
     const repeated = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-      "challenge_create", 1_800_000_002);
+      "challenge_create", 1_800_000_002, secret);
     assert.equal(repeated.allowed, false, "repeated blocked requests stay rejected without unbounded counters");
     assert.equal(db.sqlite.prepare("SELECT MAX(request_count) AS count FROM tenant_identity_link_rate_limits").get().count, 6);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tenant_identity_link_rate_limits").get().count, 2);
@@ -77,17 +78,17 @@ test("challenge consumption has a separate ten-attempt cap and window rollover r
   try {
     for (let attempt = 1; attempt <= 10; attempt++) {
       const result = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-        "challenge_consume", 1_800_000_000);
+        "challenge_consume", 1_800_000_000, secret);
       assert.equal(result.allowed, true);
     }
     const blocked = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-      "challenge_consume", 1_800_000_001);
+      "challenge_consume", 1_800_000_001, secret);
     assert.equal(blocked.allowed, false);
     const nextWindow = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-      "challenge_consume", 1_800_000_900);
+      "challenge_consume", 1_800_000_900, secret);
     assert.equal(nextWindow.allowed, true);
     const create = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-      "challenge_create", 1_800_000_900);
+      "challenge_create", 1_800_000_900, secret);
     assert.equal(create.allowed, true);
   } finally { db.sqlite.close(); }
 });
@@ -96,7 +97,7 @@ test("rate-limit storage contains only identity digests and prunes expired windo
   const db = sqliteD1();
   try {
     await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
-      "challenge_create", 1_800_000_000);
+      "challenge_create", 1_800_000_000, secret);
     const rows = db.sqlite.prepare("SELECT identity_digest, operation FROM tenant_identity_link_rate_limits").all();
     assert.equal(rows.length, 2);
     assert.ok(rows.every(row => /^[a-f0-9]{64}$/.test(row.identity_digest)));
