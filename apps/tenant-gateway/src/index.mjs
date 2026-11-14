@@ -274,7 +274,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         const requestedHeaders = (request.headers.get("access-control-request-headers") || "")
           .split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
         if (!["GET", "POST"].includes(requestedMethod) ||
-            requestedHeaders.some(header => !["accept", "content-type"].includes(header))) {
+            requestedHeaders.some(header => !["accept", "authorization", "content-type"].includes(header))) {
           return error("cors_preflight_not_allowed", 403);
         }
         return corsResponse(new Response(null, { status: 204 }), origin, true);
