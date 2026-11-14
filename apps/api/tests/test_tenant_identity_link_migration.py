@@ -28,7 +28,7 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
               ('owner-c', 'tenant-c', 'owner-c-sub', 'tenant_owner', 'active');
         """)
         self.db.executescript((MIGRATIONS / "0022_tenant_identity_link_challenges.sql").read_text())
-        self.db.executescript((MIGRATIONS / "0023_tenant_identity_link_uniqueness.sql").read_text())
+        self.db.executescript((MIGRATIONS / "0024_tenant_identity_link_uniqueness.sql").read_text())
 
     def tearDown(self):
         self.db.close()

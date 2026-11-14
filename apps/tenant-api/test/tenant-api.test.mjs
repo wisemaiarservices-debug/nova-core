@@ -1820,9 +1820,19 @@ function identitySupabaseToken() {
 }
 
 class IdentityLinkRouteDB extends DB {
-  constructor() { super(); this.identityChallengeRow = null; }
+  constructor({ rateLimitDefaultCount = 0 } = {}) { super(); this.identityChallengeRow = null; this.rateLimitDefaultCount = rateLimitDefaultCount; this.rateLimitCounts = new Map(); }
   prepare(sql) {
     const db = this;
+    if (sql.startsWith("DELETE FROM tenant_identity_link_rate_limits")) {
+      return { bind(...args) { return { sql, args, run() { return { meta: { changes: 0 } }; } }; } };
+    }
+    if (sql.includes("INSERT INTO tenant_identity_link_rate_limits")) {
+      return { bind(...args) { return { sql, args, all() {
+        const key = args.slice(0, 3).join("|");
+        const count = db.rateLimitCounts.get(key) ?? db.rateLimitDefaultCount;
+        return { results: [{ request_count: count }] };
+      } }; } };
+    }
     if (sql.startsWith("INSERT INTO tenant_identity_link_challenges")) {
       return { bind(...args) { return { async run() {
         db.calls.push({ sql, args });
@@ -1845,6 +1855,16 @@ class IdentityLinkRouteDB extends DB {
   }
   async batch(statements) {
     this.batchCalls.push(statements);
+    if (statements.length === 3 && statements[0].sql?.startsWith("DELETE FROM tenant_identity_link_rate_limits")) {
+      const results = [ { meta: { changes: 0 } } ];
+      for (const statement of statements.slice(1)) {
+        const key = statement.args.slice(0, 3).join("|");
+        const count = Math.min((this.rateLimitCounts.get(key) ?? this.rateLimitDefaultCount) + 1, 6);
+        this.rateLimitCounts.set(key, count);
+        results.push({ results: [{ request_count: count }] });
+      }
+      return results;
+    }
     if (statements.length === 3 && this.identityChallengeRow) {
       this.identityChallengeRow.status = "consumed";
       return statements.map(() => ({ meta: { changes: 1 } }));
@@ -1887,7 +1907,35 @@ test("dual-auth HTTP routes create and consume a challenge bound to both verifie
     assert.equal(consumedResponse.status, 201);
     assert.equal((await consumedResponse.json()).data.status, "pending");
     assert.equal(db.identityChallengeRow.status, "consumed");
-    assert.equal(db.batchCalls.length, 1);
+    assert.equal(db.batchCalls.length, 3, "create and consume each charge rate limits; consumption also commits the challenge batch");
     assert.equal(db.batchCalls[0].length, 3);
+    assert.equal(db.batchCalls[1].length, 3);
+    assert.equal(db.batchCalls[2].length, 3);
+    assert.match(db.batchCalls[0][0].sql, /DELETE FROM tenant_identity_link_rate_limits/);
+    assert.match(db.batchCalls[1][0].sql, /DELETE FROM tenant_identity_link_rate_limits/);
+    assert.match(db.batchCalls[2][0].sql, /UPDATE tenant_identity_link_challenges/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+
+test("identity-link challenge route enforces verified-identity rate limits before challenge persistence", async () => {
+  const db = new IdentityLinkRouteDB({ rateLimitDefaultCount: 5 });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [identityJwk] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const response = await worker.fetch(await request({
+      "x-nova-request-id": "identity-rate-limit-001",
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/identity-links/challenges", "POST", "{}"), env(db));
+    assert.equal(response.status, 429);
+    assert.equal((await response.json()).error, "identity_link_rate_limited");
+    assert.ok(Number(response.headers.get("retry-after")) > 0);
+    assert.equal(db.identityChallengeRow, null, "blocked requests must not create challenge records");
+    assert.equal(db.batchCalls.length, 1, "only rate-limit storage is touched");
   } finally { globalThis.fetch = originalFetch; }
 });
