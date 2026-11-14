@@ -153,6 +153,19 @@ try {
     return throughGateway(resourceGrantPath, accessToken(subject),
       { "content-type": "application/json" }, "POST", JSON.stringify(payload));
   }
+  const crossTenantTarget = await resourceGrant("ci-human-subject", {
+    action: "grant", subject: "ci-other-tenant-member", resource_type: "asset",
+    resource_id: "asset-http-grant", grant_action: "read",
+    reason: "Cross-tenant target must be denied",
+  });
+  assert.equal(crossTenantTarget.response.status, 404);
+  const crossTenantResource = await resourceGrant("ci-human-subject", {
+    action: "grant", subject: "ci-invited-human", resource_type: "asset",
+    resource_id: "asset-http-b", grant_action: "read",
+    reason: "Cross-tenant resource must be denied",
+  });
+  assert.equal(crossTenantResource.response.status, 404);
+
   const auditFailure = await resourceGrant("ci-human-subject", {
     action: "grant", subject: "ci-invited-human", resource_type: "asset",
     resource_id: "asset-http-grant", grant_action: "read",
