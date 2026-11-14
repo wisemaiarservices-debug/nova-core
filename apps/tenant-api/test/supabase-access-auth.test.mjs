@@ -78,3 +78,41 @@ test("rejects ambiguous duplicate key identifiers in the issuer JWKS", async () 
   await assert.rejects(verifySupabaseAccessToken(token(), config, now, async () =>
     new Response(JSON.stringify({ keys: [jwk, jwk] }), { status: 200 })), /supabase_jwks_invalid/);
 });
+
+test("rejects malformed compact tokens and malformed JWT JSON before trusting claims", async () => {
+  for (const candidate of ["", "one.two", "a.b.c.d", "!.!.!", b64("[]") + "." + b64("{}") + ".AA"]) {
+    await assert.rejects(verifySupabaseAccessToken(candidate, config, now, fetcher));
+  }
+});
+
+test("rejects weak, non-RSA, encryption-only and wrong-exponent JWKS keys", async () => {
+  const weak = { ...jwk, n: Buffer.alloc(128, 0xff).toString("base64url") };
+  const ec = { ...jwk, kty: "EC" };
+  const encryption = { ...jwk, use: "enc" };
+  const wrongExponent = { ...jwk, e: Buffer.from([3]).toString("base64url") };
+  for (const candidate of [weak, ec, encryption, wrongExponent]) {
+    await assert.rejects(verifySupabaseAccessToken(token(), config, now, async () =>
+      new Response(JSON.stringify({ keys: [candidate] }), { status: 200 })), /supabase_signing_key_not_found/);
+  }
+});
+
+test("rejects duplicate or oversized key sets and non-success JWKS responses", async () => {
+  await assert.rejects(verifySupabaseAccessToken(token(), config, now, async () =>
+    new Response(JSON.stringify({ keys: Array.from({ length: 33 }, (_, i) => ({ ...jwk, kid: "k" + i })) }), { status: 200 })), /supabase_jwks_invalid/);
+  await assert.rejects(verifySupabaseAccessToken(token(), config, now, async () =>
+    new Response("unavailable", { status: 503 })), /supabase_jwks_unavailable/);
+});
+
+test("requires an exact configured issuer path and a non-empty bounded audience", async () => {
+  for (const invalidIssuer of [
+    "https://project-ref.supabase.co/auth/v1/",
+    "https://project-ref.supabase.co/other/auth/v1",
+    "https://project-ref.supabase.co/auth/v1?redirect=attacker",
+    "https://project-ref.supabase.co/auth/v1#fragment",
+  ]) {
+    await assert.rejects(verifySupabaseAccessToken(token(), { issuer: invalidIssuer, audience }, now, fetcher),
+      /invalid_supabase_issuer_configuration/);
+  }
+  await assert.rejects(verifySupabaseAccessToken(token(), { issuer, audience: " " }, now, fetcher),
+    /invalid_supabase_audience_configuration/);
+});
