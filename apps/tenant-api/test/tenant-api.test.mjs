@@ -1321,3 +1321,101 @@ test("site grant API rejects unsupported tenant-level manage-members permission"
   assert.equal(response.status, 400);
   assert.equal(db.batchCalls.length, 0);
 });
+
+
+class ResourceGrantDB {
+  constructor({ actorRole = "tenant_owner", targetStatus = "active", resourceRows = null,
+    existing = [], batchResult = null } = {}) {
+    this.actorRole = actorRole; this.targetStatus = targetStatus; this.resourceRows = resourceRows;
+    this.existing = existing; this.batchCalls = []; this.calls = []; this.nonces = new Set();
+    this.batchResult = batchResult;
+  }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) { return { sql, args,
+      async all() {
+        db.calls.push({ sql, args });
+        if (sql.includes("FROM tenant_memberships m JOIN tenants t")) return { results: [{
+          subject: "operator@example.test", tenant_id: "tenant-a", role: db.actorRole,
+          status: "active", tenant_status: "active",
+        }] };
+        if (sql.includes("SELECT id FROM tenants WHERE id = ?")) return { results: [{ id: "tenant-a" }] };
+        if (sql.includes("FROM assets a JOIN sites s")) return { results: db.resourceRows ?? [{
+          id: args[1], tenant_id: args[0], site_id: "site-a",
+        }] };
+        if (sql.includes("FROM sources src LEFT JOIN sites")) return { results: db.resourceRows ?? [{
+          id: args[1], tenant_id: args[0], site_id: "site-a",
+        }] };
+        if (sql.includes("FROM observations o JOIN sites")) return { results: db.resourceRows ?? [{
+          id: args[1], tenant_id: args[0], site_id: "site-a", source_id: "source-a", asset_id: null,
+        }] };
+        if (sql.includes("FROM tenant_memberships WHERE tenant_id = ? AND subject = ?")) return { results: [{
+          id: "target-membership", subject: args[1], status: db.targetStatus,
+        }] };
+        if (sql.includes("FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ? AND resource_type = ?")) return { results: db.existing };
+        throw new Error("unexpected resource grant SQL: " + sql);
+      },
+      async run() {
+        db.calls.push({ sql, args });
+        if (sql.includes("INSERT INTO internal_request_nonces")) {
+          if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
+          db.nonces.add(args[0]); return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected resource grant write SQL");
+      },
+    }; } };
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    return this.batchResult ?? [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+  }
+}
+
+test("tenant owner grants exact asset access with matching append-only audit event", async () => {
+  const db = new ResourceGrantDB();
+  const response = await worker.fetch(await request({ "x-nova-request-id": "resource-grant-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST",
+    JSON.stringify({ action: "grant", subject: "member@example.test", resource_type: "asset",
+      resource_id: "asset-a", grant_action: "read", reason: "Approved asset access" })), env(db));
+  assert.equal(response.status, 201);
+  const result = (await response.json()).data;
+  assert.equal(result.resource_type, "asset");
+  assert.equal(result.resource_id, "asset-a");
+  assert.equal(result.status, "active");
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_resource_grants/);
+  assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_resource_grant_events/);
+  assert.match(db.batchCalls[0][0].sql, /a\.tenant_id = s\.tenant_id/);
+});
+
+test("resource grants reject inactive targets, mismatched resources and admin delete", async () => {
+  const body = action => JSON.stringify({ action: "grant", subject: "member@example.test",
+    resource_type: "asset", resource_id: "asset-a", grant_action: action,
+    reason: "Controlled access" });
+  const inactive = new ResourceGrantDB({ targetStatus: "inactive" });
+  assert.equal((await worker.fetch(await request({ "x-nova-request-id": "resource-inactive" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST", body("read")), env(inactive))).status, 404);
+  assert.equal(inactive.batchCalls.length, 0);
+
+  const mismatched = new ResourceGrantDB({ resourceRows: [{ id: "asset-a", tenant_id: "tenant-b", site_id: "site-b" }] });
+  assert.equal((await worker.fetch(await request({ "x-nova-request-id": "resource-cross-tenant" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST", body("read")), env(mismatched))).status, 404);
+  assert.equal(mismatched.batchCalls.length, 0);
+
+  const admin = new ResourceGrantDB({ actorRole: "tenant_admin" });
+  assert.equal((await worker.fetch(await request({ "x-nova-request-id": "resource-admin-delete" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST", body("delete")), env(admin))).status, 404);
+  assert.equal(admin.batchCalls.length, 0);
+});
+
+test("resource grant revocation allows explicit cleanup for an inactive member", async () => {
+  const db = new ResourceGrantDB({ targetStatus: "inactive",
+    existing: [{ id: "grant-existing" }] });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "resource-revoke-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST",
+    JSON.stringify({ action: "revoke", subject: "member@example.test", resource_type: "asset",
+      resource_id: "asset-a", grant_action: "read", reason: "Remove stale access" })), env(db));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.status, "revoked");
+  assert.match(db.batchCalls[0][0].sql, /DELETE FROM tenant_resource_grants/);
+  assert.match(db.batchCalls[0][1].sql, /tenant_resource_grant_events/);
+});
