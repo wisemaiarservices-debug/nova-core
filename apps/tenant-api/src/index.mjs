@@ -41,7 +41,12 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-verified-issuer"),
     headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"),
-    headers.get("x-nova-request-id")]);
+    headers.get("x-nova-request-id"),
+    headers.get("x-nova-body-sha256")]);
+}
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
@@ -999,10 +1004,7 @@ export default {
     const now = Math.floor(Date.now() / 1000);
     if (!validSubject(subject) || issuer !== env.ACCESS_ISSUER || audience !== env.ACCESS_AUDIENCE ||
         !Number.isInteger(issuedAt) || issuedAt > now + 30 || issuedAt < now - 120 ||
-        !validId(requestId, 80) ||
-        !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
-      return error("request_not_authorized", 401);
-    }
+        !validId(requestId, 80)) return error("request_not_authorized", 401);
     if (!env.DB) return error("storage_unavailable", 503);
 
     let draftBody = null;
@@ -1016,6 +1018,19 @@ export default {
         draftBody = JSON.parse(raw);
       } catch { return error("invalid_request_body", 400); }
       if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody)) return error("invalid_request_body", 400);
+    }
+    const expectedBodyDigest = request.headers.get("x-nova-body-sha256");
+    if (typeof expectedBodyDigest !== "string" || !/^[a-f0-9]{64}$/.test(expectedBodyDigest)) {
+      return error("request_not_authorized", 401);
+    }
+    const bodyBytes = request.method === "POST"
+      ? new TextEncoder().encode(JSON.stringify(draftBody)) : new Uint8Array();
+    // Sign the exact bytes forwarded by the gateway, not a reserialized JSON object.
+    // The original request stream is consumed above, so use a canonical serialized
+    // digest only when the gateway also forwards canonical JSON bytes.
+    if (await sha256Hex(bodyBytes) !== expectedBodyDigest ||
+        !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
+      return error("request_not_authorized", 401);
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
