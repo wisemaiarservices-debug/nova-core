@@ -1045,7 +1045,7 @@ export default {
       }
       if (tenantLifecycle) {
         const changed = await changeTenantLifecycle(env.DB, tenant, subject, requestId, draftBody);
-        return changed.error ? json({ error: changed.error }, changed.status)
+        return changed.error ? json({ error: changed.error, ...(changed.details ? { details: changed.details } : {}) }, changed.status)
           : json({ data: changed.data, request_id: requestId }, changed.status);
       }
       if (tenantLifecycleEvents) {
