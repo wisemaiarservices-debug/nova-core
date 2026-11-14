@@ -429,6 +429,121 @@ async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
+
+function createInvitationToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+async function createMembershipInvitation(db, tenant, actor, requestId, body) {
+  if (!onlyKeys(body, ["role", "reason"]) ||
+      !["tenant_admin", "operator", "analyst", "viewer"].includes(body.role) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "membership_invitation_request_invalid", status: 400 };
+  }
+  const invitationId = crypto.randomUUID();
+  const eventId = crypto.randomUUID();
+  const token = createInvitationToken();
+  const tokenDigest = await sha256Hex(token);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const statements = [
+    db.prepare(
+      "INSERT INTO tenant_membership_invitations (id, tenant_id, role, token_sha256, created_by_subject, reason, request_id, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(invitationId, tenant, body.role, tokenDigest, actor, body.reason, requestId, expiresAt),
+    db.prepare(
+      "INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'created', ?, NULL, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND status = 'pending')"
+    ).bind(eventId, tenant, invitationId, actor, body.reason, requestId, invitationId, tenant),
+  ];
+  const results = await db.batch(statements);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => result?.meta?.changes !== 1)) throw new Error("membership_invitation_batch_incomplete");
+  return { data: { invitation_id: invitationId, role: body.role, status: "pending",
+    expires_at: expiresAt, invitation_token: token,
+    delivery: "Share this one-time token with the intended invitee through a trusted out-of-band channel. It is shown only once." },
+    status: 201 };
+}
+async function acceptMembershipInvitation(db, tenant, invitationId, subject, requestId, body) {
+  if (!onlyKeys(body, ["invitation_token"]) ||
+      typeof body.invitation_token !== "string" ||
+      !/^[A-Za-z0-9_-]{40,60}$/.test(body.invitation_token)) {
+    return { error: "membership_invitation_token_invalid", status: 400 };
+  }
+  const tokenDigest = await sha256Hex(body.invitation_token);
+  const invitations = await rows(db.prepare(
+    "SELECT id, tenant_id, role, status, reason, expires_at FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND token_sha256 = ? LIMIT 2"
+  ).bind(invitationId, tenant, tokenDigest));
+  if (invitations.length !== 1 || invitations[0].tenant_id !== tenant ||
+      invitations[0].id !== invitationId || invitations[0].status !== "pending") {
+    return { error: "membership_invitation_not_found", status: 404 };
+  }
+  const invitation = invitations[0];
+  const now = new Date().toISOString();
+  if (typeof invitation.expires_at !== "string" || invitation.expires_at <= now) {
+    const eventId = crypto.randomUUID();
+    const expiredAt = now;
+    const results = await db.batch([
+      db.prepare("UPDATE tenant_membership_invitations SET status = 'expired' WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at <= ?")
+        .bind(invitationId, tenant, expiredAt),
+      db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'expired', ?, NULL, 'Invitation expired before acceptance', ? WHERE changes() = 1")
+        .bind(eventId, tenant, invitationId, subject, requestId),
+    ]);
+    if (!Array.isArray(results) || results.length !== 2) throw new Error("membership_invitation_expiry_batch_invalid");
+    return { error: "membership_invitation_expired", status: 410 };
+  }
+  const existing = await rows(db.prepare(
+    "SELECT id, status FROM tenant_memberships WHERE tenant_id = ? AND subject = ? LIMIT 2"
+  ).bind(tenant, subject));
+  if (existing.length !== 0) return { error: "membership_already_exists", status: 409 };
+  const membershipId = crypto.randomUUID();
+  const grantId = crypto.randomUUID();
+  const membershipEventId = crypto.randomUUID();
+  const invitationEventId = crypto.randomUUID();
+  const results = await db.batch([
+    db.prepare("UPDATE tenant_membership_invitations SET status = 'accepted', accepted_by_subject = ?, accepted_at = ? WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ?")
+      .bind(subject, now, invitationId, tenant, now),
+    db.prepare("INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) SELECT ?, ?, ?, ?, 'active' WHERE changes() = 1")
+      .bind(membershipId, tenant, subject, invitation.role),
+    db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'tenant', ?, 'read' WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
+      .bind(grantId, tenant, subject, tenant, membershipId, tenant, subject),
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, ?, NULL, 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
+      .bind(membershipEventId, tenant, membershipId, subject, subject, invitation.role, "Accepted tenant membership invitation: " + invitation.reason, requestId, membershipId, tenant, subject),
+    db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'accepted', ?, ?, 'Invitation accepted by authenticated Access subject', ? WHERE EXISTS (SELECT 1 FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND status = 'accepted' AND accepted_by_subject = ?)")
+      .bind(invitationEventId, tenant, invitationId, subject, subject, requestId, invitationId, tenant, subject),
+  ]);
+  if (!Array.isArray(results) || results.length !== 5 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("membership_invitation_accept_batch_invalid");
+  }
+  if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1 ||
+      results[2].meta.changes !== 1 || results[3].meta.changes !== 1 ||
+      results[4].meta.changes !== 1) return { error: "membership_invitation_conflict", status: 409 };
+  return { data: { invitation_id: invitationId, membership_id: membershipId,
+    tenant_id: tenant, subject, role: invitation.role, status: "active" }, status: 201 };
+}
+async function revokeMembershipInvitation(db, tenant, invitationId, actor, requestId, body) {
+  if (!onlyKeys(body, ["reason"]) || typeof body.reason !== "string" ||
+      body.reason.trim() !== body.reason || body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "membership_invitation_request_invalid", status: 400 };
+  }
+  const eventId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const results = await db.batch([
+    db.prepare("UPDATE tenant_membership_invitations SET status = 'revoked', revoked_at = ? WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ?")
+      .bind(now, invitationId, tenant, now),
+    db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'revoked', ?, NULL, ?, ? WHERE changes() = 1")
+      .bind(eventId, tenant, invitationId, actor, body.reason, requestId),
+  ]);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("membership_invitation_revoke_batch_invalid");
+  }
+  return results[0].meta.changes === 1 && results[1].meta.changes === 1
+    ? { data: { invitation_id: invitationId, status: "revoked" }, status: 200 }
+    : { error: "membership_invitation_not_found", status: 404 };
+}
+
 async function createTenantForProvisioning(db, subject, body, requestId, allowlist) {
   if (!allowlist || !allowlist.has(subject)) return { error: "not_found", status: 404 };
   if (!onlyKeys(body, ["display_name", "idempotency_key"]) ||
