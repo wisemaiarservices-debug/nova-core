@@ -8,12 +8,13 @@ const access = { issuer: "https://team.cloudflareaccess.com", subject: "access-u
 class ChallengeDB {
   constructor() { this.row = null; this.batchCalls = []; }
   prepare(sql) {
+    const db = this;
     return { sql, args: [], bind(...args) { this.args = args; return this; },
       async run() {
         if (this.sql.startsWith("INSERT INTO tenant_identity_link_challenges")) {
-          if (this.row) return { meta: { changes: 0 } };
+          if (db.row) return { meta: { changes: 0 } };
           const [id, si, ss, ci, cs, digest, created, expires, request] = this.args;
-          this.row = { id, supabase_issuer: si, supabase_subject: ss, cloudflare_issuer: ci,
+          db.row = { id, supabase_issuer: si, supabase_subject: ss, cloudflare_issuer: ci,
             cloudflare_subject: cs, challenge_sha256: digest, status: "pending",
             created_at: created, expires_at: expires, request_id: request };
           return { meta: { changes: 1 } };
@@ -21,9 +22,9 @@ class ChallengeDB {
         throw new Error("unexpected run");
       },
       async all() {
-        if (!this.row || this.row.id !== this.args[0] || this.row.challenge_sha256 !== this.args[1])
+        if (!db.row || db.row.id !== this.args[0] || db.row.challenge_sha256 !== this.args[1])
           return { results: [] };
-        return { results: [this.row] };
+        return { results: [db.row] };
       },
     };
   }
