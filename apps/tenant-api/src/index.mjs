@@ -592,6 +592,48 @@ async function changeTenantSiteGrant(db, tenant, actor, actorRole, requestId, bo
     status: body.action === "grant" ? 201 : 200 };
 }
 
+async function changeTenantLifecycle(db, tenant, actor, requestId, body) {
+  if (!onlyKeys(body, ["action", "reason"]) ||
+      !["suspend", "reactivate", "archive"].includes(body.action) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "tenant_lifecycle_request_invalid", status: 400 };
+  }
+  const currentRows = await rows(db.prepare(
+    "SELECT t.id, t.status, m.role, m.status AS membership_status FROM tenants t JOIN tenant_memberships m ON m.tenant_id = t.id WHERE t.id = ? AND m.subject = ? LIMIT 2"
+  ).bind(tenant, actor));
+  if (currentRows.length !== 1 || currentRows[0].id !== tenant ||
+      currentRows[0].role !== "tenant_owner" || currentRows[0].membership_status !== "active") {
+    return { error: "tenant_not_found", status: 404 };
+  }
+  const current = currentRows[0].status;
+  const transitions = {
+    suspend: { from: "active", to: "suspended", event: "suspended" },
+    reactivate: { from: "suspended", to: "active", event: "reactivated" },
+    archive: { from: ["active", "suspended"], to: "archived", event: "archived" },
+  };
+  const transition = transitions[body.action];
+  const allowedFrom = Array.isArray(transition.from) ? transition.from : [transition.from];
+  if (!allowedFrom.includes(current)) return { error: "tenant_lifecycle_conflict", status: 409 };
+  const eventId = crypto.randomUUID();
+  const result = await db.batch([
+    db.prepare("INSERT INTO tenant_lifecycle_events (id, tenant_id, actor_subject, event_type, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = ?) AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(eventId, tenant, actor, transition.event, current, transition.to, body.reason,
+        requestId, tenant, current, tenant, actor),
+    db.prepare("UPDATE tenants SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = ? AND EXISTS (SELECT 1 FROM tenant_lifecycle_events WHERE id = ? AND tenant_id = ? AND previous_status = ? AND new_status = ?) AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(transition.to, tenant, current, eventId, tenant, current, transition.to, tenant, actor),
+  ]);
+  if (!Array.isArray(result) || result.length !== 2 ||
+      result.some(item => !item?.meta || !Number.isInteger(item.meta.changes))) {
+    throw new Error("tenant_lifecycle_batch_invalid");
+  }
+  if (result[0].meta.changes !== 1 || result[1].meta.changes !== 1) {
+    return { error: "tenant_lifecycle_conflict", status: 409 };
+  }
+  return { data: { tenant_id: tenant, previous_status: current,
+    status: transition.to, event_type: transition.event, event_id: eventId }, status: 200 };
+}
+
 async function transferTenantOwnership(db, tenant, actor, actorMembershipId, requestId, body) {
   if (!onlyKeys(body, ["target_membership_id", "reason"]) ||
       !validId(body.target_membership_id, 160) ||
