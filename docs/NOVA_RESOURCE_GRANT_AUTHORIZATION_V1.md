@@ -99,6 +99,20 @@ Do not substitute a site grant for an exact resource grant. Do not use an unscop
 
 Run ordered migrations 0001–0020 against disposable local D1 and exercise gateway → private Worker → D1 integration before considering the route ready.
 
-## 8. Rollout boundary
+## 8. Implemented API surface and rollout boundary
 
-This is a contract only. The generic resource-grant endpoint, generic audit migration, gateway route, read-path enforcement and their tests remain unimplemented until separately validated. No production migration, grant, tenant, secret, Access policy or deployment is authorized by this document.
+The first implementation is present on the draft PR branch:
+
+- Public gateway: `POST /api/v1/tenants/{tenant}/resource-grants`.
+- Private Tenant API: signed internal `POST /internal/v1/tenants/{tenant}/resource-grants`.
+- Supported resource types: exact `asset`, `source`, and `observation` IDs only.
+- Mutation actor is derived from the verified Access subject and active tenant membership; the request body cannot choose the actor or role.
+- New grants require an active tenant, active target membership, active parent site and exact tenant/resource relationship. Sources must be verified before receiving a resource grant.
+- Observation grants require the persisted source and optional asset to match the observation tenant and site.
+- Revocation is available for stale grants even when the target membership is inactive or the resource is retired; it remains scoped to the exact tenant/member/resource/action tuple.
+- Resource reads require an exact resource grant and independently re-check the resource's tenant and parent relationships. Site grants are not inherited.
+- Grant/revoke changes append to `tenant_resource_grant_events` in the same D1 batch. The tenant audit history endpoint includes these events.
+
+The disposable local D1 HTTP integration suite now exercises asset, source, and observation grant → read → revoke → denied-read flows through the Access gateway and private Worker. This must pass on the exact PR head before the route is considered validated.
+
+No production migration, grant, tenant, secret, Access policy or deployment is authorized by this document.
