@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 import sqlite3
 import unittest
 
@@ -31,15 +32,15 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
         self.db.close()
 
     def challenge(self, challenge_id="challenge-1", request_id="challenge-request-1"):
+        digest = hashlib.sha256(challenge_id.encode()).hexdigest()
         self.db.execute("""
           INSERT INTO tenant_identity_link_challenges
           (id, supabase_issuer, supabase_subject, cloudflare_issuer, cloudflare_subject,
            challenge_sha256, status, created_at, expires_at, request_id)
           VALUES (?, 'https://project.supabase.co/auth/v1', 'supabase-sub',
                   'https://team.cloudflareaccess.com', 'cloudflare-sub',
-                  'a' || printf('%063d', 0), 'pending',
-                  '2026-11-14T10:00:00Z', '2026-11-14T10:05:00Z', ?)
-        """, (challenge_id, request_id))
+                  ?, 'pending', '2026-11-14T10:00:00Z', '2026-11-14T10:05:00Z', ?)
+        """, (challenge_id, digest, request_id))
 
     def consume(self, challenge_id="challenge-1"):
         self.db.execute("""
