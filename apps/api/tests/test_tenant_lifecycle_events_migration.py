@@ -14,9 +14,17 @@ class TenantLifecycleEventsMigrationTests(unittest.TestCase):
         self.db.executescript("""
             CREATE TABLE tenants (
               id TEXT PRIMARY KEY,
-              status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'archived'))
+              status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'archived')),
+              last_lifecycle_event_id TEXT
+            );
+            CREATE TABLE tenant_memberships (
+              id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, subject TEXT NOT NULL,
+              role TEXT NOT NULL, status TEXT NOT NULL
             );
             INSERT INTO tenants(id, status) VALUES ('tenant-a', 'active'), ('tenant-b', 'suspended');
+            INSERT INTO tenant_memberships(id, tenant_id, subject, role, status)
+              VALUES ('owner-a', 'tenant-a', 'owner-sub', 'tenant_owner', 'active'),
+                     ('owner-b', 'tenant-b', 'owner-sub', 'tenant_owner', 'active');
         """)
         self.db.executescript((MIGRATIONS / "0021_tenant_lifecycle_events.sql").read_text())
 
@@ -33,10 +41,10 @@ class TenantLifecycleEventsMigrationTests(unittest.TestCase):
 
     def test_matching_event_allows_suspension_and_reactivation(self):
         self.event()
-        self.db.execute("UPDATE tenants SET status='suspended' WHERE id='tenant-a'")
+        self.db.execute("UPDATE tenants SET status='suspended', last_lifecycle_event_id='event-1' WHERE id='tenant-a'")
         self.event(event_id="event-2", event_type="reactivated", previous="suspended",
                    new="active", request="request-2")
-        self.db.execute("UPDATE tenants SET status='active' WHERE id='tenant-a'")
+        self.db.execute("UPDATE tenants SET status='active', last_lifecycle_event_id='event-2' WHERE id='tenant-a'")
         self.assertEqual(self.db.execute(
             "SELECT status FROM tenants WHERE id='tenant-a'").fetchone()[0], "active")
 
@@ -50,14 +58,14 @@ class TenantLifecycleEventsMigrationTests(unittest.TestCase):
 
     def test_archival_is_terminal(self):
         self.event(event_type="archived", previous="active", new="archived")
-        self.db.execute("UPDATE tenants SET status='archived' WHERE id='tenant-a'")
+        self.db.execute("UPDATE tenants SET status='archived', last_lifecycle_event_id='event-1' WHERE id='tenant-a'")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "terminal"):
             self.db.execute("UPDATE tenants SET status='active' WHERE id='tenant-a'")
 
     def test_suspended_tenant_can_be_archived(self):
         self.event(event_id="event-b", tenant="tenant-b", event_type="archived",
                    previous="suspended", new="archived", request="request-b")
-        self.db.execute("UPDATE tenants SET status='archived' WHERE id='tenant-b'")
+        self.db.execute("UPDATE tenants SET status='archived', last_lifecycle_event_id='event-b' WHERE id='tenant-b'")
         self.assertEqual(self.db.execute(
             "SELECT status FROM tenants WHERE id='tenant-b'").fetchone()[0], "archived")
 
@@ -70,6 +78,23 @@ class TenantLifecycleEventsMigrationTests(unittest.TestCase):
             with self.subTest(values=values), self.assertRaises(sqlite3.IntegrityError):
                 self.event(event_id="bad-" + values[0], event_type=values[0],
                            previous=values[1], new=values[2], request="bad-" + values[0])
+
+    def test_consumed_lifecycle_event_cannot_be_replayed(self):
+        self.event()
+        self.db.execute("UPDATE tenants SET status='suspended', last_lifecycle_event_id='event-1' WHERE id='tenant-a'")
+        self.event(event_id="event-2", event_type="reactivated", previous="suspended",
+                   new="active", request="request-2")
+        self.db.execute("UPDATE tenants SET status='active', last_lifecycle_event_id='event-2' WHERE id='tenant-a'")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE constraint failed"):
+            self.db.execute("UPDATE tenants SET status='suspended', last_lifecycle_event_id='event-1' WHERE id='tenant-a'")
+
+    def test_non_owner_cannot_write_lifecycle_event(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "pre-state"):
+            self.event(actor="viewer-sub")
+
+    def test_event_pointer_cannot_change_without_status(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "pointer requires a status transition"):
+            self.db.execute("UPDATE tenants SET last_lifecycle_event_id='fake' WHERE id='tenant-a'")
 
     def test_lifecycle_events_are_append_only(self):
         self.event()
