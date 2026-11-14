@@ -710,3 +710,76 @@ test("routes tenant lifecycle actions and audit reads through signed Access gate
   assert.equal(forwarded[1].method, "GET");
   assert.equal(forwarded[1].headers.get("x-nova-verified-subject"), "tenant-owner");
 });
+
+
+test("routes dual-identity challenge and owner-review endpoints through the signed gateway", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "cloudflare-user", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const forwarded = [];
+  const token = "header.payload.signature";
+  const payloads = [
+    ["POST", "https://gateway.test/api/v1/identity-links/challenges", "{}", "/internal/v1/identity-links/challenges", true],
+    ["POST", "https://gateway.test/api/v1/identity-links/challenges/challenge-1/consume",
+      JSON.stringify({ challenge: "a".repeat(43) }),
+      "/internal/v1/identity-links/challenges/challenge-1/consume", true],
+    ["GET", "https://gateway.test/api/v1/tenants/tenant-a/identity-links/pending",
+      undefined, "/internal/v1/tenants/tenant-a/identity-links/pending", false],
+    ["POST", "https://gateway.test/api/v1/tenants/tenant-a/identity-links/request-1/decision",
+      JSON.stringify({ decision: "approve", reason: "Independent owner review", idempotency_key: "decision-1" }),
+      "/internal/v1/tenants/tenant-a/identity-links/request-1/decision", false],
+  ];
+  for (const [method, url, body, expectedPath, needsSupabase] of payloads) {
+    const response = await gateway.fetch(new Request(url, {
+      method,
+      headers: {
+        "Cf-Access-Jwt-Assertion": "valid",
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(needsSupabase ? { authorization: "Bearer " + token } : {}),
+      },
+      body,
+    }), {
+      ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+      ACCESS_AUDIENCE: "aud",
+      INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+      TENANT_API: { fetch: async request => {
+        forwarded.push(request);
+        return new Response(JSON.stringify({ data: { accepted: true } }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      } },
+    });
+    assert.equal(response.status, 200);
+    const request = forwarded.at(-1);
+    assert.equal(new URL(request.url).pathname, expectedPath);
+    assert.equal(request.headers.get("x-nova-verified-subject"), "cloudflare-user");
+    assert.match(request.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+    if (needsSupabase) {
+      assert.equal(request.headers.get("x-nova-supabase-access-token"), token);
+      assert.equal(request.headers.get("x-nova-supabase-token-sha256"),
+        createHash("sha256").update(token).digest("hex"));
+    } else {
+      assert.equal(request.headers.get("x-nova-supabase-access-token"), null);
+    }
+  }
+});
+
+test("rejects identity-link challenge creation without a Supabase bearer token", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "cloudflare-user", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  let forwarded = false;
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/identity-links/challenges", {
+      method: "POST",
+      headers: { "Cf-Access-Jwt-Assertion": "valid", "content-type": "application/json" },
+      body: "{}",
+    }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async () => { forwarded = true; return new Response(null); } },
+  });
+  assert.equal(response.status, 401);
+  assert.equal(forwarded, false);
+});

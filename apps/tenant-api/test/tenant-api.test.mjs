@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign, webcrypto } from "node:crypto";
+globalThis.crypto ??= webcrypto;
 import worker from "../src/index.mjs";
 
 const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
+    this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
@@ -19,6 +20,8 @@ class DB {
     return { bind(...args) { return { sql, args,
       async all() {
         db.calls.push({ sql, args });
+        if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
+        if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
@@ -1701,18 +1704,17 @@ test("resource grant revocation allows explicit cleanup for an inactive member",
 });
 
 
-test("identity-link HTTP routes remain unavailable until dual-identity verification is integrated", async () => {
+test("identity-link challenge endpoints require a dual-authenticated request", async () => {
   const routes = [
     ["POST", "https://private.internal/internal/v1/identity-links/challenges", JSON.stringify({})],
-    ["POST", "https://private.internal/internal/v1/identity-links/challenges/challenge-1/consume", JSON.stringify({})],
-    ["GET", "https://private.internal/internal/v1/tenants/tenant-a/identity-links/pending"],
-    ["POST", "https://private.internal/internal/v1/tenants/tenant-a/identity-links/request-1/decision", JSON.stringify({ decision: "approve" })],
+    ["POST", "https://private.internal/internal/v1/identity-links/challenges/challenge-1/consume", JSON.stringify({ challenge: "a".repeat(43) })],
   ];
   for (const [method, url, body] of routes) {
     const db = new DB();
     const response = await worker.fetch(await request({}, url, method, body), env(db));
-    assert.equal(response.status, 404, `${method} ${new URL(url).pathname} must remain unregistered`);
-    assert.equal(db.calls.length, 0, "disabled identity-link routes must not access tenant storage");
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error, "supabase_identity_required");
+    assert.equal(db.calls.length, 0, "challenge endpoints must reject Access-only callers before storage access");
   }
 });
 
@@ -1757,4 +1759,135 @@ test("rejects malformed Supabase JWTs before any tenant database access", async 
   }), env(db));
   assert.equal(response.status, 401);
   assert.equal(db.calls.length, 0);
+});
+
+
+test("identity-link pending queue is restricted to an active tenant owner and exact Access issuer", async () => {
+  const db = new DB();
+  db.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a", role: "tenant_owner",
+    membership_status: "active", tenant_status: "active",
+  }];
+  db.identityLinkRows = [{
+    id: "link-request-1", supabase_issuer: "https://project.example.test/auth/v1",
+    supabase_subject: "supabase-user", cloudflare_issuer: "https://example.cloudflareaccess.com",
+    cloudflare_subject: "requester-subject", created_at: new Date().toISOString(),
+  }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/pending"), env(db));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data[0].id, "link-request-1");
+  const pendingQuery = db.calls.find(call => call.sql.includes("FROM tenant_identity_link_requests"));
+  assert.deepEqual(pendingQuery.args, ["https://example.cloudflareaccess.com",
+    "operator@example.test", "tenant-a", 50]);
+  assert.equal(db.calls.some(call => call.args?.includes("tenant-b")), false);
+});
+
+test("identity-link decision uses the gateway-derived owner identity and caller idempotency key", async () => {
+  const db = new DB();
+  db.identityLinkEventRows = [];
+  db.identityLinkRows = [{ id: "link-request-1", status: "pending", tenant_id: null }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/link-request-1/decision",
+    "POST", JSON.stringify({ decision: "approve", reason: "Independent owner review",
+      idempotency_key: "decision-idempotency-1" })), env(db));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.data.status, "approved");
+  assert.deepEqual(result.data.decided_by, {
+    issuer: "https://example.cloudflareaccess.com", subject: "operator@example.test",
+  });
+  assert.equal(db.batchCalls.length, 1);
+  assert.equal(db.batchCalls[0][0].args[6], "https://example.cloudflareaccess.com");
+  assert.equal(db.batchCalls[0][0].args[7], "operator@example.test");
+  assert.equal(db.batchCalls[0][0].args[9], "decision-idempotency-1");
+});
+
+
+const IDENTITY_SUPABASE_ISSUER = "https://project.example.test/auth/v1";
+const IDENTITY_SUPABASE_AUDIENCE = "authenticated";
+const { publicKey: identityPublicKey, privateKey: identityPrivateKey } =
+  generateKeyPairSync("rsa", { modulusLength: 2048 });
+const identityJwk = { ...identityPublicKey.export({ format: "jwk" }),
+  kid: "tenant-api-identity-link-test", alg: "RS256", use: "sig", key_ops: ["verify"] };
+function identitySupabaseToken() {
+  const encode = value => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const header = encode({ alg: "RS256", typ: "JWT", kid: identityJwk.kid });
+  const claims = encode({ iss: IDENTITY_SUPABASE_ISSUER, aud: IDENTITY_SUPABASE_AUDIENCE,
+    sub: "supabase-user-1", role: "authenticated", iat: now - 5, exp: now + 300 });
+  const input = header + "." + claims;
+  return input + "." + sign("RSA-SHA256", Buffer.from(input), identityPrivateKey).toString("base64url");
+}
+
+class IdentityLinkRouteDB extends DB {
+  constructor() { super(); this.identityChallengeRow = null; }
+  prepare(sql) {
+    const db = this;
+    if (sql.startsWith("INSERT INTO tenant_identity_link_challenges")) {
+      return { bind(...args) { return { async run() {
+        db.calls.push({ sql, args });
+        if (db.identityChallengeRow) return { meta: { changes: 0 } };
+        const [id, si, ss, ci, cs, digest, created, expires, requestId] = args;
+        db.identityChallengeRow = { id, supabase_issuer: si, supabase_subject: ss,
+          cloudflare_issuer: ci, cloudflare_subject: cs, challenge_sha256: digest,
+          status: "pending", created_at: created, expires_at: expires, request_id: requestId };
+        return { meta: { changes: 1 } };
+      } }; } };
+    }
+    if (sql.startsWith("SELECT id, supabase_issuer, supabase_subject, cloudflare_issuer, cloudflare_subject, status, expires_at FROM tenant_identity_link_challenges")) {
+      return { bind(...args) { return { async all() {
+        db.calls.push({ sql, args });
+        const row = db.identityChallengeRow;
+        return { results: row && row.id === args[0] && row.challenge_sha256 === args[1] ? [row] : [] };
+      } }; } };
+    }
+    return super.prepare(sql);
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    if (statements.length === 3 && this.identityChallengeRow) {
+      this.identityChallengeRow.status = "consumed";
+      return statements.map(() => ({ meta: { changes: 1 } }));
+    }
+    return super.batch(statements);
+  }
+}
+
+test("dual-auth HTTP routes create and consume a challenge bound to both verified identities", async () => {
+  const db = new IdentityLinkRouteDB();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [identityJwk] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const token = identitySupabaseToken();
+    const createdResponse = await worker.fetch(await request({
+      "x-nova-request-id": "identity-create-001",
+      "x-nova-supabase-access-token": token,
+    }, "https://private.internal/internal/v1/identity-links/challenges", "POST", "{}"), env(db));
+    assert.equal(createdResponse.status, 201);
+    const created = await createdResponse.json();
+    assert.equal(db.identityChallengeRow.supabase_issuer, IDENTITY_SUPABASE_ISSUER);
+    assert.equal(db.identityChallengeRow.supabase_subject, "supabase-user-1");
+    assert.equal(db.identityChallengeRow.cloudflare_issuer, "https://example.cloudflareaccess.com");
+    assert.equal(db.identityChallengeRow.cloudflare_subject, "operator@example.test");
+    assert.equal(db.identityChallengeRow.status, "pending");
+    assert.equal(Object.hasOwn(db.identityChallengeRow, "supabase_token"), false);
+    assert.equal(Object.hasOwn(db.identityChallengeRow, "challenge"), false);
+
+    const consumedResponse = await worker.fetch(await request({
+      "x-nova-request-id": "identity-consume-001",
+      "x-nova-supabase-access-token": token,
+    }, "https://private.internal/internal/v1/identity-links/challenges/" +
+      created.data.challenge_id + "/consume", "POST",
+    JSON.stringify({ challenge: created.data.challenge })), env(db));
+    assert.equal(consumedResponse.status, 201);
+    assert.equal((await consumedResponse.json()).data.status, "pending");
+    assert.equal(db.identityChallengeRow.status, "consumed");
+    assert.equal(db.batchCalls.length, 1);
+    assert.equal(db.batchCalls[0].length, 3);
+  } finally { globalThis.fetch = originalFetch; }
 });
