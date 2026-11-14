@@ -65,3 +65,22 @@ VALUES
 ('audit-http-observation', 'tenant-http-a', 'service', 'neoagro-ingestion-service',
  'observation.accepted', 'observation', 'obs-http-verified', 'ci-ingest-request',
  '{"verification_status":"unverified"}');
+
+
+-- Verified source and active asset used only to exercise exact resource grants.
+INSERT INTO assets (id, site_id, tenant_id, name, asset_type, status)
+VALUES ('asset-http-grant', 'site-http-a', 'tenant-http-a', 'CI grant asset', 'sensor', 'active');
+
+INSERT INTO sources
+(id, site_id, tenant_id, module, provider, source_type, display_name, verification_status, metadata_json)
+VALUES
+('source-http-grant', 'site-http-a', 'tenant-http-a', 'neoagro', 'CI verified grant provider',
+ 'sensor', 'CI verified grant source', 'verified', '{}');
+
+INSERT INTO observations
+(id, site_id, tenant_id, asset_id, source_id, module, metric, value, unit, observed_at,
+ idempotency_key, verification_status, provenance_json, quality_flags_json)
+VALUES
+('obs-http-grant', 'site-http-a', 'tenant-http-a', 'asset-http-grant', 'source-http-grant',
+ 'neoagro', 'soil_moisture', 0.24, 'm3/m3', '2026-11-13T10:00:00Z',
+ 'ci-resource-grant-observation', 'unverified', '{}', '[]');
