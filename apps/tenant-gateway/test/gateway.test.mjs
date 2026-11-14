@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { createGateway } from "../src/index.mjs";
-import { generateKeyPairSync, sign, webcrypto } from "node:crypto";
+import { createHash, generateKeyPairSync, sign, webcrypto } from "node:crypto";
 globalThis.crypto ??= webcrypto;
 
 function env(overrides = {}) {
@@ -59,6 +59,7 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
     assert.equal(captured.headers.get("x-nova-verified-issuer"), issuer);
     assert.equal(captured.headers.get("cookie"), null);
     assert.notEqual(captured.headers.get("x-nova-request-id"), null);
+    assert.equal(captured.headers.get("x-nova-body-sha256"), createHash("sha256").update("").digest("hex"));
     assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
   } finally { globalThis.fetch = oldFetch; }
 });
