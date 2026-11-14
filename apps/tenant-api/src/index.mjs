@@ -615,11 +615,13 @@ async function transferTenantOwnership(db, tenant, actor, actorMembershipId, req
   const targetEventRequestId = requestId + ":target";
   const actorEventRequestId = requestId + ":actor";
   const results = await db.batch([
-    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'role_changed', ?, 'tenant_owner', 'active', 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = 'active')")
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'role_changed', ?, 'tenant_owner', 'active', 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
       .bind(targetEventId, tenant, target.id, target.subject, actor, target.role,
-        body.reason, targetEventRequestId, target.id, tenant, target.subject, target.role),
-    db.prepare("UPDATE tenant_memberships SET role = 'tenant_owner', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = 'active' AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ? AND event_type = 'role_changed')")
-      .bind(target.id, tenant, target.subject, target.role, targetEventId, targetEventRequestId),
+        body.reason, targetEventRequestId, target.id, tenant, target.subject, target.role,
+        actorMembershipId, tenant, actor),
+    db.prepare("UPDATE tenant_memberships SET role = 'tenant_owner', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = 'active' AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ? AND event_type = 'role_changed') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(target.id, tenant, target.subject, target.role, targetEventId, targetEventRequestId,
+        actorMembershipId, tenant, actor),
     db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'role_changed', 'tenant_owner', 'tenant_admin', 'active', 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
       .bind(actorEventId, tenant, actorMembershipId, actor, actor, body.reason,
         actorEventRequestId, actorMembershipId, tenant, actor),
