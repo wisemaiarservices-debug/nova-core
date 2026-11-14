@@ -33,20 +33,20 @@ function mockDatabase(rows) {
 
 const validRows = {
   site: { id: "site-001", tenant_id: "tenant-a", status: "active" },
-  source: { id: "source-001", tenant_id: "tenant-a", site_id: "site-001", module: "neoagro", verification_status: "unverified" },
+  source: { id: "source-001", tenant_id: "tenant-a", site_id: "site-001", module: "neoagro", verification_status: "verified" },
   asset: { id: "asset-001", tenant_id: "tenant-a", site_id: "site-001", status: "active" },
 };
 
-test("allows active site, matching module source, and same-site active asset", async () => {
+test("allows active site, verified matching source, and same-site active asset", async () => {
   const db = mockDatabase(validRows);
   assert.equal(await resolveObservationOwnership(db, observation), "tenant-a");
   assert.equal(db.queries.length, 3);
 });
 
-test("allows an explicitly global source but does not mark it verified", async () => {
+test("allows an explicitly global source only after it is verified", async () => {
   const db = mockDatabase({
     ...validRows,
-    source: { ...validRows.source, site_id: null, verification_status: "unverified" },
+    source: { ...validRows.source, site_id: null, verification_status: "verified" },
   });
   assert.equal(await resolveObservationOwnership(db, observation), "tenant-a");
 });
@@ -56,7 +56,9 @@ for (const [name, rows] of [
   ["inactive site", { ...validRows, site: { ...validRows.site, status: "inactive" } }],
   ["unknown source", { ...validRows, source: null }],
   ["source module mismatch", { ...validRows, source: { ...validRows.source, module: "neogrid" } }],
+  ["unverified source", { ...validRows, source: { ...validRows.source, verification_status: "unverified" } }],
   ["disabled source", { ...validRows, source: { ...validRows.source, verification_status: "disabled" } }],
+  ["unknown source verification state", { ...validRows, source: { ...validRows.source, verification_status: "pending" } }],
   ["source owned by another site", { ...validRows, source: { ...validRows.source, site_id: "site-elsewhere" } }],
   ["source owned by another tenant", { ...validRows, source: { ...validRows.source, tenant_id: "tenant-b" } }],
   ["unknown asset", { ...validRows, asset: null }],
