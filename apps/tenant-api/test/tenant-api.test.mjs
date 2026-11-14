@@ -7,7 +7,7 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
+    this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
@@ -19,6 +19,8 @@ class DB {
     return { bind(...args) { return { sql, args,
       async all() {
         db.calls.push({ sql, args });
+        if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
+        if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
@@ -1756,4 +1758,46 @@ test("rejects malformed Supabase JWTs before any tenant database access", async 
   }), env(db));
   assert.equal(response.status, 401);
   assert.equal(db.calls.length, 0);
+});
+
+
+test("identity-link pending queue is restricted to an active tenant owner and exact Access issuer", async () => {
+  const db = new DB();
+  db.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a", role: "tenant_owner",
+    membership_status: "active", tenant_status: "active",
+  }];
+  db.identityLinkRows = [{
+    id: "link-request-1", supabase_issuer: "https://project.example.test/auth/v1",
+    supabase_subject: "supabase-user", cloudflare_issuer: "https://example.cloudflareaccess.com",
+    cloudflare_subject: "requester-subject", created_at: new Date().toISOString(),
+  }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/pending"), env(db));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data[0].id, "link-request-1");
+  const pendingQuery = db.calls.find(call => call.sql.includes("FROM tenant_identity_link_requests"));
+  assert.deepEqual(pendingQuery.args, ["https://example.cloudflareaccess.com",
+    "operator@example.test", "tenant-a", 50]);
+  assert.equal(db.calls.some(call => call.args?.includes("tenant-b")), false);
+});
+
+test("identity-link decision uses the gateway-derived owner identity and caller idempotency key", async () => {
+  const db = new DB();
+  db.identityLinkEventRows = [];
+  db.identityLinkRows = [{ id: "link-request-1", status: "pending", tenant_id: null }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/link-request-1/decision",
+    "POST", JSON.stringify({ decision: "approve", reason: "Independent owner review",
+      idempotency_key: "decision-idempotency-1" })), env(db));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.data.status, "approved");
+  assert.deepEqual(result.data.decided_by, {
+    issuer: "https://example.cloudflareaccess.com", subject: "operator@example.test",
+  });
+  assert.equal(db.batchCalls.length, 1);
+  assert.equal(db.batchCalls[0][0].args[6], "https://example.cloudflareaccess.com");
+  assert.equal(db.batchCalls[0][0].args[7], "operator@example.test");
+  assert.equal(db.batchCalls[0][0].args[9], "decision-idempotency-1");
 });
