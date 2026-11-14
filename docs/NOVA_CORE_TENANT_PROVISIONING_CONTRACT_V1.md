@@ -1,144 +1,92 @@
-# NOVA Core tenant provisioning contract — v1
+# NOVA Core tenant provisioning and membership contract — v1
 
-## Status
+## Status and release boundary
 
-Phase 1 now includes draft migrations, the private tenant creation endpoint,
-exact gateway route mapping, dual provisioning-subject allowlists, and unit
-and migration tests. The endpoint atomically creates a tenant, assigns the
-verified provisioning principal as its initial owner, creates exact tenant
-grants, appends the initial membership event, and stores an idempotency result.
-The append-only membership ledger validates event pre-state and protects the
-last active owner. No migration has been applied to a live database; no tenant,
-membership, grant, secret, binding, Cloudflare resource, or deployment has
-been created.
+The draft branch implements:
+- Controlled tenant creation with dual exact-subject provisioning allowlists.
+- Atomic initial-owner assignment, tenant grants, append-only audit event and idempotency record.
+- Owner-issued, possession-based membership invitations with seven-day expiry, one-time token display, authenticated acceptance and owner revocation.
+- Audited membership role change, suspension, revocation and reactivation actions.
+- Owner/admin-only bounded membership and invitation audit history.
 
-## Existing trust boundary
+The private Worker, gateway, migrations and integration tests exist only in this draft branch. Migrations have been applied only to disposable local D1 in CI. No live D1 migration, production allowlist, Access policy, secret, binding, tenant, membership, grant or deployment has been created or changed.
 
-The supported human request path is:
+## Identity and trust boundary
 
 1. Cloudflare Access protects the public gateway hostname.
-2. The gateway verifies a human Access JWT against the configured issuer and
-   audience, rejects service-token identities, and derives the stable subject
-   from the verified `sub` claim.
-3. The gateway constructs a minimal identity envelope and signs the exact
-   method, path, subject, issuer, audience, issue time, and request ID with
-   HMAC-SHA256.
-4. The private Tenant API verifies that signature, freshness, and one-time
-   request ID before loading tenant membership and exact resource grants.
-5. D1 queries are parameterized and tenant-scoped.
+2. The gateway verifies the Access JWT against configured issuer and audience and derives the stable subject from its verified `sub` claim.
+3. The gateway constructs a minimal identity envelope and signs the exact method, path, subject, issuer, audience, issue time and request ID with HMAC-SHA256.
+4. The private Tenant API verifies the signature, freshness and one-time request ID before checking tenant membership and role.
+5. D1 queries are parameterized and tenant-scoped. Actor identity and role are always derived from the verified envelope and persisted membership, never from the JSON body.
 
-Provisioning must reuse this boundary. It must not accept caller-supplied
-identity headers, role claims, tenant membership state, actor IDs, or an
-arbitrary upstream URL.
+No route accepts caller-supplied actor IDs, owner identities, role claims, tenant membership state, arbitrary upstream URLs or identity headers as authority.
 
 ## Tenant creation and initial owner
 
-Tenant creation is a privileged provisioning operation, not an ordinary
-tenant-member action.
+- A dedicated exact-subject provisioning allowlist must be configured independently on the gateway and private Worker. Empty or malformed configuration denies provisioning.
+- The allowlist contains exact verified Access `sub` values, not email-domain wildcards or caller-provided emails.
+- The initial `tenant_owner` is the authenticated allowlisted principal. The request body cannot nominate another user.
+- No first-user auto-claim, open self-service creation, email-domain bootstrap, default tenant or fallback owner exists.
+- Tenant row, initial owner membership, exact tenant-level grants, first immutable membership event and idempotency record commit atomically.
+- Idempotency keys are bound to the verified actor and canonical request digest; conflicting reuse fails.
+- Tenant status begins active. The request cannot create an archived or suspended tenant.
 
-- A dedicated, explicit provisioning allowlist must be configured
-  independently on the gateway and private Worker. Empty or malformed
-  configuration denies all provisioning.
-- The allowlist contains exact verified Access `sub` values, not email-domain
-  wildcards, caller-provided emails, or role claims.
-- The tenant creator must be the authenticated allowlisted principal. The
-  initial `tenant_owner` membership subject is derived from that same verified
-  principal; the request body cannot nominate another user.
-- There is no first-user auto-claim, open self-service tenant creation,
-  email-domain bootstrap, default tenant, or fallback owner.
-- Tenant row, initial owner membership, tenant-level exact grants, and the
-  first immutable membership audit event must commit atomically. Partial
-  tenant creation is not acceptable.
-- Provisioning is idempotent only for a caller-supplied idempotency key bound
-  to the exact canonical request and verified actor. Reuse with different
-  content must conflict.
-- Tenant IDs are generated or strictly validated server-side; tenant status
-  always starts as `active`. No request may create a suspended/archived
-  tenant and attach an owner implicitly.
+## Membership invitation lifecycle
 
-## Membership lifecycle
+### Issue
+`POST /api/v1/tenants/{tenant}/membership-invitations`
 
-The v1 membership API should support explicit invite/activate, role change,
-suspend, revoke, and reactivate operations. It must not support changing the
-subject or tenant scope of an existing membership; revoke and create a new
-membership instead.
+Only an active tenant owner may issue an invitation. Roles are limited to `tenant_admin`, `operator`, `analyst` and `viewer`; owner and service identities cannot be invited through this route. A 256-bit random token is generated; only its SHA-256 digest is stored. The raw token is returned once and must be shared manually through a trusted out-of-band channel. No email delivery or email-address verification is claimed.
 
-- Only an active `tenant_owner` may manage memberships in v1. An admin role
-  cannot create another owner, promote itself, or bypass owner approval.
-- The target subject must be a non-empty stable identity identifier obtained
-  from a separately verified identity directory/invitation flow. Do not
-  accept a display name as identity.
-- The acting owner cannot revoke or demote the last active owner. A transfer
-  operation, if added later, must atomically install the successor before
-  removing the prior owner.
-- Duplicate active memberships and ambiguous membership rows fail closed.
-- Each state change is an atomic transaction that updates membership state
-  and appends one immutable event with actor, subject, prior/new role,
-  prior/new status, reason, request ID, and UTC timestamp.
-- Event rows are append-only; ordinary clients cannot insert, update, or
-  delete them. Event history is tenant-scoped and readable only by authorized
-  tenant owners/admins.
-- Tenant suspension blocks membership activation and all tenant-owned writes.
-  Suspension/archival itself requires a separate owner-only governed operation.
+### Accept
+`POST /api/v1/tenants/{tenant}/membership-invitations/{invitation}/accept`
 
-## Database requirements before endpoint implementation
+The invitee must authenticate through Cloudflare Access. Acceptance binds the new membership to the verified Access `sub`, not to a subject in the body. The token is one-time, expires after seven days, and duplicate existing memberships are rejected. Membership, exact tenant-level read grant and append-only membership/invitation events are written in one D1 batch.
 
-Migration 0002 defines `tenants`, `tenant_memberships`, and exact
-`tenant_resource_grants`; migration 0004 makes membership identity scope
-immutable. Draft migration `0016_tenant_membership_events.sql` adds the
-constrained tenant-scoped event ledger, append-only guards, event pre-state
-checks, matching-event requirements and last-active-owner protection. Draft
-migration `0017_tenant_provisioning_idempotency.sql` adds immutable idempotency
-records scoped to verified actor + key + canonical request digest. SQLite
-migration tests cover both ledgers. Ordered D1 migration and disposable local
-D1 + Service Binding integration checks run in CI.
+### Revoke
+`POST /api/v1/tenants/{tenant}/membership-invitations/{invitation}/revoke`
 
-Remaining requirements before membership lifecycle implementation:
+Only an active tenant owner may revoke a pending invitation. The invitation and event history cannot be deleted or rewritten.
 
-1. Implement owner-authorized membership creation and explicit lifecycle
-   transitions through the private Tenant API.
-2. Extend adversarial and disposable D1 integration tests to cover membership
-   create/transition batches and rollback behavior.
-3. Add a separately verified invitation/directory path before allowing a tenant
-   owner to invite another stable Access subject.
-4. Review event retention and tenant deletion restrictions.
+## Membership lifecycle actions
 
-## API contract and implementation status
+`POST /api/v1/tenants/{tenant}/membership-actions`
 
-- `POST /api/v1/tenants`: implemented in the draft gateway/private Worker path. An exact allowlisted Access subject creates a tenant and is atomically assigned as its initial owner. Request fields are limited to `display_name` and `idempotency_key`; the initial owner is never caller-selected.
-- `POST /api/v1/tenants/{tenant}/memberships`: active owner creates a
-  membership for a verified stable subject with a bounded role.
-- `POST /api/v1/tenants/{tenant}/memberships/{membership}/transition`:
-  active owner performs one explicit legal lifecycle transition.
-- `POST /api/v1/tenants/{tenant}/membership-invitations`: implemented; active owner issues a one-time token for `tenant_admin`, `operator`, `analyst` or `viewer`.
-- `POST /api/v1/tenants/{tenant}/membership-invitations/{invitation}/accept`: implemented; authenticated Access subject claims the invitation and becomes the membership subject.
-- `POST /api/v1/tenants/{tenant}/membership-invitations/{invitation}/revoke`: implemented; active owner revokes a pending invitation.
-- `GET /api/v1/tenants/{tenant}/membership-events`: implemented as an owner/admin-only read of the newest 100 membership and invitation events.
+Body fields are exactly `membership_id`, `action`, `reason`, and `role` only for `change_role`. Unknown keys, invalid roles, malformed IDs, blank or oversized reasons are rejected. The membership subject and tenant scope are looked up from D1; they cannot be changed.
 
-The tenant-creation and invitation routes are exact-path mapped by the public gateway. Tenant creation requires a separately configured exact-subject allowlist at both gateway and private Worker. Invitation acceptance binds the invitation to the verified Access subject; the body cannot nominate a subject. POST bodies are bounded JSON; query strings, unknown fields and caller-supplied actor identities are rejected. The private Worker independently checks authorization and writes D1 records in atomic batches; gateway authentication alone never grants tenant membership.
+| Action | Tenant owner | Tenant admin |
+|---|---|---|
+| `change_role` | Yes; active target only, roles tenant_admin/operator/analyst/viewer | No |
+| `suspend` | Yes | Only operator/analyst/viewer targets |
+| `revoke` | Yes | Only operator/analyst/viewer targets |
+| `reactivate` | Yes, inactive target only | Only operator/analyst/viewer targets |
 
-## Required adversarial tests
+Additional constraints:
+- Actors must themselves be active tenant owners/admins.
+- Self-targeting is denied.
+- No action promotes a member to `tenant_owner`; ownership transfer is a separate future workflow.
+- Role changes apply only to active memberships and cannot be no-op transitions.
+- Suspension is active → inactive; revocation is active/inactive → revoked; reactivation is inactive → active. Revoked memberships cannot be reactivated; a new invitation is required.
+- The database requires a matching immutable event for every role/status update and prevents removal or demotion of the final active tenant owner.
+- Event insert and membership update occur in the same D1 batch. A failed/mismatched write must not leave a partial state transition.
+- Existing tenant resource grants are retained on suspension/revocation but are ineffective while membership is not active. They are not silently expanded during role changes.
 
-- Unauthenticated, invalid, expired, replayed, or forged gateway envelopes.
-- Non-allowlisted tenant creation; empty/malformed allowlist.
-- Attempt to nominate another initial owner or supply actor identity.
-- Idempotent exact replay and conflicting idempotency-key reuse.
-- Cross-tenant membership ID, unknown tenant, suspended tenant, duplicate
-  membership, unknown role/status, and malformed subject.
-- Admin/operator/viewer attempting membership management.
-- Self-promotion, owner self-revocation, and last-active-owner removal.
-- Illegal state transitions and duplicate transition requests.
-- Audit-event mutation/deletion, missing event, mismatched event actor/subject,
-  and transaction rollback on any failed write.
-- Tenant isolation and indistinguishable not-found behavior for inaccessible
-  membership/event resources.
+## Audit history
 
-## Release gates
+`GET /api/v1/tenants/{tenant}/membership-events`
 
-This feature remains blocked until the exact-head unit, migration, gateway,
-and disposable D1 + Service Binding integration tests pass; a security review
-confirms that the provisioning allowlist cannot be modified by a tenant
-request; and the user explicitly approves production migration/deployment.
-Migrations 0016 and 0017 and the endpoint code exist only in this draft branch
-and have not been applied to any live database. No production allowlist, secret,
-Access policy, D1 binding, Worker route, or deployment is authorized by this PR.
+Only active owners/admins may read the newest 100 tenant-scoped membership and invitation events. Event rows are append-only. Membership events capture actor, subject, prior/new role, prior/new status, reason, request ID and timestamp. Invitation events capture the corresponding invitation lifecycle, actor, subject and reason.
+
+## Explicitly not implemented
+
+- Ownership transfer and owner promotion.
+- Direct invitation by arbitrary email, verified email matching or automated identity-provider delivery.
+- Site/resource-specific grant creation, editing or revocation through this membership API.
+- Tenant suspension/archival lifecycle.
+- Membership self-service or caller-selected subject changes.
+- A live production provisioning allowlist, Access policy or D1 migration.
+
+## Validation and release gates
+
+The draft must pass exact-head API tests, gateway tests, ordered migrations against disposable local D1, query compatibility, fixture seeding and the end-to-end gateway → private Worker → D1 integration. Security review must confirm that the provisioning allowlist is not tenant-modifiable. Production migration/deployment requires separate explicit approval.
+
