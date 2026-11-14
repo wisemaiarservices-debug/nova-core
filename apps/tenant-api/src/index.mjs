@@ -1,4 +1,5 @@
 import { json, error } from "./http.mjs";
+import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
@@ -41,7 +42,7 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-verified-issuer"),
     headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"),
-    headers.get("x-nova-request-id")]);
+    headers.get("x-nova-request-id"), headers.get("x-nova-supabase-access-token")]);
 }
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
