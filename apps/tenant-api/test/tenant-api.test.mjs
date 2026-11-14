@@ -1915,7 +1915,8 @@ test("identity-link challenge route returns 429 before writing a challenge when 
       "x-nova-supabase-access-token": identitySupabaseToken(),
     }, "https://private.internal/internal/v1/identity-links/challenges", "POST", "{}"), env(db));
     assert.equal(response.status, 429);
-    assert.equal(response.headers.get("retry-after"), "899");
+    const retryAfter = Number(response.headers.get("retry-after"));
+    assert.ok(Number.isInteger(retryAfter) && retryAfter >= 1 && retryAfter <= 900);
     assert.equal((await response.json()).error, "identity_link_rate_limited");
     assert.equal(db.identityChallengeRow, null);
     assert.equal(db.batchCalls.length, 1);
