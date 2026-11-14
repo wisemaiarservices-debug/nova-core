@@ -431,6 +431,73 @@ async function sha256Hex(value) {
 }
 
 
+
+async function changeTenantSiteGrant(db, tenant, actor, actorRole, requestId, body) {
+  const allowedActions = ["read", "create", "update", "delete", "ingest", "manage_members"];
+  if (!onlyKeys(body, ["action", "subject", "site_id", "grant_action", "reason"]) ||
+      !["grant", "revoke"].includes(body.action) || !validSubject(body.subject) ||
+      !validId(body.site_id, 160) || !allowedActions.includes(body.grant_action) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "site_grant_request_invalid", status: 400 };
+  }
+  if (actorRole === "tenant_admin" &&
+      !["read", "create", "update", "ingest"].includes(body.grant_action)) {
+    return { error: "site_grant_not_found", status: 404 };
+  }
+  const sites = await rows(db.prepare(
+    "SELECT id, tenant_id, status FROM sites WHERE id = ? AND tenant_id = ? LIMIT 2"
+  ).bind(body.site_id, tenant));
+  if (sites.length !== 1 || sites[0].id !== body.site_id ||
+      sites[0].tenant_id !== tenant || sites[0].status !== "active") {
+    return { error: "site_grant_not_found", status: 404 };
+  }
+  const targets = await rows(db.prepare(
+    "SELECT id, subject, status FROM tenant_memberships WHERE tenant_id = ? AND subject = ? LIMIT 2"
+  ).bind(tenant, body.subject));
+  if (targets.length !== 1 || targets[0].subject !== body.subject ||
+      targets[0].status !== "active") return { error: "site_grant_not_found", status: 404 };
+  const existing = await rows(db.prepare(
+    "SELECT id FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = ? LIMIT 2"
+  ).bind(tenant, body.subject, body.site_id, body.grant_action));
+  if (body.action === "grant" && existing.length !== 0) {
+    return { error: "site_grant_already_exists", status: 409 };
+  }
+  if (body.action === "revoke" && existing.length !== 1) {
+    return { error: "site_grant_not_found", status: 404 };
+  }
+  const grantId = body.action === "grant" ? crypto.randomUUID() : existing[0].id;
+  const eventId = crypto.randomUUID();
+  const statements = body.action === "grant" ? [
+    db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'site', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND tenant_id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active')")
+      .bind(grantId, tenant, body.subject, body.site_id, body.grant_action,
+        tenant, body.site_id, tenant, targets[0].id, tenant, body.subject),
+    db.prepare("INSERT INTO tenant_site_grant_events (id, tenant_id, grant_id, subject, site_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, 'granted', ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = ?)")
+      .bind(eventId, tenant, grantId, body.subject, body.site_id, body.grant_action,
+        actor, body.reason, requestId, grantId, tenant, body.subject, body.site_id, body.grant_action),
+  ] : [
+    db.prepare("DELETE FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = ? AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND tenant_id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active')")
+      .bind(grantId, tenant, body.subject, body.site_id, body.grant_action,
+        tenant, body.site_id, tenant, targets[0].id, tenant, body.subject),
+    db.prepare("INSERT INTO tenant_site_grant_events (id, tenant_id, grant_id, subject, site_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, 'revoked', ?, ?, ? WHERE changes() = 1")
+      .bind(eventId, tenant, grantId, body.subject, body.site_id, body.grant_action,
+        actor, body.reason, requestId),
+  ];
+  const results = await db.batch(statements);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("site_grant_batch_invalid");
+  }
+  if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
+    return { error: "site_grant_transition_conflict", status: 409 };
+  }
+  return { data: { grant_id: grantId, tenant_id: tenant, subject: body.subject,
+    site_id: body.site_id, resource_type: "site", action: body.grant_action,
+    status: body.action === "grant" ? "active" : "revoked",
+    event_type: body.action === "grant" ? "granted" : "revoked" },
+    status: body.action === "grant" ? 201 : 200 };
+}
+
 async function changeTenantMembership(db, tenant, actor, actorRole, requestId, body) {
   if (!onlyKeys(body, ["membership_id", "action", "role", "reason"]) ||
       typeof body.membership_id !== "string" || !validId(body.membership_id, 160) ||
@@ -679,6 +746,7 @@ export default {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
     const url = new URL(request.url);
     const tenantProvision = url.pathname === "/internal/v1/tenants";
+    const siteGrantChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/site-grants$/);
     const membershipChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-actions$/);
     const membershipEvents = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-events$/);
     const membershipInvitationCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-invitations$/);
@@ -711,10 +779,10 @@ export default {
     const qualityAssessment = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/measurement-quality-assessment$/);
     const labReportUpload = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
     const labReportDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
-    if ((tenantProvision && request.method !== "POST") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange) && request.method !== "POST") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+    if ((tenantProvision && request.method !== "POST") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange || siteGrantChange) && request.method !== "POST") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
         (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !tenantProvision && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange || criteriaDetail || match || labReportDetail)) ||
         (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload))) return error("not_found", 404);
-    const tenant = membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
+    const tenant = membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
@@ -775,6 +843,19 @@ export default {
               subject, requestId, draftBody);
         return result.error ? json({ error: result.error }, result.status)
           : json({ data: result.data, request_id: requestId }, result.status);
+      }
+      if (siteGrantChange) {
+        const memberships = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (memberships.length !== 1 || memberships[0].subject !== subject ||
+            memberships[0].tenant_id !== tenant || memberships[0].status !== "active" ||
+            memberships[0].tenant_status !== "active" ||
+            !["tenant_owner", "tenant_admin"].includes(memberships[0].role)) return error("not_found", 404);
+        const changed = await changeTenantSiteGrant(env.DB, tenant, subject,
+          memberships[0].role, requestId, draftBody);
+        return changed.error ? json({ error: changed.error }, changed.status)
+          : json({ data: changed.data, request_id: requestId }, changed.status);
       }
       if (membershipChange) {
         const memberships = await rows(env.DB.prepare(
