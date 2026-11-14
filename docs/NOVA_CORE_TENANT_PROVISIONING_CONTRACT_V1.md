@@ -10,7 +10,7 @@ The draft branch implements:
 - Owner/admin-only bounded membership, invitation and site-grant audit history.
 - Exact site-scoped grant assignment/revocation with tenant, active site and active member validation.
 
-The private Worker, gateway, migrations and integration tests exist only in this draft branch. Migrations have been applied only to disposable local D1 in CI. No live D1 migration, production allowlist, Access policy, secret, binding, tenant, membership, grant or deployment has been created or changed.
+The private Worker, gateway, migrations and integration tests exist only in this draft branch. Site-grant events are also append-only and included in the bounded tenant audit timeline. Migrations have been applied only to disposable local D1 in CI. No live D1 migration, production allowlist, Access policy, secret, binding, tenant, membership, grant or deployment has been created or changed.
 
 ## Identity and trust boundary
 
