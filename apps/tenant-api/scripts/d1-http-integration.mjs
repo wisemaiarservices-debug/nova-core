@@ -147,6 +147,49 @@ try {
   assert.equal(siteGrantRevoked.response.status, 200, JSON.stringify(siteGrantRevoked.body));
   assert.equal(siteGrantRevoked.body.data.status, "revoked");
 
+  // Resource grants are exact (no site inheritance) and independently audited.
+  const resourceGrantPath = "/api/v1/tenants/tenant-http-a/resource-grants";
+  async function resourceGrant(subject, payload) {
+    return throughGateway(resourceGrantPath, accessToken(subject),
+      { "content-type": "application/json" }, "POST", JSON.stringify(payload));
+  }
+  const resourceCases = [
+    ["asset", "asset-http-grant"],
+    ["source", "source-http-grant"],
+    ["observation", "obs-http-grant"],
+  ];
+  for (const [resource_type, resource_id] of resourceCases) {
+    const deniedBeforeGrant = await throughGateway(
+      "/api/v1/tenants/tenant-http-a/" + (resource_type === "observation" ? "observations" : resource_type === "source" ? "sources" : "assets") + "/" + resource_id,
+      accessToken("ci-invited-human"));
+    assert.equal(deniedBeforeGrant.response.status, 404);
+    const granted = await resourceGrant("ci-human-subject", {
+      action: "grant", subject: "ci-invited-human", resource_type, resource_id,
+      grant_action: "read", reason: "CI exact resource access grant",
+    });
+    assert.equal(granted.response.status, 201, JSON.stringify(granted.body));
+    assert.equal(granted.body.data.resource_type, resource_type);
+    const allowedResource = await throughGateway(
+      "/api/v1/tenants/tenant-http-a/" + (resource_type === "observation" ? "observations" : resource_type === "source" ? "sources" : "assets") + "/" + resource_id,
+      accessToken("ci-invited-human"));
+    assert.equal(allowedResource.response.status, 200, JSON.stringify(allowedResource.body));
+    const revoked = await resourceGrant("ci-human-subject", {
+      action: "revoke", subject: "ci-invited-human", resource_type, resource_id,
+      grant_action: "read", reason: "CI exact resource access revocation",
+    });
+    assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+    const deniedAfterRevoke = await throughGateway(
+      "/api/v1/tenants/tenant-http-a/" + (resource_type === "observation" ? "observations" : resource_type === "source" ? "sources" : "assets") + "/" + resource_id,
+      accessToken("ci-invited-human"));
+    assert.equal(deniedAfterRevoke.response.status, 404);
+  }
+  const adminResourceDelete = await resourceGrant("ci-http-admin", {
+    action: "grant", subject: "ci-invited-human", resource_type: "asset",
+    resource_id: "asset-http-grant", grant_action: "delete",
+    reason: "CI admin cannot grant destructive access",
+  });
+  assert.equal(adminResourceDelete.response.status, 404);
+
   const membershipAudit = await throughGateway(
     "/api/v1/tenants/tenant-http-a/membership-events", accessToken("ci-human-subject"));
   assert.equal(membershipAudit.response.status, 200, JSON.stringify(membershipAudit.body));
@@ -169,6 +212,10 @@ try {
     event.event_type === "site_grant_granted" && event.subject === "ci-invited-human"), true);
   assert.equal(membershipAudit.body.data.some(event =>
     event.event_type === "site_grant_revoked" && event.subject === "ci-invited-human"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "resource_grant_granted" && event.subject === "ci-invited-human"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "resource_grant_revoked" && event.subject === "ci-invited-human"), true);
 
   const criteriaList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
   assert.equal(criteriaList.response.status, 200, JSON.stringify(criteriaList.body));
