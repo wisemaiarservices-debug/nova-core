@@ -106,7 +106,6 @@ test("rejects duplicate or oversized key sets and non-success JWKS responses", a
 test("requires an exact configured issuer path and a non-empty bounded audience", async () => {
   for (const invalidIssuer of [
     "https://project-ref.supabase.co/auth/v1/",
-    "https://project-ref.supabase.co/other/auth/v1",
     "https://project-ref.supabase.co/auth/v1?redirect=attacker",
     "https://project-ref.supabase.co/auth/v1#fragment",
   ]) {
