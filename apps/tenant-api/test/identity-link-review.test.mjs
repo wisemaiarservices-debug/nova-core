@@ -114,8 +114,8 @@ test("owner review is independent and bound to the request Cloudflare issuer", a
     "approve", "Independent owner review", "decision-independent");
   assert.equal(result.status, 200);
   const insertSql = db.batchCalls[0][0].sql;
-  assert.match(insertSql, /r\\.cloudflare_issuer = \\?/);
-  assert.match(insertSql, /\\? = 'revoke' OR r\\.cloudflare_subject <> \\?/);
+  assert.match(insertSql, /r\.cloudflare_issuer = \?/);
+  assert.match(insertSql, /\? = 'revoke' OR r\.cloudflare_subject <> \?/);
   assert.deepEqual(db.batchCalls[0][0].args.slice(-5), ["tenant-1", "owner-1", actor.issuer, "approve", actor.subject]);
 });
 
@@ -123,6 +123,6 @@ test("pending review list excludes self-requests and mismatched Cloudflare issue
   const db = new DB();
   const result = await listPendingIdentityLinkRequests(db, "tenant-1", actor);
   assert.equal(result.status, 200);
-  assert.match(db.queries.find(sql => sql.includes("FROM tenant_identity_link_requests r")), /r\\.cloudflare_issuer = \\?/);
-  assert.match(db.queries.find(sql => sql.includes("FROM tenant_identity_link_requests r")), /r\\.cloudflare_subject <> \\?/);
+  assert.match(db.queries.find(sql => sql.includes("FROM tenant_identity_link_requests r")), /r\.cloudflare_issuer = \?/);
+  assert.match(db.queries.find(sql => sql.includes("FROM tenant_identity_link_requests r")), /r\.cloudflare_subject <> \?/);
 });
