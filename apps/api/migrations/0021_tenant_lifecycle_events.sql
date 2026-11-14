@@ -1,6 +1,9 @@
 -- NOVA Core tenant lifecycle audit and state guards — 0021
 -- Tenant state changes are owner-authorized by the private Tenant API and
--- paired with an immutable event in the same D1 batch.
+-- paired with an immutable event in the same D1 batch. The tenant row stores
+-- the exact event ID consumed by each transition to prevent event replay.
+
+ALTER TABLE tenants ADD COLUMN last_lifecycle_event_id TEXT;
 
 CREATE TABLE tenant_lifecycle_events (
   id TEXT PRIMARY KEY CHECK (length(trim(id)) BETWEEN 1 AND 160),
@@ -28,6 +31,10 @@ BEFORE INSERT ON tenant_lifecycle_events
 WHEN NOT EXISTS (
   SELECT 1 FROM tenants t
   WHERE t.id = NEW.tenant_id AND t.status = NEW.previous_status
+) OR NOT EXISTS (
+  SELECT 1 FROM tenant_memberships m
+  WHERE m.tenant_id = NEW.tenant_id AND m.subject = NEW.actor_subject
+    AND m.role = 'tenant_owner' AND m.status = 'active'
 )
 BEGIN
   SELECT RAISE(ABORT, 'tenant lifecycle event does not match tenant pre-state');
@@ -36,9 +43,10 @@ END;
 CREATE TRIGGER tenant_lifecycle_update_requires_event
 BEFORE UPDATE OF status ON tenants
 WHEN NEW.status <> OLD.status
-  AND NOT EXISTS (
+  AND (NEW.last_lifecycle_event_id IS OLD.last_lifecycle_event_id OR NOT EXISTS (
     SELECT 1 FROM tenant_lifecycle_events e
-    WHERE e.tenant_id = OLD.id
+    WHERE e.id = NEW.last_lifecycle_event_id
+      AND e.tenant_id = OLD.id
       AND e.previous_status = OLD.status
       AND e.new_status = NEW.status
       AND (
@@ -46,9 +54,17 @@ WHEN NEW.status <> OLD.status
         OR (e.event_type = 'reactivated' AND OLD.status = 'suspended' AND NEW.status = 'active')
         OR (e.event_type = 'archived' AND OLD.status IN ('active', 'suspended') AND NEW.status = 'archived')
       )
-  )
+  ))
 BEGIN
   SELECT RAISE(ABORT, 'tenant lifecycle update requires matching immutable event');
+END;
+
+CREATE TRIGGER tenant_lifecycle_event_pointer_requires_status
+BEFORE UPDATE OF last_lifecycle_event_id ON tenants
+WHEN NEW.last_lifecycle_event_id IS NOT OLD.last_lifecycle_event_id
+  AND NEW.status = OLD.status
+BEGIN
+  SELECT RAISE(ABORT, 'tenant lifecycle event pointer requires a status transition');
 END;
 
 CREATE TRIGGER tenant_lifecycle_archived_terminal
