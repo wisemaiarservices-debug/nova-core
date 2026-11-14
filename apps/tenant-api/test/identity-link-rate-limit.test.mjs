@@ -63,7 +63,11 @@ test("challenge creation is capped at five requests per verified identity per 15
     const blocked = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
       "challenge_create", 1_800_000_001);
     assert.equal(blocked.allowed, false);
-    assert.equal(blocked.retryAfterSeconds, 600);
+    assert.equal(blocked.retryAfterSeconds, 899);
+    const repeated = await consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
+      "challenge_create", 1_800_000_002);
+    assert.equal(repeated.allowed, false, "repeated blocked requests stay rejected without unbounded counters");
+    assert.equal(db.sqlite.prepare("SELECT MAX(request_count) AS count FROM tenant_identity_link_rate_limits").get().count, 6);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM tenant_identity_link_rate_limits").get().count, 2);
   } finally { db.sqlite.close(); }
 });
