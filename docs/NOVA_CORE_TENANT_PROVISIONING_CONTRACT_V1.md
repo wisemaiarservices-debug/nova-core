@@ -110,8 +110,8 @@ Remaining requirements before membership lifecycle implementation:
   membership for a verified stable subject with a bounded role.
 - `POST /api/v1/tenants/{tenant}/memberships/{membership}/transition`:
   active owner performs one explicit legal lifecycle transition.
-- `GET /api/v1/tenants/{tenant}/membership-events`: owner/admin read of
-  append-only tenant membership history.
+- `GET /api/v1/tenants/{tenant}/membership-events`: implemented as an
+  owner/admin-only read of the newest 100 append-only tenant membership events.
 
 The future membership routes above are not yet implemented. The tenant-creation
 route is exact-path mapped by the public gateway, requires a separately
