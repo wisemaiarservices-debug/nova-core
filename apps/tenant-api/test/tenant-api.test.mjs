@@ -1458,6 +1458,17 @@ test("resource grant resolvers enforce each resource's tenant and parent relatio
   }
 });
 
+test("concurrent exact grant conflict cannot append a duplicate audit event", async () => {
+  const db = new ResourceGrantDB({ batchResult: [{ meta: { changes: 0 } }, { meta: { changes: 0 } }] });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "resource-concurrent-duplicate" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST",
+    JSON.stringify({ action: "grant", subject: "member@example.test", resource_type: "asset",
+      resource_id: "asset-a", grant_action: "read", reason: "Concurrent exact grant" })), env(db));
+  assert.equal(response.status, 409);
+  assert.match(db.batchCalls[0][0].sql, /ON CONFLICT\(tenant_id, subject, resource_type, resource_id, action\) DO NOTHING/);
+  assert.match(db.batchCalls[0][1].sql, /WHERE changes\(\) = 1/);
+});
+
 test("resource grant audit failure is not reported as a successful transition", async () => {
   const db = new ResourceGrantDB({ batchResult: [{ meta: { changes: 1 } }, { meta: { changes: 0 } }] });
   const response = await worker.fetch(await request({ "x-nova-request-id": "resource-audit-failure" },
