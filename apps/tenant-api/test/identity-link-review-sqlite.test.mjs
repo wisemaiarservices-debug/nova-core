@@ -132,6 +132,7 @@ test("SQLite trigger blocks direct request status changes and event mutation", (
       tenantId, owner.issuer, owner.subject, "No matching event", now
     ), /identity-link request update requires matching immutable owner event/);
 
+  insertEvent(db, { id: "event-requested", eventType: "requested", previousStatus: null, newStatus: "pending", actor: requester, tenant: null });
   assert.throws(() => db.prepare(`UPDATE tenant_identity_link_events SET reason = 'tampered'
-    WHERE id = ?`).run("missing-event"), /identity-link events are append-only/);
+    WHERE id = ?`).run("event-requested"), /identity-link events are append-only/);
 });
