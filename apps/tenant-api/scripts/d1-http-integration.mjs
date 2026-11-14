@@ -696,6 +696,60 @@ try {
     event.membership_id === "membership-http-a" &&
     event.previous_role === "tenant_owner" && event.new_role === "tenant_admin"), true);
 
+  const nonOwnerCannotSuspendTenant = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-other-tenant-member"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "suspend", reason: "Must be owner" }));
+  assert.equal(nonOwnerCannotSuspendTenant.response.status, 404);
+
+  const tenantSuspended = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-tenant-b-owner"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "suspend", reason: "CI lifecycle suspension" }));
+  assert.equal(tenantSuspended.response.status, 200, JSON.stringify(tenantSuspended.body));
+  assert.equal(tenantSuspended.body.data.status, "suspended");
+
+  const suspendedSiteRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b", accessToken("ci-tenant-b-owner"));
+  assert.equal(suspendedSiteRead.response.status, 404);
+
+  const suspendedAudit = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-events", accessToken("ci-tenant-b-owner"));
+  assert.equal(suspendedAudit.response.status, 200, JSON.stringify(suspendedAudit.body));
+  assert.equal(suspendedAudit.body.data.some(event => event.event_type === "suspended"), true);
+
+  const tenantReactivated = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-tenant-b-owner"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "reactivate", reason: "CI lifecycle reactivation" }));
+  assert.equal(tenantReactivated.response.status, 200, JSON.stringify(tenantReactivated.body));
+  assert.equal(tenantReactivated.body.data.status, "active");
+  const activeSiteRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b", accessToken("ci-tenant-b-owner"));
+  assert.equal(activeSiteRead.response.status, 200);
+
+  const tenantArchived = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-tenant-b-owner"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "archive", reason: "CI lifecycle archival" }));
+  assert.equal(tenantArchived.response.status, 200, JSON.stringify(tenantArchived.body));
+  assert.equal(tenantArchived.body.data.status, "archived");
+
+  const archivedReactivation = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-actions", accessToken("ci-tenant-b-owner"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "reactivate", reason: "Archived tenants are terminal" }));
+  assert.equal(archivedReactivation.response.status, 409);
+  const archivedSiteRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b", accessToken("ci-tenant-b-owner"));
+  assert.equal(archivedSiteRead.response.status, 404);
+
+  const archivedAudit = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/lifecycle-events", accessToken("ci-tenant-b-owner"));
+  assert.equal(archivedAudit.response.status, 200, JSON.stringify(archivedAudit.body));
+  assert.deepEqual(archivedAudit.body.data.map(event => event.event_type).sort(),
+    ["archived", "reactivated", "suspended"]);
+
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
