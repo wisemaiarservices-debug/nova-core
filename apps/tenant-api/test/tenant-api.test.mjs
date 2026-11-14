@@ -1709,7 +1709,7 @@ test("identity-link HTTP routes remain unavailable until dual-identity verificat
 
 test("rejects a body changed after the gateway signed its digest before storage access", async () => {
   const db = new DB();
-  const signed = await request({}, undefined, "POST", JSON.stringify({ action: "original" }));
+  const signed = await request({}, "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/measurement-quality-assessment", "POST", JSON.stringify({ action: "original" }));
   const tampered = new Request(signed.url, {
     method: "POST",
     headers: signed.headers,
