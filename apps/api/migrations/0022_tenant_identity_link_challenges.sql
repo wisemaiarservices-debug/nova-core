@@ -90,7 +90,8 @@ WHEN NEW.id IS NOT OLD.id OR NEW.supabase_issuer IS NOT OLD.supabase_issuer
   OR NEW.request_id IS NOT OLD.request_id
   OR NOT (
     OLD.status = 'pending' AND (
-      (NEW.status = 'consumed' AND NEW.consumed_at IS NOT NULL\n        AND NEW.consumed_at >= OLD.created_at AND NEW.consumed_at < OLD.expires_at)
+      (NEW.status = 'consumed' AND NEW.consumed_at IS NOT NULL
+        AND NEW.consumed_at >= OLD.created_at AND NEW.consumed_at < OLD.expires_at)
       OR (NEW.status = 'expired' AND NEW.consumed_at IS NULL)
     )
   )
