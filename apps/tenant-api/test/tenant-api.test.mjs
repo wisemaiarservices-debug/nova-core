@@ -1387,6 +1387,14 @@ test("only active owners can transfer ownership to another active non-owner", as
   assert.equal(denied.status, 404);
   assert.equal(admin.batchCalls.length, 0);
 
+  const forgedActor = new OwnershipTransferDB();
+  const forged = await worker.fetch(await request({ "x-nova-request-id": "owner-transfer-forged-actor" },
+    "https://private.internal/internal/v1/tenants/tenant-a/ownership-transfer", "POST",
+    JSON.stringify({ target_membership_id: "membership-target", actor_membership_id: "forged",
+      reason: "Caller cannot choose actor membership" })), env(forgedActor));
+  assert.equal(forged.status, 400);
+  assert.equal(forgedActor.batchCalls.length, 0);
+
   const inactiveTarget = new OwnershipTransferDB({ targetStatus: "inactive" });
   const inactive = await worker.fetch(await request({ "x-nova-request-id": "owner-transfer-inactive" },
     "https://private.internal/internal/v1/tenants/tenant-a/ownership-transfer", "POST",
