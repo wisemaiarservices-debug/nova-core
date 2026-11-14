@@ -962,6 +962,7 @@ class MembershipEventsDB {
         if (sql.includes("FROM tenant_membership_events")) return { results: db.eventRows };
         if (sql.includes("FROM tenant_membership_invitation_events")) return { results: [] };
         if (sql.includes("FROM tenant_site_grant_events")) return { results: [] };
+        if (sql.includes("FROM tenant_resource_grant_events")) return { results: [] };
         throw new Error("unexpected audit read SQL");
       },
     }; } };
