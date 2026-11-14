@@ -82,6 +82,9 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const url = new URL(request.url);
       const tenantProvision = url.pathname === "/api/v1/tenants";
       const membershipEvents = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-events$/);
+    const membershipInvitationCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-invitations$/);
+    const membershipInvitationAccept = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-invitations\/([^/]+)\/accept$/);
+    const membershipInvitationRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-invitations\/([^/]+)\/revoke$/);
       const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
       const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
       const reviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
