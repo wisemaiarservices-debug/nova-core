@@ -1689,3 +1689,19 @@ test("resource grant revocation allows explicit cleanup for an inactive member",
   assert.match(db.batchCalls[0][0].sql, /DELETE FROM tenant_resource_grants/);
   assert.match(db.batchCalls[0][1].sql, /tenant_resource_grant_events/);
 });
+
+
+test("identity-link HTTP routes remain unavailable until dual-identity verification is integrated", async () => {
+  const routes = [
+    ["POST", "https://private.internal/internal/v1/identity-links/challenges", JSON.stringify({})],
+    ["POST", "https://private.internal/internal/v1/identity-links/challenges/challenge-1/consume", JSON.stringify({})],
+    ["GET", "https://private.internal/internal/v1/tenants/tenant-a/identity-links/pending"],
+    ["POST", "https://private.internal/internal/v1/tenants/tenant-a/identity-links/request-1/decision", JSON.stringify({ decision: "approve" })],
+  ];
+  for (const [method, url, body] of routes) {
+    const db = new DB();
+    const response = await worker.fetch(await request({}, url, method, body), env(db));
+    assert.equal(response.status, 404, `${method} ${new URL(url).pathname} must remain unregistered`);
+    assert.equal(db.calls.length, 0, "disabled identity-link routes must not access tenant storage");
+  }
+});
