@@ -72,7 +72,7 @@ function insertEvent(db, {
 function approve(db) {
   insertEvent(db, {
     id: "event-approved", eventType: "approved",
-    previousStatus: "pending", newStatus: "approved",
+    previousStatus: "pending", newStatus: "approved", reason: "Owner approved after review",
   });
   db.prepare(`UPDATE tenant_identity_link_requests SET status = 'approved',
     tenant_id = ?, decided_by_cloudflare_issuer = ?, decided_by_cloudflare_subject = ?,
@@ -112,7 +112,7 @@ test("SQLite trigger rejects approval and revocation events with a forged issuer
 
   insertEvent(db, {
     id: "event-revoked", eventType: "revoked",
-    previousStatus: "approved", newStatus: "revoked",
+    previousStatus: "approved", newStatus: "revoked", reason: "Owner revoked after review",
   });
   db.prepare(`UPDATE tenant_identity_link_requests SET status = 'revoked',
     decided_by_cloudflare_issuer = ?, decided_by_cloudflare_subject = ?,
