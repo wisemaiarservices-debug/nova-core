@@ -592,6 +592,52 @@ async function changeTenantSiteGrant(db, tenant, actor, actorRole, requestId, bo
     status: body.action === "grant" ? 201 : 200 };
 }
 
+async function transferTenantOwnership(db, tenant, actor, requestId, body) {
+  if (!onlyKeys(body, ["target_membership_id", "reason"]) ||
+      !validId(body.target_membership_id, 160) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "ownership_transfer_request_invalid", status: 400 };
+  }
+  const targets = await rows(db.prepare(
+    "SELECT id, tenant_id, subject, role, status FROM tenant_memberships WHERE id = ? AND tenant_id = ? LIMIT 2"
+  ).bind(body.target_membership_id, tenant));
+  if (targets.length !== 1 || targets[0].id !== body.target_membership_id ||
+      targets[0].tenant_id !== tenant || targets[0].subject === actor ||
+      targets[0].status !== "active" ||
+      !["tenant_admin", "operator", "analyst", "viewer"].includes(targets[0].role)) {
+    return { error: "ownership_transfer_target_not_found", status: 404 };
+  }
+  const target = targets[0];
+  const targetEventId = crypto.randomUUID();
+  const actorEventId = crypto.randomUUID();
+  const targetEventRequestId = requestId + ":target";
+  const actorEventRequestId = requestId + ":actor";
+  const results = await db.batch([
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'role_changed', ?, 'tenant_owner', 'active', 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = 'active')")
+      .bind(targetEventId, tenant, target.id, target.subject, actor, target.role,
+        body.reason, targetEventRequestId, target.id, tenant, target.subject, target.role),
+    db.prepare("UPDATE tenant_memberships SET role = 'tenant_owner', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = 'active' AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ? AND event_type = 'role_changed')")
+      .bind(target.id, tenant, target.subject, target.role, targetEventId, targetEventRequestId),
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'role_changed', 'tenant_owner', 'tenant_admin', 'active', 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(actorEventId, tenant, body.actor_membership_id, actor, actor, body.reason,
+        actorEventRequestId, body.actor_membership_id, tenant, actor),
+    db.prepare("UPDATE tenant_memberships SET role = 'tenant_admin', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active' AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ? AND event_type = 'role_changed')")
+      .bind(body.actor_membership_id, tenant, actor, actorEventId, actorEventRequestId),
+  ]);
+  if (!Array.isArray(results) || results.length !== 4 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("ownership_transfer_batch_invalid");
+  }
+  if (results.some(result => result.meta.changes !== 1)) {
+    return { error: "ownership_transfer_conflict", status: 409 };
+  }
+  return { data: { tenant_id: tenant, previous_owner_subject: actor,
+    previous_owner_role: "tenant_admin", new_owner_subject: target.subject,
+    new_owner_role: "tenant_owner", target_membership_id: target.id,
+    event_type: "ownership_transferred" }, status: 200 };
+}
+
 async function changeTenantMembership(db, tenant, actor, actorRole, requestId, body) {
   if (!onlyKeys(body, ["membership_id", "action", "role", "reason"]) ||
       typeof body.membership_id !== "string" || !validId(body.membership_id, 160) ||
