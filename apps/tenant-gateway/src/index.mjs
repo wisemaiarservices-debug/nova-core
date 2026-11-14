@@ -153,6 +153,8 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
             ? "/internal/v1/tenants/" + tenant + "/membership-invitations/" + membershipInvitationAccept[2] + "/accept"
             : membershipInvitationRevoke
               ? "/internal/v1/tenants/" + tenant + "/membership-invitations/" + membershipInvitationRevoke[2] + "/revoke"
+          : membershipChange
+            ? "/internal/v1/tenants/" + tenant + "/membership-actions"
           : membershipEvents
             ? "/internal/v1/tenants/" + tenant + "/membership-events"
         : qualityPolicyRegister
