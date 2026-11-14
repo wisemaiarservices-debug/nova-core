@@ -474,3 +474,46 @@ test("routes tenant membership audit reads through the signed private API", asyn
   assert.equal(forwarded.headers.get("x-nova-verified-subject"), "tenant-owner");
   assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
 });
+
+
+test("routes owner-issued membership invitations and authenticated acceptance through signed paths", async () => {
+  const gateway = createGateway({ verifyAccessToken: async token => ({
+    subject: token === "owner-token" ? "tenant-owner" : "invitee-subject",
+    issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const cases = [
+    ["POST", "/api/v1/tenants/tenant-a/membership-invitations",
+      "/internal/v1/tenants/tenant-a/membership-invitations", "owner-token",
+      { role: "operator", reason: "Field operations access" }],
+    ["POST", "/api/v1/tenants/tenant-a/membership-invitations/invite-1/accept",
+      "/internal/v1/tenants/tenant-a/membership-invitations/invite-1/accept", "invitee-token",
+      { invitation_token: "A".repeat(43) }],
+    ["POST", "/api/v1/tenants/tenant-a/membership-invitations/invite-1/revoke",
+      "/internal/v1/tenants/tenant-a/membership-invitations/invite-1/revoke", "owner-token",
+      { reason: "Invitation withdrawn" }],
+  ];
+  for (const [method, publicPath, internalPath, token, payload] of cases) {
+    let forwarded;
+    const body = JSON.stringify(payload);
+    const response = await gateway.fetch(new Request("https://gateway.test" + publicPath, {
+      method, body, headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": token },
+    }), {
+      ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+      ACCESS_AUDIENCE: "aud",
+      INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+      TENANT_API: { fetch: async request => {
+        forwarded = request;
+        return new Response(JSON.stringify({ data: { status: "ok" } }), {
+          status: 201, headers: { "content-type": "application/json" },
+        });
+      } },
+    });
+    assert.equal(response.status, 201, publicPath);
+    assert.equal(forwarded.method, method);
+    assert.equal(new URL(forwarded.url).pathname, internalPath);
+    assert.equal(await forwarded.text(), body);
+    assert.equal(forwarded.headers.get("x-nova-verified-subject"),
+      token === "owner-token" ? "tenant-owner" : "invitee-subject");
+    assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+  }
+});
