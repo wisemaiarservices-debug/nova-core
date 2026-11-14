@@ -131,7 +131,8 @@ WHEN NOT EXISTS (
       OR
       (NEW.event_type IN ('approved', 'rejected') AND r.status = 'pending'
         AND NEW.previous_status = 'pending' AND NEW.new_status = NEW.event_type
-        AND r.tenant_id IS NULL AND EXISTS (
+        AND r.tenant_id IS NULL AND r.cloudflare_issuer = NEW.actor_cloudflare_issuer
+        AND r.cloudflare_subject <> NEW.actor_cloudflare_subject AND EXISTS (
           SELECT 1 FROM tenants t JOIN tenant_memberships m ON m.tenant_id = t.id
           WHERE t.id = NEW.tenant_id AND t.status = 'active'
             AND m.subject = NEW.actor_cloudflare_subject AND m.role = 'tenant_owner'
