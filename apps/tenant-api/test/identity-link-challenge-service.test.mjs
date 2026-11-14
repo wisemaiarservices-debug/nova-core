@@ -6,7 +6,7 @@ const supabase = { issuer: "https://project.supabase.co/auth/v1", subject: "supa
 const access = { issuer: "https://team.cloudflareaccess.com", subject: "access-user-1", audience: "nova-core" };
 
 class ChallengeDB {
-  constructor() { this.row = null; this.batchCalls = []; }
+  constructor() { this.row = null; this.batchCalls = []; this.duplicatePendingPair = false; this.batchFailure = null; }
   prepare(sql) {
     const db = this;
     return { sql, args: [], bind(...args) { this.args = args; return this; },
@@ -30,6 +30,10 @@ class ChallengeDB {
   }
   async batch(statements) {
     this.batchCalls.push(statements);
+    if (this.batchFailure) throw this.batchFailure;
+    if (this.duplicatePendingPair) {
+      throw new Error("UNIQUE constraint failed: tenant_identity_link_requests.supabase_issuer, tenant_identity_link_requests.supabase_subject, tenant_identity_link_requests.cloudflare_issuer, tenant_identity_link_requests.cloudflare_subject");
+    }
     if (this.row.status !== "pending") return statements.map(() => ({ meta: { changes: 0 } }));
     this.row.status = "consumed";
     return statements.map(() => ({ meta: { changes: 1 } }));
@@ -105,4 +109,27 @@ test("challenge consumption rejects a shared issuer even when stored row is othe
     created.data.challenge, supabase, sameIssuer, "consume-same-issuer", now);
   assert.equal(result.status, 400);
   assert.equal(db.batchCalls.length, 0);
+});
+
+
+test("duplicate pending identity pair returns a conflict and leaves the challenge unconsumed", async () => {
+  const db = new ChallengeDB();
+  const now = new Date("2026-11-14T10:00:00.000Z");
+  const created = await createIdentityLinkChallenge(db, supabase, access, "request-duplicate-pair", now);
+  db.duplicatePendingPair = true;
+  const result = await consumeIdentityLinkChallenge(db, created.data.challenge_id,
+    created.data.challenge, supabase, access, "consume-duplicate-pair", now);
+  assert.equal(result.status, 409);
+  assert.equal(result.error, "identity_link_request_already_pending");
+  assert.equal(db.row.status, "pending", "the atomic D1 batch must roll back challenge consumption");
+});
+
+test("unrelated challenge storage failures are not disguised as identity conflicts", async () => {
+  const db = new ChallengeDB();
+  const now = new Date("2026-11-14T10:00:00.000Z");
+  const created = await createIdentityLinkChallenge(db, supabase, access, "request-storage-failure", now);
+  db.batchFailure = new Error("D1 unavailable");
+  await assert.rejects(() => consumeIdentityLinkChallenge(db, created.data.challenge_id,
+    created.data.challenge, supabase, access, "consume-storage-failure", now), /D1 unavailable/);
+  assert.equal(db.row.status, "pending");
 });
