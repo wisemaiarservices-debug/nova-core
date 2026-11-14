@@ -504,13 +504,8 @@ async function changeTenantResourceGrant(db, tenant, actor, actorRole, requestId
       .bind(eventId, tenant, grantId, body.subject, type, resourceId, action,
         actor, body.reason, requestId, grantId, tenant, body.subject, type, resourceId, action),
   ] : [
-    db.prepare("DELETE FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ? AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM " +
-      (type === "asset" ? "assets a JOIN sites s ON s.id = a.site_id AND s.tenant_id = a.tenant_id AND s.status = 'active' WHERE a.id = ? AND a.tenant_id = ? AND a.status = 'active'"
-        : type === "source" ? "sources src LEFT JOIN sites s ON s.id = src.site_id AND s.tenant_id = src.tenant_id AND s.status = 'active' WHERE src.id = ? AND src.tenant_id = ? AND src.verification_status = 'verified' AND (src.site_id IS NULL OR s.id IS NOT NULL)"
-        : "observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.id = ? AND o.tenant_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL)") +
-      ")")
-      .bind(grantId, tenant, body.subject, type, resourceId, action,
-        tenant, resourceId, tenant),
+    db.prepare("DELETE FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ? AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active')")
+      .bind(grantId, tenant, body.subject, type, resourceId, action, tenant),
     db.prepare("INSERT INTO tenant_resource_grant_events (id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, 'revoked', ?, ?, ? WHERE changes() = 1")
       .bind(eventId, tenant, grantId, body.subject, type, resourceId, action,
         actor, body.reason, requestId),
