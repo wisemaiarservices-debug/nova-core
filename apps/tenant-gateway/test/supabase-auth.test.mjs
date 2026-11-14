@@ -77,23 +77,33 @@ test("rejects unsafe issuer and any audience other than authenticated", async ()
     /invalid_supabase_auth_audience_configuration/);
 });
 test("refreshes JWKS once when the signing key rotates", async () => {
+  const isolatedIssuer = "https://rotation-project.supabase.co/auth/v1";
   let calls = 0;
   globalThis.fetch = async () => new Response(JSON.stringify({
     keys: calls++ === 0 ? [{ ...jwk, kid: "previous-key" }] : [jwk],
   }), { status: 200 });
-  const principal = await verifySupabaseAuthToken(tokenFor(), { issuer, audience }, now);
+  const principal = await verifySupabaseAuthToken(tokenFor({}, {}, isolatedIssuer),
+    { issuer: isolatedIssuer, audience }, now);
   assert.equal(principal.subject, "supabase-user-uuid-001");
   assert.equal(calls, 2);
 });
 test("fails closed when JWKS is unavailable or malformed", async () => {
+  const isolatedIssuer = "https://unavailable-project.supabase.co/auth/v1";
   globalThis.fetch = async () => { throw new Error("private fetch details"); };
-  await assert.rejects(() => verifySupabaseAuthToken(tokenFor(), { issuer, audience }, now), /supabase_jwks_unavailable/);
+  await assert.rejects(() => verifySupabaseAuthToken(tokenFor({}, {}, isolatedIssuer),
+    { issuer: isolatedIssuer, audience }, now), /supabase_jwks_unavailable/);
+  const malformedIssuer = "https://malformed-project.supabase.co/auth/v1";
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [] }), { status: 200 });
-  const malformedIssuer = "https://malformed-project.supabase.co/auth/v1";\n  await assert.rejects(() => verifySupabaseAuthToken(tokenFor({}, {}, malformedIssuer), { issuer: malformedIssuer, audience }, now), /supabase_jwks_invalid/);
+  await assert.rejects(() => verifySupabaseAuthToken(tokenFor({}, {}, malformedIssuer),
+    { issuer: malformedIssuer, audience }, now), /supabase_jwks_invalid/);
 });
 test("fails closed on JWKS redirects and oversized bodies", async () => {
+  const redirectIssuer = "https://redirect-project.supabase.co/auth/v1";
   globalThis.fetch = async () => new Response("", { status: 302 });
-  await assert.rejects(() => verifySupabaseAuthToken(tokenFor(), { issuer, audience }, now), /supabase_jwks_unavailable/);
+  await assert.rejects(() => verifySupabaseAuthToken(tokenFor({}, {}, redirectIssuer),
+    { issuer: redirectIssuer, audience }, now), /supabase_jwks_unavailable/);
+  const oversizedIssuer = "https://oversized-project.supabase.co/auth/v1";
   globalThis.fetch = async () => new Response("x".repeat(65_537), { status: 200 });
-  await assert.rejects(() => verifySupabaseAuthToken(tokenFor(), { issuer, audience }, now), /supabase_jwks_invalid/);
+  await assert.rejects(() => verifySupabaseAuthToken(tokenFor({}, {}, oversizedIssuer),
+    { issuer: oversizedIssuer, audience }, now), /supabase_jwks_invalid/);
 });
