@@ -583,3 +583,37 @@ test("routes exact site-grant mutations through the signed private tenant API", 
   assert.equal(forwarded.headers.get("x-nova-verified-subject"), "tenant-owner");
   assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
 });
+
+
+test("routes exact tenant resource-grant mutations through the signed private API", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "tenant-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  let forwarded;
+  const payload = JSON.stringify({ action: "grant", subject: "member-subject",
+    resource_type: "asset", resource_id: "asset-a", grant_action: "read",
+    reason: "Approved asset access" });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/resource-grants", {
+      method: "POST",
+      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+      body: payload,
+    }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      forwarded = request;
+      return new Response(JSON.stringify({ data: { status: "active" } }), {
+        status: 201, headers: { "content-type": "application/json" },
+      });
+    } },
+  });
+  assert.equal(response.status, 201);
+  assert.equal(forwarded.method, "POST");
+  assert.equal(new URL(forwarded.url).pathname,
+    "/internal/v1/tenants/tenant-a/resource-grants");
+  assert.equal(await forwarded.text(), payload);
+  assert.equal(forwarded.headers.get("x-nova-verified-subject"), "tenant-owner");
+  assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+});
