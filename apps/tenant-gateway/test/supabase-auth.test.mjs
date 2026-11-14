@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign, webcrypto } from "node:crypto";
+import { createPublicKey, generateKeyPairSync, sign, webcrypto } from "node:crypto";
 import { verifySupabaseAuthToken } from "../src/supabase-auth.mjs";
 globalThis.crypto ??= webcrypto;
 
@@ -12,7 +12,7 @@ const { privateKey, publicKey } = generateKeyPairSync("ec", {
   publicKeyEncoding: { type: "spki", format: "pem" },
   privateKeyEncoding: { type: "pkcs8", format: "pem" },
 });
-const jwk = { ...publicKey.export({ format: "jwk" }), kid: "supabase-test-key", use: "sig", alg: "ES256" };
+const jwk = { ...createPublicKey(publicKey).export({ format: "jwk" }), kid: "supabase-test-key", use: "sig", alg: "ES256" };
 const originalFetch = globalThis.fetch;
 function b64url(value) { return Buffer.from(value).toString("base64url"); }
 function tokenFor(claimOverrides = {}, headerOverrides = {}) {
