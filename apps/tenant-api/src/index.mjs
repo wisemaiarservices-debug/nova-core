@@ -1008,14 +1008,15 @@ export default {
     if (!env.DB) return error("storage_unavailable", 503);
 
     let draftBody = null;
+    let rawBody = "";
     if (request.method === "POST") {
       const declaredLength = Number(request.headers.get("content-length") ?? "0");
       if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
           !Number.isFinite(declaredLength) || declaredLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
       try {
-        const raw = await request.text();
-        if (new TextEncoder().encode(raw).byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
-        draftBody = JSON.parse(raw);
+        rawBody = await request.text();
+        if (new TextEncoder().encode(rawBody).byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
+        draftBody = JSON.parse(rawBody);
       } catch { return error("invalid_request_body", 400); }
       if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody)) return error("invalid_request_body", 400);
     }
@@ -1023,11 +1024,7 @@ export default {
     if (typeof expectedBodyDigest !== "string" || !/^[a-f0-9]{64}$/.test(expectedBodyDigest)) {
       return error("request_not_authorized", 401);
     }
-    const bodyBytes = request.method === "POST"
-      ? new TextEncoder().encode(JSON.stringify(draftBody)) : new Uint8Array();
-    // Sign the exact bytes forwarded by the gateway, not a reserialized JSON object.
-    // The original request stream is consumed above, so use a canonical serialized
-    // digest only when the gateway also forwards canonical JSON bytes.
+    const bodyBytes = new TextEncoder().encode(rawBody);
     if (await sha256Hex(bodyBytes) !== expectedBodyDigest ||
         !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
       return error("request_not_authorized", 401);
