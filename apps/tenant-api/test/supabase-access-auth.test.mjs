@@ -55,3 +55,26 @@ test("rejects missing configuration and malformed or oversized JWKS", async () =
   await assert.rejects(verifySupabaseAccessToken(token(), config, now, async () => new Response("{}", { status: 200 })), /supabase_jwks_invalid/);
   await assert.rejects(verifySupabaseAccessToken(token(), config, now, async () => new Response("x".repeat(70_000), { status: 200 })), /supabase_jwks_invalid/);
 });
+
+test("accepts signing-key rotation when the configured issuer publishes the new kid", async () => {
+  const rotated = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const rotatedJwk = { ...rotated.publicKey.export({ format: "jwk" }),
+    kid: "supabase-key-rotated", alg: "RS256", use: "sig", key_ops: ["verify"] };
+  const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: rotatedJwk.kid }));
+  const claims = b64(JSON.stringify({
+    iss: issuer, aud: audience, sub: "supabase-user-after-rotation",
+    role: "authenticated", iat: now - 5, exp: now + 300,
+  }));
+  const input = header + "." + claims;
+  const rotatedToken = input + "." + sign("RSA-SHA256", Buffer.from(input), rotated.privateKey).toString("base64url");
+  const identity = await verifySupabaseAccessToken(rotatedToken, config, now, async url => {
+    assert.equal(url, issuer + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [jwk, rotatedJwk] }), { status: 200 });
+  });
+  assert.equal(identity.subject, "supabase-user-after-rotation");
+});
+
+test("rejects ambiguous duplicate key identifiers in the issuer JWKS", async () => {
+  await assert.rejects(verifySupabaseAccessToken(token(), config, now, async () =>
+    new Response(JSON.stringify({ keys: [jwk, jwk] }), { status: 200 })), /supabase_jwks_invalid/);
+});
