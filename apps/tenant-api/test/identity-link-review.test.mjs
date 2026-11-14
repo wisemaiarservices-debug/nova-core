@@ -137,3 +137,14 @@ test("SQL event trigger binds owner decisions to the request Cloudflare issuer",
   assert.match(sql, /r\.cloudflare_issuer = NEW\.actor_cloudflare_issuer/);
   assert.equal((sql.match(/r\.cloudflare_issuer = NEW\.actor_cloudflare_issuer/g) ?? []).length, 3);
 });
+
+
+test("owner can revoke an approved link after the linked member is inactive", async () => {
+  const db = new DB({ id: "link-1", status: "approved", tenant_id: "tenant-1" });
+  const result = await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "revoke", "Membership was deactivated", "decision-revoke-inactive");
+  assert.equal(result.status, 200);
+  const eventSql = db.batchCalls[0][0].sql;
+  assert.match(eventSql, /\? = 'revoke' OR EXISTS \(SELECT 1 FROM tenant_memberships requester/);
+  assert.equal(db.batchCalls[0][0].args.at(-1), "revoke");
+});
