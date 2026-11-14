@@ -14,8 +14,7 @@ class TenantResourceGrantEventsMigrationTests(unittest.TestCase):
         self.db.executescript("""
             CREATE TABLE tenants (id TEXT PRIMARY KEY, status TEXT NOT NULL);
             CREATE TABLE assets (
-              id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, site_id TEXT NOT NULL,
-              UNIQUE (id, tenant_id, site_id)
+              id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, site_id TEXT NOT NULL
             );
             CREATE TABLE tenant_resource_grants (
               id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, subject TEXT NOT NULL,
