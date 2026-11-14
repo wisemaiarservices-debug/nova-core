@@ -95,7 +95,7 @@ class TenantMembershipInvitationsMigrationTests(unittest.TestCase):
                   '2026-12-01T00:00:00Z')
             """, ("a" * 64,))
         with self.assertRaises(sqlite3.IntegrityError):
-            self.event(event_id="event-2")
+            self.event(event_id="event-1")
 
 
 if __name__ == "__main__":
