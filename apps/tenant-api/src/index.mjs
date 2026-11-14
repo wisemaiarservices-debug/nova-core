@@ -500,7 +500,7 @@ export default {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
     const url = new URL(request.url);
     const tenantProvision = url.pathname === "/internal/v1/tenants";
-    const membershipEvents = url.pathname.match(/^\\/internal\\/v1\\/tenants\\/([^/]+)\\/membership-events$/);
+    const membershipEvents = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-events$/);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
     const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
     const reviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
