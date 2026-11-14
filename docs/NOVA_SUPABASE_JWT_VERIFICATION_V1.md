@@ -20,3 +20,13 @@ Supabase projects using legacy HS256 JWT signing secrets are intentionally unsup
 This module is not wired to a route, does not create or approve identity links, does not authorize tenants, and does not change the Cloudflare Access verifier. It only returns the verified Supabase issuer/subject pair for a future challenge ceremony. NOVA Core membership and grants remain authoritative.
 
 No Supabase project URL, signing key, service-role secret, Cloudflare configuration, production route, deployment or live data is configured or changed by this PR.
+
+## Gateway-bound token verification
+
+The private Tenant API can now accept an optional Supabase bearer token forwarded by the Cloudflare Access gateway over its private Service Binding. The gateway computes SHA-256 over the exact bearer-token bytes and includes the digest in the HMAC-signed internal envelope. The private Worker independently recomputes that digest and verifies the JWT against the explicitly configured `SUPABASE_AUTH_ISSUER` and `SUPABASE_AUTH_AUDIENCE`.
+
+The gateway accepts the browser's standard `Authorization: Bearer <token>` header only; CORS preflight permits `Authorization` for the configured exact origins. The raw token is forwarded only as an internal header and is neither persisted nor included in response payloads. Do not log request headers or token material.
+
+This is an optional verification layer for compatibility: requests without a Supabase token continue to be Cloudflare-Access-only and MUST NOT be treated as proof of a linked Supabase identity. Supplying a token verifies it independently but does not link the Supabase identity to the Cloudflare identity, authorize a tenant, or grant access. The one-time challenge plus independent tenant-owner review protocol remains a separate, disabled workflow.
+
+Before enabling this path in a deployment, confirm the project's actual asymmetric signing mode, exact issuer and audience, configure both Worker variables, and test a real token and key rotation in a non-production environment. No production configuration is set by this change.

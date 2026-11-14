@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { createGateway } from "../src/index.mjs";
-import { generateKeyPairSync, sign, webcrypto } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign, webcrypto } from "node:crypto";
 globalThis.crypto ??= webcrypto;
 
 function env(overrides = {}) {
@@ -45,8 +45,9 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
   try {
     const response = await worker.fetch(new Request(
       "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a",
-      { headers: { "Cf-Access-Jwt-Assertion": token, cookie: "session=secret",
-        "x-nova-verified-subject": "attacker", "x-nova-verified-issuer": "https://attacker.test" } }),
+      { headers: { "Cf-Access-Jwt-Assertion": token, Authorization: "Bearer supabase.header.payload",
+        cookie: "session=secret", "x-nova-verified-subject": "attacker",
+        "x-nova-verified-issuer": "https://attacker.test" } }),
       { ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience, INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
         TENANT_API: { fetch: async request => {
           captured = request;
@@ -58,8 +59,16 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
     assert.equal(captured.headers.get("x-nova-verified-subject"), "verified-human-subject");
     assert.equal(captured.headers.get("x-nova-verified-issuer"), issuer);
     assert.equal(captured.headers.get("cookie"), null);
-    assert.notEqual(captured.headers.get("x-nova-request-id"), null);
-    assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+    assert.equal(captured.headers.get("x-nova-supabase-access-token"), "supabase.header.payload");
+    const expectedTokenDigest = createHash("sha256").update("supabase.header.payload").digest("hex");
+    assert.equal(captured.headers.get("x-nova-supabase-token-sha256"), expectedTokenDigest);
+    const canonical = JSON.stringify(["GET", new URL(captured.url).pathname,
+      captured.headers.get("x-nova-verified-subject"), captured.headers.get("x-nova-verified-issuer"),
+      captured.headers.get("x-nova-verified-audience"), captured.headers.get("x-nova-gateway-issued-at"),
+      captured.headers.get("x-nova-request-id"), captured.headers.get("x-nova-body-sha256"), expectedTokenDigest]);
+    const expectedSignature = createHmac("sha256", "test-only-internal-secret-with-32-bytes-minimum")
+      .update(canonical).digest("hex");
+    assert.equal(captured.headers.get("x-nova-internal-signature"), expectedSignature);
   } finally { globalThis.fetch = oldFetch; }
 });
 
@@ -297,14 +306,14 @@ test("handles credentialed CORS preflight only for exact configured origins and 
     headers: {
       Origin: "https://nova-os-pied.vercel.app",
       "Access-Control-Request-Method": "POST",
-      "Access-Control-Request-Headers": "accept,content-type",
+      "Access-Control-Request-Headers": "accept,authorization,content-type",
     },
   }), configured);
   assert.equal(response.status, 204);
   assert.equal(response.headers.get("access-control-allow-origin"), "https://nova-os-pied.vercel.app");
   assert.equal(response.headers.get("access-control-allow-credentials"), "true");
   assert.equal(response.headers.get("access-control-allow-methods"), "GET, POST, OPTIONS");
-  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Content-Type");
+  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Authorization, Content-Type");
   assert.match(response.headers.get("vary"), /Origin/);
   assert.match(response.headers.get("vary"), /Access-Control-Request-Method/);
 
@@ -318,7 +327,7 @@ test("handles credentialed CORS preflight only for exact configured origins and 
   const deniedHeader = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
     method: "OPTIONS",
     headers: { Origin: "https://nova-os-pied.vercel.app",
-      "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization" },
+      "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "x-unapproved-header" },
   }), configured);
   assert.equal(deniedHeader.status, 403);
 });

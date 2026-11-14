@@ -1,4 +1,5 @@
 import { json, error } from "./http.mjs";
+import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
@@ -42,7 +43,8 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"),
     headers.get("x-nova-request-id"),
-    headers.get("x-nova-body-sha256")]);
+    headers.get("x-nova-body-sha256"),
+    headers.get("x-nova-supabase-token-sha256")]);
 }
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
@@ -1003,6 +1005,32 @@ export default {
         !validId(requestId, 80) ||
         !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
       return error("request_not_authorized", 401);
+    }
+    const supabaseToken = request.headers.get("x-nova-supabase-access-token");
+    const supabaseTokenDigest = request.headers.get("x-nova-supabase-token-sha256");
+    if ((supabaseToken === null) !== (supabaseTokenDigest === null)) return error("request_not_authorized", 401);
+    if (supabaseToken !== null) {
+      const tokenDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(supabaseToken));
+      const tokenDigestHex = Array.from(new Uint8Array(tokenDigest), byte => byte.toString(16).padStart(2, "0")).join("");
+      if (!/^[a-f0-9]{64}$/.test(supabaseTokenDigest) || tokenDigestHex !== supabaseTokenDigest)
+        return error("request_not_authorized", 401);
+      if (typeof env.SUPABASE_AUTH_ISSUER !== "string" || !env.SUPABASE_AUTH_ISSUER ||
+          typeof env.SUPABASE_AUTH_AUDIENCE !== "string" || !env.SUPABASE_AUTH_AUDIENCE)
+        return error("supabase_identity_not_configured", 503);
+      try {
+        await verifySupabaseAccessToken(supabaseToken, {
+          issuer: env.SUPABASE_AUTH_ISSUER,
+          audience: env.SUPABASE_AUTH_AUDIENCE,
+        });
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : "";
+        if (reason === "supabase_jwks_unavailable" || reason === "supabase_issuer_unavailable")
+          return error("supabase_identity_provider_unavailable", 503);
+        if (reason === "invalid_supabase_issuer_configuration" ||
+            reason === "invalid_supabase_audience_configuration")
+          return error("supabase_identity_configuration_invalid", 503);
+        return error("supabase_identity_not_authorized", 401);
+      }
     }
     if (!env.DB) return error("storage_unavailable", 503);
 

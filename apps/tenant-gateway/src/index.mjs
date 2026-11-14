@@ -26,7 +26,7 @@ function corsResponse(response, origin, preflight) {
   headers.set("Access-Control-Expose-Headers", "X-Request-Id");
   if (preflight) {
     headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    headers.set("Access-Control-Allow-Headers", "Accept, Content-Type");
+    headers.set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type");
     headers.set("Access-Control-Max-Age", "600");
   }
   const vary = new Set((headers.get("Vary") || "").split(",").map(value => value.trim()).filter(Boolean));
@@ -67,7 +67,8 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"),
     headers.get("x-nova-request-id"),
-    headers.get("x-nova-body-sha256")]);
+    headers.get("x-nova-body-sha256"),
+    headers.get("x-nova-supabase-token-sha256")]);
 }
 async function signEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) throw new Error("internal_auth_not_configured");
@@ -233,6 +234,15 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         "accept": "application/json",
       });
       try {
+        const authorization = request.headers.get("authorization");
+        if (authorization !== null) {
+          const match = authorization.match(/^Bearer ([A-Za-z0-9._~-]{1,16384})$/);
+          if (!match) return error("invalid_supabase_authorization", 401);
+          headers.set("x-nova-supabase-access-token", match[1]);
+          const tokenDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(match[1]));
+          headers.set("x-nova-supabase-token-sha256",
+            Array.from(new Uint8Array(tokenDigest), byte => byte.toString(16).padStart(2, "0")).join(""));
+        }
         if (request.method === "POST") {
           const declaredLength = Number(request.headers.get("content-length") ?? "0");
           if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
@@ -264,7 +274,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         const requestedHeaders = (request.headers.get("access-control-request-headers") || "")
           .split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
         if (!["GET", "POST"].includes(requestedMethod) ||
-            requestedHeaders.some(header => !["accept", "content-type"].includes(header))) {
+            requestedHeaders.some(header => !["accept", "authorization", "content-type"].includes(header))) {
           return error("cors_preflight_not_allowed", 403);
         }
         return corsResponse(new Response(null, { status: 204 }), origin, true);
