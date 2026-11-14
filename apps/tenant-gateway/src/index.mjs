@@ -52,6 +52,14 @@ function validSubject(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 200 &&
     value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
+
+function configuredProvisioningSubjects(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 10000) return null;
+  const subjects = value.split(",").map(item => item.trim());
+  if (subjects.some(item => !validSubject(item)) || new Set(subjects).size !== subjects.length) return null;
+  return new Set(subjects);
+}
+
 function canonicalEnvelope(method, path, headers) {
   return JSON.stringify([method, path,
     headers.get("x-nova-verified-subject"),
@@ -72,6 +80,17 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
   const handle = async (request, env) => {
       if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
       const url = new URL(request.url);
+      const tenantProvision = url.pathname === "/api/v1/tenants";
+      const ownershipTransfer = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/ownership-transfer$/);
+      const tenantLifecycle = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/lifecycle-actions$/);
+      const tenantLifecycleEvents = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/lifecycle-events$/);
+      const siteGrantChange = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/site-grants$/);
+      const resourceGrantChange = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/resource-grants$/);
+      const membershipChange = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-actions$/);
+      const membershipEvents = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-events$/);
+    const membershipInvitationCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-invitations$/);
+    const membershipInvitationAccept = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-invitations\/([^/]+)\/accept$/);
+    const membershipInvitationRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/membership-invitations\/([^/]+)\/revoke$/);
       const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
       const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
       const reviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
@@ -99,14 +118,14 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const qualityAssessment = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/measurement-quality-assessment$/);
       const labReportUpload = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
       const labReportDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
-      if ((!match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
-          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload || criteriaDetail || match || labReportDetail)) ||
+      if ((tenantProvision && request.method !== "POST") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange || siteGrantChange || resourceGrantChange || ownershipTransfer || tenantLifecycle) && request.method !== "POST") || (tenantLifecycleEvents && request.method !== "GET") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle && !tenantLifecycleEvents && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+          (request.method === "POST" && (!criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !tenantProvision && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle || criteriaDetail || match || labReportDetail)) ||
           (request.method === "GET" && (reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload))) return error("not_found", 404);
-      const tenant = match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
+      const tenant = tenantProvision ? null : membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? resourceGrantChange?.[1] ?? ownershipTransfer?.[1] ?? tenantLifecycle?.[1] ?? tenantLifecycleEvents?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
       const resourceId = match?.[3];
       const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
       const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
-      if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
+      if ((!tenantProvision && !validPathId(tenant, 120)) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validPathId((membershipInvitationAccept || membershipInvitationRevoke)[2])) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
           ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess) && (!validPathId(entryId) || !validPathId(version, 80))) ||
           (observationVerification && !validPathId(observationVerification[2])) || (((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validPathId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validPathId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validPathId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview) && (!validPathId((sensorMappingRegister || sensorMappingReview)[2]) || !validPathId((sensorMappingRegister || sensorMappingReview)[3]))) || ((sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && !validPathId((sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2])) || (sensorMappingReview && !validPathId(sensorMappingReview[4])) || ((qualityPolicyRegister || qualityPolicyReview) && (!validPathId((qualityPolicyRegister || qualityPolicyReview)[2]) || !validPathId((qualityPolicyRegister || qualityPolicyReview)[3]))) || (qualityPolicyReview && !validPathId(qualityPolicyReview[4])) || (qualityAssessment && !validPathId(qualityAssessment[2])) || ((labReportUpload || labReportDetail) && !validPathId((labReportUpload ?? labReportDetail)[2]))) || (labReportDetail && !validPathId(labReportDetail[3]))) return error("not_found", 404);
       if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
@@ -128,9 +147,32 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         return error("request_not_authorized", 401);
       }
       if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
+      if (tenantProvision && !configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS)?.has(principal.subject)) return error("not_found", 404);
 
       const requestId = crypto.randomUUID();
-      const internalPath = qualityPolicyRegister
+      const internalPath = tenantProvision
+        ? "/internal/v1/tenants"
+        : membershipInvitationCreate
+          ? "/internal/v1/tenants/" + tenant + "/membership-invitations"
+          : membershipInvitationAccept
+            ? "/internal/v1/tenants/" + tenant + "/membership-invitations/" + membershipInvitationAccept[2] + "/accept"
+            : membershipInvitationRevoke
+              ? "/internal/v1/tenants/" + tenant + "/membership-invitations/" + membershipInvitationRevoke[2] + "/revoke"
+          : tenantLifecycle
+            ? "/internal/v1/tenants/" + tenant + "/lifecycle-actions"
+          : tenantLifecycleEvents
+            ? "/internal/v1/tenants/" + tenant + "/lifecycle-events"
+          : ownershipTransfer
+            ? "/internal/v1/tenants/" + tenant + "/ownership-transfer"
+          : resourceGrantChange
+            ? "/internal/v1/tenants/" + tenant + "/resource-grants"
+          : siteGrantChange
+            ? "/internal/v1/tenants/" + tenant + "/site-grants"
+          : membershipChange
+            ? "/internal/v1/tenants/" + tenant + "/membership-actions"
+          : membershipEvents
+            ? "/internal/v1/tenants/" + tenant + "/membership-events"
+        : qualityPolicyRegister
         ? "/internal/v1/tenants/" + tenant + "/sites/" + qualityPolicyRegister[2] + "/assets/" + qualityPolicyRegister[3] + "/measurement-quality-policies"
         : qualityPolicyReview
           ? "/internal/v1/tenants/" + tenant + "/sites/" + qualityPolicyReview[2] + "/assets/" + qualityPolicyReview[3] + "/measurement-quality-policies/" + qualityPolicyReview[4] + "/verification"

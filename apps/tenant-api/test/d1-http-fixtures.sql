@@ -4,15 +4,20 @@ INSERT INTO tenants (id, display_name, status) VALUES
   ('tenant-http-b', 'CI Tenant B', 'active');
 
 INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
+  ('membership-http-b-member', 'tenant-http-b', 'ci-other-tenant-member', 'viewer', 'active'),
+  ('membership-http-b-owner', 'tenant-http-b', 'ci-tenant-b-owner', 'tenant_owner', 'active'),
   ('membership-http-a', 'tenant-http-a', 'ci-human-subject', 'tenant_owner', 'active'),
   ('membership-http-reviewer', 'tenant-http-a', 'ci-measurement-reviewer', 'viewer', 'active'),
+  ('membership-http-lifecycle', 'tenant-http-a', 'ci-lifecycle-member', 'viewer', 'active'),
+  ('membership-http-admin', 'tenant-http-a', 'ci-http-admin', 'tenant_admin', 'active'),
   ('membership-http-service-subject', 'tenant-http-a', 'neoagro-ingestion-service', 'viewer', 'active');
 
 INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) VALUES
   ('grant-http-a-site', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'read'),
   ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create'),
   ('grant-http-a-reviewer-site', 'tenant-http-a', 'ci-measurement-reviewer', 'site', 'site-http-a', 'read'),
-  ('grant-http-a-service-subject-site', 'tenant-http-a', 'neoagro-ingestion-service', 'site', 'site-http-a', 'read');
+  ('grant-http-a-service-subject-site', 'tenant-http-a', 'neoagro-ingestion-service', 'site', 'site-http-a', 'read'),
+  ('grant-http-b-owner-site', 'tenant-http-b', 'ci-tenant-b-owner', 'site', 'site-http-b', 'read');
 
 INSERT INTO sites (id, tenant_id, name, status) VALUES
   ('site-http-a', 'tenant-http-a', 'CI Site A', 'active'),
@@ -63,3 +68,32 @@ VALUES
 ('audit-http-observation', 'tenant-http-a', 'service', 'neoagro-ingestion-service',
  'observation.accepted', 'observation', 'obs-http-verified', 'ci-ingest-request',
  '{"verification_status":"unverified"}');
+
+
+-- Test-only failure injection proves the grant row rolls back if its audit event fails.
+CREATE TRIGGER ci_reject_resource_grant_audit
+BEFORE INSERT ON tenant_resource_grant_events
+WHEN NEW.reason = 'CI injected resource grant audit failure'
+BEGIN
+  SELECT RAISE(ABORT, 'ci_resource_grant_audit_failure');
+END;
+
+-- Verified source and active asset used only to exercise exact resource grants.
+INSERT INTO assets (id, site_id, tenant_id, name, asset_type, status)
+VALUES ('asset-http-grant', 'site-http-a', 'tenant-http-a', 'CI grant asset', 'sensor', 'active');
+INSERT INTO assets (id, site_id, tenant_id, name, asset_type, status)
+VALUES ('asset-http-b', 'site-http-b', 'tenant-http-b', 'Other tenant asset', 'sensor', 'active');
+
+INSERT INTO sources
+(id, site_id, tenant_id, module, provider, source_type, display_name, verification_status, metadata_json)
+VALUES
+('source-http-grant', 'site-http-a', 'tenant-http-a', 'neoagro', 'CI verified grant provider',
+ 'sensor', 'CI verified grant source', 'verified', '{}');
+
+INSERT INTO observations
+(id, site_id, tenant_id, asset_id, source_id, module, metric, value, unit, observed_at,
+ idempotency_key, verification_status, provenance_json, quality_flags_json)
+VALUES
+('obs-http-grant', 'site-http-a', 'tenant-http-a', 'asset-http-grant', 'source-http-grant',
+ 'neoagro', 'soil_moisture', 0.24, 'm3/m3', '2026-11-13T10:00:00Z',
+ 'ci-resource-grant-observation', 'unverified', '{}', '[]');
