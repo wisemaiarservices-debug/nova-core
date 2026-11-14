@@ -115,8 +115,8 @@ test("owner review is independent and bound to the request Cloudflare issuer", a
   assert.equal(result.status, 200);
   const insertSql = db.batchCalls[0][0].sql;
   assert.match(insertSql, /r\\.cloudflare_issuer = \\?/);
-  assert.match(insertSql, /r\\.cloudflare_subject <> \\?/);
-  assert.deepEqual(db.batchCalls[0][0].args.slice(-4), ["tenant-1", "owner-1", actor.issuer, actor.subject]);
+  assert.match(insertSql, /\\? = 'revoke' OR r\\.cloudflare_subject <> \\?/);
+  assert.deepEqual(db.batchCalls[0][0].args.slice(-5), ["tenant-1", "owner-1", actor.issuer, "approve", actor.subject]);
 });
 
 test("pending review list excludes self-requests and mismatched Cloudflare issuers", async () => {
