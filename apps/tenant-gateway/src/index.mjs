@@ -52,6 +52,14 @@ function validSubject(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 200 &&
     value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
+
+function configuredProvisioningSubjects(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 10000) return null;
+  const subjects = value.split(",").map(item => item.trim());
+  if (subjects.some(item => !validSubject(item)) || new Set(subjects).size !== subjects.length) return null;
+  return new Set(subjects);
+}
+
 function canonicalEnvelope(method, path, headers) {
   return JSON.stringify([method, path,
     headers.get("x-nova-verified-subject"),
@@ -129,6 +137,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         return error("request_not_authorized", 401);
       }
       if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
+      if (tenantProvision && !configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS)?.has(principal.subject)) return error("not_found", 404);
 
       const requestId = crypto.randomUUID();
       const internalPath = tenantProvision
