@@ -20,27 +20,30 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
               id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, subject TEXT NOT NULL,
               role TEXT NOT NULL, status TEXT NOT NULL
             );
-            INSERT INTO tenants VALUES ('tenant-a', 'active'), ('tenant-b', 'suspended');
+            INSERT INTO tenants VALUES ('tenant-a', 'active'), ('tenant-b', 'suspended'), ('tenant-c', 'active');
             INSERT INTO tenant_memberships VALUES
               ('owner-a', 'tenant-a', 'owner-a-sub', 'tenant_owner', 'active'),
               ('admin-a', 'tenant-a', 'admin-a-sub', 'tenant_admin', 'active'),
-              ('owner-b', 'tenant-b', 'owner-b-sub', 'tenant_owner', 'active');
+              ('owner-b', 'tenant-b', 'owner-b-sub', 'tenant_owner', 'active'),
+              ('owner-c', 'tenant-c', 'owner-c-sub', 'tenant_owner', 'active');
         """)
         self.db.executescript((MIGRATIONS / "0022_tenant_identity_link_challenges.sql").read_text())
+        self.db.executescript((MIGRATIONS / "0023_tenant_identity_link_uniqueness.sql").read_text())
 
     def tearDown(self):
         self.db.close()
 
-    def challenge(self, challenge_id="challenge-1", request_id="challenge-request-1"):
+    def challenge(self, challenge_id="challenge-1", request_id="challenge-request-1",
+                  supabase_subject="supabase-sub", cloudflare_subject="cloudflare-sub"):
         digest = hashlib.sha256(challenge_id.encode()).hexdigest()
         self.db.execute("""
           INSERT INTO tenant_identity_link_challenges
           (id, supabase_issuer, supabase_subject, cloudflare_issuer, cloudflare_subject,
            challenge_sha256, status, created_at, expires_at, request_id)
-          VALUES (?, 'https://project.supabase.co/auth/v1', 'supabase-sub',
-                  'https://team.cloudflareaccess.com', 'cloudflare-sub',
+          VALUES (?, 'https://project.supabase.co/auth/v1', ?,
+                  'https://team.cloudflareaccess.com', ?,
                   ?, 'pending', '2026-11-14T10:00:00Z', '2026-11-14T10:05:00Z', ?)
-        """, (challenge_id, digest, request_id))
+        """, (challenge_id, supabase_subject, cloudflare_subject, digest, request_id))
 
     def consume(self, challenge_id="challenge-1", consumed_at="2026-11-14T10:01:00Z"):
         self.db.execute("""
@@ -48,14 +51,15 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
             consumed_at=? WHERE id=?
         """, (consumed_at, challenge_id))
 
-    def request(self, request_id="link-request-1", challenge_id="challenge-1"):
+    def request(self, request_id="link-request-1", challenge_id="challenge-1",
+                supabase_subject="supabase-sub", cloudflare_subject="cloudflare-sub"):
         self.db.execute("""
           INSERT INTO tenant_identity_link_requests
           (id, challenge_id, supabase_issuer, supabase_subject, cloudflare_issuer,
            cloudflare_subject, request_id)
-          VALUES (?, ?, 'https://project.supabase.co/auth/v1', 'supabase-sub',
-                  'https://team.cloudflareaccess.com', 'cloudflare-sub', ?)
-        """, (request_id, challenge_id, request_id + "-idem"))
+          VALUES (?, ?, 'https://project.supabase.co/auth/v1', ?,
+                  'https://team.cloudflareaccess.com', ?, ?)
+        """, (request_id, challenge_id, supabase_subject, cloudflare_subject, request_id + "-idem"))
 
     def event(self, event_id, link_id="link-request-1", event_type="requested",
               previous=None, new="pending", tenant=None, actor_issuer="https://team.cloudflareaccess.com",
@@ -179,6 +183,95 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
             self.db.execute("DELETE FROM tenant_identity_link_events WHERE id='event-requested'")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
             self.db.execute("UPDATE tenant_identity_link_requests SET supabase_subject='changed' WHERE id='link-request-1'")
+
+
+    def test_approved_identity_pair_is_unique_within_a_tenant(self):
+        self.create_pending_request()
+        self.decide()
+        self.challenge("challenge-2", "challenge-request-2")
+        self.consume("challenge-2")
+        self.request("link-request-2", "challenge-2")
+        self.event("event-requested-2", link_id="link-request-2",
+                   request_id="event-requested-2-request")
+        self.event("event-approved-2", link_id="link-request-2", event_type="approved",
+                   previous="pending", new="approved", tenant="tenant-a",
+                   actor_subject="owner-a-sub", reason="owner decision",
+                   request_id="event-approved-2-request")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE constraint failed"):
+            self.db.execute("""
+              UPDATE tenant_identity_link_requests SET status='approved', tenant_id='tenant-a',
+                decided_by_cloudflare_issuer='https://team.cloudflareaccess.com',
+                decided_by_cloudflare_subject='owner-a-sub', reason='owner decision',
+                decided_at='2026-11-14T10:02:00Z' WHERE id='link-request-2'
+            """)
+
+    def test_revocation_releases_identity_pair_for_a_new_reviewed_link(self):
+        self.create_pending_request()
+        self.decide()
+        self.event("event-revoked", event_type="revoked", previous="approved", new="revoked",
+                   tenant="tenant-a", actor_subject="owner-a-sub", reason="owner revoked",
+                   request_id="event-revoked-request")
+        self.db.execute("""
+          UPDATE tenant_identity_link_requests SET status='revoked',
+            decided_by_cloudflare_issuer='https://team.cloudflareaccess.com',
+            decided_by_cloudflare_subject='owner-a-sub', reason='owner revoked',
+            decided_at='2026-11-14T10:03:00Z' WHERE id='link-request-1'
+        """)
+        self.challenge("challenge-2", "challenge-request-2")
+        self.consume("challenge-2")
+        self.request("link-request-2", "challenge-2")
+        self.event("event-requested-2", link_id="link-request-2",
+                   request_id="event-requested-2-request")
+        self.event("event-approved-2", link_id="link-request-2", event_type="approved",
+                   previous="pending", new="approved", tenant="tenant-a",
+                   actor_subject="owner-a-sub", reason="owner decision",
+                   request_id="event-approved-2-request")
+        self.db.execute("""
+          UPDATE tenant_identity_link_requests SET status='approved', tenant_id='tenant-a',
+            decided_by_cloudflare_issuer='https://team.cloudflareaccess.com',
+            decided_by_cloudflare_subject='owner-a-sub', reason='owner decision',
+            decided_at='2026-11-14T10:04:00Z' WHERE id='link-request-2'
+        """)
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM tenant_identity_link_requests WHERE id='link-request-2'"
+        ).fetchone()[0], "approved")
+
+
+    def _approve_second_link(self, supabase_subject, cloudflare_subject, tenant="tenant-a", actor="owner-a-sub"):
+        self.challenge("challenge-2", "challenge-request-2", supabase_subject, cloudflare_subject)
+        self.consume("challenge-2")
+        self.request("link-request-2", "challenge-2", supabase_subject, cloudflare_subject)
+        self.event("event-requested-2", link_id="link-request-2", actor_subject=cloudflare_subject, request_id="event-requested-2-request")
+        self.event("event-approved-2", link_id="link-request-2", event_type="approved",
+                   previous="pending", new="approved", tenant=tenant, actor_subject=actor,
+                   reason="owner decision", request_id="event-approved-2-request")
+        self.db.execute("""
+          UPDATE tenant_identity_link_requests SET status='approved', tenant_id=?,
+            decided_by_cloudflare_issuer='https://team.cloudflareaccess.com',
+            decided_by_cloudflare_subject=?, reason='owner decision',
+            decided_at='2026-11-14T10:04:00Z' WHERE id='link-request-2'
+        """, (tenant, actor))
+
+    def test_supabase_identity_cannot_map_to_second_access_identity(self):
+        self.create_pending_request()
+        self.decide()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE constraint failed"):
+            self._approve_second_link("supabase-sub", "different-cloudflare-sub")
+
+    def test_access_identity_cannot_map_to_second_supabase_identity(self):
+        self.create_pending_request()
+        self.decide()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE constraint failed"):
+            self._approve_second_link("different-supabase-sub", "cloudflare-sub")
+
+    def test_same_identity_pair_can_be_approved_in_another_tenant(self):
+        self.create_pending_request()
+        self.decide()
+        self._approve_second_link("supabase-sub", "cloudflare-sub", tenant="tenant-c", actor="owner-c-sub")
+        row = self.db.execute(
+            "SELECT tenant_id, status FROM tenant_identity_link_requests WHERE id='link-request-2'"
+        ).fetchone()
+        self.assertEqual(row, ("tenant-c", "approved"))
 
 
 if __name__ == "__main__":
