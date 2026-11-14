@@ -69,7 +69,7 @@ async function request(overrides = {}, targetUrl = "https://private.internal/int
   const path = new URL(url).pathname;
   const canonical = JSON.stringify([method, path, headers.get("x-nova-verified-subject"),
     headers.get("x-nova-verified-issuer"), headers.get("x-nova-verified-audience"),
-    headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id")]);
+    headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id"), headers.get("x-nova-body-sha256")]);
   headers.set("x-nova-internal-signature",
     createHmac("sha256", SECRET).update(canonical).digest("hex"));
   return new Request(url, { method, headers, body });
