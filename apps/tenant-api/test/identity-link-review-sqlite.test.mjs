@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const migrationPath = fileURLToPath(new URL("../../api/migrations/0022_tenant_identity_link_challenges.sql", import.meta.url));
 const migration = readFileSync(migrationPath, "utf8");
+const distinctIssuerMigrationPath = fileURLToPath(new URL("../../api/migrations/0023_identity_link_distinct_issuers.sql", import.meta.url));
+const distinctIssuerMigration = readFileSync(distinctIssuerMigrationPath, "utf8");
 const requester = {
   issuer: "https://team.cloudflareaccess.com",
   subject: "linked-user",
@@ -34,6 +36,7 @@ function fixture(t) {
     );
   `);
   db.exec(migration);
+  db.exec(distinctIssuerMigration);
   db.prepare("INSERT INTO tenants (id, status) VALUES (?, 'active')").run(tenantId);
   db.prepare(`INSERT INTO tenant_memberships (tenant_id, subject, role, status)
     VALUES (?, ?, 'tenant_owner', 'active')`).run(tenantId, owner.subject);
@@ -135,4 +138,16 @@ test("SQLite trigger blocks direct request status changes and event mutation", (
   insertEvent(db, { id: "event-requested", eventType: "requested", previousStatus: null, newStatus: "pending", actor: requester, tenant: null });
   assert.throws(() => db.prepare(`UPDATE tenant_identity_link_events SET reason = 'tampered'
     WHERE id = ?`).run("event-requested"), /identity-link events are append-only/);
+});
+
+test("SQLite trigger rejects a challenge that reuses one issuer for both identity systems", (t) => {
+  const db = fixture(t);
+  assert.throws(() => db.prepare(`INSERT INTO tenant_identity_link_challenges
+    (id, supabase_issuer, supabase_subject, cloudflare_issuer, cloudflare_subject,
+     challenge_sha256, status, created_at, expires_at, request_id)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`).run(
+      "challenge-same-issuer", requester.issuer, "supabase-user-2",
+      requester.issuer, "cloudflare-user-2", "b".repeat(64), now,
+      "2026-11-14T20:05:00.000Z", "challenge-request-same-issuer"
+    ), /identity-link providers must use distinct issuers/);
 });

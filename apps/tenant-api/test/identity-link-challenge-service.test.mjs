@@ -87,3 +87,22 @@ test("challenge consumption rejects malformed challenge material", async () => {
     supabase, access, "consume-5");
   assert.equal(result.status, 400);
 });
+
+test("challenge creation rejects a shared issuer for both identity systems", async () => {
+  const db = new ChallengeDB();
+  const sameIssuer = { ...access, issuer: supabase.issuer };
+  const result = await createIdentityLinkChallenge(db, supabase, sameIssuer, "request-same-issuer");
+  assert.equal(result.status, 400);
+  assert.equal(db.row, null);
+});
+
+test("challenge consumption rejects a shared issuer even when stored row is otherwise valid", async () => {
+  const db = new ChallengeDB();
+  const now = new Date("2026-11-14T10:00:00.000Z");
+  const created = await createIdentityLinkChallenge(db, supabase, access, "request-6", now);
+  const sameIssuer = { ...access, issuer: supabase.issuer };
+  const result = await consumeIdentityLinkChallenge(db, created.data.challenge_id,
+    created.data.challenge, supabase, sameIssuer, "consume-same-issuer", now);
+  assert.equal(result.status, 400);
+  assert.equal(db.batchCalls.length, 0);
+});
