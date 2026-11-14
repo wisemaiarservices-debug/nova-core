@@ -67,9 +67,12 @@ async function request(overrides = {}, targetUrl = "https://private.internal/int
     "x-nova-verified-audience": "aud", "x-nova-gateway-issued-at": String(now),
     "x-nova-request-id": "request-123", ...(method === "POST" ? { "content-type": "application/json" } : {}), ...overrides });
   const path = new URL(url).pathname;
+  const bodyBytes = new TextEncoder().encode(body ?? "");
+  const bodyDigest = createHash("sha256").update(bodyBytes).digest("hex");
+  if (!headers.has("x-nova-body-sha256")) headers.set("x-nova-body-sha256", bodyDigest);
   const canonical = JSON.stringify([method, path, headers.get("x-nova-verified-subject"),
     headers.get("x-nova-verified-issuer"), headers.get("x-nova-verified-audience"),
-    headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id")]);
+    headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id"), headers.get("x-nova-body-sha256")]);
   headers.set("x-nova-internal-signature",
     createHmac("sha256", SECRET).update(canonical).digest("hex"));
   return new Request(url, { method, headers, body });
@@ -1704,4 +1707,18 @@ test("identity-link HTTP routes remain unavailable until dual-identity verificat
     assert.equal(response.status, 404, `${method} ${new URL(url).pathname} must remain unregistered`);
     assert.equal(db.calls.length, 0, "disabled identity-link routes must not access tenant storage");
   }
+});
+
+
+test("rejects a body changed after the gateway signed its digest before storage access", async () => {
+  const db = new DB();
+  const signed = await request({}, "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/measurement-quality-assessment", "POST", JSON.stringify({ action: "original" }));
+  const tampered = new Request(signed.url, {
+    method: "POST",
+    headers: signed.headers,
+    body: JSON.stringify({ action: "tampered" }),
+  });
+  const response = await worker.fetch(tampered, env(db));
+  assert.equal(response.status, 401);
+  assert.equal(db.calls.length, 0);
 });

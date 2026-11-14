@@ -66,7 +66,8 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-verified-issuer"),
     headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"),
-    headers.get("x-nova-request-id")]);
+    headers.get("x-nova-request-id"),
+    headers.get("x-nova-body-sha256")]);
 }
 async function signEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) throw new Error("internal_auth_not_configured");
@@ -232,8 +233,6 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         "accept": "application/json",
       });
       try {
-        headers.set("x-nova-internal-signature",
-          await signEnvelope(env.INTERNAL_AUTH_SECRET, request.method, internalPath, headers));
         if (request.method === "POST") {
           const declaredLength = Number(request.headers.get("content-length") ?? "0");
           if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
@@ -242,6 +241,10 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         }
         const forwardedBody = request.method === "POST" ? await request.arrayBuffer() : undefined;
         if (forwardedBody && forwardedBody.byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
+        const digest = await crypto.subtle.digest("SHA-256", forwardedBody ?? new ArrayBuffer(0));
+        headers.set("x-nova-body-sha256", Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join(""));
+        headers.set("x-nova-internal-signature",
+          await signEnvelope(env.INTERNAL_AUTH_SECRET, request.method, internalPath, headers));
         const upstream = await env.TENANT_API.fetch(new Request(
           "https://nova-core-tenant-api.internal" + internalPath,
           { method: request.method, headers, body: forwardedBody },
