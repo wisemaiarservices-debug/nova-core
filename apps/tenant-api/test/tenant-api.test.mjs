@@ -1385,7 +1385,7 @@ test("tenant owner grants exact asset access with matching append-only audit eve
   assert.equal(result.status, "active");
   assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_resource_grants/);
   assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_resource_grant_events/);
-  assert.match(db.batchCalls[0][0].sql, /s\\.tenant_id = a\\.tenant_id/);
+  assert.match(db.batchCalls[0][0].sql, /s\.tenant_id = a\.tenant_id/);
 });
 
 test("resource grants reject inactive targets, mismatched resources and admin delete", async () => {
