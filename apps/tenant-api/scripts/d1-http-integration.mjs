@@ -176,6 +176,27 @@ try {
     "/api/v1/tenants/tenant-http-a/assets/asset-http-grant", accessToken("ci-invited-human"));
   assert.equal(auditFailureDidNotGrant.response.status, 404);
 
+  const concurrentGrants = await Promise.all([1, 2].map(() =>
+    resourceGrant("ci-human-subject", {
+      action: "grant", subject: "ci-invited-human", resource_type: "asset",
+      resource_id: "asset-http-grant", grant_action: "read",
+      reason: "CI simultaneous exact grant",
+    })));
+  assert.deepEqual(concurrentGrants.map(result => result.response.status).sort(),
+    [201, 409]);
+  const concurrentGrantRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/assets/asset-http-grant", accessToken("ci-invited-human"));
+  assert.equal(concurrentGrantRead.response.status, 200, JSON.stringify(concurrentGrantRead.body));
+  const concurrentGrantRevoke = await resourceGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-invited-human", resource_type: "asset",
+    resource_id: "asset-http-grant", grant_action: "read",
+    reason: "CI cleanup after simultaneous grant",
+  });
+  assert.equal(concurrentGrantRevoke.response.status, 200, JSON.stringify(concurrentGrantRevoke.body));
+  const concurrentGrantDenied = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/assets/asset-http-grant", accessToken("ci-invited-human"));
+  assert.equal(concurrentGrantDenied.response.status, 404);
+
   const resourceCases = [
     ["asset", "asset-http-grant"],
     ["source", "source-http-grant"],
