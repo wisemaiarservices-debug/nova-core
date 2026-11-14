@@ -116,3 +116,15 @@ The first implementation is present on the draft PR branch:
 The disposable local D1 HTTP integration suite now exercises asset, source, and observation grant → read → revoke → denied-read flows through the Access gateway and private Worker. This must pass on the exact PR head before the route is considered validated.
 
 No production migration, grant, tenant, secret, Access policy or deployment is authorized by this document.
+
+## 9. Enforcement boundary for non-read actions
+
+The current generic resource routes expose governed reads only. The grant registry accepts the explicit action vocabulary `read`, `create`, `update`, `delete`, and `ingest`, but this does **not** mean corresponding resource mutation or ingestion endpoints are implemented or enabled.
+
+Until a specific endpoint exists, validates the resource's exact tenant/parent scope, checks the verified actor's active membership and role, and checks the exact matching resource grant for its operation inside the mutation boundary:
+- `create`, `update`, `delete`, and `ingest` grants are stored authorization records only;
+- they do not authorize a caller to perform an operation through an unimplemented route;
+- no generic write endpoint may be inferred from a grant row;
+- site grants and resource grants remain non-inheriting.
+
+Each future write/ingestion endpoint must add endpoint-specific positive and negative tests, including actor-role revocation races and atomic audit behavior where state changes occur. The API must continue to return not-found for unsupported methods/routes rather than imply that a stored grant enables a missing capability.
