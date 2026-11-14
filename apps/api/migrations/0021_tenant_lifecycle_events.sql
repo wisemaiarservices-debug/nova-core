@@ -59,6 +59,34 @@ BEGIN
   SELECT RAISE(ABORT, 'tenant lifecycle update requires matching immutable event');
 END;
 
+CREATE TABLE tenant_lifecycle_event_consumptions (
+  event_id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  consumed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY (event_id) REFERENCES tenant_lifecycle_events(id) ON DELETE RESTRICT,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT
+);
+
+CREATE TRIGGER tenant_lifecycle_event_consumed_once
+AFTER UPDATE OF status ON tenants
+WHEN NEW.status <> OLD.status
+BEGIN
+  INSERT INTO tenant_lifecycle_event_consumptions (event_id, tenant_id)
+  SELECT NEW.last_lifecycle_event_id, NEW.id;
+END;
+
+CREATE TRIGGER tenant_lifecycle_event_consumptions_no_update
+BEFORE UPDATE ON tenant_lifecycle_event_consumptions
+BEGIN
+  SELECT RAISE(ABORT, 'tenant lifecycle event consumption is immutable');
+END;
+
+CREATE TRIGGER tenant_lifecycle_event_consumptions_no_delete
+BEFORE DELETE ON tenant_lifecycle_event_consumptions
+BEGIN
+  SELECT RAISE(ABORT, 'tenant lifecycle event consumption is immutable');
+END;
+
 CREATE TRIGGER tenant_lifecycle_event_pointer_requires_status
 BEFORE UPDATE OF last_lifecycle_event_id ON tenants
 WHEN NEW.last_lifecycle_event_id IS NOT OLD.last_lifecycle_event_id
