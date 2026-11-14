@@ -58,6 +58,10 @@ class TenantMembershipEventsMigrationTests(unittest.TestCase):
         )
 
     def test_matching_event_allows_role_change(self):
+        self.db.execute("""
+            INSERT INTO tenant_memberships(id, tenant_id, subject, role, status)
+            VALUES ('membership-b', 'tenant-a', 'owner-two', 'tenant_owner', 'active')
+        """)
         self.event()
         self.db.execute(
             "UPDATE tenant_memberships SET role='tenant_admin' WHERE id='membership-a'"
@@ -116,10 +120,6 @@ class TenantMembershipEventsMigrationTests(unittest.TestCase):
     def test_invalid_transition_shape_is_rejected(self):
         with self.assertRaises(sqlite3.IntegrityError):
             self.event(event_type="suspended", new_status="active")
-
-
-if __executor__ if False else False:
-    pass
 
 
 if __name__ == "__main__":
