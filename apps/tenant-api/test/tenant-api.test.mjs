@@ -990,3 +990,117 @@ test("non-admin tenant members cannot read membership audit history", async () =
   assert.equal(response.status, 404);
   assert.equal(db.calls.some(call => call.sql.includes("FROM tenant_membership_events")), false);
 });
+
+
+class MembershipInvitationDB {
+  constructor({ role = "tenant_owner", invitationRows = [], existingMemberships = [],
+    batchResult = [] } = {}) {
+    this.role = role;
+    this.invitationRows = invitationRows;
+    this.existingMemberships = existingMemberships;
+    this.batchResult = batchResult;
+    this.batchCalls = [];
+    this.calls = [];
+    this.nonces = new Set();
+  }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) { return {
+      async run() {
+        if (sql.includes("INSERT INTO internal_request_nonces")) {
+          if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
+          db.nonces.add(args[0]);
+          return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected invitation write");
+      },
+      async all() {
+        db.calls.push({ sql, args });
+        if (sql.includes("SELECT status FROM tenants")) return { results: [{ status: "active" }] };
+        if (sql.includes("FROM tenant_membership_invitations")) return { results: db.invitationRows };
+        if (sql.includes("FROM tenant_memberships")) return { results: sql.includes("SELECT id, status")
+          ? db.existingMemberships : [{ subject: "operator@example.test", tenant_id: args[1],
+            role: db.role, status: "active" }] };
+        throw new Error("unexpected invitation read SQL");
+      },
+    }; } };
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    return this.batchResult;
+  }
+}
+
+test("tenant owner creates a one-time invitation without selecting the invitee identity", async () => {
+  const db = new MembershipInvitationDB({ batchResult: [
+    { meta: { changes: 1 } }, { meta: { changes: 1 } },
+  ] });
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations",
+    "POST", JSON.stringify({ role: "operator", reason: "Field operations access" })), env(db));
+  assert.equal(response.status, 201);
+  const result = (await response.json()).data;
+  assert.equal(result.role, "operator");
+  assert.equal(result.status, "pending");
+  assert.match(result.invitation_token, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(result.delivery.includes("out-of-band"), true);
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_membership_invitations/);
+  assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_membership_invitation_events/);
+});
+
+test("only an active tenant owner can create or revoke membership invitations", async () => {
+  const db = new MembershipInvitationDB({ role: "tenant_admin" });
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations",
+    "POST", JSON.stringify({ role: "viewer", reason: "Read access" })), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("authenticated Access subject accepts a one-time invitation into a tenant membership", async () => {
+  const db = new MembershipInvitationDB({
+    invitationRows: [{ id: "invite-1", tenant_id: "tenant-a", role: "analyst",
+      status: "pending", reason: "Research access",
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }],
+    batchResult: Array.from({ length: 5 }, () => ({ meta: { changes: 1 } })),
+  });
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-1/accept",
+    "POST", JSON.stringify({ invitation_token: "A".repeat(43) })), env(db));
+  assert.equal(response.status, 201);
+  const result = (await response.json()).data;
+  assert.equal(result.subject, "operator@example.test");
+  assert.equal(result.role, "analyst");
+  assert.equal(result.status, "active");
+  assert.equal(db.batchCalls[0].length, 5);
+  assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_memberships/);
+  assert.match(db.batchCalls[0][3].sql, /INSERT INTO tenant_membership_events/);
+  assert.match(db.batchCalls[0][4].sql, /INSERT INTO tenant_membership_invitation_events/);
+});
+
+test("membership invitation acceptance rejects an existing membership", async () => {
+  const db = new MembershipInvitationDB({
+    invitationRows: [{ id: "invite-1", tenant_id: "tenant-a", role: "viewer",
+      status: "pending", reason: "Read access",
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }],
+    existingMemberships: [{ id: "membership-existing", status: "active" }],
+  });
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-1/accept",
+    "POST", JSON.stringify({ invitation_token: "A".repeat(43) })), env(db));
+  assert.equal(response.status, 409);
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("tenant owner revokes a pending invitation with an append-only event", async () => {
+  const db = new MembershipInvitationDB({ batchResult: [
+    { meta: { changes: 1 } }, { meta: { changes: 1 } },
+  ] });
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-1/revoke",
+    "POST", JSON.stringify({ reason: "Access no longer required" })), env(db));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.status, "revoked");
+  assert.match(db.batchCalls[0][0].sql, /UPDATE tenant_membership_invitations/);
+  assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_membership_invitation_events/);
+});
