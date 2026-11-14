@@ -5,12 +5,15 @@ import { listPendingIdentityLinkRequests, decideIdentityLinkRequest } from "../s
 const actor = { issuer: "https://team.cloudflareaccess.com", subject: "owner-1" };
 class DB {
   constructor(request = { id: "link-1", status: "pending", tenant_id: null }, owner = true) {
-    this.request = request; this.owner = owner; this.batchCalls = [];
+    this.request = request; this.owner = owner; this.batchCalls = []; this.priorEvent = null; this.batchError = null;
   }
   prepare(sql) {
     const db = this;
     return { sql, args: [], bind(...args) { this.args = args; return this; },
       async all() {
+        if (this.sql.includes("FROM tenant_identity_link_events WHERE request_id")) {
+          return { results: db.priorEvent ? [db.priorEvent] : [] };
+        }
         if (this.sql.includes("FROM tenant_memberships m JOIN tenants")) {
           return { results: db.owner ? [{ subject: this.args[1] }] : [] };
         }
@@ -24,6 +27,7 @@ class DB {
   }
   async batch(statements) {
     this.batchCalls.push(statements);
+    if (this.batchError) throw this.batchError;
     return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
   }
 }
@@ -61,4 +65,43 @@ test("revocation only applies to an approved link in the same tenant", async () 
   const otherTenant = new DB({ id: "link-1", status: "approved", tenant_id: "tenant-2" });
   assert.equal((await decideIdentityLinkRequest(otherTenant, "tenant-1", "link-1", actor,
     "revoke", "Wrong tenant", "decision-5")).status, 409);
+});
+
+test("repeated identical owner decision returns the original outcome without another write", async () => {
+  const db = new DB({ id: "link-1", status: "approved", tenant_id: "tenant-1" });
+  db.priorEvent = {
+    link_request_id: "link-1", event_type: "approved", tenant_id: "tenant-1",
+    actor_cloudflare_issuer: actor.issuer, actor_cloudflare_subject: actor.subject,
+    reason: "Reviewed independently", created_at: "2026-11-14T12:00:00.000Z",
+  };
+  const result = await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "approve", "Reviewed independently", "decision-1", new Date("2026-11-14T12:01:00Z"));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.status, "approved");
+  assert.equal(result.data.decided_at, "2026-11-14T12:00:00.000Z");
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("idempotency key reuse with different decision content is rejected", async () => {
+  const db = new DB();
+  db.priorEvent = {
+    link_request_id: "another-link", event_type: "approved", tenant_id: "tenant-1",
+    actor_cloudflare_issuer: actor.issuer, actor_cloudflare_subject: actor.subject,
+    reason: "Reviewed independently", created_at: "2026-11-14T12:00:00.000Z",
+  };
+  const result = await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "approve", "Reviewed independently", "decision-1");
+  assert.equal(result.status, 409);
+  assert.equal(result.error, "identity_link_idempotency_conflict");
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("database failures are not disguised as idempotency conflicts", async () => {
+  const db = new DB();
+  db.batchError = new Error("temporary D1 failure");
+  await assert.rejects(
+    decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+      "approve", "Reviewed independently", "decision-db-error"),
+    /temporary D1 failure/,
+  );
 });
