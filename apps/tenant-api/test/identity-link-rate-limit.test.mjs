@@ -117,5 +117,7 @@ test("rate limiter rejects malformed or duplicate identity inputs", async () => 
       "challenge_create", 1_800_000_000, secret), /must_be_distinct/);
     await assert.rejects(() => consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
       "unknown", 1_800_000_000, secret), /invalid_rate_limit_input/);
+    await assert.rejects(() => consumeIdentityLinkRateLimit(db, [supabase, cloudflare],
+      "challenge_create", 1_800_000_000, "short"), /secret_not_configured/);
   } finally { db.sqlite.close(); }
 });
