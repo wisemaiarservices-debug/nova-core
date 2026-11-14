@@ -1408,6 +1408,44 @@ test("resource grants reject inactive targets, mismatched resources and admin de
   assert.equal(admin.batchCalls.length, 0);
 });
 
+test("resource grants reject parent mismatches, duplicate tuples and malformed scope", async () => {
+  const payload = patch => JSON.stringify({ action: "grant", subject: "member@example.test",
+    resource_type: "observation", resource_id: "obs-a", grant_action: "read",
+    reason: "Exact resource access", ...patch });
+  const parentMismatch = new ResourceGrantDB({ resourceRows: [] });
+  assert.equal((await worker.fetch(await request({ "x-nova-request-id": "resource-parent-mismatch" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST", payload({})), env(parentMismatch))).status, 404);
+  assert.equal(parentMismatch.batchCalls.length, 0);
+
+  const duplicate = new ResourceGrantDB({ existing: [{ id: "grant-already-there" }] });
+  assert.equal((await worker.fetch(await request({ "x-nova-request-id": "resource-duplicate" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST", payload({})), env(duplicate))).status, 409);
+  assert.equal(duplicate.batchCalls.length, 0);
+
+  for (const patch of [
+    { resource_type: "tenant" },
+    { grant_action: "manage_members" },
+    { resource_id: "../asset" },
+    { caller_role: "tenant_owner" },
+  ]) {
+    const db = new ResourceGrantDB();
+    const response = await worker.fetch(await request({ "x-nova-request-id": "resource-invalid-" + Object.keys(patch)[0] },
+      "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST", payload(patch)), env(db));
+    assert.equal(response.status, 400);
+    assert.equal(db.batchCalls.length, 0);
+  }
+});
+
+test("resource grant audit failure is not reported as a successful transition", async () => {
+  const db = new ResourceGrantDB({ batchResult: [{ meta: { changes: 1 } }, { meta: { changes: 0 } }] });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "resource-audit-failure" },
+    "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST",
+    JSON.stringify({ action: "grant", subject: "member@example.test", resource_type: "asset",
+      resource_id: "asset-a", grant_action: "read", reason: "Audit must be paired" })), env(db));
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "resource_grant_transition_conflict");
+});
+
 test("resource grant revocation allows explicit cleanup for an inactive member", async () => {
   const db = new ResourceGrantDB({ targetStatus: "inactive",
     existing: [{ id: "grant-existing" }] });
