@@ -1,4 +1,5 @@
 import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
+import { createIdentityLinkChallenge, consumeIdentityLinkChallenge } from "./identity-link-challenge-service.mjs";
 
 function validIdentity(identity) {
   return identity !== null && typeof identity === "object" &&
@@ -60,4 +61,23 @@ export async function verifyIdentityLinkIdentityPair({
       audience: cloudflareIdentity.audience,
     }),
   });
+}
+
+
+/**
+ * Verify both identities before persisting a one-time challenge. The
+ * Cloudflare identity must be sourced from the already-verified gateway
+ * envelope; no route should call this with browser-supplied claims.
+ */
+export async function createVerifiedIdentityLinkChallenge(db, input) {
+  const pair = await verifyIdentityLinkIdentityPair(input);
+  return createIdentityLinkChallenge(db, pair.supabase, pair.cloudflare,
+    input.requestId, input.now);
+}
+
+/** Re-verify the same two authorities before attempting atomic challenge consumption. */
+export async function consumeVerifiedIdentityLinkChallenge(db, input) {
+  const pair = await verifyIdentityLinkIdentityPair(input);
+  return consumeIdentityLinkChallenge(db, input.challengeId, input.challenge,
+    pair.supabase, pair.cloudflare, input.requestId, input.now);
 }
