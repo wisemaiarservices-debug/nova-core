@@ -38,7 +38,7 @@ function makeAccessFixture(issuer) {
 
 
 function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceModule = "neoagro",
-  sourceStatus = "unverified", assetSiteId = "site-001", assetStatus = "active" } = {}) {
+  sourceStatus = "verified", assetSiteId = "site-001", assetStatus = "active" } = {}) {
   const state = { observation: null, audit: [] };
   return {
     state,
