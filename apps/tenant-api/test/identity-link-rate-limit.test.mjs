@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { webcrypto } from "node:crypto";
+globalThis.crypto ??= webcrypto;
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -29,11 +31,19 @@ function sqliteD1() {
       };
     },
     async batch(statements) {
-      return sqlite.transaction(() => statements.map(statement =>
-        statement.sql.trimStart().startsWith("DELETE")
-          ? statement.run()
-          : statement.all()
-      ))();
+      sqlite.exec("BEGIN");
+      try {
+        const results = statements.map(statement =>
+          statement.sql.trimStart().startsWith("DELETE")
+            ? statement.run()
+            : statement.all()
+        );
+        sqlite.exec("COMMIT");
+        return results;
+      } catch (cause) {
+        sqlite.exec("ROLLBACK");
+        throw cause;
+      }
     },
   };
 }
