@@ -829,3 +829,108 @@ retrievable report\
   assert.equal(Buffer.from(result.data.document_base64, "base64").compare(bytes), 0);
   assert.equal(result.data.verification_status, "registered_unverified");
 });
+
+
+class ProvisioningDB {
+  constructor(batchResult, existingRows = []) {
+    this.batchResult = batchResult;
+    this.existingRows = existingRows;
+    this.batchCalls = [];
+    this.nonces = new Set();
+  }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) { return {
+      async run() {
+        if (sql.includes("INSERT INTO internal_request_nonces")) {
+          if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
+          db.nonces.add(args[0]);
+          return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected provisioning write");
+      },
+      async all() {
+        if (sql.includes("FROM tenant_provisioning_requests")) return { results: db.existingRows };
+        throw new Error("unexpected provisioning read");
+      },
+    }; } };
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    return this.batchResult;
+  }
+}
+const provisioningPath = "https://private.internal/internal/v1/tenants";
+const provisioningBody = JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-001" });
+const provisioningEnv = db => ({ ...env(db), TENANT_PROVISIONING_SUBJECTS: "operator@example.test" });
+
+test("tenant provisioning requires an exact configured Access subject allowlist", async () => {
+  const db = new ProvisioningDB([]);
+  const denied = await worker.fetch(await request({}, provisioningPath, "POST", provisioningBody), {
+    ...env(db), TENANT_PROVISIONING_SUBJECTS: "different-subject",
+  });
+  assert.equal(denied.status, 404);
+  assert.equal(db.batchCalls.length, 0);
+  const missing = await worker.fetch(await request({ "x-nova-request-id": "provision-no-allowlist" },
+    provisioningPath, "POST", provisioningBody), env(db));
+  assert.equal(missing.status, 404);
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("tenant provisioning rejects caller-selected owners and unknown fields", async () => {
+  const db = new ProvisioningDB([]);
+  const body = JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-002",
+    initial_owner_subject: "attacker-subject" });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "provision-extra-field" },
+    provisioningPath, "POST", body), provisioningEnv(db));
+  assert.equal(response.status, 400);
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("tenant provisioning atomically creates tenant, initial owner, exact grants and audit event", async () => {
+  const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 1 } })));
+  const response = await worker.fetch(await request({ "x-nova-request-id": "provision-create-001" },
+    provisioningPath, "POST", provisioningBody), provisioningEnv(db));
+  assert.equal(response.status, 201);
+  const result = (await response.json()).data;
+  assert.equal(result.display_name, "Research tenant");
+  assert.equal(result.tenant_status, "active");
+  assert.equal(result.membership_role, "tenant_owner");
+  assert.equal(result.membership_status, "active");
+  assert.equal(result.created, true);
+  assert.match(result.tenant_id, /^tenant-[0-9a-f-]{36}$/);
+  assert.equal(db.batchCalls.length, 1);
+  const sql = db.batchCalls[0].map(statement => statement.sql).join("\n");
+  assert.match(sql, /INSERT INTO tenant_memberships/);
+  assert.match(sql, /'tenant_owner', 'active'/);
+  assert.match(sql, /INSERT INTO tenant_membership_events/);
+  assert.match(sql, /'created'/);
+  assert.match(sql, /INSERT INTO tenant_provisioning_requests/);
+  assert.ok(db.batchCalls[0].every(statement => !statement.args.includes("attacker-subject")));
+});
+
+test("tenant provisioning returns the existing result for an exact idempotent retry", async () => {
+  const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
+    request_sha256: createHash("sha256").update(JSON.stringify(["operator@example.test", "Research tenant"])).digest("hex"),
+    tenant_id: "tenant-existing", display_name: "Research tenant", status: "active",
+    membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
+  }]);
+  const response = await worker.fetch(await request({ "x-nova-request-id": "provision-retry-001" },
+    provisioningPath, "POST", provisioningBody), provisioningEnv(db));
+  assert.equal(response.status, 200);
+  const result = (await response.json()).data;
+  assert.equal(result.tenant_id, "tenant-existing");
+  assert.equal(result.created, false);
+});
+
+test("tenant provisioning rejects idempotency key reuse with different content", async () => {
+  const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
+    request_sha256: "0".repeat(64), tenant_id: "tenant-existing", display_name: "Other name",
+    status: "active", membership_id: "membership-existing", role: "tenant_owner",
+    membership_status: "active",
+  }]);
+  const response = await worker.fetch(await request({ "x-nova-request-id": "provision-conflict-001" },
+    provisioningPath, "POST", provisioningBody), provisioningEnv(db));
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "idempotency_key_reused");
+});
