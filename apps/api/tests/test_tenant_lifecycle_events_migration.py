@@ -14,8 +14,7 @@ class TenantLifecycleEventsMigrationTests(unittest.TestCase):
         self.db.executescript("""
             CREATE TABLE tenants (
               id TEXT PRIMARY KEY,
-              status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'archived')),
-              last_lifecycle_event_id TEXT
+              status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'archived'))
             );
             CREATE TABLE tenant_memberships (
               id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, subject TEXT NOT NULL,
