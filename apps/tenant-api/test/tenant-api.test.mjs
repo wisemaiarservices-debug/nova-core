@@ -1285,6 +1285,14 @@ test("site grant changes fail closed for inactive target memberships and duplica
       grant_action: "read", reason: "Duplicate grant attempt" })), env(duplicate));
   assert.equal(duplicateResponse.status, 409);
   assert.equal(duplicate.batchCalls.length, 0);
+
+  const cleanup = new SiteGrantChangeDB({ targetStatus: "inactive", existing: [{ id: "grant-stale" }] });
+  const cleanupResponse = await worker.fetch(await request({ "x-nova-request-id": "site-grant-cleanup-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/site-grants", "POST",
+    JSON.stringify({ action: "revoke", subject: "member@example.test", site_id: "site-a",
+      grant_action: "read", reason: "Remove stale access after suspension" })), env(cleanup));
+  assert.equal(cleanupResponse.status, 200);
+  assert.equal((await cleanupResponse.json()).data.grant_id, "grant-stale");
 });
 
 test("tenant owner revokes an exact site grant and appends a matching event", async () => {
