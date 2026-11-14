@@ -141,7 +141,7 @@ WHEN NOT EXISTS (
       OR
       (NEW.event_type = 'revoked' AND r.status = 'approved'
         AND NEW.previous_status = 'approved' AND NEW.new_status = 'revoked'
-        AND r.tenant_id = NEW.tenant_id AND EXISTS (
+        AND r.tenant_id = NEW.tenant_id AND r.cloudflare_issuer = NEW.actor_cloudflare_issuer AND EXISTS (
           SELECT 1 FROM tenants t JOIN tenant_memberships m ON m.tenant_id = t.id
           WHERE t.id = NEW.tenant_id AND t.status = 'active'
             AND m.subject = NEW.actor_cloudflare_subject AND m.role = 'tenant_owner'
