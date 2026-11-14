@@ -66,6 +66,7 @@ async function request(overrides = {}, targetUrl = "https://private.internal/int
     "x-nova-verified-issuer": "https://example.cloudflareaccess.com",
     "x-nova-verified-audience": "aud", "x-nova-gateway-issued-at": String(now),
     "x-nova-request-id": "request-123", ...(method === "POST" ? { "content-type": "application/json" } : {}), ...overrides });
+  for (const [key, value] of Object.entries(overrides)) if (value === null) headers.delete(key);
   const path = new URL(url).pathname;
   const bodyBytes = new TextEncoder().encode(body ?? "");
   const bodyDigest = createHash("sha256").update(bodyBytes).digest("hex");
