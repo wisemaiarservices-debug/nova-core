@@ -407,3 +407,43 @@ test("routes calibration, sensor identity and quality governance through signed 
     assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
   }
 });
+
+
+test("routes tenant creation only for an exact gateway provisioning allowlist subject", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "provisioning-principal", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const payload = JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-001" });
+  let forwarded;
+  const configured = {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    TENANT_PROVISIONING_SUBJECTS: "provisioning-principal",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      forwarded = request;
+      return new Response(JSON.stringify({ data: { tenant_status: "active" } }), {
+        status: 201, headers: { "content-type": "application/json" },
+      });
+    } },
+  };
+  const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants", {
+    method: "POST", body: payload,
+    headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+  }), configured);
+  assert.equal(response.status, 201);
+  assert.equal(new URL(forwarded.url).pathname, "/internal/v1/tenants");
+  assert.equal(forwarded.method, "POST");
+  assert.equal(await forwarded.text(), payload);
+  assert.equal(forwarded.headers.get("x-nova-verified-subject"), "provisioning-principal");
+  assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+
+  let called = false;
+  const denied = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants", {
+    method: "POST", body: payload,
+    headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+  }), { ...configured, TENANT_PROVISIONING_SUBJECTS: "someone-else",
+    TENANT_API: { fetch: async () => { called = true; throw new Error("must not forward"); } } });
+  assert.equal(denied.status, 404);
+  assert.equal(called, false);
+});
