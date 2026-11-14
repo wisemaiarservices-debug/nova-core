@@ -2,13 +2,15 @@
 
 ## Status
 
-Phase 1 is implemented as a draft migration and SQLite contract tests. The
-migration adds an append-only membership-event ledger, validates event
-pre-state, requires a matching event for role/status updates, and prevents
-demotion or revocation of the last active owner. The private Tenant API and
-Access gateway still do not expose general tenant or membership provisioning.
-No migration has been applied to a live database; no tenant, membership, grant,
-secret, binding, Cloudflare resource, route, or deployment has been created.
+Phase 1 now includes draft migrations, the private tenant creation endpoint,
+exact gateway route mapping, dual provisioning-subject allowlists, and unit
+and migration tests. The endpoint atomically creates a tenant, assigns the
+verified provisioning principal as its initial owner, creates exact tenant
+grants, appends the initial membership event, and stores an idempotency result.
+The append-only membership ledger validates event pre-state and protects the
+last active owner. No migration has been applied to a live database; no tenant,
+membership, grant, secret, binding, Cloudflare resource, or deployment has
+been created.
 
 ## Existing trust boundary
 
@@ -83,29 +85,27 @@ membership instead.
 
 Migration 0002 defines `tenants`, `tenant_memberships`, and exact
 `tenant_resource_grants`; migration 0004 makes membership identity scope
-immutable. Draft migration `0016_tenant_membership_events.sql` now adds a
-constrained tenant-scoped event ledger, foreign keys, unique request IDs,
-append-only UPDATE/DELETE guards, event pre-state checks, matching-event
-requirements for role/status updates, and last-active-owner protection.
-SQLite migration tests cover these invariants. The CI pipeline also applies
-ordered migrations to disposable local D1 and exercises the Worker boundary.
+immutable. Draft migration `0016_tenant_membership_events.sql` adds the
+constrained tenant-scoped event ledger, append-only guards, event pre-state
+checks, matching-event requirements and last-active-owner protection. Draft
+migration `0017_tenant_provisioning_idempotency.sql` adds immutable idempotency
+records scoped to verified actor + key + canonical request digest. SQLite
+migration tests cover both ledgers. Ordered D1 migration and disposable local
+D1 + Service Binding integration checks run in CI.
 
-Remaining requirements before endpoint implementation:
+Remaining requirements before membership lifecycle implementation:
 
-1. Add unique/idempotency storage for tenant creation requests, scoped to the
-   verified actor and canonical request digest.
-2. Preserve immutable `tenant_id` and `subject` membership scope.
-3. Ensure every event write is made only by the private Tenant API after
-   authenticated identity and owner authorization; the gateway must not expose
-   direct database access.
-4. Extend adversarial and disposable D1 integration tests to cover membership
+1. Implement owner-authorized membership creation and explicit lifecycle
+   transitions through the private Tenant API.
+2. Extend adversarial and disposable D1 integration tests to cover membership
    create/transition batches and rollback behavior.
-5. Review the event ledger retention and tenant deletion restrictions.
+3. Add a separately verified invitation/directory path before allowing a tenant
+   owner to invite another stable Access subject.
+4. Review event retention and tenant deletion restrictions.
 
-## API contract (proposed; not yet implemented)
+## API contract and implementation status
 
-- `POST /api/v1/tenants`: allowlisted provisioning principal creates a tenant
-  and is atomically assigned as its initial owner.
+- `POST /api/v1/tenants`: implemented in the draft gateway/private Worker path. An exact allowlisted Access subject creates a tenant and is atomically assigned as its initial owner. Request fields are limited to `display_name` and `idempotency_key`; the initial owner is never caller-selected.
 - `POST /api/v1/tenants/{tenant}/memberships`: active owner creates a
   membership for a verified stable subject with a bounded role.
 - `POST /api/v1/tenants/{tenant}/memberships/{membership}/transition`:
@@ -113,11 +113,14 @@ Remaining requirements before endpoint implementation:
 - `GET /api/v1/tenants/{tenant}/membership-events`: owner/admin read of
   append-only tenant membership history.
 
-The public gateway must map only these exact routes to fixed private paths.
-POST bodies must be bounded JSON; query strings, unknown fields, wildcard
-grants, arbitrary role names, and caller-supplied actor identities are rejected.
-The private Worker rechecks all authorization and tenant state from D1; gateway
-authentication alone never grants tenant access.
+The future membership routes above are not yet implemented. The tenant-creation
+route is exact-path mapped by the public gateway, requires a separately
+configured exact-subject allowlist at both gateway and private Worker, and
+forwards only a verified Access identity in the signed envelope. POST bodies
+are bounded JSON; query strings, unknown fields and caller-supplied actor
+identities are rejected. The private Worker independently checks the allowlist
+and writes D1 records in one batch; gateway authentication alone never grants
+tenant membership.
 
 ## Required adversarial tests
 
@@ -141,6 +144,6 @@ This feature remains blocked until the exact-head unit, migration, gateway,
 and disposable D1 + Service Binding integration tests pass; a security review
 confirms that the provisioning allowlist cannot be modified by a tenant
 request; and the user explicitly approves production migration/deployment.
-Migration 0016 exists only in this draft branch and has not been applied to
-any live database. No secret, Access policy, D1 binding, Worker route, or
-deployment is authorized by this design.
+Migrations 0016 and 0017 and the endpoint code exist only in this draft branch
+and have not been applied to any live database. No production allowlist, secret,
+Access policy, D1 binding, Worker route, or deployment is authorized by this PR.
