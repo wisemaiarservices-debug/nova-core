@@ -44,10 +44,6 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-request-id"),
     headers.get("x-nova-body-sha256")]);
 }
-async function sha256Hex(bytes) {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-}
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
   const encoded = headers.get("x-nova-internal-signature");
@@ -1024,8 +1020,7 @@ export default {
     if (typeof expectedBodyDigest !== "string" || !/^[a-f0-9]{64}$/.test(expectedBodyDigest)) {
       return error("request_not_authorized", 401);
     }
-    const bodyBytes = new TextEncoder().encode(rawBody);
-    if (await sha256Hex(bodyBytes) !== expectedBodyDigest ||
+    if (await sha256Hex(rawBody) !== expectedBodyDigest ||
         !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
       return error("request_not_authorized", 401);
     }
