@@ -121,6 +121,32 @@ try {
   assert.equal(invitationAccepted.body.data.subject, "ci-invited-human");
   assert.equal(invitationAccepted.body.data.role, "operator");
 
+  const siteGrantPath = "/api/v1/tenants/tenant-http-a/site-grants";
+  async function siteGrant(subject, payload) {
+    return throughGateway(siteGrantPath, accessToken(subject),
+      { "content-type": "application/json" }, "POST", JSON.stringify(payload));
+  }
+  const siteGrantCreated = await siteGrant("ci-human-subject", {
+    action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI site access grant",
+  });
+  assert.equal(siteGrantCreated.response.status, 201, JSON.stringify(siteGrantCreated.body));
+  assert.equal(siteGrantCreated.body.data.status, "active");
+  assert.equal(siteGrantCreated.body.data.resource_type, "site");
+
+  const adminPrivilegedGrant = await siteGrant("ci-http-admin", {
+    action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "delete", reason: "Admin must not grant destructive access",
+  });
+  assert.equal(adminPrivilegedGrant.response.status, 404);
+
+  const siteGrantRevoked = await siteGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI site access revocation",
+  });
+  assert.equal(siteGrantRevoked.response.status, 200, JSON.stringify(siteGrantRevoked.body));
+  assert.equal(siteGrantRevoked.body.data.status, "revoked");
+
   const membershipAudit = await throughGateway(
     "/api/v1/tenants/tenant-http-a/membership-events", accessToken("ci-human-subject"));
   assert.equal(membershipAudit.response.status, 200, JSON.stringify(membershipAudit.body));
@@ -139,6 +165,10 @@ try {
   assert.equal(membershipAudit.body.data.some(event =>
     event.event_type === "invitation_accepted" &&
     event.subject === "ci-invited-human"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "site_grant_granted" && event.subject === "ci-invited-human"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "site_grant_revoked" && event.subject === "ci-invited-human"), true);
 
   const criteriaList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
   assert.equal(criteriaList.response.status, 200, JSON.stringify(criteriaList.body));
