@@ -41,7 +41,8 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-verified-issuer"),
     headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"),
-    headers.get("x-nova-request-id")]);
+    headers.get("x-nova-request-id"),
+    headers.get("x-nova-body-sha256")]);
 }
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
@@ -999,23 +1000,29 @@ export default {
     const now = Math.floor(Date.now() / 1000);
     if (!validSubject(subject) || issuer !== env.ACCESS_ISSUER || audience !== env.ACCESS_AUDIENCE ||
         !Number.isInteger(issuedAt) || issuedAt > now + 30 || issuedAt < now - 120 ||
-        !validId(requestId, 80) ||
-        !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
-      return error("request_not_authorized", 401);
-    }
+        !validId(requestId, 80)) return error("request_not_authorized", 401);
     if (!env.DB) return error("storage_unavailable", 503);
 
     let draftBody = null;
+    let rawBody = "";
     if (request.method === "POST") {
       const declaredLength = Number(request.headers.get("content-length") ?? "0");
       if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
           !Number.isFinite(declaredLength) || declaredLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
       try {
-        const raw = await request.text();
-        if (new TextEncoder().encode(raw).byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
-        draftBody = JSON.parse(raw);
+        rawBody = await request.text();
+        if (new TextEncoder().encode(rawBody).byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
+        draftBody = JSON.parse(rawBody);
       } catch { return error("invalid_request_body", 400); }
       if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody)) return error("invalid_request_body", 400);
+    }
+    const expectedBodyDigest = request.headers.get("x-nova-body-sha256");
+    if (typeof expectedBodyDigest !== "string" || !/^[a-f0-9]{64}$/.test(expectedBodyDigest)) {
+      return error("request_not_authorized", 401);
+    }
+    if (await sha256Hex(rawBody) !== expectedBodyDigest ||
+        !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
+      return error("request_not_authorized", 401);
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);

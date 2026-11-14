@@ -67,9 +67,13 @@ async function request(overrides = {}, targetUrl = "https://private.internal/int
     "x-nova-verified-audience": "aud", "x-nova-gateway-issued-at": String(now),
     "x-nova-request-id": "request-123", ...(method === "POST" ? { "content-type": "application/json" } : {}), ...overrides });
   const path = new URL(url).pathname;
+  const rawBody = body === undefined ? "" : String(body);
+  headers.set("x-nova-body-sha256", headers.get("x-nova-body-sha256") ??
+    createHash("sha256").update(rawBody).digest("hex"));
   const canonical = JSON.stringify([method, path, headers.get("x-nova-verified-subject"),
     headers.get("x-nova-verified-issuer"), headers.get("x-nova-verified-audience"),
-    headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id")]);
+    headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id"),
+    headers.get("x-nova-body-sha256")]);
   headers.set("x-nova-internal-signature",
     createHmac("sha256", SECRET).update(canonical).digest("hex"));
   return new Request(url, { method, headers, body });
@@ -1688,4 +1692,15 @@ test("resource grant revocation allows explicit cleanup for an inactive member",
   assert.equal((await response.json()).data.status, "revoked");
   assert.match(db.batchCalls[0][0].sql, /DELETE FROM tenant_resource_grants/);
   assert.match(db.batchCalls[0][1].sql, /tenant_resource_grant_events/);
+});
+
+
+test("rejects a body whose bytes do not match the signed gateway digest", async () => {
+  const db = new DB();
+  const body = JSON.stringify({ unexpected: true });
+  const requestWithWrongDigest = await request({ "x-nova-body-sha256": "0".repeat(64) },
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-actions", "POST", body);
+  const response = await worker.fetch(requestWithWrongDigest, env(db));
+  assert.equal(response.status, 401);
+  assert.equal(db.calls.length, 0);
 });
