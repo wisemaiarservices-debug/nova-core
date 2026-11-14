@@ -85,7 +85,7 @@ test("rejects an invalid Supabase token rather than returning a partial identity
   });
   try {
     await assert.rejects(() => verifyIdentityLinkIdentityPair({
-      supabaseToken: "not-a-jwt", cloudflareIdentity: accessIdentity, ...config,
+      supabaseToken: "not-a-valid-jwt-token", cloudflareIdentity: accessIdentity, ...config,
     }), /invalid_supabase_token/);
   } finally { globalThis.fetch = originalFetch; }
 });
