@@ -508,7 +508,7 @@ async function acceptMembershipInvitation(db, tenant, invitationId, subject, req
     db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'tenant', ?, 'read' WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
       .bind(grantId, tenant, subject, tenant, membershipId, tenant, subject),
     db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, ?, NULL, 'active', ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
-      .bind(membershipEventId, tenant, membershipId, subject, subject, invitation.role, "Accepted tenant membership invitation: " + invitation.reason, requestId, membershipId, tenant, subject),
+      .bind(membershipEventId, tenant, membershipId, subject, subject, invitation.role, "Accepted tenant membership invitation: " + invitation.reason.slice(0, 950), requestId, membershipId, tenant, subject),
     db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'accepted', ?, ?, 'Invitation accepted by authenticated Access subject', ? WHERE EXISTS (SELECT 1 FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND status = 'accepted' AND accepted_by_subject = ?)")
       .bind(invitationEventId, tenant, invitationId, subject, subject, requestId, invitationId, tenant, subject),
   ]);
