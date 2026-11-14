@@ -80,7 +80,7 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
   let results;
   try {
     results = await db.batch([event, update]);
-  } catch {
+  } catch (error) {
     // A concurrent retry may have committed the same idempotency key first.
     const concurrentEvent = await exactlyOne(db.prepare(
       "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? LIMIT 2"
@@ -94,7 +94,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
         decided_by: { issuer: actor.issuer, subject: actor.subject },
         decided_at: concurrentEvent.created_at }, status: 200 };
     }
-    return { error: "identity_link_idempotency_conflict", status: 409 };
+    if (concurrentEvent) return { error: "identity_link_idempotency_conflict", status: 409 };
+    throw error;
   }
   if (!Array.isArray(results) || results.length !== 2 ||
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
