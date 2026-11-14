@@ -1820,7 +1820,7 @@ function identitySupabaseToken() {
 }
 
 class IdentityLinkRouteDB extends DB {
-  constructor() { super(); this.identityChallengeRow = null; }
+  constructor() { super(); this.identityChallengeRow = null; this.rateLimitBlocked = false; }
   prepare(sql) {
     const db = this;
     if (sql.startsWith("INSERT INTO tenant_identity_link_challenges")) {
@@ -1848,8 +1848,8 @@ class IdentityLinkRouteDB extends DB {
     if (statements[0]?.sql?.includes("tenant_identity_link_rate_limits")) {
       return [
         { meta: { changes: 0 } },
-        { results: [{ request_count: 1 }] },
-        { results: [{ request_count: 1 }] },
+        { results: [{ request_count: this.rateLimitBlocked ? 6 : 1 }] },
+        { results: [{ request_count: this.rateLimitBlocked ? 6 : 1 }] },
       ];
     }
     if (statements.length === 3 && this.identityChallengeRow) {
@@ -1898,5 +1898,27 @@ test("dual-auth HTTP routes create and consume a challenge bound to both verifie
     assert.ok(db.batchCalls.slice(0, 2).every(batch =>
       batch[0].sql.includes("tenant_identity_link_rate_limits")));
     assert.equal(db.batchCalls[2].length, 3);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+
+test("identity-link challenge route returns 429 before writing a challenge when either identity is over limit", async () => {
+  const db = new IdentityLinkRouteDB();
+  db.rateLimitBlocked = true;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  try {
+    const response = await worker.fetch(await request({
+      "x-nova-request-id": "identity-create-rate-limited",
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/identity-links/challenges", "POST", "{}"), env(db));
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get("retry-after"), "899");
+    assert.equal((await response.json()).error, "identity_link_rate_limited");
+    assert.equal(db.identityChallengeRow, null);
+    assert.equal(db.batchCalls.length, 1);
+    assert.ok(db.batchCalls[0][0].sql.includes("tenant_identity_link_rate_limits"));
   } finally { globalThis.fetch = originalFetch; }
 });
