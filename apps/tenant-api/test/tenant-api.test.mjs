@@ -67,6 +67,9 @@ async function request(overrides = {}, targetUrl = "https://private.internal/int
     "x-nova-verified-audience": "aud", "x-nova-gateway-issued-at": String(now),
     "x-nova-request-id": "request-123", ...(method === "POST" ? { "content-type": "application/json" } : {}), ...overrides });
   const path = new URL(url).pathname;
+  const bodyBytes = new TextEncoder().encode(body ?? "");
+  const bodyDigest = createHash("sha256").update(bodyBytes).digest("hex");
+  if (!headers.has("x-nova-body-sha256")) headers.set("x-nova-body-sha256", bodyDigest);
   const canonical = JSON.stringify([method, path, headers.get("x-nova-verified-subject"),
     headers.get("x-nova-verified-issuer"), headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id"), headers.get("x-nova-body-sha256")]);
