@@ -1206,3 +1206,96 @@ test("membership lifecycle returns conflict when atomic audit and state writes d
       reason: "Access withdrawn" })), env(db));
   assert.equal(response.status, 409);
 });
+
+
+class SiteGrantChangeDB {
+  constructor({ actorRole = "tenant_owner", targetStatus = "active", existing = [],
+    batchResult = [{ meta: { changes: 1 } }, { meta: { changes: 1 } }] } = {}) {
+    this.actorRole = actorRole; this.targetStatus = targetStatus; this.existing = existing;
+    this.batchResult = batchResult; this.batchCalls = []; this.calls = []; this.nonces = new Set();
+  }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) { return { sql, args,
+      async run() {
+        if (sql.includes("INSERT INTO internal_request_nonces")) {
+          if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
+          db.nonces.add(args[0]); return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected site grant write");
+      },
+      async all() {
+        db.calls.push({ sql, args });
+        if (sql.includes("JOIN tenants")) return { results: [{
+          subject: "operator@example.test", tenant_id: "tenant-a", role: db.actorRole,
+          status: "active", tenant_status: "active",
+        }] };
+        if (sql.includes("FROM sites")) return { results: [{ id: "site-a", tenant_id: "tenant-a", status: "active" }] };
+        if (sql.includes("FROM tenant_memberships")) return { results: [{
+          id: "member-1", subject: "member@example.test", status: db.targetStatus,
+        }] };
+        if (sql.includes("FROM tenant_resource_grants")) return { results: db.existing };
+        throw new Error("unexpected site grant read SQL");
+      },
+    }; } };
+  }
+  async batch(statements) { this.batchCalls.push(statements); return this.batchResult; }
+}
+
+test("tenant owner grants exact site access and appends a matching event atomically", async () => {
+  const db = new SiteGrantChangeDB();
+  const response = await worker.fetch(await request({ "x-nova-request-id": "site-grant-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/site-grants", "POST",
+    JSON.stringify({ action: "grant", subject: "member@example.test", site_id: "site-a",
+      grant_action: "read", reason: "Approved site access" })), env(db));
+  assert.equal(response.status, 201);
+  const result = (await response.json()).data;
+  assert.equal(result.status, "active");
+  assert.equal(result.resource_type, "site");
+  assert.equal(result.site_id, "site-a");
+  assert.match(result.grant_id, /^[0-9a-f-]{36}$/);
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_resource_grants/);
+  assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_site_grant_events/);
+});
+
+test("tenant admin cannot grant delete or manage-members privileges", async () => {
+  for (const grant_action of ["delete", "manage_members"]) {
+    const db = new SiteGrantChangeDB({ actorRole: "tenant_admin" });
+    const response = await worker.fetch(await request({ "x-nova-request-id": "site-grant-denied-" + grant_action },
+      "https://private.internal/internal/v1/tenants/tenant-a/site-grants", "POST",
+      JSON.stringify({ action: "grant", subject: "member@example.test", site_id: "site-a",
+        grant_action, reason: "Must be owner controlled" })), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.batchCalls.length, 0);
+  }
+});
+
+test("site grant changes fail closed for inactive target memberships and duplicate grants", async () => {
+  const inactive = new SiteGrantChangeDB({ targetStatus: "inactive" });
+  const inactiveResponse = await worker.fetch(await request({ "x-nova-request-id": "site-grant-inactive-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/site-grants", "POST",
+    JSON.stringify({ action: "grant", subject: "member@example.test", site_id: "site-a",
+      grant_action: "read", reason: "Inactive membership must not receive access" })), env(inactive));
+  assert.equal(inactiveResponse.status, 404);
+  const duplicate = new SiteGrantChangeDB({ existing: [{ id: "grant-existing" }] });
+  const duplicateResponse = await worker.fetch(await request({ "x-nova-request-id": "site-grant-duplicate-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/site-grants", "POST",
+    JSON.stringify({ action: "grant", subject: "member@example.test", site_id: "site-a",
+      grant_action: "read", reason: "Duplicate grant attempt" })), env(duplicate));
+  assert.equal(duplicateResponse.status, 409);
+  assert.equal(duplicate.batchCalls.length, 0);
+});
+
+test("tenant owner revokes an exact site grant and appends a matching event", async () => {
+  const db = new SiteGrantChangeDB({ existing: [{ id: "grant-existing" }] });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "site-grant-revoke-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/site-grants", "POST",
+    JSON.stringify({ action: "revoke", subject: "member@example.test", site_id: "site-a",
+      grant_action: "read", reason: "Site access withdrawn" })), env(db));
+  assert.equal(response.status, 200);
+  const result = (await response.json()).data;
+  assert.equal(result.grant_id, "grant-existing");
+  assert.equal(result.status, "revoked");
+  assert.match(db.batchCalls[0][0].sql, /DELETE FROM tenant_resource_grants/);
+  assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_site_grant_events/);
+});
