@@ -43,6 +43,20 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
       !validId(idempotencyKey) || !(now instanceof Date) || !Number.isFinite(now.getTime())) {
     return { error: "identity_link_review_input_invalid", status: 400 };
   }
+  const priorEvent = await exactlyOne(db.prepare(
+    "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? LIMIT 2"
+  ).bind(idempotencyKey));
+  const expectedEvent = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "revoked";
+  if (priorEvent) {
+    if (priorEvent.link_request_id === requestId && priorEvent.event_type === expectedEvent &&
+        priorEvent.tenant_id === tenantId && priorEvent.actor_cloudflare_issuer === actor.issuer &&
+        priorEvent.actor_cloudflare_subject === actor.subject && priorEvent.reason === reason) {
+      return { data: { request_id: requestId, tenant_id: tenantId, status: expectedEvent,
+        decided_by: { issuer: actor.issuer, subject: actor.subject },
+        decided_at: priorEvent.created_at }, status: 200 };
+    }
+    return { error: "identity_link_idempotency_conflict", status: 409 };
+  }
   const request = await exactlyOne(db.prepare(
     "SELECT id, status, tenant_id FROM tenant_identity_link_requests WHERE id = ? LIMIT 2"
   ).bind(requestId));
@@ -63,7 +77,25 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
     "UPDATE tenant_identity_link_requests SET status = ?, tenant_id = ?, decided_by_cloudflare_issuer = ?, decided_by_cloudflare_subject = ?, reason = ?, decided_at = ? WHERE id = ? AND status = ? AND (tenant_id IS NULL OR tenant_id = ?) AND changes() = 1"
   ).bind(eventType, tenantId, actor.issuer, actor.subject, reason, decidedAt,
     requestId, expected, tenantId);
-  const results = await db.batch([event, update]);
+  let results;
+  try {
+    results = await db.batch([event, update]);
+  } catch {
+    // A concurrent retry may have committed the same idempotency key first.
+    const concurrentEvent = await exactlyOne(db.prepare(
+      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? LIMIT 2"
+    ).bind(idempotencyKey));
+    if (concurrentEvent && concurrentEvent.link_request_id === requestId &&
+        concurrentEvent.event_type === eventType && concurrentEvent.tenant_id === tenantId &&
+        concurrentEvent.actor_cloudflare_issuer === actor.issuer &&
+        concurrentEvent.actor_cloudflare_subject === actor.subject &&
+        concurrentEvent.reason === reason) {
+      return { data: { request_id: requestId, tenant_id: tenantId, status: eventType,
+        decided_by: { issuer: actor.issuer, subject: actor.subject },
+        decided_at: concurrentEvent.created_at }, status: 200 };
+    }
+    return { error: "identity_link_idempotency_conflict", status: 409 };
+  }
   if (!Array.isArray(results) || results.length !== 2 ||
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
     throw new Error("identity_link_review_batch_invalid");
