@@ -1436,6 +1436,28 @@ test("resource grants reject parent mismatches, duplicate tuples and malformed s
   }
 });
 
+test("resource grant resolvers enforce each resource's tenant and parent relationships", async () => {
+  const cases = [
+    ["asset", "asset-a", /s\.tenant_id = a\.tenant_id.*s\.status = 'active'/],
+    ["source", "source-a", /src\.tenant_id = \? AND src\.id = \?.*src\.verification_status = 'verified'.*src\.site_id IS NULL OR s\.id IS NOT NULL/],
+    ["observation", "obs-a", /src\.tenant_id = o\.tenant_id.*src\.site_id IS NULL OR src\.site_id = o\.site_id.*a\.tenant_id = o\.tenant_id.*a\.site_id = o\.site_id/],
+  ];
+  for (const [resource_type, resource_id, expected] of cases) {
+    const db = new ResourceGrantDB({ resourceRows: [] });
+    const response = await worker.fetch(await request({ "x-nova-request-id": "resource-parent-" + resource_type },
+      "https://private.internal/internal/v1/tenants/tenant-a/resource-grants", "POST",
+      JSON.stringify({ action: "grant", subject: "member@example.test", resource_type,
+        resource_id, grant_action: "read", reason: "Parent scope validation" })), env(db));
+    assert.equal(response.status, 404, resource_type);
+    const lookup = db.calls.find(call => call.sql.includes(
+      resource_type === "asset" ? "FROM assets a" :
+      resource_type === "source" ? "FROM sources src" : "FROM observations o"));
+    assert.ok(lookup, resource_type + " resolver query exists");
+    assert.match(lookup.sql, expected, resource_type);
+    assert.equal(db.batchCalls.length, 0);
+  }
+});
+
 test("resource grant audit failure is not reported as a successful transition", async () => {
   const db = new ResourceGrantDB({ batchResult: [{ meta: { changes: 1 } }, { meta: { changes: 0 } }] });
   const response = await worker.fetch(await request({ "x-nova-request-id": "resource-audit-failure" },
