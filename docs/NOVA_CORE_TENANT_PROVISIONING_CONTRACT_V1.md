@@ -2,11 +2,13 @@
 
 ## Status
 
-Design contract only. This document does not create a tenant, membership, grant,
-database migration, secret, binding, Cloudflare resource, route, or deployment.
-The private Tenant API and Access gateway currently expose tenant-scoped reads
-and domain-specific governed writes; they do not expose general tenant or
-membership provisioning.
+Phase 1 is implemented as a draft migration and SQLite contract tests. The
+migration adds an append-only membership-event ledger, validates event
+pre-state, requires a matching event for role/status updates, and prevents
+demotion or revocation of the last active owner. The private Tenant API and
+Access gateway still do not expose general tenant or membership provisioning.
+No migration has been applied to a live database; no tenant, membership, grant,
+secret, binding, Cloudflare resource, route, or deployment has been created.
 
 ## Existing trust boundary
 
@@ -81,25 +83,24 @@ membership instead.
 
 Migration 0002 defines `tenants`, `tenant_memberships`, and exact
 `tenant_resource_grants`; migration 0004 makes membership identity scope
-immutable. Those tables are not sufficient by themselves for a safe lifecycle
-API because they do not provide a dedicated immutable membership-event ledger
-or database guards tying each lifecycle transition to a matching event.
+immutable. Draft migration `0016_tenant_membership_events.sql` now adds a
+constrained tenant-scoped event ledger, foreign keys, unique request IDs,
+append-only UPDATE/DELETE guards, event pre-state checks, matching-event
+requirements for role/status updates, and last-active-owner protection.
+SQLite migration tests cover these invariants. The CI pipeline also applies
+ordered migrations to disposable local D1 and exercises the Worker boundary.
 
-The implementation migration must:
+Remaining requirements before endpoint implementation:
 
-1. Add a tenant-scoped membership event table with constrained event types,
-   actor/subject identity, prior/new role and status, reason, request ID and
-   UTC creation time.
-2. Add unique/idempotency storage for tenant creation requests, scoped to the
+1. Add unique/idempotency storage for tenant creation requests, scoped to the
    verified actor and canonical request digest.
-3. Reject event UPDATE/DELETE and reject client-role INSERT.
-4. Enforce legal membership transitions, last-active-owner protection, and
-   matching append-only event insertion within the same transaction.
-5. Preserve immutable `tenant_id` and `subject` membership scope.
-6. Add foreign keys and indexes for tenant, membership, actor/subject, and
-   event chronology.
-7. Include ordered migration tests and a disposable local D1 integration test
-   before any production migration is considered.
+2. Preserve immutable `tenant_id` and `subject` membership scope.
+3. Ensure every event write is made only by the private Tenant API after
+   authenticated identity and owner authorization; the gateway must not expose
+   direct database access.
+4. Extend adversarial and disposable D1 integration tests to cover membership
+   create/transition batches and rollback behavior.
+5. Review the event ledger retention and tenant deletion restrictions.
 
 ## API contract (proposed; not yet implemented)
 
@@ -140,5 +141,6 @@ This feature remains blocked until the exact-head unit, migration, gateway,
 and disposable D1 + Service Binding integration tests pass; a security review
 confirms that the provisioning allowlist cannot be modified by a tenant
 request; and the user explicitly approves production migration/deployment.
-No migration, secret, Access policy, D1 binding, Worker route, or deployment is
-authorized by this design.
+Migration 0016 exists only in this draft branch and has not been applied to
+any live database. No secret, Access policy, D1 binding, Worker route, or
+deployment is authorized by this design.
