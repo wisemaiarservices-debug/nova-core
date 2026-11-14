@@ -1409,13 +1409,14 @@ test("only active tenant owners can change lifecycle; archived tenants are termi
 });
 
 test("tenant lifecycle rejects caller-supplied actor and invalid actions", async () => {
-  for (const body of [
+  const invalidBodies = [
     { action: "suspend", reason: "reason", actor_subject: "forged" },
     { action: "delete", reason: "reason" },
     { action: "suspend", reason: " " },
-  ]) {
+  ];
+  for (const [index, body] of invalidBodies.entries()) {
     const db = new TenantLifecycleDB();
-    const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-lifecycle-invalid-" + Math.random() },
+    const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-lifecycle-invalid-" + index },
       "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-actions", "POST",
       JSON.stringify(body)), env(db));
     assert.equal(response.status, 400);
