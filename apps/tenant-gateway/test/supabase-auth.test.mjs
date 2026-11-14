@@ -15,10 +15,10 @@ const { privateKey, publicKey } = generateKeyPairSync("ec", {
 const jwk = { ...createPublicKey(publicKey).export({ format: "jwk" }), kid: "supabase-test-key", use: "sig", alg: "ES256" };
 const originalFetch = globalThis.fetch;
 function b64url(value) { return Buffer.from(value).toString("base64url"); }
-function tokenFor(claimOverrides = {}, headerOverrides = {}) {
+function tokenFor(claimOverrides = {}, headerOverrides = {}, issuerValue = issuer) {
   const header = { alg: "ES256", typ: "JWT", kid: "supabase-test-key", ...headerOverrides };
   const claims = {
-    iss: issuer, aud: audience, sub: "supabase-user-uuid-001", role: "authenticated",
+    iss: issuerValue, aud: audience, sub: "supabase-user-uuid-001", role: "authenticated",
     iat: now - 10, exp: now + 600, session_id: "session-test", ...claimOverrides,
   };
   const input = b64url(JSON.stringify(header)) + "." + b64url(JSON.stringify(claims));
@@ -89,7 +89,7 @@ test("fails closed when JWKS is unavailable or malformed", async () => {
   globalThis.fetch = async () => { throw new Error("private fetch details"); };
   await assert.rejects(() => verifySupabaseAuthToken(tokenFor(), { issuer, audience }, now), /supabase_jwks_unavailable/);
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [] }), { status: 200 });
-  await assert.rejects(() => verifySupabaseAuthToken(tokenFor(), { issuer, audience }, now), /supabase_jwks_invalid/);
+  const malformedIssuer = "https://malformed-project.supabase.co/auth/v1";\n  await assert.rejects(() => verifySupabaseAuthToken(tokenFor({}, {}, malformedIssuer), { issuer: malformedIssuer, audience }, now), /supabase_jwks_invalid/);
 });
 test("fails closed on JWKS redirects and oversized bodies", async () => {
   globalThis.fetch = async () => new Response("", { status: 302 });
