@@ -58,6 +58,88 @@ try {
   const invalidIdentity = await throughGateway(sitePath, "not.a.valid.jwt");
   assert.equal(invalidIdentity.response.status, 401);
 
+  // Exercise membership lifecycle and possession-based invitation using real
+  // D1 rows through the public Access gateway and private Worker binding.
+  const membershipActionsPath = "/api/v1/tenants/tenant-http-a/membership-actions";
+  async function membershipAction(subject, payload) {
+    return throughGateway(membershipActionsPath, accessToken(subject),
+      { "content-type": "application/json" }, "POST", JSON.stringify(payload));
+  }
+  const roleChanged = await membershipAction("ci-human-subject", {
+    membership_id: "membership-http-lifecycle", action: "change_role",
+    role: "analyst", reason: "CI role transition fixture",
+  });
+  assert.equal(roleChanged.response.status, 200, JSON.stringify(roleChanged.body));
+  assert.equal(roleChanged.body.data.role, "analyst");
+  assert.equal(roleChanged.body.data.event_type, "role_changed");
+
+  const adminRoleChange = await membershipAction("ci-http-admin", {
+    membership_id: "membership-http-lifecycle", action: "change_role",
+    role: "viewer", reason: "Admin role change must be denied",
+  });
+  assert.equal(adminRoleChange.response.status, 404);
+
+  const suspended = await membershipAction("ci-http-admin", {
+    membership_id: "membership-http-lifecycle", action: "suspend",
+    reason: "CI temporary suspension",
+  });
+  assert.equal(suspended.response.status, 200, JSON.stringify(suspended.body));
+  assert.equal(suspended.body.data.status, "inactive");
+
+  const reactivated = await membershipAction("ci-human-subject", {
+    membership_id: "membership-http-lifecycle", action: "reactivate",
+    reason: "CI access restoration",
+  });
+  assert.equal(reactivated.response.status, 200, JSON.stringify(reactivated.body));
+  assert.equal(reactivated.body.data.status, "active");
+
+  const revoked = await membershipAction("ci-human-subject", {
+    membership_id: "membership-http-lifecycle", action: "revoke",
+    reason: "CI final membership revocation",
+  });
+  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+  assert.equal(revoked.body.data.status, "revoked");
+
+  const revokedAgain = await membershipAction("ci-human-subject", {
+    membership_id: "membership-http-lifecycle", action: "reactivate",
+    reason: "Illegal transition after revocation",
+  });
+  assert.equal(revokedAgain.response.status, 409);
+
+  const invitationCreated = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ role: "operator", reason: "CI invitation acceptance fixture" }));
+  assert.equal(invitationCreated.response.status, 201, JSON.stringify(invitationCreated.body));
+  assert.match(invitationCreated.body.data.invitation_token, /^[A-Za-z0-9_-]{43}$/);
+  const invitationAccepted = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+      invitationCreated.body.data.invitation_id + "/accept", accessToken("ci-invited-human"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ invitation_token: invitationCreated.body.data.invitation_token }));
+  assert.equal(invitationAccepted.response.status, 201, JSON.stringify(invitationAccepted.body));
+  assert.equal(invitationAccepted.body.data.subject, "ci-invited-human");
+  assert.equal(invitationAccepted.body.data.role, "operator");
+
+  const membershipAudit = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-events", accessToken("ci-human-subject"));
+  assert.equal(membershipAudit.response.status, 200, JSON.stringify(membershipAudit.body));
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "membership_role_changed" &&
+    event.membership_id === "membership-http-lifecycle"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "membership_suspended" &&
+    event.membership_id === "membership-http-lifecycle"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "membership_reactivated" &&
+    event.membership_id === "membership-http-lifecycle"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "membership_revoked" &&
+    event.membership_id === "membership-http-lifecycle"), true);
+  assert.equal(membershipAudit.body.data.some(event =>
+    event.event_type === "invitation_accepted" &&
+    event.subject === "ci-invited-human"), true);
+
   const criteriaList = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria");
   assert.equal(criteriaList.response.status, 200, JSON.stringify(criteriaList.body));
   assert.equal(criteriaList.body.data.length, 1);
