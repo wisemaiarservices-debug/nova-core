@@ -1086,7 +1086,7 @@ export default {
           const pair = await verifyIdentityLinkIdentityPair(input);
           const operation = identityLinkChallengeCreate ? "challenge_create" : "challenge_consume";
           const rate = await consumeIdentityLinkRateLimit(env.DB,
-            [pair.supabase, pair.cloudflare], operation, input.now);
+            [pair.supabase, pair.cloudflare], operation, input.now, env.INTERNAL_AUTH_SECRET);
           if (!rate.allowed) {
             return new Response(JSON.stringify({ error: "identity_link_rate_limited",
               retry_after_seconds: rate.retryAfterSeconds, request_id: requestId }), {
