@@ -4,6 +4,7 @@ INSERT INTO tenants (id, display_name, status) VALUES
   ('tenant-http-b', 'CI Tenant B', 'active');
 
 INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
+  ('membership-http-b-member', 'tenant-http-b', 'ci-other-tenant-member', 'viewer', 'active'),
   ('membership-http-a', 'tenant-http-a', 'ci-human-subject', 'tenant_owner', 'active'),
   ('membership-http-reviewer', 'tenant-http-a', 'ci-measurement-reviewer', 'viewer', 'active'),
   ('membership-http-lifecycle', 'tenant-http-a', 'ci-lifecycle-member', 'viewer', 'active'),
@@ -78,6 +79,8 @@ END;
 -- Verified source and active asset used only to exercise exact resource grants.
 INSERT INTO assets (id, site_id, tenant_id, name, asset_type, status)
 VALUES ('asset-http-grant', 'site-http-a', 'tenant-http-a', 'CI grant asset', 'sensor', 'active');
+INSERT INTO assets (id, site_id, tenant_id, name, asset_type, status)
+VALUES ('asset-http-b', 'site-http-b', 'tenant-http-b', 'Other tenant asset', 'sensor', 'active');
 
 INSERT INTO sources
 (id, site_id, tenant_id, module, provider, source_type, display_name, verification_status, metadata_json)
