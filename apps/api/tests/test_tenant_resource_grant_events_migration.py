@@ -33,20 +33,20 @@ class TenantResourceGrantEventsMigrationTests(unittest.TestCase):
 
     def insert_event(self, *, event_id="event-a", grant_id="grant-asset",
                      resource_type="asset", resource_id="asset-a",
-                     event_type="granted", request_id="request-a"):
+                     event_type="granted", request_id="request-a", grant_action="read"):
         self.db.execute("""
             INSERT INTO tenant_resource_grant_events
               (id, tenant_id, grant_id, subject, resource_type, resource_id,
                grant_action, event_type, actor_subject, reason, request_id)
-            VALUES (?, 'tenant-a', ?, 'member-sub', ?, ?, 'read', ?,
+            VALUES (?, 'tenant-a', ?, 'member-sub', ?, ?, ?, ?,
                     'owner-sub', 'approved exact resource access', ?)
-        """, (event_id, grant_id, resource_type, resource_id, event_type, request_id))
+        """, (event_id, grant_id, resource_type, resource_id, grant_action, event_type, request_id))
 
     def test_granted_events_cover_exact_asset_source_and_observation_scopes(self):
         self.insert_event()
         self.insert_event(event_id="event-source", grant_id="grant-source",
                           resource_type="source", resource_id="source-a",
-                          event_type="granted", request_id="request-source")
+                          event_type="granted", request_id="request-source", grant_action="ingest")
         self.insert_event(event_id="event-observation", grant_id="grant-observation",
                           resource_type="observation", resource_id="obs-a",
                           event_type="granted", request_id="request-observation")
