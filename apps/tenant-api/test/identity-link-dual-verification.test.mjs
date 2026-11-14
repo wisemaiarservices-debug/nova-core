@@ -89,3 +89,93 @@ test("rejects an invalid Supabase token rather than returning a partial identity
     }), /invalid_supabase_token/);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+class PersistedChallengeDb {
+  constructor() { this.row = null; this.batchCalls = []; }
+  prepare(sql) {
+    const db = this;
+    return {
+      sql, args: [],
+      bind(...args) { this.args = args; return this; },
+      async run() {
+        if (this.sql.startsWith("INSERT INTO tenant_identity_link_challenges")) {
+          if (db.row) return { meta: { changes: 0 } };
+          const [id, si, ss, ci, cs, digest, created, expires, request] = this.args;
+          db.row = { id, supabase_issuer: si, supabase_subject: ss,
+            cloudflare_issuer: ci, cloudflare_subject: cs,
+            challenge_sha256: digest, status: "pending", created_at: created,
+            expires_at: expires, request_id: request };
+          return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected run SQL: " + this.sql);
+      },
+      async all() {
+        if (!db.row || db.row.id !== this.args[0] ||
+            db.row.challenge_sha256 !== this.args[1]) return { results: [] };
+        return { results: [db.row] };
+      },
+    };
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    if (!this.row || this.row.status !== "pending") {
+      return statements.map(() => ({ meta: { changes: 0 } }));
+    }
+    this.row.status = "consumed";
+    return statements.map(() => ({ meta: { changes: 1 } }));
+  }
+}
+
+test("verified challenge orchestration verifies both identities before create and atomic consume", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  try {
+    const db = new PersistedChallengeDb();
+    const createdAt = new Date("2026-11-14T10:00:00.000Z");
+    const created = await import("../src/identity-link-dual-verification.mjs")
+      .then(({ createVerifiedIdentityLinkChallenge }) =>
+        createVerifiedIdentityLinkChallenge(db, {
+          supabaseToken: tokenFor(), cloudflareIdentity: accessIdentity, ...config,
+          requestId: "verified-create-1", now: createdAt,
+        }));
+    assert.equal(created.status, 201);
+    assert.equal(db.row.supabase_issuer, SUPABASE_ISSUER);
+    assert.equal(db.row.supabase_subject, "supabase-user");
+    assert.equal(db.row.cloudflare_issuer, ACCESS_ISSUER);
+    assert.equal(db.row.cloudflare_subject, "cloudflare-access-user");
+    assert.equal(db.row.status, "pending");
+
+    const { consumeVerifiedIdentityLinkChallenge } =
+      await import("../src/identity-link-dual-verification.mjs");
+    const consumed = await consumeVerifiedIdentityLinkChallenge(db, {
+      challengeId: created.data.challenge_id, challenge: created.data.challenge,
+      supabaseToken: tokenFor(), cloudflareIdentity: accessIdentity, ...config,
+      requestId: "verified-consume-1", now: createdAt,
+    });
+    assert.equal(consumed.status, 201);
+    assert.equal(consumed.data.status, "pending");
+    assert.equal(db.row.status, "consumed");
+    assert.equal(db.batchCalls.length, 1);
+    assert.equal(db.batchCalls[0].length, 3);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("verified challenge orchestration never persists a pair with a shared issuer", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("JWKS must not be fetched"); };
+  try {
+    const db = new PersistedChallengeDb();
+    await assert.rejects(() => import("../src/identity-link-dual-verification.mjs")
+      .then(({ createVerifiedIdentityLinkChallenge }) =>
+        createVerifiedIdentityLinkChallenge(db, {
+          supabaseToken: tokenFor(),
+          cloudflareIdentity: { ...accessIdentity, issuer: SUPABASE_ISSUER },
+          ...config, accessIssuer: SUPABASE_ISSUER,
+          requestId: "verified-create-same-issuer",
+        })), /identity_link_dual_identity_invalid/);
+    assert.equal(db.row, null);
+  } finally { globalThis.fetch = originalFetch; }
+});
