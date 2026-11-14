@@ -66,7 +66,8 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-verified-issuer"),
     headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"),
-    headers.get("x-nova-request-id"),\n    headers.get("x-nova-body-sha256")]);
+    headers.get("x-nova-request-id"),
+    headers.get("x-nova-body-sha256")]);
 }
 async function signEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) throw new Error("internal_auth_not_configured");
