@@ -1374,7 +1374,9 @@ test("tenant owner transfers ownership atomically and audits both role changes",
   assert.match(db.batchCalls[0][1].sql, /SET role = 'tenant_owner'/);
   assert.match(db.batchCalls[0][2].sql, /new_role, previous_status/);
   assert.match(db.batchCalls[0][3].sql, /SET role = 'tenant_admin'/);
-  assert.deepEqual(db.batchCalls[0][2].args.slice(7, 10), ["owner-transfer-001:actor", "owner-membership", "tenant-a"]);
+  assert.equal(db.batchCalls[0][2].args[6], "owner-transfer-001:actor");
+  assert.deepEqual(db.batchCalls[0][2].args.slice(7, 10),
+    ["owner-membership", "tenant-a", "operator@example.test"]);
 });
 
 test("only active owners can transfer ownership to another active non-owner", async () => {
