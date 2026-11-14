@@ -41,7 +41,7 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-verified-issuer"),
     headers.get("x-nova-verified-audience"),
     headers.get("x-nova-gateway-issued-at"),
-    headers.get("x-nova-request-id")]);
+    headers.get("x-nova-request-id"),\n    headers.get("x-nova-body-sha256")]);
 }
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
@@ -1006,14 +1006,18 @@ export default {
     if (!env.DB) return error("storage_unavailable", 503);
 
     let draftBody = null;
+    const rawBody = request.method === "POST" ? await request.arrayBuffer() : new ArrayBuffer(0);
+    const actualDigest = await crypto.subtle.digest("SHA-256", rawBody);
+    const actualDigestHex = Array.from(new Uint8Array(actualDigest), byte => byte.toString(16).padStart(2, "0")).join("");
+    if (!/^[a-f0-9]{64}$/.test(request.headers.get("x-nova-body-sha256") || "") ||
+        request.headers.get("x-nova-body-sha256") !== actualDigestHex) return error("request_not_authorized", 401);
     if (request.method === "POST") {
       const declaredLength = Number(request.headers.get("content-length") ?? "0");
       if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
-          !Number.isFinite(declaredLength) || declaredLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
+          !Number.isFinite(declaredLength) || declaredLength > (labReportUpload ? 1500000 : 65536) ||
+          rawBody.byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
       try {
-        const raw = await request.text();
-        if (new TextEncoder().encode(raw).byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
-        draftBody = JSON.parse(raw);
+        draftBody = JSON.parse(new TextDecoder().decode(rawBody));
       } catch { return error("invalid_request_body", 400); }
       if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody)) return error("invalid_request_body", 400);
     }
