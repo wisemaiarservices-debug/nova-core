@@ -24,7 +24,8 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
             INSERT INTO tenant_memberships VALUES
               ('owner-a', 'tenant-a', 'owner-a-sub', 'tenant_owner', 'active'),
               ('admin-a', 'tenant-a', 'admin-a-sub', 'tenant_admin', 'active'),
-              ('owner-b', 'tenant-b', 'owner-b-sub', 'tenant_owner', 'active'),\n              ('owner-c', 'tenant-c', 'owner-c-sub', 'tenant_owner', 'active');
+              ('owner-b', 'tenant-b', 'owner-b-sub', 'tenant_owner', 'active'),
+              ('owner-c', 'tenant-c', 'owner-c-sub', 'tenant_owner', 'active');
         """)
         self.db.executescript((MIGRATIONS / "0022_tenant_identity_link_challenges.sql").read_text())
         self.db.executescript((MIGRATIONS / "0023_tenant_identity_link_uniqueness.sql").read_text())
@@ -32,16 +33,17 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def challenge(self, challenge_id="challenge-1", request_id="challenge-request-1",\n                  supabase_subject="supabase-sub", cloudflare_subject="cloudflare-sub"):
+    def challenge(self, challenge_id="challenge-1", request_id="challenge-request-1",
+                  supabase_subject="supabase-sub", cloudflare_subject="cloudflare-sub"):
         digest = hashlib.sha256(challenge_id.encode()).hexdigest()
         self.db.execute("""
           INSERT INTO tenant_identity_link_challenges
           (id, supabase_issuer, supabase_subject, cloudflare_issuer, cloudflare_subject,
            challenge_sha256, status, created_at, expires_at, request_id)
-          VALUES (?, 'https://project.supabase.co/auth/v1', 'supabase-sub',
-                  'https://team.cloudflareaccess.com', 'cloudflare-sub',
+          VALUES (?, 'https://project.supabase.co/auth/v1', ?,
+                  'https://team.cloudflareaccess.com', ?,
                   ?, 'pending', '2026-11-14T10:00:00Z', '2026-11-14T10:05:00Z', ?)
-        """, (challenge_id, digest, request_id))
+        """, (challenge_id, supabase_subject, cloudflare_subject, digest, request_id))
 
     def consume(self, challenge_id="challenge-1", consumed_at="2026-11-14T10:01:00Z"):
         self.db.execute("""
@@ -49,14 +51,15 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
             consumed_at=? WHERE id=?
         """, (consumed_at, challenge_id))
 
-    def request(self, request_id="link-request-1", challenge_id="challenge-1",\n                supabase_subject="supabase-sub", cloudflare_subject="cloudflare-sub"):
+    def request(self, request_id="link-request-1", challenge_id="challenge-1",
+                supabase_subject="supabase-sub", cloudflare_subject="cloudflare-sub"):
         self.db.execute("""
           INSERT INTO tenant_identity_link_requests
           (id, challenge_id, supabase_issuer, supabase_subject, cloudflare_issuer,
            cloudflare_subject, request_id)
-          VALUES (?, ?, 'https://project.supabase.co/auth/v1', 'supabase-sub',
-                  'https://team.cloudflareaccess.com', 'cloudflare-sub', ?)
-        """, (request_id, challenge_id, request_id + "-idem"))
+          VALUES (?, ?, 'https://project.supabase.co/auth/v1', ?,
+                  'https://team.cloudflareaccess.com', ?, ?)
+        """, (request_id, challenge_id, supabase_subject, cloudflare_subject, request_id + "-idem"))
 
     def event(self, event_id, link_id="link-request-1", event_type="requested",
               previous=None, new="pending", tenant=None, actor_issuer="https://team.cloudflareaccess.com",
