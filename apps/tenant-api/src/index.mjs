@@ -9,7 +9,9 @@ import { registerSensorCalibration } from "./sensor-calibration.mjs";
 import { assignCalibrationReviewer, reviewSensorCalibration } from "./sensor-calibration-verification.mjs";
 import { registerSensorSourceMapping, reviewSensorSourceMapping, assignSensorSourceMappingReviewer } from "./sensor-source-identity.mjs";
 import { registerMeasurementQualityPolicy, reviewMeasurementQualityPolicy, assessMeasurementQuality } from "./measurement-quality.mjs";
-import { createVerifiedIdentityLinkChallenge, consumeVerifiedIdentityLinkChallenge } from "./identity-link-dual-verification.mjs";
+import { verifyIdentityLinkIdentityPair } from "./identity-link-dual-verification.mjs";
+import { createIdentityLinkChallenge, consumeIdentityLinkChallenge } from "./identity-link-challenge-service.mjs";
+import { consumeIdentityLinkRateLimit } from "./identity-link-rate-limit.mjs";
 import { listPendingIdentityLinkRequests, decideIdentityLinkRequest } from "./identity-link-review.mjs";
 
 const ROLE_ACTIONS = {
@@ -1075,15 +1077,30 @@ export default {
         try {
           if (identityLinkChallengeCreate) {
             if (!onlyKeys(draftBody, [])) return error("invalid_request_body", 400);
-            result = await createVerifiedIdentityLinkChallenge(env.DB, input);
-          } else {
-            if (!onlyKeys(draftBody, ["challenge"]) ||
-                typeof draftBody.challenge !== "string") return error("invalid_request_body", 400);
-            result = await consumeVerifiedIdentityLinkChallenge(env.DB, {
-              ...input, challengeId: identityLinkChallengeConsume[1],
-              challenge: draftBody.challenge,
+          } else if (!onlyKeys(draftBody, ["challenge"]) ||
+              typeof draftBody.challenge !== "string") {
+            return error("invalid_request_body", 400);
+          }
+          // Verify both independent issuers before charging either identity's
+          // rate-limit bucket. Browser-supplied identity claims are never used.
+          const pair = await verifyIdentityLinkIdentityPair(input);
+          const operation = identityLinkChallengeCreate ? "challenge_create" : "challenge_consume";
+          const rate = await consumeIdentityLinkRateLimit(env.DB,
+            [pair.supabase, pair.cloudflare], operation, input.now, env.INTERNAL_AUTH_SECRET);
+          if (!rate.allowed) {
+            return new Response(JSON.stringify({ error: "identity_link_rate_limited",
+              retry_after_seconds: rate.retryAfterSeconds, request_id: requestId }), {
+              status: 429,
+              headers: { "content-type": "application/json; charset=utf-8",
+                "cache-control": "no-store", "retry-after": String(rate.retryAfterSeconds),
+                "x-content-type-options": "nosniff" },
             });
           }
+          result = identityLinkChallengeCreate
+            ? await createIdentityLinkChallenge(env.DB, pair.supabase, pair.cloudflare,
+                requestId, input.now)
+            : await consumeIdentityLinkChallenge(env.DB, identityLinkChallengeConsume[1],
+                draftBody.challenge, pair.supabase, pair.cloudflare, requestId, input.now);
         } catch (cause) {
           const reason = cause instanceof Error ? cause.message : "";
           if (reason === "supabase_jwks_unavailable" || reason === "supabase_issuer_unavailable")
