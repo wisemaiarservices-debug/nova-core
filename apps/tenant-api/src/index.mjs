@@ -887,7 +887,8 @@ export default {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
     const url = new URL(request.url);
     const tenantProvision = url.pathname === "/internal/v1/tenants";
-    const ownershipTransfer = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/ownership-transfer$/);\n    const siteGrantChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/site-grants$/);
+    const ownershipTransfer = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/ownership-transfer$/);
+    const siteGrantChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/site-grants$/);
     const resourceGrantChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/resource-grants$/);
     const membershipChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-actions$/);
     const membershipEvents = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-events$/);
