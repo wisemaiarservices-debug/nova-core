@@ -1374,7 +1374,7 @@ test("tenant owner suspends a tenant with an atomic immutable lifecycle event", 
   assert.equal(db.batchCalls[0].length, 2);
   assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_lifecycle_events/);
   assert.match(db.batchCalls[0][1].sql, /UPDATE tenants SET status = \?/);
-  assert.match(db.batchCalls[0][1].sql, /tenant_lifecycle_events/);
+  assert.match(db.batchCalls[0][1].sql, /last_lifecycle_event_id = \?/);
   assert.equal(db.batchCalls[0][0].args[7], "tenant-suspend-001");
 });
 
