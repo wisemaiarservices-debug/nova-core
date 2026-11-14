@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign, webcrypto } from "node:crypto";
+globalThis.crypto ??= webcrypto;
 import worker from "../src/index.mjs";
 
 const now = Math.floor(Date.now() / 1000);
@@ -1800,4 +1801,93 @@ test("identity-link decision uses the gateway-derived owner identity and caller 
   assert.equal(db.batchCalls[0][0].args[6], "https://example.cloudflareaccess.com");
   assert.equal(db.batchCalls[0][0].args[7], "operator@example.test");
   assert.equal(db.batchCalls[0][0].args[9], "decision-idempotency-1");
+});
+
+
+const IDENTITY_SUPABASE_ISSUER = "https://project.example.test/auth/v1";
+const IDENTITY_SUPABASE_AUDIENCE = "authenticated";
+const { publicKey: identityPublicKey, privateKey: identityPrivateKey } =
+  generateKeyPairSync("rsa", { modulusLength: 2048 });
+const identityJwk = { ...identityPublicKey.export({ format: "jwk" }),
+  kid: "tenant-api-identity-link-test", alg: "RS256", use: "sig", key_ops: ["verify"] };
+function identitySupabaseToken() {
+  const encode = value => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const header = encode({ alg: "RS256", typ: "JWT", kid: identityJwk.kid });
+  const claims = encode({ iss: IDENTITY_SUPABASE_ISSUER, aud: IDENTITY_SUPABASE_AUDIENCE,
+    sub: "supabase-user-1", role: "authenticated", iat: now - 5, exp: now + 300 });
+  const input = header + "." + claims;
+  return input + "." + sign("RSA-SHA256", Buffer.from(input), identityPrivateKey).toString("base64url");
+}
+
+class IdentityLinkRouteDB extends DB {
+  constructor() { super(); this.identityChallengeRow = null; }
+  prepare(sql) {
+    const db = this;
+    if (sql.startsWith("INSERT INTO tenant_identity_link_challenges")) {
+      return { bind(...args) { return { async run() {
+        db.calls.push({ sql, args });
+        if (db.identityChallengeRow) return { meta: { changes: 0 } };
+        const [id, si, ss, ci, cs, digest, created, expires, requestId] = args;
+        db.identityChallengeRow = { id, supabase_issuer: si, supabase_subject: ss,
+          cloudflare_issuer: ci, cloudflare_subject: cs, challenge_sha256: digest,
+          status: "pending", created_at: created, expires_at: expires, request_id: requestId };
+        return { meta: { changes: 1 } };
+      } }; } };
+    }
+    if (sql.startsWith("SELECT id, supabase_issuer, supabase_subject, cloudflare_issuer, cloudflare_subject, status, expires_at FROM tenant_identity_link_challenges")) {
+      return { bind(...args) { return { async all() {
+        db.calls.push({ sql, args });
+        const row = db.identityChallengeRow;
+        return { results: row && row.id === args[0] && row.challenge_sha256 === args[1] ? [row] : [] };
+      } }; } };
+    }
+    return super.prepare(sql);
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    if (statements.length === 3 && this.identityChallengeRow) {
+      this.identityChallengeRow.status = "consumed";
+      return statements.map(() => ({ meta: { changes: 1 } }));
+    }
+    return super.batch(statements);
+  }
+}
+
+test("dual-auth HTTP routes create and consume a challenge bound to both verified identities", async () => {
+  const db = new IdentityLinkRouteDB();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [identityJwk] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const token = identitySupabaseToken();
+    const createdResponse = await worker.fetch(await request({
+      "x-nova-request-id": "identity-create-001",
+      "x-nova-supabase-access-token": token,
+    }, "https://private.internal/internal/v1/identity-links/challenges", "POST", "{}"), env(db));
+    assert.equal(createdResponse.status, 201);
+    const created = await createdResponse.json();
+    assert.equal(db.identityChallengeRow.supabase_issuer, IDENTITY_SUPABASE_ISSUER);
+    assert.equal(db.identityChallengeRow.supabase_subject, "supabase-user-1");
+    assert.equal(db.identityChallengeRow.cloudflare_issuer, "https://example.cloudflareaccess.com");
+    assert.equal(db.identityChallengeRow.cloudflare_subject, "operator@example.test");
+    assert.equal(db.identityChallengeRow.status, "pending");
+    assert.equal(Object.hasOwn(db.identityChallengeRow, "supabase_token"), false);
+    assert.equal(Object.hasOwn(db.identityChallengeRow, "challenge"), false);
+
+    const consumedResponse = await worker.fetch(await request({
+      "x-nova-request-id": "identity-consume-001",
+      "x-nova-supabase-access-token": token,
+    }, "https://private.internal/internal/v1/identity-links/challenges/" +
+      created.data.challenge_id + "/consume", "POST",
+    JSON.stringify({ challenge: created.data.challenge })), env(db));
+    assert.equal(consumedResponse.status, 201);
+    assert.equal((await consumedResponse.json()).data.status, "pending");
+    assert.equal(db.identityChallengeRow.status, "consumed");
+    assert.equal(db.batchCalls.length, 1);
+    assert.equal(db.batchCalls[0].length, 3);
+  } finally { globalThis.fetch = originalFetch; }
 });
