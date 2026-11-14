@@ -287,3 +287,66 @@ test("routes bounded laboratory report uploads and larger evidence reads through
     "/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports/lab-1");
   assert.equal((await download.json()).data.document_base64.length, 90000);
 });
+
+
+test("handles credentialed CORS preflight only for exact configured origins and safe headers", async () => {
+  const gateway = createGateway();
+  const configured = env({ CORS_ALLOWED_ORIGINS: "https://nova-os-pied.vercel.app,https://nova-command-center-peach.vercel.app" });
+  const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/observations/obs-1/measurement-quality-assessment", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://nova-os-pied.vercel.app",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "accept,content-type",
+    },
+  }), configured);
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://nova-os-pied.vercel.app");
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+  assert.equal(response.headers.get("access-control-allow-methods"), "GET, POST, OPTIONS");
+  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Content-Type");
+  assert.match(response.headers.get("vary"), /Origin/);
+  assert.match(response.headers.get("vary"), /Access-Control-Request-Method/);
+
+  const deniedOrigin = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
+    method: "OPTIONS",
+    headers: { Origin: "https://attacker.example", "Access-Control-Request-Method": "GET" },
+  }), configured);
+  assert.equal(deniedOrigin.status, 403);
+  assert.equal(deniedOrigin.headers.get("access-control-allow-origin"), null);
+
+  const deniedHeader = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
+    method: "OPTIONS",
+    headers: { Origin: "https://nova-os-pied.vercel.app",
+      "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization" },
+  }), configured);
+  assert.equal(deniedHeader.status, 403);
+});
+
+test("adds exact-origin credentialed CORS headers to successful API responses and exposes request ID", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "browser-user", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
+    headers: { Origin: "https://nova-os-pied.vercel.app", "Cf-Access-Jwt-Assertion": "valid" },
+  }), env({
+    CORS_ALLOWED_ORIGINS: "https://nova-os-pied.vercel.app",
+    TENANT_API: { fetch: async () => new Response(JSON.stringify({ data: { ok: true } }), {
+      headers: { "content-type": "application/json" },
+    }) },
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://nova-os-pied.vercel.app");
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+  assert.equal(response.headers.get("access-control-expose-headers"), "X-Request-Id");
+  assert.ok(response.headers.get("x-request-id"));
+});
+
+test("rejects wildcard and malformed origins in CORS configuration", async () => {
+  const gateway = createGateway();
+  const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/t/sites/s", {
+    method: "OPTIONS",
+    headers: { Origin: "https://nova-os-pied.vercel.app", "Access-Control-Request-Method": "GET" },
+  }), env({ CORS_ALLOWED_ORIGINS: "*,https://nova-os-pied.vercel.app/path" }));
+  assert.equal(response.status, 403);
+});
