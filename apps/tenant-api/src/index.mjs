@@ -450,7 +450,7 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
       "INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) SELECT ?, ?, ?, 'tenant_owner', 'active' WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ?)"
     ).bind(membershipId, tenantId, subject, tenantId),
     db.prepare(
-      "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'tenant', ?, 'read' WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? UNION ALL SELECT 1 WHERE 0)"
+      "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'tenant', ?, 'read' WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(grantIds[0], tenantId, subject, tenantId, membershipId, tenantId),
     ...["create", "update", "delete", "ingest", "manage_members"].map((action, index) =>
       db.prepare(
@@ -484,7 +484,7 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
   const existing = await rows(db.prepare(
     "SELECT r.request_sha256, r.tenant_id, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
   ).bind(subject, body.idempotency_key));
-  if (existing.length !== 1) return { error: "tenant_provisioning_conflict", status: 409 };
+  if (existing.length !== 1) throw new Error("tenant_provisioning_storage_conflict");
   const row = existing[0];
   if (row.request_sha256 !== requestDigest) return { error: "idempotency_key_reused", status: 409 };
   if (row.role !== "tenant_owner" || row.membership_status !== "active" || row.status !== "active") {
