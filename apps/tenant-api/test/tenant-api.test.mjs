@@ -1295,7 +1295,9 @@ test("site grant changes fail closed for inactive target memberships and duplica
   assert.equal(cleanupResponse.status, 200);
   assert.equal((await cleanupResponse.json()).data.grant_id, "grant-stale");
   assert.match(cleanup.batchCalls[0][0].sql, /DELETE FROM tenant_resource_grants/);
-  assert.doesNotMatch(cleanup.batchCalls[0][0].sql, /tenant_memberships[^)]*status = 'active'/);
+  assert.match(cleanup.batchCalls[0][0].sql, /actor_m\.status = 'active'/);
+  assert.match(cleanup.batchCalls[0][0].sql, /tenant_memberships WHERE id = \? AND tenant_id = \? AND subject = \?/);
+  assert.doesNotMatch(cleanup.batchCalls[0][0].sql, /tenant_memberships WHERE id = \? AND tenant_id = \? AND subject = \? AND status = 'active'/);
 });
 
 test("tenant owner revokes an exact site grant and appends a matching event", async () => {
