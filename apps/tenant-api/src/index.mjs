@@ -432,6 +432,100 @@ async function sha256Hex(value) {
 
 
 
+async function resolveGrantableResource(db, tenant, type, id) {
+  const queries = {
+    asset: "SELECT a.id, a.tenant_id, a.site_id FROM assets a JOIN sites s ON s.id = a.site_id AND s.tenant_id = a.tenant_id AND s.status = 'active' WHERE a.tenant_id = ? AND a.id = ? AND a.status = 'active' LIMIT 2",
+    source: "SELECT src.id, src.tenant_id, src.site_id FROM sources src LEFT JOIN sites s ON s.id = src.site_id AND s.tenant_id = src.tenant_id AND s.status = 'active' WHERE src.tenant_id = ? AND src.id = ? AND src.verification_status = 'verified' AND (src.site_id IS NULL OR s.id IS NOT NULL) LIMIT 2",
+    observation: "SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.tenant_id = ? AND o.id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL) LIMIT 2",
+  };
+  const sql = queries[type];
+  if (!sql) return null;
+  const found = await rows(db.prepare(sql).bind(tenant, id));
+  if (found.length !== 1 || found[0].tenant_id !== tenant || found[0].id !== id) return null;
+  return found[0];
+}
+
+async function changeTenantResourceGrant(db, tenant, actor, actorRole, requestId, body) {
+  const allowedActions = ["read", "create", "update", "delete", "ingest"];
+  if (!onlyKeys(body, ["action", "subject", "resource_type", "resource_id", "grant_action", "reason"]) ||
+      !["grant", "revoke"].includes(body.action) || !validSubject(body.subject) ||
+      !["asset", "source", "observation"].includes(body.resource_type) ||
+      !validId(body.resource_id, 160) || !allowedActions.includes(body.grant_action) ||
+      typeof body.reason !== "string" || body.reason.trim() !== body.reason ||
+      body.reason.length < 1 || body.reason.length > 1000) {
+    return { error: "resource_grant_request_invalid", status: 400 };
+  }
+  if (actorRole === "tenant_admin" &&
+      !["read", "create", "update", "ingest"].includes(body.grant_action)) {
+    return { error: "resource_grant_not_found", status: 404 };
+  }
+  const tenantRows = await rows(db.prepare(
+    "SELECT id FROM tenants WHERE id = ? AND status = 'active' LIMIT 2"
+  ).bind(tenant));
+  if (tenantRows.length !== 1 || tenantRows[0].id !== tenant) {
+    return { error: "resource_grant_not_found", status: 404 };
+  }
+  const resource = await resolveGrantableResource(db, tenant, body.resource_type, body.resource_id);
+  if (!resource) return { error: "resource_grant_not_found", status: 404 };
+  const targets = await rows(db.prepare(
+    "SELECT id, subject, status FROM tenant_memberships WHERE tenant_id = ? AND subject = ? LIMIT 2"
+  ).bind(tenant, body.subject));
+  if (targets.length !== 1 || targets[0].subject !== body.subject ||
+      (body.action === "grant" && targets[0].status !== "active")) {
+    return { error: "resource_grant_not_found", status: 404 };
+  }
+  const existing = await rows(db.prepare(
+    "SELECT id FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ? LIMIT 2"
+  ).bind(tenant, body.subject, body.resource_type, body.resource_id, body.grant_action));
+  if (body.action === "grant" && existing.length !== 0) {
+    return { error: "resource_grant_already_exists", status: 409 };
+  }
+  if (body.action === "revoke" && existing.length !== 1) {
+    return { error: "resource_grant_not_found", status: 404 };
+  }
+  const grantId = body.action === "grant" ? crypto.randomUUID() : existing[0].id;
+  const eventId = crypto.randomUUID();
+  const type = body.resource_type;
+  const resourceId = body.resource_id;
+  const action = body.grant_action;
+  const statements = body.action === "grant" ? [
+    db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM " +
+      (type === "asset" ? "assets a JOIN sites s ON s.id = a.site_id AND s.tenant_id = a.tenant_id AND s.status = 'active' WHERE a.id = ? AND a.tenant_id = ? AND a.status = 'active'"
+        : type === "source" ? "sources src LEFT JOIN sites s ON s.id = src.site_id AND s.tenant_id = src.tenant_id AND s.status = 'active' WHERE src.id = ? AND src.tenant_id = ? AND src.verification_status = 'verified' AND (src.site_id IS NULL OR s.id IS NOT NULL)"
+        : "observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.id = ? AND o.tenant_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL)") +
+      ")")
+      .bind(grantId, tenant, body.subject, type, resourceId, action,
+        tenant, targets[0].id, tenant, body.subject, resourceId, tenant),
+    db.prepare("INSERT INTO tenant_resource_grant_events (id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, 'granted', ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ?)")
+      .bind(eventId, tenant, grantId, body.subject, type, resourceId, action,
+        actor, body.reason, requestId, grantId, tenant, body.subject, type, resourceId, action),
+  ] : [
+    db.prepare("DELETE FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ? AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM " +
+      (type === "asset" ? "assets a JOIN sites s ON s.id = a.site_id AND s.tenant_id = a.tenant_id AND s.status = 'active' WHERE a.id = ? AND a.tenant_id = ? AND a.status = 'active'"
+        : type === "source" ? "sources src LEFT JOIN sites s ON s.id = src.site_id AND s.tenant_id = src.tenant_id AND s.status = 'active' WHERE src.id = ? AND src.tenant_id = ? AND src.verification_status = 'verified' AND (src.site_id IS NULL OR s.id IS NOT NULL)"
+        : "observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.id = ? AND o.tenant_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL)") +
+      ")")
+      .bind(grantId, tenant, body.subject, type, resourceId, action,
+        tenant, resourceId, tenant),
+    db.prepare("INSERT INTO tenant_resource_grant_events (id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, 'revoked', ?, ?, ? WHERE changes() = 1")
+      .bind(eventId, tenant, grantId, body.subject, type, resourceId, action,
+        actor, body.reason, requestId),
+  ];
+  const results = await db.batch(statements);
+  if (!Array.isArray(results) || results.length !== 2 ||
+      results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+    throw new Error("resource_grant_batch_invalid");
+  }
+  if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
+    return { error: "resource_grant_transition_conflict", status: 409 };
+  }
+  return { data: { grant_id: grantId, tenant_id: tenant, subject: body.subject,
+    resource_type: type, resource_id: resourceId, action,
+    status: body.action === "grant" ? "active" : "revoked",
+    event_type: body.action === "grant" ? "granted" : "revoked" },
+    status: body.action === "grant" ? 201 : 200 };
+}
+
 async function changeTenantSiteGrant(db, tenant, actor, actorRole, requestId, body) {
   const allowedActions = ["read", "create", "update", "delete", "ingest"];
   if (!onlyKeys(body, ["action", "subject", "site_id", "grant_action", "reason"]) ||
@@ -747,6 +841,7 @@ export default {
     const url = new URL(request.url);
     const tenantProvision = url.pathname === "/internal/v1/tenants";
     const siteGrantChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/site-grants$/);
+    const resourceGrantChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/resource-grants$/);
     const membershipChange = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-actions$/);
     const membershipEvents = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-events$/);
     const membershipInvitationCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/membership-invitations$/);
@@ -843,6 +938,19 @@ export default {
               subject, requestId, draftBody);
         return result.error ? json({ error: result.error }, result.status)
           : json({ data: result.data, request_id: requestId }, result.status);
+      }
+      if (resourceGrantChange) {
+        const memberships = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (memberships.length !== 1 || memberships[0].subject !== subject ||
+            memberships[0].tenant_id !== tenant || memberships[0].status !== "active" ||
+            memberships[0].tenant_status !== "active" ||
+            !["tenant_owner", "tenant_admin"].includes(memberships[0].role)) return error("not_found", 404);
+        const changed = await changeTenantResourceGrant(env.DB, tenant, subject,
+          memberships[0].role, requestId, draftBody);
+        return changed.error ? json({ error: changed.error }, changed.status)
+          : json({ data: changed.data, request_id: requestId }, changed.status);
       }
       if (siteGrantChange) {
         const memberships = await rows(env.DB.prepare(
