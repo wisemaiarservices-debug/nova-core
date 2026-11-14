@@ -2,6 +2,12 @@
 -- Supports exact asset/source/observation grant events without changing the
 -- existing site-grant ledger or silently enabling a new mutation route.
 
+-- Complete the composite parent key already referenced by the quality-policy
+-- schema. The asset primary key makes this index non-duplicative; SQLite
+-- requires an exact UNIQUE parent key for the three-column foreign key.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_id_tenant_site
+  ON assets(id, tenant_id, site_id);
+
 CREATE TABLE tenant_resource_grant_events (
   id TEXT PRIMARY KEY CHECK (length(trim(id)) BETWEEN 1 AND 160),
   tenant_id TEXT NOT NULL,
