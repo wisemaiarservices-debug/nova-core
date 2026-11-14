@@ -25,6 +25,7 @@ def test_private_tenant_api_sql_compiles_against_ordered_schema_migrations():
         MIGRATIONS / "0008_water_quality_criteria_reviewer_events.sql",
         MIGRATIONS / "0016_tenant_membership_events.sql",
         MIGRATIONS / "0017_tenant_provisioning_idempotency.sql",
+        MIGRATIONS / "0018_tenant_membership_invitations.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
 
