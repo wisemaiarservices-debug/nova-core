@@ -27,6 +27,7 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
               ('owner-b', 'tenant-b', 'owner-b-sub', 'tenant_owner', 'active');
         """)
         self.db.executescript((MIGRATIONS / "0022_tenant_identity_link_challenges.sql").read_text())
+        self.db.executescript((MIGRATIONS / "0023_tenant_identity_link_uniqueness.sql").read_text())
 
     def tearDown(self):
         self.db.close()
@@ -179,6 +180,58 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
             self.db.execute("DELETE FROM tenant_identity_link_events WHERE id='event-requested'")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
             self.db.execute("UPDATE tenant_identity_link_requests SET supabase_subject='changed' WHERE id='link-request-1'")
+
+
+    def test_approved_identity_pair_is_unique_within_a_tenant(self):
+        self.create_pending_request()
+        self.decide()
+        self.challenge("challenge-2", "challenge-request-2")
+        self.consume("challenge-2")
+        self.request("link-request-2", "challenge-2")
+        self.event("event-requested-2", link_id="link-request-2",
+                   request_id="event-requested-2-request")
+        self.event("event-approved-2", link_id="link-request-2", event_type="approved",
+                   previous="pending", new="approved", tenant="tenant-a",
+                   actor_subject="owner-a-sub", reason="owner decision",
+                   request_id="event-approved-2-request")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE constraint failed"):
+            self.db.execute("""
+              UPDATE tenant_identity_link_requests SET status='approved', tenant_id='tenant-a',
+                decided_by_cloudflare_issuer='https://team.cloudflareaccess.com',
+                decided_by_cloudflare_subject='owner-a-sub', reason='owner decision',
+                decided_at='2026-11-14T10:02:00Z' WHERE id='link-request-2'
+            """)
+
+    def test_revocation_releases_identity_pair_for_a_new_reviewed_link(self):
+        self.create_pending_request()
+        self.decide()
+        self.event("event-revoked", event_type="revoked", previous="approved", new="revoked",
+                   tenant="tenant-a", actor_subject="owner-a-sub", reason="owner revoked",
+                   request_id="event-revoked-request")
+        self.db.execute("""
+          UPDATE tenant_identity_link_requests SET status='revoked',
+            decided_by_cloudflare_issuer='https://team.cloudflareaccess.com',
+            decided_by_cloudflare_subject='owner-a-sub', reason='owner revoked',
+            decided_at='2026-11-14T10:03:00Z' WHERE id='link-request-1'
+        """)
+        self.challenge("challenge-2", "challenge-request-2")
+        self.consume("challenge-2")
+        self.request("link-request-2", "challenge-2")
+        self.event("event-requested-2", link_id="link-request-2",
+                   request_id="event-requested-2-request")
+        self.event("event-approved-2", link_id="link-request-2", event_type="approved",
+                   previous="pending", new="approved", tenant="tenant-a",
+                   actor_subject="owner-a-sub", reason="owner decision",
+                   request_id="event-approved-2-request")
+        self.db.execute("""
+          UPDATE tenant_identity_link_requests SET status='approved', tenant_id='tenant-a',
+            decided_by_cloudflare_issuer='https://team.cloudflareaccess.com',
+            decided_by_cloudflare_subject='owner-a-sub', reason='owner decision',
+            decided_at='2026-11-14T10:04:00Z' WHERE id='link-request-2'
+        """)
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM tenant_identity_link_requests WHERE id='link-request-2'"
+        ).fetchone()[0], "approved")
 
 
 if __name__ == "__main__":
