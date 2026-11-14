@@ -1701,18 +1701,17 @@ test("resource grant revocation allows explicit cleanup for an inactive member",
 });
 
 
-test("identity-link HTTP routes remain unavailable until dual-identity verification is integrated", async () => {
+test("identity-link challenge endpoints require a dual-authenticated request", async () => {
   const routes = [
     ["POST", "https://private.internal/internal/v1/identity-links/challenges", JSON.stringify({})],
-    ["POST", "https://private.internal/internal/v1/identity-links/challenges/challenge-1/consume", JSON.stringify({})],
-    ["GET", "https://private.internal/internal/v1/tenants/tenant-a/identity-links/pending"],
-    ["POST", "https://private.internal/internal/v1/tenants/tenant-a/identity-links/request-1/decision", JSON.stringify({ decision: "approve" })],
+    ["POST", "https://private.internal/internal/v1/identity-links/challenges/challenge-1/consume", JSON.stringify({ challenge: "a".repeat(43) })],
   ];
   for (const [method, url, body] of routes) {
     const db = new DB();
     const response = await worker.fetch(await request({}, url, method, body), env(db));
-    assert.equal(response.status, 404, `${method} ${new URL(url).pathname} must remain unregistered`);
-    assert.equal(db.calls.length, 0, "disabled identity-link routes must not access tenant storage");
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error, "supabase_identity_required");
+    assert.equal(db.calls.length, 0, "challenge endpoints must reject Access-only callers before storage access");
   }
 });
 
