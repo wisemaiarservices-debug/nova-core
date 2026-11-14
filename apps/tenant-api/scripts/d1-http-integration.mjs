@@ -93,12 +93,12 @@ try {
   assert.equal(reactivated.response.status, 200, JSON.stringify(reactivated.body));
   assert.equal(reactivated.body.data.status, "active");
 
-  const revoked = await membershipAction("ci-human-subject", {
+  const membershipRevoked = await membershipAction("ci-human-subject", {
     membership_id: "membership-http-lifecycle", action: "revoke",
     reason: "CI final membership revocation",
   });
-  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
-  assert.equal(revoked.body.data.status, "revoked");
+  assert.equal(membershipRevoked.response.status, 200, JSON.stringify(membershipRevoked.body));
+  assert.equal(membershipRevoked.body.data.status, "revoked");
 
   const revokedAgain = await membershipAction("ci-human-subject", {
     membership_id: "membership-http-lifecycle", action: "reactivate",
