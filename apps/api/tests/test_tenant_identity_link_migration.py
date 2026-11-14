@@ -42,11 +42,11 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
                   ?, 'pending', '2026-11-14T10:00:00Z', '2026-11-14T10:05:00Z', ?)
         """, (challenge_id, digest, request_id))
 
-    def consume(self, challenge_id="challenge-1"):
+    def consume(self, challenge_id="challenge-1", consumed_at="2026-11-14T10:01:00Z"):
         self.db.execute("""
           UPDATE tenant_identity_link_challenges SET status='consumed',
-            consumed_at='2026-11-14T10:01:00Z' WHERE id=?
-        """, (challenge_id,))
+            consumed_at=? WHERE id=?
+        """, (consumed_at, challenge_id))
 
     def request(self, request_id="link-request-1", challenge_id="challenge-1"):
         self.db.execute("""
@@ -103,6 +103,17 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
             self.db.execute("UPDATE tenant_identity_link_challenges SET supabase_subject='attacker' WHERE id='challenge-1'")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
             self.db.execute("DELETE FROM tenant_identity_link_challenges WHERE id='challenge-1'")
+
+    def test_challenge_cannot_be_consumed_before_creation_or_after_expiry(self):
+        self.challenge()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "invalid or immutable"):
+            self.consume(consumed_at="2026-11-14T09:59:59Z")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "invalid or immutable"):
+            self.consume(consumed_at="2026-11-14T10:05:00Z")
+        self.consume(consumed_at="2026-11-14T10:04:59Z")
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM tenant_identity_link_challenges WHERE id='challenge-1'"
+        ).fetchone()[0], "consumed")
 
     def test_pending_identity_pair_cannot_be_duplicated(self):
         self.create_pending_request()
