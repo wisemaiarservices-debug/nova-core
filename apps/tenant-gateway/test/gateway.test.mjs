@@ -350,3 +350,60 @@ test("rejects wildcard and malformed origins in CORS configuration", async () =>
   }), env({ CORS_ALLOWED_ORIGINS: "*,https://nova-os-pied.vercel.app/path" }));
   assert.equal(response.status, 403);
 });
+
+
+test("routes calibration, sensor identity and quality governance through signed private Core paths", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "governance-reviewer", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const cases = [
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibration-reviewers/assign",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibration-reviewers/assign"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibration-reviewers/revoke",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibration-reviewers/revoke"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations/cal-1/verification",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations/cal-1/verification"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/sensor-source-mappings",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/sensor-source-mappings"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/sensor-source-mappings/map-1/verification",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/sensor-source-mappings/map-1/verification"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/sensor-source-mapping-reviewers/assign",
+      "/internal/v1/tenants/tenant-a/sites/site-a/sensor-source-mapping-reviewers/assign"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/sensor-source-mapping-reviewers/revoke",
+      "/internal/v1/tenants/tenant-a/sites/site-a/sensor-source-mapping-reviewers/revoke"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/measurement-quality-policies",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/measurement-quality-policies"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/measurement-quality-policies/policy-1/verification",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/measurement-quality-policies/policy-1/verification"],
+    ["/api/v1/tenants/tenant-a/observations/obs-1/measurement-quality-assessment",
+      "/internal/v1/tenants/tenant-a/observations/obs-1/measurement-quality-assessment"],
+  ];
+  for (const [publicPath, expectedPath] of cases) {
+    let forwarded;
+    const payload = JSON.stringify({ evidence_ref: "review-record:1" });
+    const response = await gateway.fetch(new Request("https://gateway.test" + publicPath, {
+      method: "POST",
+      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid", cookie: "browser=session" },
+      body: payload,
+    }), {
+      ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+      ACCESS_AUDIENCE: "aud",
+      INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+      TENANT_API: { fetch: async request => {
+        forwarded = request;
+        return new Response(JSON.stringify({ data: { ok: true } }), {
+          status: 201, headers: { "content-type": "application/json" },
+        });
+      } },
+    });
+    assert.equal(response.status, 201, publicPath);
+    assert.equal(forwarded.method, "POST", publicPath);
+    assert.equal(new URL(forwarded.url).pathname, expectedPath, publicPath);
+    assert.equal(await forwarded.text(), payload, publicPath);
+    assert.equal(forwarded.headers.get("x-nova-verified-subject"), "governance-reviewer");
+    assert.equal(forwarded.headers.get("cookie"), null);
+    assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+  }
+});
