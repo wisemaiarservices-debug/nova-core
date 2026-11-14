@@ -7,7 +7,7 @@ CREATE TABLE tenant_membership_invitations (
   tenant_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('tenant_admin', 'operator', 'analyst', 'viewer')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'revoked', 'expired')),
-  token_sha256 TEXT NOT NULL CHECK (length(token_sha256) = 64 AND token_sha256 NOT GLOB '*[^a-f0-9]*'),
+  token_sha256 TEXT NOT NULL UNIQUE CHECK (length(token_sha256) = 64 AND token_sha256 NOT GLOB '*[^a-f0-9]*'),
   created_by_subject TEXT NOT NULL CHECK (length(trim(created_by_subject)) BETWEEN 1 AND 200),
   accepted_by_subject TEXT CHECK (accepted_by_subject IS NULL OR length(trim(accepted_by_subject)) BETWEEN 1 AND 200),
   reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 1 AND 1000),
