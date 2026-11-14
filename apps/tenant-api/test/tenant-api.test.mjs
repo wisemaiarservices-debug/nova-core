@@ -1308,3 +1308,14 @@ test("tenant owner revokes an exact site grant and appends a matching event", as
   assert.match(db.batchCalls[0][0].sql, /DELETE FROM tenant_resource_grants/);
   assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_site_grant_events/);
 });
+
+
+test("site grant API rejects unsupported tenant-level manage-members permission", async () => {
+  const db = new SiteGrantChangeDB();
+  const response = await worker.fetch(await request({ "x-nova-request-id": "site-grant-unsupported-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/site-grants", "POST",
+    JSON.stringify({ action: "grant", subject: "member@example.test", site_id: "site-a",
+      grant_action: "manage_members", reason: "Not a site-level permission" })), env(db));
+  assert.equal(response.status, 400);
+  assert.equal(db.batchCalls.length, 0);
+});
