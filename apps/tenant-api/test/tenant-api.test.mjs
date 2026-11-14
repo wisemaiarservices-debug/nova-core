@@ -1336,6 +1336,9 @@ class TenantLifecycleDB {
     return { bind(...args) { return { sql, args,
       async all() {
         db.calls.push({ sql, args });
+        if (sql.includes("SELECT status, last_lifecycle_event_id FROM tenants")) return { results: [{
+          status: db.status, last_lifecycle_event_id: db.lastLifecycleEventId ?? null,
+        }] };
         if (sql.includes("FROM tenants t JOIN tenant_memberships")) return { results: [{
           id: args[0], status: db.status, role: db.role, membership_status: db.membershipStatus,
         }] };
@@ -1357,7 +1360,10 @@ class TenantLifecycleDB {
   }
   async batch(statements) {
     this.batchCalls.push(statements);
-    return this.batchResult ?? [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+    if (this.batchResult) return this.batchResult;
+    this.status = statements[1].args[0];
+    this.lastLifecycleEventId = statements[1].args[1];
+    return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
   }
 }
 
