@@ -1324,6 +1324,114 @@ test("site grant API rejects unsupported tenant-level manage-members permission"
 });
 
 
+class TenantLifecycleDB {
+  constructor({ role = "tenant_owner", membershipStatus = "active", status = "active",
+    batchResult = null, events = [] } = {}) {
+    this.role = role; this.membershipStatus = membershipStatus; this.status = status;
+    this.batchResult = batchResult; this.events = events; this.batchCalls = []; this.calls = [];
+    this.nonces = new Set();
+  }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) { return { sql, args,
+      async all() {
+        db.calls.push({ sql, args });
+        if (sql.includes("FROM tenants t JOIN tenant_memberships")) return { results: [{
+          id: args[0], status: db.status, role: db.role, membership_status: db.membershipStatus,
+        }] };
+        if (sql.includes("FROM tenant_lifecycle_events")) return { results: db.events };
+        if (sql.includes("FROM tenant_memberships m WHERE")) return { results: [{
+          subject: "operator@example.test", tenant_id: "tenant-a", role: db.role,
+          membership_status: db.membershipStatus,
+        }] };
+        throw new Error("unexpected tenant lifecycle query");
+      },
+      async run() {
+        if (sql.includes("INSERT INTO internal_request_nonces")) {
+          if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
+          db.nonces.add(args[0]); return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected tenant lifecycle write");
+      },
+    }; } };
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    return this.batchResult ?? [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+  }
+}
+
+test("tenant owner suspends a tenant with an atomic immutable lifecycle event", async () => {
+  const db = new TenantLifecycleDB();
+  const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-suspend-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-actions", "POST",
+    JSON.stringify({ action: "suspend", reason: "Security review" })), env(db));
+  assert.equal(response.status, 200);
+  const data = (await response.json()).data;
+  assert.equal(data.previous_status, "active");
+  assert.equal(data.status, "suspended");
+  assert.equal(data.event_type, "suspended");
+  assert.equal(db.batchCalls[0].length, 2);
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_lifecycle_events/);
+  assert.match(db.batchCalls[0][1].sql, /UPDATE tenants SET status = \?/);
+  assert.match(db.batchCalls[0][1].sql, /tenant_lifecycle_events/);
+  assert.equal(db.batchCalls[0][0].args[7], "tenant-suspend-001");
+});
+
+test("suspended tenant can be reactivated and active or suspended tenant can be archived", async () => {
+  for (const [action, status, expected] of [
+    ["reactivate", "suspended", "active"],
+    ["archive", "active", "archived"],
+    ["archive", "suspended", "archived"],
+  ]) {
+    const db = new TenantLifecycleDB({ status });
+    const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-" + action + "-" + status },
+      "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-actions", "POST",
+      JSON.stringify({ action, reason: "Approved lifecycle change" })), env(db));
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.status, expected);
+  }
+});
+
+test("only active tenant owners can change lifecycle; archived tenants are terminal", async () => {
+  for (const config of [
+    { role: "tenant_admin", status: "active" },
+    { role: "tenant_owner", membershipStatus: "inactive", status: "active" },
+    { role: "tenant_owner", status: "archived" },
+  ]) {
+    const db = new TenantLifecycleDB(config);
+    const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-lifecycle-denied-" + config.status },
+      "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-actions", "POST",
+      JSON.stringify({ action: "reactivate", reason: "Denied transition" })), env(db));
+    assert.ok([404, 409].includes(response.status));
+    assert.equal(db.batchCalls.length, 0);
+  }
+});
+
+test("tenant lifecycle rejects caller-supplied actor and invalid actions", async () => {
+  for (const body of [
+    { action: "suspend", reason: "reason", actor_subject: "forged" },
+    { action: "delete", reason: "reason" },
+    { action: "suspend", reason: " " },
+  ]) {
+    const db = new TenantLifecycleDB();
+    const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-lifecycle-invalid-" + Math.random() },
+      "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-actions", "POST",
+      JSON.stringify(body)), env(db));
+    assert.equal(response.status, 400);
+    assert.equal(db.batchCalls.length, 0);
+  }
+});
+
+test("tenant lifecycle audit history is available to active tenant administrators", async () => {
+  const db = new TenantLifecycleDB({ role: "tenant_admin", status: "archived",
+    events: [{ id: "event-1", tenant_id: "tenant-a", event_type: "archived" }] });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-lifecycle-events-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-events", "GET"), env(db));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data[0].event_type, "archived");
+});
+
 class OwnershipTransferDB {
   constructor({ actorRole = "tenant_owner", targetStatus = "active", targetRole = "operator",
     batchResult = null } = {}) {
