@@ -287,3 +287,123 @@ test("routes bounded laboratory report uploads and larger evidence reads through
     "/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports/lab-1");
   assert.equal((await download.json()).data.document_base64.length, 90000);
 });
+
+
+test("handles credentialed CORS preflight only for exact configured origins and safe headers", async () => {
+  const gateway = createGateway();
+  const configured = env({ CORS_ALLOWED_ORIGINS: "https://nova-os-pied.vercel.app,https://nova-command-center-peach.vercel.app" });
+  const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/observations/obs-1/measurement-quality-assessment", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://nova-os-pied.vercel.app",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "accept,content-type",
+    },
+  }), configured);
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://nova-os-pied.vercel.app");
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+  assert.equal(response.headers.get("access-control-allow-methods"), "GET, POST, OPTIONS");
+  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Content-Type");
+  assert.match(response.headers.get("vary"), /Origin/);
+  assert.match(response.headers.get("vary"), /Access-Control-Request-Method/);
+
+  const deniedOrigin = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
+    method: "OPTIONS",
+    headers: { Origin: "https://attacker.example", "Access-Control-Request-Method": "GET" },
+  }), configured);
+  assert.equal(deniedOrigin.status, 403);
+  assert.equal(deniedOrigin.headers.get("access-control-allow-origin"), null);
+
+  const deniedHeader = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
+    method: "OPTIONS",
+    headers: { Origin: "https://nova-os-pied.vercel.app",
+      "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization" },
+  }), configured);
+  assert.equal(deniedHeader.status, 403);
+});
+
+test("adds exact-origin credentialed CORS headers to successful API responses and exposes request ID", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "browser-user", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites/site-a", {
+    headers: { Origin: "https://nova-os-pied.vercel.app", "Cf-Access-Jwt-Assertion": "valid" },
+  }), env({
+    CORS_ALLOWED_ORIGINS: "https://nova-os-pied.vercel.app",
+    TENANT_API: { fetch: async () => new Response(JSON.stringify({ data: { ok: true } }), {
+      headers: { "content-type": "application/json" },
+    }) },
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://nova-os-pied.vercel.app");
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+  assert.equal(response.headers.get("access-control-expose-headers"), "X-Request-Id");
+  assert.ok(response.headers.get("x-request-id"));
+});
+
+test("rejects wildcard and malformed origins in CORS configuration", async () => {
+  const gateway = createGateway();
+  const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants/t/sites/s", {
+    method: "OPTIONS",
+    headers: { Origin: "https://nova-os-pied.vercel.app", "Access-Control-Request-Method": "GET" },
+  }), env({ CORS_ALLOWED_ORIGINS: "*,https://nova-os-pied.vercel.app/path" }));
+  assert.equal(response.status, 403);
+});
+
+
+test("routes calibration, sensor identity and quality governance through signed private Core paths", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "governance-reviewer", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const cases = [
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibration-reviewers/assign",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibration-reviewers/assign"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibration-reviewers/revoke",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibration-reviewers/revoke"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations/cal-1/verification",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations/cal-1/verification"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/sensor-source-mappings",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/sensor-source-mappings"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/sensor-source-mappings/map-1/verification",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/sensor-source-mappings/map-1/verification"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/sensor-source-mapping-reviewers/assign",
+      "/internal/v1/tenants/tenant-a/sites/site-a/sensor-source-mapping-reviewers/assign"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/sensor-source-mapping-reviewers/revoke",
+      "/internal/v1/tenants/tenant-a/sites/site-a/sensor-source-mapping-reviewers/revoke"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/measurement-quality-policies",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/measurement-quality-policies"],
+    ["/api/v1/tenants/tenant-a/sites/site-a/assets/asset-a/measurement-quality-policies/policy-1/verification",
+      "/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/measurement-quality-policies/policy-1/verification"],
+    ["/api/v1/tenants/tenant-a/observations/obs-1/measurement-quality-assessment",
+      "/internal/v1/tenants/tenant-a/observations/obs-1/measurement-quality-assessment"],
+  ];
+  for (const [publicPath, expectedPath] of cases) {
+    let forwarded;
+    const payload = JSON.stringify({ evidence_ref: "review-record:1" });
+    const response = await gateway.fetch(new Request("https://gateway.test" + publicPath, {
+      method: "POST",
+      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid", cookie: "browser=session" },
+      body: payload,
+    }), {
+      ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+      ACCESS_AUDIENCE: "aud",
+      INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+      TENANT_API: { fetch: async request => {
+        forwarded = request;
+        return new Response(JSON.stringify({ data: { ok: true } }), {
+          status: 201, headers: { "content-type": "application/json" },
+        });
+      } },
+    });
+    assert.equal(response.status, 201, publicPath);
+    assert.equal(forwarded.method, "POST", publicPath);
+    assert.equal(new URL(forwarded.url).pathname, expectedPath, publicPath);
+    assert.equal(await forwarded.text(), payload, publicPath);
+    assert.equal(forwarded.headers.get("x-nova-verified-subject"), "governance-reviewer");
+    assert.equal(forwarded.headers.get("cookie"), null);
+    assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+  }
+});

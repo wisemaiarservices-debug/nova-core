@@ -1,6 +1,45 @@
 import { verifyHumanAccessToken } from "./human-access-auth.mjs";
 import { error, boundedJsonResponse } from "./http.mjs";
 
+function parseAllowedOrigins(raw) {
+  const origins = new Set();
+  if (typeof raw !== "string") return origins;
+  for (const item of raw.split(",")) {
+    const candidate = item.trim();
+    if (!candidate) continue;
+    try {
+      const url = new URL(candidate);
+      const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+      if ((url.protocol === "https:" || (local && url.protocol === "http:")) &&
+          url.origin === candidate && !url.username && !url.password && !url.search && !url.hash) {
+        origins.add(url.origin);
+      }
+    } catch { /* Invalid configured origins fail closed. */ }
+  }
+  return origins;
+}
+
+function corsResponse(response, origin, preflight) {
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Access-Control-Allow-Credentials", "true");
+  headers.set("Access-Control-Expose-Headers", "X-Request-Id");
+  if (preflight) {
+    headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    headers.set("Access-Control-Allow-Headers", "Accept, Content-Type");
+    headers.set("Access-Control-Max-Age", "600");
+  }
+  const vary = new Set((headers.get("Vary") || "").split(",").map(value => value.trim()).filter(Boolean));
+  vary.add("Origin");
+  if (preflight) {
+    vary.add("Access-Control-Request-Method");
+    vary.add("Access-Control-Request-Headers");
+  }
+  headers.set("Vary", [...vary].join(", "));
+  headers.set("Cache-Control", "no-store");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 const ROUTES = new Map([
   ["sites", "sites"], ["assets", "assets"], ["sources", "sources"],
   ["observations", "observations"], ["audit-events", "audit-events"],
@@ -30,8 +69,7 @@ async function signEnvelope(secret, method, path, headers) {
   return Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 export function createGateway({ verifyAccessToken = (token, config) => verifyHumanAccessToken(token, config) } = {}) {
-  return {
-    async fetch(request, env) {
+  const handle = async (request, env) => {
       if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
       const url = new URL(request.url);
       const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
@@ -70,7 +108,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
       if (!validPathId(tenant, 120) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) ||
           ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess) && (!validPathId(entryId) || !validPathId(version, 80))) ||
-          (observationVerification && !validPathId(observationVerification[2])) || (((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validPathId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validPathId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validPathId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && (!validPathId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2]) || !validPathId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[3]))) || (sensorMappingReview && !validPathId(sensorMappingReview[4])) || ((qualityPolicyRegister || qualityPolicyReview) && (!validPathId((qualityPolicyRegister || qualityPolicyReview)[2]) || !validPathId((qualityPolicyRegister || qualityPolicyReview)[3]))) || (qualityPolicyReview && !validPathId(qualityPolicyReview[4])) || (qualityAssessment && !validPathId(qualityAssessment[2])) || ((labReportUpload || labReportDetail) && !validPathId((labReportUpload ?? labReportDetail)[2]))) || (labReportDetail && !validPathId(labReportDetail[3]))) return error("not_found", 404);
+          (observationVerification && !validPathId(observationVerification[2])) || (((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validPathId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validPathId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validPathId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview) && (!validPathId((sensorMappingRegister || sensorMappingReview)[2]) || !validPathId((sensorMappingRegister || sensorMappingReview)[3]))) || ((sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && !validPathId((sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2])) || (sensorMappingReview && !validPathId(sensorMappingReview[4])) || ((qualityPolicyRegister || qualityPolicyReview) && (!validPathId((qualityPolicyRegister || qualityPolicyReview)[2]) || !validPathId((qualityPolicyRegister || qualityPolicyReview)[3]))) || (qualityPolicyReview && !validPathId(qualityPolicyReview[4])) || (qualityAssessment && !validPathId(qualityAssessment[2])) || ((labReportUpload || labReportDetail) && !validPathId((labReportUpload ?? labReportDetail)[2]))) || (labReportDetail && !validPathId(labReportDetail[3]))) return error("not_found", 404);
       if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
           typeof env.ACCESS_AUDIENCE !== "string" || !env.ACCESS_AUDIENCE) {
         return error("identity_or_private_api_not_configured", 503);
@@ -170,6 +208,25 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       } catch {
         return error("tenant_api_unavailable", 503);
       }
+  };
+  return {
+    async fetch(request, env) {
+      const origin = request.headers.get("origin");
+      const allowed = parseAllowedOrigins(env.CORS_ALLOWED_ORIGINS);
+      if (request.method === "OPTIONS") {
+        if (!origin || !allowed.has(origin)) return error("cors_origin_not_allowed", 403);
+        const requestedMethod = request.headers.get("access-control-request-method");
+        const requestedHeaders = (request.headers.get("access-control-request-headers") || "")
+          .split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+        if (!["GET", "POST"].includes(requestedMethod) ||
+            requestedHeaders.some(header => !["accept", "content-type"].includes(header))) {
+          return error("cors_preflight_not_allowed", 403);
+        }
+        return corsResponse(new Response(null, { status: 204 }), origin, true);
+      }
+      if (origin && !allowed.has(origin)) return error("cors_origin_not_allowed", 403);
+      const response = await handle(request, env);
+      return origin ? corsResponse(response, origin, false) : response;
     },
   };
 }
