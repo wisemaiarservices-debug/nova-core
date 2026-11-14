@@ -1907,8 +1907,13 @@ test("dual-auth HTTP routes create and consume a challenge bound to both verifie
     assert.equal(consumedResponse.status, 201);
     assert.equal((await consumedResponse.json()).data.status, "pending");
     assert.equal(db.identityChallengeRow.status, "consumed");
-    assert.equal(db.batchCalls.length, 1);
+    assert.equal(db.batchCalls.length, 3, "create and consume each charge rate limits; consumption also commits the challenge batch");
     assert.equal(db.batchCalls[0].length, 3);
+    assert.equal(db.batchCalls[1].length, 3);
+    assert.equal(db.batchCalls[2].length, 3);
+    assert.match(db.batchCalls[0][0].sql, /DELETE FROM tenant_identity_link_rate_limits/);
+    assert.match(db.batchCalls[1][0].sql, /DELETE FROM tenant_identity_link_rate_limits/);
+    assert.match(db.batchCalls[2][0].sql, /UPDATE tenant_identity_link_challenges/);
   } finally { globalThis.fetch = originalFetch; }
 });
 
