@@ -1108,3 +1108,101 @@ test("tenant owner revokes a pending invitation with an append-only event", asyn
   assert.match(db.batchCalls[0][0].sql, /UPDATE tenant_membership_invitations/);
   assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_membership_invitation_events/);
 });
+
+
+class MembershipChangeDB {
+  constructor({ actorRole = "tenant_owner", target = { id: "member-1", tenant_id: "tenant-a",
+    subject: "member@example.test", role: "operator", status: "active" },
+    batchResult = [{ meta: { changes: 1 } }, { meta: { changes: 1 } }] } = {}) {
+    this.actorRole = actorRole; this.target = target; this.batchResult = batchResult;
+    this.batchCalls = []; this.calls = []; this.nonces = new Set();
+  }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) { return { sql, args,
+      async run() {
+        if (sql.includes("INSERT INTO internal_request_nonces")) {
+          if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
+          db.nonces.add(args[0]); return { meta: { changes: 1 } };
+        }
+        throw new Error("unexpected membership change write");
+      },
+      async all() {
+        db.calls.push({ sql, args });
+        if (sql.includes("FROM tenant_memberships") && sql.includes("WHERE subject = ?")) {
+          return { results: [{ subject: "operator@example.test", tenant_id: "tenant-a",
+            role: db.actorRole, status: "active" }] };
+        }
+        if (sql.includes("FROM tenant_memberships") && sql.includes("WHERE id = ?")) {
+          return { results: db.target ? [db.target] : [] };
+        }
+        throw new Error("unexpected membership change read SQL");
+      },
+    }; } };
+  }
+  async batch(statements) { this.batchCalls.push(statements); return this.batchResult; }
+}
+
+test("tenant owner changes a member role with a matching append-only event in one batch", async () => {
+  const db = new MembershipChangeDB();
+  const response = await worker.fetch(await request({ "x-nova-request-id": "membership-change-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-actions", "POST",
+    JSON.stringify({ membership_id: "member-1", action: "change_role", role: "analyst",
+      reason: "Role adjusted to current responsibilities" })), env(db));
+  assert.equal(response.status, 200);
+  const result = (await response.json()).data;
+  assert.equal(result.role, "analyst");
+  assert.equal(result.status, "active");
+  assert.equal(result.event_type, "role_changed");
+  assert.equal(db.batchCalls.length, 1);
+  assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_membership_events/);
+  assert.match(db.batchCalls[0][1].sql, /UPDATE tenant_memberships SET role = \?, status = \?/);
+  assert.deepEqual(db.batchCalls[0][0].args.slice(5, 10),
+    ["role_changed", "operator", "analyst", "active", "active"]);
+});
+
+test("tenant admin may suspend a lower-privilege member but cannot change roles", async () => {
+  const allowed = new MembershipChangeDB({ actorRole: "tenant_admin" });
+  const suspended = await worker.fetch(await request({ "x-nova-request-id": "membership-suspend-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-actions", "POST",
+    JSON.stringify({ membership_id: "member-1", action: "suspend",
+      reason: "Temporary access pause" })), env(allowed));
+  assert.equal(suspended.status, 200);
+  assert.equal((await suspended.json()).data.status, "inactive");
+  const denied = new MembershipChangeDB({ actorRole: "tenant_admin" });
+  const changed = await worker.fetch(await request({ "x-nova-request-id": "membership-role-denied-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-actions", "POST",
+    JSON.stringify({ membership_id: "member-1", action: "change_role", role: "analyst",
+      reason: "Attempted escalation" })), env(denied));
+  assert.equal(changed.status, 404);
+  assert.equal(denied.batchCalls.length, 0);
+});
+
+test("membership lifecycle rejects self-targeting and never accepts owner promotion", async () => {
+  const self = new MembershipChangeDB({ target: { id: "member-1", tenant_id: "tenant-a",
+    subject: "operator@example.test", role: "tenant_owner", status: "active" } });
+  const selfResponse = await worker.fetch(await request({ "x-nova-request-id": "membership-self-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-actions", "POST",
+    JSON.stringify({ membership_id: "member-1", action: "revoke",
+      reason: "Self revoke" })), env(self));
+  assert.equal(selfResponse.status, 404);
+  assert.equal(self.batchCalls.length, 0);
+  const ownerPromotion = new MembershipChangeDB();
+  const promotion = await worker.fetch(await request({ "x-nova-request-id": "membership-owner-promotion-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-actions", "POST",
+    JSON.stringify({ membership_id: "member-1", action: "change_role", role: "tenant_owner",
+      reason: "Owner promotion attempt" })), env(ownerPromotion));
+  assert.equal(promotion.status, 400);
+  assert.equal(ownerPromotion.batchCalls.length, 0);
+});
+
+test("membership lifecycle returns conflict when atomic audit and state writes do not both succeed", async () => {
+  const db = new MembershipChangeDB({ batchResult: [
+    { meta: { changes: 1 } }, { meta: { changes: 0 } },
+  ] });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "membership-conflict-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-actions", "POST",
+    JSON.stringify({ membership_id: "member-1", action: "revoke",
+      reason: "Access withdrawn" })), env(db));
+  assert.equal(response.status, 409);
+});
