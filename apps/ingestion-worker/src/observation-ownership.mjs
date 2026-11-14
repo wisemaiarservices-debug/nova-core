@@ -12,7 +12,7 @@ export async function resolveObservationOwnership(database, observation) {
     "SELECT id, tenant_id, site_id, module, verification_status FROM sources WHERE id = ? LIMIT 1",
   ).bind(observation.source_id).first();
   if (!source || source.tenant_id !== site.tenant_id || source.module !== observation.module ||
-      source.verification_status === "disabled" ||
+      source.verification_status !== "verified" ||
       (source.site_id !== null && source.site_id !== observation.site_id)) {
     return false;
   }
