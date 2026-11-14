@@ -34,9 +34,9 @@ export async function consumeIdentityLinkRateLimit(db, identities, operation, no
         (identity_digest, operation, window_started_at, request_count)
       VALUES (?, ?, ?, 1)
       ON CONFLICT(identity_digest, operation, window_started_at)
-      DO UPDATE SET request_count = request_count + 1
+      DO UPDATE SET request_count = MIN(request_count + 1, ?)
       RETURNING request_count
-    `).bind(digest, operation, windowStartedAt)),
+    `).bind(digest, operation, windowStartedAt, limit + 1)),
   ];
   const results = await db.batch(statements);
   const counts = results.slice(1).map(result => {
