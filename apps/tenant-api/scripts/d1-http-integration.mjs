@@ -153,6 +153,16 @@ try {
     return throughGateway(resourceGrantPath, accessToken(subject),
       { "content-type": "application/json" }, "POST", JSON.stringify(payload));
   }
+  const auditFailure = await resourceGrant("ci-human-subject", {
+    action: "grant", subject: "ci-invited-human", resource_type: "asset",
+    resource_id: "asset-http-grant", grant_action: "read",
+    reason: "CI injected resource grant audit failure",
+  });
+  assert.equal(auditFailure.response.status, 503, JSON.stringify(auditFailure.body));
+  const auditFailureDidNotGrant = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/assets/asset-http-grant", accessToken("ci-invited-human"));
+  assert.equal(auditFailureDidNotGrant.response.status, 404);
+
   const resourceCases = [
     ["asset", "asset-http-grant"],
     ["source", "source-http-grant"],
