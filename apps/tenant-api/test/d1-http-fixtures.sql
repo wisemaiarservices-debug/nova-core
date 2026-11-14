@@ -67,6 +67,14 @@ VALUES
  '{"verification_status":"unverified"}');
 
 
+-- Test-only failure injection proves the grant row rolls back if its audit event fails.
+CREATE TRIGGER ci_reject_resource_grant_audit
+BEFORE INSERT ON tenant_resource_grant_events
+WHEN NEW.reason = 'CI injected resource grant audit failure'
+BEGIN
+  SELECT RAISE(ABORT, 'ci_resource_grant_audit_failure');
+END;
+
 -- Verified source and active asset used only to exercise exact resource grants.
 INSERT INTO assets (id, site_id, tenant_id, name, asset_type, status)
 VALUES ('asset-http-grant', 'site-http-a', 'tenant-http-a', 'CI grant asset', 'sensor', 'active');
