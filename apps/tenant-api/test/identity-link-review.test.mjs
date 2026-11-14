@@ -1,0 +1,64 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { listPendingIdentityLinkRequests, decideIdentityLinkRequest } from "../src/identity-link-review.mjs";
+
+const actor = { issuer: "https://team.cloudflareaccess.com", subject: "owner-1" };
+class DB {
+  constructor(request = { id: "link-1", status: "pending", tenant_id: null }, owner = true) {
+    this.request = request; this.owner = owner; this.batchCalls = [];
+  }
+  prepare(sql) {
+    const db = this;
+    return { sql, args: [], bind(...args) { this.args = args; return this; },
+      async all() {
+        if (this.sql.includes("FROM tenant_memberships m JOIN tenants")) {
+          return { results: db.owner ? [{ subject: db.args[1] }] : [] };
+        }
+        if (this.sql.includes("FROM tenant_identity_link_requests WHERE id")) {
+          return { results: db.request ? [db.request] : [] };
+        }
+        if (this.sql.includes("WHERE status = 'pending' ORDER BY")) return { results: [] };
+        return { results: [] };
+      }
+    };
+  }
+  async batch(statements) {
+    this.batchCalls.push(statements);
+    return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+  }
+}
+
+test("pending requests are visible only to active tenant owners", async () => {
+  const denied = await listPendingIdentityLinkRequests(new DB(undefined, false), "tenant-1", actor);
+  assert.equal(denied.status, 404);
+  const allowed = await listPendingIdentityLinkRequests(new DB(), "tenant-1", actor);
+  assert.equal(allowed.status, 200);
+});
+test("approval records owner event and guarded update atomically", async () => {
+  const db = new DB();
+  const result = await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "approve", "Reviewed independently", "decision-1", new Date("2026-11-14T12:00:00Z"));
+  assert.equal(result.status, 200);
+  assert.equal(result.data.status, "approved");
+  assert.equal(db.batchCalls[0].length, 2);
+  assert.match(db.batchCalls[0][0].sql, /tenant_owner/);
+  assert.match(db.batchCalls[0][1].sql, /changes\(\) = 1/);
+});
+test("rejection requires a reason and pending state", async () => {
+  const db = new DB();
+  assert.equal((await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "reject", "", "decision-2")).status, 400);
+  db.request.status = "approved";
+  assert.equal((await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "reject", "Not sufficient", "decision-3")).status, 409);
+});
+test("revocation only applies to an approved link in the same tenant", async () => {
+  const db = new DB({ id: "link-1", status: "approved", tenant_id: "tenant-1" });
+  const result = await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "revoke", "Access no longer authorized", "decision-4");
+  assert.equal(result.status, 200);
+  assert.equal(result.data.status, "revoked");
+  const otherTenant = new DB({ id: "link-1", status: "approved", tenant_id: "tenant-2" });
+  assert.equal((await decideIdentityLinkRequest(otherTenant, "tenant-1", "link-1", actor,
+    "revoke", "Wrong tenant", "decision-5")).status, 409);
+});
