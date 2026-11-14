@@ -465,8 +465,12 @@ async function changeTenantResourceGrant(db, tenant, actor, actorRole, requestId
   if (tenantRows.length !== 1 || tenantRows[0].id !== tenant) {
     return { error: "resource_grant_not_found", status: 404 };
   }
-  const resource = await resolveGrantableResource(db, tenant, body.resource_type, body.resource_id);
-  if (!resource) return { error: "resource_grant_not_found", status: 404 };
+  // Revocation is deliberately independent of current resource/member activity:
+  // administrators must be able to remove stale grants after suspension or retirement.
+  if (body.action === "grant") {
+    const resource = await resolveGrantableResource(db, tenant, body.resource_type, body.resource_id);
+    if (!resource) return { error: "resource_grant_not_found", status: 404 };
+  }
   const targets = await rows(db.prepare(
     "SELECT id, subject, status FROM tenant_memberships WHERE tenant_id = ? AND subject = ? LIMIT 2"
   ).bind(tenant, body.subject));
