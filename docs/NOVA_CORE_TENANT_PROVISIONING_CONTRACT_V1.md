@@ -7,7 +7,8 @@ The draft branch implements:
 - Atomic initial-owner assignment, tenant grants, append-only audit event and idempotency record.
 - Owner-issued, possession-based membership invitations with seven-day expiry, one-time token display, authenticated acceptance and owner revocation.
 - Audited membership role change, suspension, revocation and reactivation actions.
-- Owner/admin-only bounded membership and invitation audit history.
+- Owner/admin-only bounded membership, invitation and site-grant audit history.
+- Exact site-scoped grant assignment/revocation with tenant, active site and active member validation.
 
 The private Worker, gateway, migrations and integration tests exist only in this draft branch. Migrations have been applied only to disposable local D1 in CI. No live D1 migration, production allowlist, Access policy, secret, binding, tenant, membership, grant or deployment has been created or changed.
 
@@ -71,22 +72,36 @@ Additional constraints:
 - Event insert and membership update occur in the same D1 batch. A failed/mismatched write must not leave a partial state transition.
 - Existing tenant resource grants are retained on suspension/revocation but are ineffective while membership is not active. They are not silently expanded during role changes.
 
+## Site-level resource grants
+
+`POST /api/v1/tenants/{tenant}/site-grants`
+
+The active tenant owner or admin may grant or revoke one exact site/action grant for another active tenant member. The body fields are exactly `action` (`grant` or `revoke`), `subject`, `site_id`, `grant_action` and `reason`. Wildcards, inactive sites, inactive memberships, ambiguous targets and duplicate grants fail closed.
+
+- Supported grant actions: `read`, `create`, `update`, `delete`, `ingest`, `manage_members`.
+- Owners may grant/revoke all listed actions.
+- Admins may grant/revoke only `read`, `create`, `update` and `ingest`; destructive `delete` and `manage_members` grants remain owner-only.
+- Grant row mutation and its immutable `tenant_site_grant_events` audit event commit in one D1 batch.
+- Revocation deletes only the exact matching grant ID, tenant, subject, site and action; it does not affect other sites or grants.
+- Existing site grants are retained when a membership is suspended or revoked, but authorization requires active membership, so those grants do not authorize inactive users.
+- This route does not create a site, change membership roles, or assign tenant-wide grants.
+
 ## Audit history
 
 `GET /api/v1/tenants/{tenant}/membership-events`
 
-Only active owners/admins may read the newest 100 tenant-scoped membership and invitation events. Event rows are append-only. Membership events capture actor, subject, prior/new role, prior/new status, reason, request ID and timestamp. Invitation events capture the corresponding invitation lifecycle, actor, subject and reason.
+Only active owners/admins may read the newest 100 tenant-scoped membership, invitation and site-grant events. Event rows are append-only. Membership events capture actor, subject, prior/new role, prior/new status, reason, request ID and timestamp. Invitation events capture the corresponding invitation lifecycle, actor, subject and reason.
 
 ## Explicitly not implemented
 
 - Ownership transfer and owner promotion.
 - Direct invitation by arbitrary email, verified email matching or automated identity-provider delivery.
-- Site/resource-specific grant creation, editing or revocation through this membership API.
+- Asset/source/observation-specific grants and grant inheritance; only exact site-level grants are managed by this endpoint.
 - Tenant suspension/archival lifecycle.
 - Membership self-service or caller-selected subject changes.
 - A live production provisioning allowlist, Access policy or D1 migration.
 
 ## Validation and release gates
 
-The draft must pass exact-head API tests, gateway tests, ordered migrations against disposable local D1, query compatibility, fixture seeding and the end-to-end gateway → private Worker → D1 integration. Security review must confirm that the provisioning allowlist is not tenant-modifiable. Production migration/deployment requires separate explicit approval.
+The draft must pass exact-head API tests, gateway tests, ordered migrations against disposable local D1, query compatibility, fixture seeding and the end-to-end gateway → private Worker → D1 integration for membership and site-grant lifecycle. Security review must confirm that the provisioning allowlist is not tenant-modifiable. Production migration/deployment requires separate explicit approval.
 
