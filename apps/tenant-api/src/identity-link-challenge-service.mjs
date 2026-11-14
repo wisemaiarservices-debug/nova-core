@@ -29,6 +29,7 @@ async function sha256(value) {
 export async function createIdentityLinkChallenge(db, supabaseIdentity, cloudflareIdentity,
   requestId, now = new Date()) {
   if (!validIdentity(supabaseIdentity) || !validIdentity(cloudflareIdentity) ||
+      supabaseIdentity.issuer === cloudflareIdentity.issuer ||
       typeof requestId !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(requestId) ||
       !(now instanceof Date) || !Number.isFinite(now.getTime())) {
     return { error: "identity_link_challenge_input_invalid", status: 400 };
@@ -62,6 +63,7 @@ export async function consumeIdentityLinkChallenge(db, challengeId, challenge,
   if (typeof challengeId !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(challengeId) ||
       typeof challenge !== "string" || challenge.length !== 43 ||
       !validIdentity(supabaseIdentity) || !validIdentity(cloudflareIdentity) ||
+      supabaseIdentity.issuer === cloudflareIdentity.issuer ||
       typeof requestId !== "string" || !/^[A-Za-z0-9._:-]{1,140}$/.test(requestId) ||
       !(now instanceof Date) || !Number.isFinite(now.getTime())) {
     return { error: "identity_link_challenge_input_invalid", status: 400 };
