@@ -15,7 +15,7 @@ CREATE TABLE tenant_membership_events (
   previous_role TEXT CHECK (previous_role IS NULL OR previous_role IN (
     'tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service'
   )),
-  new_role TEXT CHECK (new_role IS NULL OR new_role IN (
+  new_role TEXT NOT NULL CHECK (new_role IN (
     'tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service'
   )),
   previous_status TEXT CHECK (previous_status IS NULL OR previous_status IN ('active', 'inactive', 'revoked')),
