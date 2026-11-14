@@ -721,8 +721,17 @@ export default {
         const events = await rows(env.DB.prepare(
           "SELECT id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id, created_at FROM tenant_membership_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
         ).bind(tenant));
-        if (events.some(event => event.tenant_id !== tenant)) return error("not_found", 404);
-        return json({ data: events, request_id: requestId });
+        const invitationEvents = await rows(env.DB.prepare(
+          "SELECT id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id, created_at FROM tenant_membership_invitation_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
+        ).bind(tenant));
+        if (events.some(event => event.tenant_id !== tenant) ||
+            invitationEvents.some(event => event.tenant_id !== tenant)) return error("not_found", 404);
+        const combined = [
+          ...events.map(event => ({ ...event, event_type: "membership_" + event.event_type })),
+          ...invitationEvents.map(event => ({ ...event, event_type: "invitation_" + event.event_type })),
+        ].sort((left, right) => right.created_at.localeCompare(left.created_at) ||
+          right.id.localeCompare(left.id)).slice(0, 100);
+        return json({ data: combined, request_id: requestId });
       }
       if (tenantProvision) {
         const provisioned = await createTenantForProvisioning(env.DB, subject, draftBody, requestId,
