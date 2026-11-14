@@ -15,14 +15,14 @@ The two issuer strings must differ. The helper does not accept browser-supplied 
 2. The private Worker verifies the envelope, exact configured Access issuer/audience, time bounds and request nonce.
 3. Only the future identity-link route passes the resulting trusted Cloudflare envelope identity and the forwarded Supabase bearer token to this helper.
 4. The helper independently verifies the Supabase JWT against the configured Supabase issuer/JWKS/audience and rejects issuer equality.
-5. The route may pass the returned pair to the one-time challenge service. The raw JWT must never be stored or included in the challenge or audit ledger.
+5. The route uses `createVerifiedIdentityLinkChallenge` or `consumeVerifiedIdentityLinkChallenge`, which repeat dual verification immediately before the challenge operation. The raw JWT must never be stored or included in the challenge or audit ledger.
 
 The helper is not a replacement for steps 1–2. Its Cloudflare input is trusted only when the call site follows this precondition.
 
 ## Explicit non-goals
 
 This helper does not:
-- create, consume, or persist a challenge;
+- authorize either identity for a tenant;
 - authorize either identity for a Core tenant;
 - infer a link from matching email addresses or UUIDs;
 - provision tenant membership, roles or grants;
@@ -46,6 +46,7 @@ The focused tests create a test-only RSA key pair and JWKS endpoint, then cover:
 - immutable minimal output with no raw token;
 - wrong Access issuer/audience;
 - identical issuer rejection before JWKS retrieval;
+- verified challenge creation and atomic consumption using the exact verified pair;
 - invalid Supabase token rejection without returning a partial pair.
 
 These are unit tests, not proof of the live Supabase project's signing configuration or a deployed end-to-end identity bridge.
