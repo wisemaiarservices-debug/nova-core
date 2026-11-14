@@ -1022,7 +1022,13 @@ export default {
           issuer: env.SUPABASE_AUTH_ISSUER,
           audience: env.SUPABASE_AUTH_AUDIENCE,
         });
-      } catch {
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : "";
+        if (reason === "supabase_jwks_unavailable" || reason === "supabase_issuer_unavailable")
+          return error("supabase_identity_provider_unavailable", 503);
+        if (reason === "invalid_supabase_issuer_configuration" ||
+            reason === "invalid_supabase_audience_configuration")
+          return error("supabase_identity_configuration_invalid", 503);
         return error("supabase_identity_not_authorized", 401);
       }
     }
