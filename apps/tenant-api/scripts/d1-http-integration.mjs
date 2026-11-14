@@ -66,7 +66,7 @@ try {
       { "content-type": "application/json" }, "POST", JSON.stringify(payload));
   }
   const roleChanged = await membershipAction("ci-human-subject", {
-    membership_id: "membership-http-lifecycle", action: "change_role",
+    membership_id: "membership-http-reviewer", action: "change_role",
     role: "analyst", reason: "CI role transition fixture",
   });
   assert.equal(roleChanged.response.status, 200, JSON.stringify(roleChanged.body));
@@ -74,34 +74,34 @@ try {
   assert.equal(roleChanged.body.data.event_type, "role_changed");
 
   const adminRoleChange = await membershipAction("ci-http-admin", {
-    membership_id: "membership-http-lifecycle", action: "change_role",
+    membership_id: "membership-http-reviewer", action: "change_role",
     role: "viewer", reason: "Admin role change must be denied",
   });
   assert.equal(adminRoleChange.response.status, 404);
 
   const suspended = await membershipAction("ci-http-admin", {
-    membership_id: "membership-http-lifecycle", action: "suspend",
+    membership_id: "membership-http-reviewer", action: "suspend",
     reason: "CI temporary suspension",
   });
   assert.equal(suspended.response.status, 200, JSON.stringify(suspended.body));
   assert.equal(suspended.body.data.status, "inactive");
 
   const reactivated = await membershipAction("ci-human-subject", {
-    membership_id: "membership-http-lifecycle", action: "reactivate",
+    membership_id: "membership-http-reviewer", action: "reactivate",
     reason: "CI access restoration",
   });
   assert.equal(reactivated.response.status, 200, JSON.stringify(reactivated.body));
   assert.equal(reactivated.body.data.status, "active");
 
   const membershipRevoked = await membershipAction("ci-human-subject", {
-    membership_id: "membership-http-lifecycle", action: "revoke",
+    membership_id: "membership-http-reviewer", action: "revoke",
     reason: "CI final membership revocation",
   });
   assert.equal(membershipRevoked.response.status, 200, JSON.stringify(membershipRevoked.body));
   assert.equal(membershipRevoked.body.data.status, "revoked");
 
   const revokedAgain = await membershipAction("ci-human-subject", {
-    membership_id: "membership-http-lifecycle", action: "reactivate",
+    membership_id: "membership-http-reviewer", action: "reactivate",
     reason: "Illegal transition after revocation",
   });
   assert.equal(revokedAgain.response.status, 409);
@@ -239,16 +239,16 @@ try {
   assert.equal(membershipAudit.response.status, 200, JSON.stringify(membershipAudit.body));
   assert.equal(membershipAudit.body.data.some(event =>
     event.event_type === "membership_role_changed" &&
-    event.membership_id === "membership-http-lifecycle"), true);
+    event.membership_id === "membership-http-reviewer"), true);
   assert.equal(membershipAudit.body.data.some(event =>
     event.event_type === "membership_suspended" &&
-    event.membership_id === "membership-http-lifecycle"), true);
+    event.membership_id === "membership-http-reviewer"), true);
   assert.equal(membershipAudit.body.data.some(event =>
     event.event_type === "membership_reactivated" &&
-    event.membership_id === "membership-http-lifecycle"), true);
+    event.membership_id === "membership-http-reviewer"), true);
   assert.equal(membershipAudit.body.data.some(event =>
     event.event_type === "membership_revoked" &&
-    event.membership_id === "membership-http-lifecycle"), true);
+    event.membership_id === "membership-http-reviewer"), true);
   assert.equal(membershipAudit.body.data.some(event =>
     event.event_type === "invitation_accepted" &&
     event.subject === "ci-invited-human"), true);
@@ -671,10 +671,10 @@ try {
   const ownershipTransfer = await throughGateway(
     "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-human-subject"),
     { "content-type": "application/json" }, "POST",
-    JSON.stringify({ target_membership_id: "membership-http-lifecycle",
+    JSON.stringify({ target_membership_id: "membership-http-reviewer",
       reason: "CI designated tenant successor" }));
   assert.equal(ownershipTransfer.response.status, 200, JSON.stringify(ownershipTransfer.body));
-  assert.equal(ownershipTransfer.body.data.new_owner_subject, "ci-lifecycle-member");
+  assert.equal(ownershipTransfer.body.data.new_owner_subject, "ci-measurement-reviewer");
   assert.equal(ownershipTransfer.body.data.previous_owner_role, "tenant_admin");
 
   const previousOwnerCannotTransferAgain = await throughGateway(
@@ -685,11 +685,11 @@ try {
   assert.equal(previousOwnerCannotTransferAgain.response.status, 404);
 
   const newOwnerAudit = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/membership-events", accessToken("ci-lifecycle-member"));
+    "/api/v1/tenants/tenant-http-a/membership-events", accessToken("ci-measurement-reviewer"));
   assert.equal(newOwnerAudit.response.status, 200, JSON.stringify(newOwnerAudit.body));
   assert.equal(newOwnerAudit.body.data.some(event =>
     event.event_type === "membership_role_changed" &&
-    event.membership_id === "membership-http-lifecycle" &&
+    event.membership_id === "membership-http-reviewer" &&
     event.previous_role === "viewer" && event.new_role === "tenant_owner"), true);
   assert.equal(newOwnerAudit.body.data.some(event =>
     event.event_type === "membership_role_changed" &&
