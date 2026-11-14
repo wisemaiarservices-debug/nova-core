@@ -238,7 +238,7 @@ class TenantIdentityLinkMigrationTests(unittest.TestCase):
         self.challenge("challenge-2", "challenge-request-2", supabase_subject, cloudflare_subject)
         self.consume("challenge-2")
         self.request("link-request-2", "challenge-2", supabase_subject, cloudflare_subject)
-        self.event("event-requested-2", link_id="link-request-2", request_id="event-requested-2-request")
+        self.event("event-requested-2", link_id="link-request-2", actor_subject=cloudflare_subject, request_id="event-requested-2-request")
         self.event("event-approved-2", link_id="link-request-2", event_type="approved",
                    previous="pending", new="approved", tenant=tenant, actor_subject=actor,
                    reason="owner decision", request_id="event-approved-2-request")
