@@ -1,5 +1,13 @@
 const encoder = new TextEncoder();
 const CHALLENGE_TTL_SECONDS = 300;
+
+function isPendingIdentityPairConflict(error) {
+  const message = error instanceof Error ? error.message : "";
+  return message.includes("UNIQUE constraint failed: tenant_identity_link_requests.supabase_issuer") &&
+    message.includes("tenant_identity_link_requests.supabase_subject") &&
+    message.includes("tenant_identity_link_requests.cloudflare_issuer") &&
+    message.includes("tenant_identity_link_requests.cloudflare_subject");
+}
 const MAX_REASON_LENGTH = 1000;
 
 function validIdentity(value) {
@@ -99,7 +107,17 @@ export async function consumeIdentityLinkChallenge(db, challengeId, challenge,
     "INSERT INTO tenant_identity_link_events (id, link_request_id, event_type, previous_status, new_status, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, request_id) SELECT ?, ?, 'requested', NULL, 'pending', NULL, ?, ?, 'independently verified identities presented', ? WHERE changes() = 1"
   ).bind(eventId, linkRequestId, cloudflareIdentity.issuer, cloudflareIdentity.subject,
     requestId + "-requested");
-  const results = await db.batch([consume, insertRequest, insertEvent]);
+  let results;
+  try {
+    results = await db.batch([consume, insertRequest, insertEvent]);
+  } catch (error) {
+    // The partial unique index allows only one pending request per exact
+    // identity pair. D1 rolls back the batch, leaving this challenge pending.
+    if (isPendingIdentityPairConflict(error)) {
+      return { error: "identity_link_request_already_pending", status: 409 };
+    }
+    throw error;
+  }
   if (!Array.isArray(results) || results.length !== 3 ||
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
     throw new Error("identity_link_challenge_batch_invalid");
