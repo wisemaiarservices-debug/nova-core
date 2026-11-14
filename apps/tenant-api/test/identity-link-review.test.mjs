@@ -5,7 +5,7 @@ import { listPendingIdentityLinkRequests, decideIdentityLinkRequest } from "../s
 const actor = { issuer: "https://team.cloudflareaccess.com", subject: "owner-1" };
 class DB {
   constructor(request = { id: "link-1", status: "pending", tenant_id: null }, owner = true) {
-    this.request = request; this.owner = owner; this.batchCalls = []; this.priorEvent = null;
+    this.request = request; this.owner = owner; this.batchCalls = []; this.priorEvent = null; this.batchError = null;
   }
   prepare(sql) {
     const db = this;
@@ -27,6 +27,7 @@ class DB {
   }
   async batch(statements) {
     this.batchCalls.push(statements);
+    if (this.batchError) throw this.batchError;
     return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
   }
 }
@@ -93,4 +94,14 @@ test("idempotency key reuse with different decision content is rejected", async 
   assert.equal(result.status, 409);
   assert.equal(result.error, "identity_link_idempotency_conflict");
   assert.equal(db.batchCalls.length, 0);
+});
+
+test("database failures are not disguised as idempotency conflicts", async () => {
+  const db = new DB();
+  db.batchError = new Error("temporary D1 failure");
+  await assert.rejects(
+    decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+      "approve", "Reviewed independently", "decision-db-error"),
+    /temporary D1 failure/,
+  );
 });
