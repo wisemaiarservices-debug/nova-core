@@ -134,6 +134,6 @@ test("pending review list excludes self-requests and mismatched Cloudflare issue
 test("SQL event trigger binds owner decisions to the request Cloudflare issuer", () => {
   const migrationPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../api/migrations/0022_tenant_identity_link_challenges.sql");
   const sql = readFileSync(migrationPath, "utf8");
-  assert.match(sql, /r\\.cloudflare_issuer = NEW\\.actor_cloudflare_issuer/);
-  assert.equal((sql.match(/r\\.cloudflare_issuer = NEW\\.actor_cloudflare_issuer/g) ?? []).length, 2);
+  assert.match(sql, /r\.cloudflare_issuer = NEW\.actor_cloudflare_issuer/);
+  assert.equal((sql.match(/r\.cloudflare_issuer = NEW\.actor_cloudflare_issuer/g) ?? []).length, 2);
 });
