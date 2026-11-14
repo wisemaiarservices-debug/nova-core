@@ -433,7 +433,7 @@ async function sha256Hex(value) {
 
 
 async function changeTenantSiteGrant(db, tenant, actor, actorRole, requestId, body) {
-  const allowedActions = ["read", "create", "update", "delete", "ingest", "manage_members"];
+  const allowedActions = ["read", "create", "update", "delete", "ingest"];
   if (!onlyKeys(body, ["action", "subject", "site_id", "grant_action", "reason"]) ||
       !["grant", "revoke"].includes(body.action) || !validSubject(body.subject) ||
       !validId(body.site_id, 160) || !allowedActions.includes(body.grant_action) ||
