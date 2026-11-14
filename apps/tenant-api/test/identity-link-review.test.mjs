@@ -12,7 +12,7 @@ class DB {
     return { sql, args: [], bind(...args) { this.args = args; return this; },
       async all() {
         if (this.sql.includes("FROM tenant_memberships m JOIN tenants")) {
-          return { results: db.owner ? [{ subject: db.args[1] }] : [] };
+          return { results: db.owner ? [{ subject: this.args[1] }] : [] };
         }
         if (this.sql.includes("FROM tenant_identity_link_requests WHERE id")) {
           return { results: db.request ? [db.request] : [] };
