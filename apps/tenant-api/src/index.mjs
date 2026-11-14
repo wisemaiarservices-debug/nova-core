@@ -15,6 +15,11 @@ const ROLE_ACTIONS = {
   operator: new Set(["read", "ingest"]), analyst: new Set(["read"]),
   viewer: new Set(["read"]), service: new Set(["read", "ingest"]),
 };
+const RESOURCE_GRANT_INSERT_SQL = {
+  asset: "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'asset', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM assets a JOIN sites s ON s.id = a.site_id AND s.tenant_id = a.tenant_id AND s.status = 'active' WHERE a.id = ? AND a.tenant_id = ? AND a.status = 'active')",
+  source: "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'source', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sources src LEFT JOIN sites s ON s.id = src.site_id AND s.tenant_id = src.tenant_id AND s.status = 'active' WHERE src.id = ? AND src.tenant_id = ? AND src.verification_status = 'verified' AND (src.site_id IS NULL OR s.id IS NOT NULL))",
+  observation: "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'observation', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.id = ? AND o.tenant_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL))",
+};
 const RESOURCE_SQL = {
   site: "SELECT id, tenant_id, name, description, latitude, longitude, timezone, status, metadata_json, created_at, updated_at FROM sites WHERE tenant_id = ? AND id = ? LIMIT 1",
   asset: "SELECT id, tenant_id, site_id, name, asset_type, external_ref, status, metadata_json, created_at, updated_at FROM assets WHERE tenant_id = ? AND id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM sites s WHERE s.id = assets.site_id AND s.tenant_id = assets.tenant_id AND s.status = 'active') LIMIT 1",
@@ -493,12 +498,8 @@ async function changeTenantResourceGrant(db, tenant, actor, actorRole, requestId
   const resourceId = body.resource_id;
   const action = body.grant_action;
   const statements = body.action === "grant" ? [
-    db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM " +
-      (type === "asset" ? "assets a JOIN sites s ON s.id = a.site_id AND s.tenant_id = a.tenant_id AND s.status = 'active' WHERE a.id = ? AND a.tenant_id = ? AND a.status = 'active'"
-        : type === "source" ? "sources src LEFT JOIN sites s ON s.id = src.site_id AND s.tenant_id = src.tenant_id AND s.status = 'active' WHERE src.id = ? AND src.tenant_id = ? AND src.verification_status = 'verified' AND (src.site_id IS NULL OR s.id IS NOT NULL)"
-        : "observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.id = ? AND o.tenant_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL)") +
-      ")")
-      .bind(grantId, tenant, body.subject, type, resourceId, action,
+    db.prepare(RESOURCE_GRANT_INSERT_SQL[type])
+      .bind(grantId, tenant, body.subject, resourceId, action,
         tenant, targets[0].id, tenant, body.subject, resourceId, tenant),
     db.prepare("INSERT INTO tenant_resource_grant_events (id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, 'granted', ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ? AND action = ?)")
       .bind(eventId, tenant, grantId, body.subject, type, resourceId, action,
