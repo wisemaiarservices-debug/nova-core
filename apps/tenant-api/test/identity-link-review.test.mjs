@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { listPendingIdentityLinkRequests, decideIdentityLinkRequest } from "../src/identity-link-review.mjs";
 
 const actor = { issuer: "https://team.cloudflareaccess.com", subject: "owner-1" };
@@ -125,4 +128,12 @@ test("pending review list excludes self-requests and mismatched Cloudflare issue
   assert.equal(result.status, 200);
   assert.match(db.queries.find(sql => sql.includes("FROM tenant_identity_link_requests r")), /r\.cloudflare_issuer = \?/);
   assert.match(db.queries.find(sql => sql.includes("FROM tenant_identity_link_requests r")), /r\.cloudflare_subject <> \?/);
+});
+
+
+test("SQL event trigger binds owner decisions to the request Cloudflare issuer", () => {
+  const migrationPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../api/migrations/0022_tenant_identity_link_challenges.sql");
+  const sql = readFileSync(migrationPath, "utf8");
+  assert.match(sql, /r\\.cloudflare_issuer = NEW\\.actor_cloudflare_issuer/);
+  assert.equal((sql.match(/r\\.cloudflare_issuer = NEW\\.actor_cloudflare_issuer/g) ?? []).length, 2);
 });
