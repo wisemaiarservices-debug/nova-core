@@ -1,5 +1,5 @@
 -- NOVA Core identity-link challenge rate limits — 0025
--- Store only SHA-256 identity digests, never issuer/subject values.
+-- Store only keyed HMAC-SHA-256 identity digests, never issuer/subject values.
 -- Fixed 15-minute windows; stale rows are pruned by the request path.
 
 CREATE TABLE tenant_identity_link_rate_limits (
