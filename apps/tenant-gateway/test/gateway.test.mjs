@@ -650,3 +650,54 @@ test("routes ownership transfer through the signed Access gateway", async () => 
   assert.equal(forwarded.headers.get("x-nova-verified-subject"), "tenant-owner");
   assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
 });
+
+
+test("routes tenant lifecycle actions and audit reads through signed Access gateway", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "tenant-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const forwarded = [];
+  const payload = JSON.stringify({ action: "suspend", reason: "Approved security review" });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/lifecycle-actions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+      body: payload,
+    }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      forwarded.push(request);
+      return new Response(JSON.stringify({ data: { status: "suspended" } }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(new URL(forwarded[0].url).pathname,
+    "/internal/v1/tenants/tenant-a/lifecycle-actions");
+  assert.equal(await forwarded[0].text(), payload);
+  assert.equal(forwarded[0].headers.get("x-nova-verified-subject"), "tenant-owner");
+  assert.match(forwarded[0].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+
+  const audit = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/lifecycle-events", {
+      method: "GET", headers: { "Cf-Access-Jwt-Assertion": "valid" },
+    }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      forwarded.push(request);
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } },
+  });
+  assert.equal(audit.status, 200);
+  assert.equal(new URL(forwarded[1].url).pathname,
+    "/internal/v1/tenants/tenant-a/lifecycle-events");
+  assert.equal(forwarded[1].method, "GET");
+  assert.equal(forwarded[1].headers.get("x-nova-verified-subject"), "tenant-owner");
+});
