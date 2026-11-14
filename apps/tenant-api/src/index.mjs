@@ -630,8 +630,15 @@ async function changeTenantLifecycle(db, tenant, actor, requestId, body) {
   if (result[0].meta.changes !== 1) {
     return { error: "tenant_lifecycle_event_conflict", status: 409 };
   }
-  if (result[1].meta.changes !== 1) {
-    return { error: "tenant_lifecycle_state_conflict", status: 409 };
+  const persisted = await rows(db.prepare(
+    "SELECT status, last_lifecycle_event_id FROM tenants WHERE id = ? LIMIT 2"
+  ).bind(tenant));
+  if (persisted.length !== 1 || persisted[0].status !== transition.to ||
+      persisted[0].last_lifecycle_event_id !== eventId) {
+    return { error: "tenant_lifecycle_state_conflict", status: 409,
+      details: { expected_status: transition.to,
+        current_status: persisted[0]?.status ?? null,
+        event_recorded: result[0].meta.changes === 1 } };
   }
   return { data: { tenant_id: tenant, previous_status: current,
     status: transition.to, event_type: transition.event, event_id: eventId }, status: 200 };
