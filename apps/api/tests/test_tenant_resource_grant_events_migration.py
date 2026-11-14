@@ -13,6 +13,10 @@ class TenantResourceGrantEventsMigrationTests(unittest.TestCase):
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.executescript("""
             CREATE TABLE tenants (id TEXT PRIMARY KEY, status TEXT NOT NULL);
+            CREATE TABLE assets (
+              id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, site_id TEXT NOT NULL,
+              UNIQUE (id, tenant_id, site_id)
+            );
             CREATE TABLE tenant_resource_grants (
               id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, subject TEXT NOT NULL,
               resource_type TEXT NOT NULL, resource_id TEXT NOT NULL, action TEXT NOT NULL,
@@ -41,6 +45,11 @@ class TenantResourceGrantEventsMigrationTests(unittest.TestCase):
             VALUES (?, 'tenant-a', ?, 'member-sub', ?, ?, ?, ?,
                     'owner-sub', 'approved exact resource access', ?)
         """, (event_id, grant_id, resource_type, resource_id, grant_action, event_type, request_id))
+
+    def test_asset_composite_foreign_key_parent_index_exists(self):
+        indexes = self.db.execute("PRAGMA index_list(assets)").fetchall()
+        self.assertTrue(any(row[1] == "idx_assets_id_tenant_site" and row[2] == 1
+                            for row in indexes))
 
     def test_granted_events_cover_exact_asset_source_and_observation_scopes(self):
         self.insert_event()
