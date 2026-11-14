@@ -17,9 +17,9 @@ const ROLE_ACTIONS = {
 };
 const RESOURCE_SQL = {
   site: "SELECT id, tenant_id, name, description, latitude, longitude, timezone, status, metadata_json, created_at, updated_at FROM sites WHERE tenant_id = ? AND id = ? LIMIT 1",
-  asset: "SELECT id, tenant_id, site_id, name, asset_type, external_ref, status, metadata_json, created_at, updated_at FROM assets WHERE tenant_id = ? AND id = ? LIMIT 1",
-  source: "SELECT id, tenant_id, site_id, module, provider, source_type, display_name, verification_status, verification_method, license_reference, metadata_json, created_at, updated_at FROM sources WHERE tenant_id = ? AND id = ? LIMIT 1",
-  observation: "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, ingested_at, verification_status, provenance_json, quality_flags_json, retention_until FROM observations WHERE tenant_id = ? AND id = ? LIMIT 1",
+  asset: "SELECT id, tenant_id, site_id, name, asset_type, external_ref, status, metadata_json, created_at, updated_at FROM assets WHERE tenant_id = ? AND id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM sites s WHERE s.id = assets.site_id AND s.tenant_id = assets.tenant_id AND s.status = 'active') LIMIT 1",
+  source: "SELECT id, tenant_id, site_id, module, provider, source_type, display_name, verification_status, verification_method, license_reference, metadata_json, created_at, updated_at FROM sources WHERE tenant_id = ? AND id = ? AND verification_status = 'verified' AND (site_id IS NULL OR EXISTS (SELECT 1 FROM sites s WHERE s.id = sources.site_id AND s.tenant_id = sources.tenant_id AND s.status = 'active')) LIMIT 1",
+  observation: "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, ingested_at, verification_status, provenance_json, quality_flags_json, retention_until FROM observations WHERE tenant_id = ? AND id = ? AND EXISTS (SELECT 1 FROM sites s WHERE s.id = observations.site_id AND s.tenant_id = observations.tenant_id AND s.status = 'active') AND EXISTS (SELECT 1 FROM sources src WHERE src.id = observations.source_id AND src.tenant_id = observations.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = observations.site_id)) AND (asset_id IS NULL OR EXISTS (SELECT 1 FROM assets a WHERE a.id = observations.asset_id AND a.tenant_id = observations.tenant_id AND a.site_id = observations.site_id AND a.status = 'active')) LIMIT 1",
   audit_event: "SELECT id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json FROM audit_events WHERE tenant_id = ? AND id = ? LIMIT 1",
 };
 function validSubject(value) {
@@ -993,13 +993,18 @@ export default {
         const siteGrantEvents = await rows(env.DB.prepare(
           "SELECT id, tenant_id, grant_id, subject, site_id, grant_action, event_type, actor_subject, reason, request_id, created_at FROM tenant_site_grant_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
         ).bind(tenant));
+        const resourceGrantEvents = await rows(env.DB.prepare(
+          "SELECT id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id, created_at FROM tenant_resource_grant_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
+        ).bind(tenant));
         if (events.some(event => event.tenant_id !== tenant) ||
             invitationEvents.some(event => event.tenant_id !== tenant) ||
-            siteGrantEvents.some(event => event.tenant_id !== tenant)) return error("not_found", 404);
+            siteGrantEvents.some(event => event.tenant_id !== tenant) ||
+            resourceGrantEvents.some(event => event.tenant_id !== tenant)) return error("not_found", 404);
         const combined = [
           ...events.map(event => ({ ...event, event_type: "membership_" + event.event_type })),
           ...invitationEvents.map(event => ({ ...event, event_type: "invitation_" + event.event_type })),
           ...siteGrantEvents.map(event => ({ ...event, event_type: "site_grant_" + event.event_type })),
+          ...resourceGrantEvents.map(event => ({ ...event, event_type: "resource_grant_" + event.event_type })),
         ].sort((left, right) => right.created_at.localeCompare(left.created_at) ||
           right.id.localeCompare(left.id)).slice(0, 100);
         return json({ data: combined, request_id: requestId });
