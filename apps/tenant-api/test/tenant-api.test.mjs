@@ -840,7 +840,7 @@ class ProvisioningDB {
   }
   prepare(sql) {
     const db = this;
-    return { bind(...args) { return {
+    return { bind(...args) { return { sql, args,
       async run() {
         if (sql.includes("INSERT INTO internal_request_nonces")) {
           if (db.nonces.has(args[0])) return { meta: { changes: 0 } };
