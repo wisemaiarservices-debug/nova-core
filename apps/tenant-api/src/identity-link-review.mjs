@@ -69,10 +69,10 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
   const eventId = crypto.randomUUID();
   const decidedAt = now.toISOString();
   const event = db.prepare(
-    "INSERT INTO tenant_identity_link_events (id, link_request_id, event_type, previous_status, new_status, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_identity_link_requests r JOIN tenants t ON t.id = ? AND t.status = 'active' WHERE r.id = ? AND r.status = ? AND (r.tenant_id IS NULL OR r.tenant_id = ?) AND EXISTS (SELECT 1 FROM tenant_memberships m WHERE m.tenant_id = t.id AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active') AND r.cloudflare_issuer = ? AND (? = 'revoke' OR r.cloudflare_subject <> ?) AND EXISTS (SELECT 1 FROM tenant_memberships requester WHERE requester.tenant_id = t.id AND requester.subject = r.cloudflare_subject AND requester.status = 'active'))"
+    "INSERT INTO tenant_identity_link_events (id, link_request_id, event_type, previous_status, new_status, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_identity_link_requests r JOIN tenants t ON t.id = ? AND t.status = 'active' WHERE r.id = ? AND r.status = ? AND (r.tenant_id IS NULL OR r.tenant_id = ?) AND EXISTS (SELECT 1 FROM tenant_memberships m WHERE m.tenant_id = t.id AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active') AND r.cloudflare_issuer = ? AND (? = 'revoke' OR r.cloudflare_subject <> ?) AND (? = 'revoke' OR EXISTS (SELECT 1 FROM tenant_memberships requester WHERE requester.tenant_id = t.id AND requester.subject = r.cloudflare_subject AND requester.status = 'active')))"
   ).bind(eventId, requestId, eventType, expected, eventType, tenantId,
     actor.issuer, actor.subject, reason, idempotencyKey, tenantId, requestId, expected,
-    tenantId, actor.subject, actor.issuer, decision, actor.subject);
+    tenantId, actor.subject, actor.issuer, decision, actor.subject, decision);
   const update = db.prepare(
     "UPDATE tenant_identity_link_requests SET status = ?, tenant_id = ?, decided_by_cloudflare_issuer = ?, decided_by_cloudflare_subject = ?, reason = ?, decided_at = ? WHERE id = ? AND status = ? AND (tenant_id IS NULL OR tenant_id = ?) AND changes() = 1"
   ).bind(eventType, tenantId, actor.issuer, actor.subject, reason, decidedAt,
