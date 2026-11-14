@@ -447,3 +447,30 @@ test("routes tenant creation only for an exact gateway provisioning allowlist su
   assert.equal(denied.status, 404);
   assert.equal(called, false);
 });
+
+
+test("routes tenant membership audit reads through the signed private API", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "tenant-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  let forwarded;
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/membership-events",
+    { headers: { "Cf-Access-Jwt-Assertion": "valid" } }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      forwarded = request;
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(forwarded.method, "GET");
+  assert.equal(new URL(forwarded.url).pathname,
+    "/internal/v1/tenants/tenant-a/membership-events");
+  assert.equal(forwarded.headers.get("x-nova-verified-subject"), "tenant-owner");
+  assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+});
