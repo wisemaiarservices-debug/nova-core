@@ -456,7 +456,7 @@ async function changeTenantSiteGrant(db, tenant, actor, actorRole, requestId, bo
     "SELECT id, subject, status FROM tenant_memberships WHERE tenant_id = ? AND subject = ? LIMIT 2"
   ).bind(tenant, body.subject));
   if (targets.length !== 1 || targets[0].subject !== body.subject ||
-      targets[0].status !== "active") return { error: "site_grant_not_found", status: 404 };
+      (body.action === "grant" && targets[0].status !== "active")) return { error: "site_grant_not_found", status: 404 };
   const existing = await rows(db.prepare(
     "SELECT id FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = ? LIMIT 2"
   ).bind(tenant, body.subject, body.site_id, body.grant_action));
@@ -469,7 +469,7 @@ async function changeTenantSiteGrant(db, tenant, actor, actorRole, requestId, bo
   const grantId = body.action === "grant" ? crypto.randomUUID() : existing[0].id;
   const eventId = crypto.randomUUID();
   const statements = body.action === "grant" ? [
-    db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'site', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND tenant_id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active')")
+    db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'site', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND tenant_id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
       .bind(grantId, tenant, body.subject, body.site_id, body.grant_action,
         tenant, body.site_id, tenant, targets[0].id, tenant, body.subject),
     db.prepare("INSERT INTO tenant_site_grant_events (id, tenant_id, grant_id, subject, site_id, grant_action, event_type, actor_subject, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, 'granted', ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_resource_grants WHERE id = ? AND tenant_id = ? AND subject = ? AND resource_type = 'site' AND resource_id = ? AND action = ?)")
