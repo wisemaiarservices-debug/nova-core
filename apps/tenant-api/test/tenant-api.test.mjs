@@ -1293,6 +1293,8 @@ test("site grant changes fail closed for inactive target memberships and duplica
       grant_action: "read", reason: "Remove stale access after suspension" })), env(cleanup));
   assert.equal(cleanupResponse.status, 200);
   assert.equal((await cleanupResponse.json()).data.grant_id, "grant-stale");
+  assert.match(cleanup.batchCalls[0][0].sql, /DELETE FROM tenant_resource_grants/);
+  assert.doesNotMatch(cleanup.batchCalls[0][0].sql, /tenant_memberships[^)]*status = 'active'/);
 });
 
 test("tenant owner revokes an exact site grant and appends a matching event", async () => {
