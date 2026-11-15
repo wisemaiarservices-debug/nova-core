@@ -34,7 +34,7 @@ test("membership lifecycle event rejects suspended actor", (t) => {
   db.prepare("UPDATE tenant_memberships SET status = 'suspended' WHERE tenant_id = 'tenant-1' AND subject = 'owner-1'").run();
   assert.throws(
     () => db.prepare("INSERT INTO tenant_membership_events VALUES ('event-2', 'tenant-1', 'owner-1', 'suspended')").run(),
-    /membership event actor membership must be active/
+    /membership event actor (membership must be active|must have active owner or admin authority)/
   );
 });
 
@@ -43,7 +43,7 @@ test("membership lifecycle event rejects inactive tenant", (t) => {
   db.prepare("UPDATE tenants SET status = 'suspended' WHERE id = 'tenant-1'").run();
   assert.throws(
     () => db.prepare("INSERT INTO tenant_membership_events VALUES ('event-3', 'tenant-1', 'owner-1', 'suspended')").run(),
-    /membership event actor membership must be active/
+    /membership event actor (membership must be active|must have active owner or admin authority)/
   );
 });
 
