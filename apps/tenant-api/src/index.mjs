@@ -1028,7 +1028,7 @@ export default {
           typeof env.SUPABASE_AUTH_AUDIENCE !== "string" || !env.SUPABASE_AUTH_AUDIENCE)
         return error("supabase_identity_not_configured", 503);
       try {
-        await verifySupabaseAccessToken(supabaseToken, {
+        verifiedSupabaseIdentity = await verifySupabaseAccessToken(supabaseToken, {
           issuer: env.SUPABASE_AUTH_ISSUER,
           audience: env.SUPABASE_AUTH_AUDIENCE,
         });
@@ -1065,6 +1065,7 @@ export default {
       if (identityLinkChallengeCreate || identityLinkChallengeConsume) {
         const input = {
           supabaseToken,
+          verifiedSupabaseIdentity,
           cloudflareIdentity: { issuer, subject, audience },
           accessIssuer: env.ACCESS_ISSUER,
           accessAudience: env.ACCESS_AUDIENCE,
