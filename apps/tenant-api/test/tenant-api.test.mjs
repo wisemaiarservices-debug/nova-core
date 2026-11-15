@@ -22,6 +22,7 @@ class DB {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
         if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
+        if (sql.includes("tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved'")) return { results: db.identityLinkRows ?? [] };
         if (sql.includes("SELECT e.id FROM water_quality_criteria_entries e")) {
           const entry = (db.criteriaRows ?? []).find(row =>
             row.tenant_id === args[0] && row.id === args[1] && row.version === args[2]);
@@ -51,6 +52,12 @@ class DB {
         }
         if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) {
           return { results: db.siteObservationRows };
+        }
+        if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) {
+          return { results: db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []) };
+        }
+        if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) {
+          return { results: db.siteObservationRows ?? [] };
         }
         if (sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS")) {
           return { results: db.observationSiteAuthorizationRows ?? [] };
@@ -122,6 +129,28 @@ async function request(overrides = {}, targetUrl = "https://private.internal/int
 const env = db => ({ ACCESS_ISSUER: "https://example.cloudflareaccess.com",
   ACCESS_AUDIENCE: "aud", INTERNAL_AUTH_SECRET: SECRET,
   SUPABASE_AUTH_ISSUER: "https://project.example.test/auth/v1", SUPABASE_AUTH_AUDIENCE: "authenticated", DB: db });
+
+const testSupabaseIssuer = "https://project.example.test/auth/v1";
+const testSupabaseAudience = "authenticated";
+const testSupabaseKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const testSupabaseJwk = { ...testSupabaseKeys.publicKey.export({ format: "jwk" }),
+  kid: "tenant-api-test-key", alg: "RS256", use: "sig", key_ops: ["verify"] };
+function testSupabaseToken(subject = "supabase-user-123") {
+  const enc = value => Buffer.from(value).toString("base64url");
+  const head = enc(JSON.stringify({ alg: "RS256", typ: "JWT", kid: testSupabaseJwk.kid }));
+  const claims = enc(JSON.stringify({ iss: testSupabaseIssuer, aud: testSupabaseAudience,
+    sub: subject, role: "authenticated", iat: now - 5, exp: now + 300 }));
+  const input = head + "." + claims;
+  return input + "." + sign("RSA-SHA256", Buffer.from(input), testSupabaseKeys.privateKey).toString("base64url");
+}
+async function withTestSupabaseJwks(run) {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    assert.equal(String(url), testSupabaseIssuer + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [testSupabaseJwk] }), { status: 200 });
+  };
+  try { return await run(); } finally { globalThis.fetch = previousFetch; }
+}
 
 test("requires a complete, fresh gateway identity envelope", async () => {
   const db = new DB();
@@ -2553,30 +2582,62 @@ test("a valid linked Supabase JWT cannot substitute for the verified Cloudflare 
 });
 
 
-test("lists only bounded observations for an active site with an exact site read grant", async () => {
+test("requires a verified Supabase identity before site observation reads", async () => {
   const db = new DB();
-  db.siteObservationRows = [
-    { id: "obs-2", tenant_id: "tenant-a", site_id: "site-a", metric: "soil_moisture", value: 24, unit: "%" },
-    { id: "obs-1", tenant_id: "tenant-a", site_id: "site-a", metric: "air_temperature", value: 21, unit: "Cel" },
-  ];
   const response = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
-  assert.equal(response.status, 200);
-  const payload = await response.json();
-  assert.equal(payload.limit, 100);
-  assert.deepEqual(payload.data, db.siteObservationRows);
-  const authorization = db.calls.find(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships"));
-  assert.deepEqual(authorization.args, ["operator@example.test", "tenant-a", "site-a"]);
-  const read = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
-  assert.deepEqual(read.args, ["tenant-a", "site-a"]);
-  assert.match(read.sql, /ORDER BY o\.observed_at DESC, o\.id DESC LIMIT 100/);
-  assert.match(read.sql, /src\.verification_status = 'verified'/);
+  assert.equal(response.status, 401);
+  assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
+});
+
+test("lists bounded observations only after approved dual-identity and exact site grant checks", async () => {
+  await withTestSupabaseJwks(async () => {
+    const db = new DB();
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    db.siteObservationRows = [
+      { id: "obs-2", tenant_id: "tenant-a", site_id: "site-a", metric: "soil_moisture", value: 24, unit: "%" },
+      { id: "obs-1", tenant_id: "tenant-a", site_id: "site-a", metric: "air_temperature", value: 21, unit: "Cel" },
+    ];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": testSupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.limit, 100);
+    assert.deepEqual(payload.data, db.siteObservationRows);
+    const link = db.calls.find(call => call.sql.includes("tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved'"));
+    assert.deepEqual(link.args, ["tenant-a", testSupabaseIssuer, "supabase-user-123",
+      "https://example.cloudflareaccess.com", "operator@example.test"]);
+    const authorization = db.calls.find(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships"));
+    assert.deepEqual(authorization.args, ["operator@example.test", "tenant-a", "site-a"]);
+    const read = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
+    assert.deepEqual(read.args, ["tenant-a", "site-a"]);
+    assert.match(read.sql, /ORDER BY o\.observed_at DESC, o\.id DESC LIMIT 100/);
+    assert.match(read.sql, /src\.verification_status = 'verified'/);
+  });
 });
 
 test("does not read site observations without the exact active site grant", async () => {
-  const db = new DB({ grant: false });
-  const response = await worker.fetch(await request({},
-    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
-  assert.equal(response.status, 404);
-  assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
+  await withTestSupabaseJwks(async () => {
+    const db = new DB({ grant: false });
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": testSupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
+  });
+});
+
+test("does not read observations when Supabase and Access identities are not owner-linked", async () => {
+  await withTestSupabaseJwks(async () => {
+    const db = new DB();
+    db.identityLinkRows = [];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": testSupabaseToken("different-supabase-user"),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.some(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")), false);
+    assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
+  });
 });
