@@ -133,6 +133,52 @@ test("denies missing and duplicate memberships without grant lookup", async () =
   assert.equal(duplicateResponse.status, 404);
   assert.equal(duplicate.calls.length, 2);
 });
+test("Supabase identity cannot substitute for the Access subject across site, asset, source, observation and audit reads", async () => {
+  const paths = [
+    "/internal/v1/tenants/tenant-a/sites/site-a",
+    "/internal/v1/tenants/tenant-a/assets/asset-a",
+    "/internal/v1/tenants/tenant-a/sources/source-a",
+    "/internal/v1/tenants/tenant-a/observations/observation-a",
+    "/internal/v1/tenants/tenant-a/audit-events/event-a",
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [identityJwk] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    for (const path of paths) {
+      const db = new DB();
+      // Only the Supabase subject has membership and a grant. The Access
+      // subject supplied by the authenticated gateway deliberately does not.
+      db.membershipRows = [{
+        subject: "supabase-user-1", tenant_id: "tenant-a", role: "viewer",
+        membership_status: "active", tenant_status: "active",
+      }];
+      db.grantRows = [{
+        subject: "supabase-user-1", tenant_id: "tenant-a",
+        resource_type: path.split("/")[5].replace(/s$/, "").replace("audit-event", "audit_event"),
+        resource_id: path.split("/").at(-1), action: "read",
+      }];
+      const response = await worker.fetch(await request({
+        "x-nova-supabase-access-token": identitySupabaseToken(),
+      }, "https://private.internal" + path), env(db));
+      assert.equal(response.status, 404, path);
+      const membershipRead = db.calls.find(call => call.sql.includes("FROM tenant_memberships"));
+      assert.ok(membershipRead, path);
+      assert.equal(membershipRead.args[0], "operator@example.test", path);
+      assert.equal(db.calls.some(call => call.sql.includes("FROM tenant_identity_link_requests")), false, path);
+      assert.equal(db.calls.some(call =>
+        /FROM (sites|assets|sources|observations|audit_events)/.test(call.sql)), false,
+        "resource row must not be read for " + path);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("denies inactive memberships and suspended tenants before checking grants or reading resources", async () => {
   const inactiveMembership = new DB();
   inactiveMembership.membershipRows = [{
