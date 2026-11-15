@@ -1017,6 +1017,7 @@ export default {
     if ((supabaseToken === null) !== (supabaseTokenDigest === null)) return error("request_not_authorized", 401);
     if ((identityLinkChallengeCreate || identityLinkChallengeConsume) && supabaseToken === null)
       return error("supabase_identity_required", 401);
+    let verifiedSupabaseIdentity = null;
     if (supabaseToken !== null) {
       const tokenDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(supabaseToken));
       const tokenDigestHex = Array.from(new Uint8Array(tokenDigest), byte => byte.toString(16).padStart(2, "0")).join("");
@@ -1026,7 +1027,7 @@ export default {
           typeof env.SUPABASE_AUTH_AUDIENCE !== "string" || !env.SUPABASE_AUTH_AUDIENCE)
         return error("supabase_identity_not_configured", 503);
       try {
-        await verifySupabaseAccessToken(supabaseToken, {
+        verifiedSupabaseIdentity = await verifySupabaseAccessToken(supabaseToken, {
           issuer: env.SUPABASE_AUTH_ISSUER,
           audience: env.SUPABASE_AUTH_AUDIENCE,
         });
@@ -1063,6 +1064,7 @@ export default {
       if (identityLinkChallengeCreate || identityLinkChallengeConsume) {
         const input = {
           supabaseToken,
+          verifiedSupabaseIdentity,
           cloudflareIdentity: { issuer, subject, audience },
           accessIssuer: env.ACCESS_ISSUER,
           accessAudience: env.ACCESS_AUDIENCE,
