@@ -1838,6 +1838,23 @@ test("identity-link challenge endpoints require a dual-authenticated request", a
 });
 
 
+test("observation verification checks exact site grant before resolving observation details", async () => {
+  const db = new DB({ membership: true, grant: false });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/verification",
+    "POST", JSON.stringify({ decision: "verified" })), env(db));
+  assert.equal(response.status, 404);
+  const authorizationLookup = db.calls.find(call =>
+    call.sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS"));
+  assert.ok(authorizationLookup, "observation lookup must include the exact site-grant predicate");
+  assert.deepEqual(authorizationLookup.args, ["tenant-a", "observation-a", "operator@example.test"]);
+  assert.match(authorizationLookup.sql, /g\.resource_id=o\.site_id/);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM sensor_calibrations")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("INSERT INTO observation_verification_events")), false);
+  assert.equal(db.batchCalls.length, 0);
+});
+
 test("measurement quality assessment checks exact site grant before resolving observation details", async () => {
   const db = new DB({ membership: true, grant: false });
   const response = await worker.fetch(await request({},

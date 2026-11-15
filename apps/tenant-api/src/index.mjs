@@ -1388,11 +1388,10 @@ export default {
         }
         if (observationVerification) {
           if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
-          const observationRows = await rows(env.DB.prepare(
-            "SELECT site_id FROM observations WHERE tenant_id = ? AND id = ? LIMIT 2"
-          ).bind(tenant, observationVerification[2]));
-          if (observationRows.length !== 1 ||
-              !await hasSiteReadGrant(env.DB, tenant, subject, observationRows[0].site_id)) return error("not_found", 404);
+          const authorizedObservation = await rows(env.DB.prepare(
+            "SELECT o.id FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS (SELECT 1 FROM tenant_resource_grants g WHERE g.tenant_id=o.tenant_id AND g.subject=? AND g.resource_type='site' AND g.resource_id=o.site_id AND g.action='read') LIMIT 1"
+          ).bind(tenant, observationVerification[2], subject));
+          if (authorizedObservation.length !== 1 || authorizedObservation[0].id !== observationVerification[2]) return error("not_found", 404);
           const reviewed = await reviewObservation(env.DB, tenant, observationVerification[2],
             subject, requestId, draftBody);
           return reviewed.error ? json({ error: reviewed.error }, reviewed.status)
