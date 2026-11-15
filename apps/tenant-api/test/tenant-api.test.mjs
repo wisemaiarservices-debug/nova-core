@@ -2080,12 +2080,14 @@ test("identity-link HTTP routes reject oversized JWKS Content-Length before read
     jwksFetchCount += 1;
     assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
     assert.equal(init?.redirect, "error");
-    return new Response(new ReadableStream({
-      pull() { bodyRead = true; },
-    }), {
-      status: 200,
-      headers: { "content-type": "application/json", "content-length": "65537" },
-    });
+    return {
+      ok: true,
+      headers: new Headers({ "content-type": "application/json", "content-length": "65537" }),
+      get body() {
+        bodyRead = true;
+        return new ReadableStream({ start(controller) { controller.close(); } });
+      },
+    };
   };
   try {
     for (const [name, path, body] of [
