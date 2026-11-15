@@ -434,6 +434,7 @@ test("criteria list binds the authenticated subject to both site-grant and revie
   assert.match(query.sql, /water_quality_criteria_reviewers r/);
   assert.match(query.sql, /r\.reviewer_subject = \?/);
   assert.match(query.sql, /r\.jurisdiction = e\.jurisdiction/);
+  assert.match(query.sql, /JOIN tenants t ON t.id = r\.tenant_id AND t\.status = 'active'/);
 });
 
 test("does not return criteria belonging to another tenant or unknown versions", async () => {
