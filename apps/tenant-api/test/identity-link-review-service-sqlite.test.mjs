@@ -402,6 +402,7 @@ test("real SQLite allows the same identity pair to be independently approved in 
     WHERE supabase_issuer = ? AND supabase_subject = ?
       AND cloudflare_issuer = ? AND cloudflare_subject = ?
     ORDER BY tenant_id
-  `).all(supabaseIssuer, "supabase-user", requester.issuer, requester.subject),
+  `).all(supabaseIssuer, "supabase-user", requester.issuer, requester.subject)
+    .map(row => ({ tenant_id: row.tenant_id, status: row.status })),
   [{ tenant_id: "tenant-independent", status: "approved" }, { tenant_id: tenantId, status: "approved" }]);
 });
