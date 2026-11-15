@@ -819,7 +819,16 @@ async function acceptMembershipInvitation(db, tenant, invitationId, subject, req
       db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'expired', ?, NULL, 'Invitation expired before acceptance', ? WHERE changes() = 1")
         .bind(eventId, tenant, invitationId, subject, requestId),
     ]);
-    if (!Array.isArray(results) || results.length !== 2) throw new Error("membership_invitation_expiry_batch_invalid");
+    if (!Array.isArray(results) || results.length !== 2 ||
+        results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
+      throw new Error("membership_invitation_expiry_batch_invalid");
+    }
+    if (results[0].meta.changes !== 1) {
+      return { error: "membership_invitation_expiry_conflict", status: 409 };
+    }
+    if (results[1].meta.changes !== 1) {
+      throw new Error("membership_invitation_expiry_audit_invariant_failed");
+    }
     return { error: "membership_invitation_expired", status: 410 };
   }
   const existing = await rows(db.prepare(
