@@ -947,6 +947,19 @@ retrievable report\
 });
 
 
+test("calibration verification denies inactive tenant members before reading calibration records", async () => {
+  const db = new DB({ membership: false, grant: true });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/assets/asset-a/calibrations/calibration-a/verification",
+    "POST", JSON.stringify({ decision: "verified", reason: "independent review" })), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM tenant_memberships")), true);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM sensor_calibrations")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM sensor_calibration_reviewers")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM laboratory_report_evidence")), false);
+  assert.equal(db.batchCalls.length, 0);
+});
+
 class ProvisioningDB {
   constructor(batchResult, existingRows = []) {
     this.batchResult = batchResult;
