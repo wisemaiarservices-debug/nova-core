@@ -76,8 +76,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
     return { error: "identity_link_idempotency_conflict", status: 409 };
   }
   const request = await exactlyOne(db.prepare(
-    "SELECT id, status, tenant_id FROM tenant_identity_link_requests WHERE id = ? AND (tenant_id IS NULL OR tenant_id = ?) LIMIT 2"
-  ).bind(requestId, tenantId));
+    "SELECT r.id, r.status, r.tenant_id FROM tenant_identity_link_requests r WHERE r.id = ? AND r.cloudflare_issuer = ? AND (r.tenant_id IS NULL OR r.tenant_id = ?) AND (? = 'revoke' OR (r.cloudflare_subject <> ? AND EXISTS (SELECT 1 FROM tenant_memberships requester WHERE requester.tenant_id = ? AND requester.subject = r.cloudflare_subject AND requester.status = 'active'))) LIMIT 2"
+  ).bind(requestId, actor.issuer, tenantId, decision, actor.subject, tenantId));
   if (!request) return { error: "not_found", status: 404 };
   const expected = decision === "revoke" ? "approved" : "pending";
   if (request.status !== expected || (request.tenant_id !== null && request.tenant_id !== tenantId)) {
