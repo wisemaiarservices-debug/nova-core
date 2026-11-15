@@ -21,11 +21,11 @@ export async function reviewSensorSourceMapping(db,tenant,siteId,assetId,mapping
  if(!only(body,["decision","evidence_ref","reason"])||!["verify","reject","revoke"].includes(body.decision)||
  !textOk(body.evidence_ref,500)||(body.decision!=="verify"&&!textOk(body.reason,2000))||
  (body.reason!==undefined&&!textOk(body.reason,2000)))return {error:"sensor_source_mapping_review_invalid",status:400};
+ const reviewerRows=await db.prepare("SELECT reviewer_subject FROM sensor_source_mapping_reviewers WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND status='active' LIMIT 2").bind(tenant,siteId,reviewer).all();
+ if(!Array.isArray(reviewerRows?.results)||reviewerRows.results.length!==1)return {error:"sensor_source_mapping_reviewer_not_assigned",status:404};
  const found=await db.prepare("SELECT id,source_id,registered_by_subject FROM sensor_source_identity_mappings WHERE tenant_id=? AND site_id=? AND asset_id=? AND id=? LIMIT 2").bind(tenant,siteId,assetId,mappingId).all();
  if(!Array.isArray(found?.results)||found.results.length!==1)return {error:"sensor_source_mapping_not_found",status:404};
  if(found.results[0].registered_by_subject===reviewer)return {error:"sensor_source_mapping_submitter_cannot_review",status:409};
- const reviewerRows=await db.prepare("SELECT reviewer_subject FROM sensor_source_mapping_reviewers WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND status='active' LIMIT 2").bind(tenant,siteId,reviewer).all();
- if(!Array.isArray(reviewerRows?.results)||reviewerRows.results.length!==1)return {error:"sensor_source_mapping_reviewer_not_assigned",status:404};
  const history=await db.prepare("SELECT event_type FROM sensor_source_mapping_events WHERE tenant_id=? AND mapping_id=? ORDER BY occurred_at DESC,rowid DESC LIMIT 1").bind(tenant,mappingId).all();
  if(!Array.isArray(history?.results))throw new Error("sensor_source_mapping_history_invalid");
  const current=history.results[0]?.event_type??"registered_unverified";
