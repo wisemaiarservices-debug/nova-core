@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { listPendingIdentityLinkRequests, decideIdentityLinkRequest } from "../src/identity-link-review.mjs";
+import { createIdentityLinkChallenge, consumeIdentityLinkChallenge } from "../src/identity-link-challenge-service.mjs";
 
 const migrationDir = new URL("../../api/migrations/", import.meta.url);
 const migrations = [
@@ -191,4 +192,44 @@ test("real SQLite triggers reject cross-tenant owner decisions and preserve appe
   assert.throws(() => sqlite.prepare(`
     UPDATE tenant_identity_link_events SET reason = 'tampered' WHERE request_id = ?
   `).run("correct-tenant-decision"), /identity-link events are append-only/);
+});
+
+
+test("real SQLite migrations allow only one concurrent consume of the same identity-link challenge", async t => {
+  const { db, sqlite } = fixture(t);
+  const supabaseIdentity = {
+    issuer: supabaseIssuer,
+    subject: "supabase-concurrent-user",
+    audience: "authenticated",
+  };
+  const cloudflareIdentity = {
+    issuer: requester.issuer,
+    subject: requester.subject,
+    audience: "nova-core",
+  };
+  const created = await createIdentityLinkChallenge(db, supabaseIdentity,
+    cloudflareIdentity, "concurrent-create-request", now);
+  assert.equal(created.status, 201);
+
+  const attempts = await Promise.all([
+    consumeIdentityLinkChallenge(db, created.data.challenge_id, created.data.challenge,
+      supabaseIdentity, cloudflareIdentity, "concurrent-consume-a",
+      new Date("2026-11-15T12:00:01.000Z")),
+    consumeIdentityLinkChallenge(db, created.data.challenge_id, created.data.challenge,
+      supabaseIdentity, cloudflareIdentity, "concurrent-consume-b",
+      new Date("2026-11-15T12:00:01.000Z")),
+  ]);
+
+  assert.deepEqual(attempts.map(result => result.status).sort(), [201, 409]);
+  const challenge = sqlite.prepare(
+    "SELECT status, consumed_at FROM tenant_identity_link_challenges WHERE id = ?"
+  ).get(created.data.challenge_id);
+  assert.equal(challenge.status, "consumed");
+  assert.ok(challenge.consumed_at);
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_requests WHERE challenge_id = ?"
+  ).get(created.data.challenge_id).count, 1);
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_events e JOIN tenant_identity_link_requests r ON r.id = e.link_request_id WHERE r.challenge_id = ? AND e.event_type = 'requested'"
+  ).get(created.data.challenge_id).count, 1);
 });
