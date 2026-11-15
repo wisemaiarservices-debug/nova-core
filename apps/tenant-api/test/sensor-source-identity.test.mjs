@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { registerSensorSourceMapping, reviewSensorSourceMapping, resolveVerifiedSensorSourceMapping } from "../src/sensor-source-identity.mjs";
+import { registerSensorSourceMapping, reviewSensorSourceMapping, assignSensorSourceMappingReviewer, resolveVerifiedSensorSourceMapping } from "../src/sensor-source-identity.mjs";
 globalThis.crypto ??= webcrypto;
 function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[]}={}){
  const calls=[];
  return {calls,prepare(sql){return {sql,values:[],bind(...v){this.values=v;return this;},async all(){
   if(sql.includes("FROM assets"))return {results:[{id:"asset-1"}]};
+  if(sql.includes("FROM tenant_memberships"))return {results:[{subject:"reviewer"}]};
+  if(sql.includes("FROM sites"))return {results:[{id:"site-1"}]};
   if(sql.includes("FROM sources"))return {results:[{id:"source-1",site_id:"site-1"}]};
   if(sql.includes("FROM sensor_source_identity_mappings WHERE"))return {results:[{id:"map-1",source_id:"source-1",registered_by_subject:owner}]};
   if(sql.includes("FROM sensor_source_mapping_reviewers"))return {results:[{reviewer_subject:reviewer}]};
@@ -31,6 +33,12 @@ test("mapping submitter cannot independently verify their own mapping",async()=>
 test("mapping verification requires an assigned independent reviewer",async()=>{
  const r=await reviewSensorSourceMapping(dbFixture(),"tenant-1","site-1","asset-1","map-1","reviewer","req-1",{decision:"verify",evidence_ref:"evidence-7"});
  assert.equal(r.status,201);assert.equal(r.data.status,"verified");
+ assert.deepEqual({tenant_id:r.data.tenant_id,site_id:r.data.site_id,asset_id:r.data.asset_id},{tenant_id:"tenant-1",site_id:"site-1",asset_id:"asset-1"});
+});
+test("mapping reviewer assignment returns exact tenant and site scope",async()=>{
+ const r=await assignSensorSourceMappingReviewer(dbFixture(),"tenant-1","site-1","admin",{reviewer_subject:"reviewer",evidence_ref:"evidence-7"},"assign");
+ assert.equal(r.status,201);
+ assert.deepEqual({tenant_id:r.data.tenant_id,site_id:r.data.site_id,status:r.data.status},{tenant_id:"tenant-1",site_id:"site-1",status:"active"});
 });
 test("rejected mapping cannot be revoked as if it had been verified",async()=>{
  const r=await reviewSensorSourceMapping(dbFixture({history:[{event_type:"rejected"}]}),"tenant-1","site-1","asset-1","map-1","reviewer","req-1",{decision:"revoke",evidence_ref:"evidence-7",reason:"withdraw"});
