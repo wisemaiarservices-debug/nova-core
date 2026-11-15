@@ -10,7 +10,9 @@ INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
   ('membership-http-reviewer', 'tenant-http-a', 'ci-measurement-reviewer', 'viewer', 'active'),
   ('membership-http-lifecycle', 'tenant-http-a', 'ci-lifecycle-member', 'viewer', 'active'),
   ('membership-http-admin', 'tenant-http-a', 'ci-http-admin', 'tenant_admin', 'active'),
-  ('membership-http-service-subject', 'tenant-http-a', 'neoagro-ingestion-service', 'viewer', 'active');
+  ('membership-http-service-subject', 'tenant-http-a', 'neoagro-ingestion-service', 'viewer', 'active'),
+  ('membership-http-regulatory-reviewer', 'tenant-http-a', 'ci-regulatory-reviewer', 'viewer', 'active'),
+  ('membership-http-domain-reviewer', 'tenant-http-a', 'ci-domain-reviewer', 'viewer', 'active');
 
 INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) VALUES
   ('grant-http-a-site', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'read'),
