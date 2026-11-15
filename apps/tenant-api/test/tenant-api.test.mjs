@@ -24,7 +24,9 @@ class DB {
         if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
         if (sql.includes("SELECT e.id FROM water_quality_criteria_entries e")) {
           const entry = (db.criteriaRows ?? []).find(row =>
-            row.tenant_id === args[0] && row.id === args[1] && row.version === args[2]);
+            (row.tenant_id ?? args[0]) === args[0] &&
+            (row.id ?? args[1]) === args[1] &&
+            (row.version ?? args[2]) === args[2]);
           if (!entry) return { results: [] };
           const subject = args[3];
           const memberships = db.membershipRows ?? (db.membership ? [{
