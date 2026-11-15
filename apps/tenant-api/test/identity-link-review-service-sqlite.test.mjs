@@ -554,6 +554,42 @@ test("identity-link approval and revocation never provision tenant memberships o
 });
 
 
+
+
+test("identity-link decision hides requests and idempotency events owned by another tenant", async t => {
+  const { db, sqlite, queries } = fixture(t);
+  const otherTenant = "tenant-review-other";
+  const otherOwner = { issuer: owner.issuer, subject: "owner-other-sqlite" };
+  sqlite.prepare("INSERT INTO tenants (id, status) VALUES (?, 'active')").run(otherTenant);
+  const addMember = sqlite.prepare(
+    "INSERT INTO tenant_memberships (tenant_id, subject, role, status) VALUES (?, ?, ?, 'active')"
+  );
+  addMember.run(otherTenant, otherOwner.subject, "tenant_owner");
+  addMember.run(otherTenant, requester.subject, "operator");
+
+  const approved = await decideIdentityLinkRequest(db, otherTenant, "link-review", otherOwner,
+    "approve", "Approved in the owning tenant", "other-tenant-approval-key", now);
+  assert.equal(approved.status, 200);
+  assert.equal(sqlite.prepare(
+    "SELECT status, tenant_id FROM tenant_identity_link_requests WHERE id = ?"
+  ).get("link-review").status, "approved");
+
+  queries.length = 0;
+  const crossTenantProbe = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Attempt cross-tenant decision", "other-tenant-approval-key",
+    new Date("2026-11-15T12:01:00.000Z"));
+  assert.equal(crossTenantProbe.status, 404);
+  assert.equal(queries.length, 3);
+  assert.match(queries[1], /tenant_id = \?/);
+  assert.match(queries[2], /tenant_id IS NULL OR tenant_id = \?/);
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?"
+  ).get("other-tenant-approval-key").count, 1);
+  assert.equal(sqlite.prepare(
+    "SELECT status, tenant_id FROM tenant_identity_link_requests WHERE id = ?"
+  ).get("link-review").tenant_id, otherTenant);
+});
+
 test("identity-link decisions authorize active tenant owner before reading request or idempotency ledger", async t => {
   const { db, sqlite, queries } = fixture(t);
   const denied = await decideIdentityLinkRequest(db, tenantId, "link-review", requester,
