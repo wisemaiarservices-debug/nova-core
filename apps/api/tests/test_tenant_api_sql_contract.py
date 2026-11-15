@@ -23,6 +23,7 @@ def test_private_tenant_api_sql_compiles_against_ordered_schema_migrations():
         MIGRATIONS / "0006_site_configuration_idempotency.sql",
         MIGRATIONS / "0007_water_quality_criteria_registry.sql",
         MIGRATIONS / "0008_water_quality_criteria_reviewer_events.sql",
+        MIGRATIONS / "0010_observation_verification_workflow.sql",
         MIGRATIONS / "0016_tenant_membership_events.sql",
         MIGRATIONS / "0017_tenant_provisioning_idempotency.sql",
         MIGRATIONS / "0018_tenant_membership_invitations.sql",
