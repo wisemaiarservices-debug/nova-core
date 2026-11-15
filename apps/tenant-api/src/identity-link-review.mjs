@@ -12,6 +12,11 @@ function validActor(value) {
     value.issuer.length <= 500 && typeof value.subject === "string" &&
     value.subject.length > 0 && value.subject.length <= 200;
 }
+function isIdentityLinkEventRequestIdConflict(error) {
+  const message = error instanceof Error ? error.message : "";
+  return message === "UNIQUE constraint failed: tenant_identity_link_events.request_id";
+}
+
 function isApprovedIdentityMappingConflict(error) {
   const message = error instanceof Error ? error.message : "";
   const tenantScope = "UNIQUE constraint failed: tenant_identity_link_requests.tenant_id";
@@ -113,6 +118,12 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
         decided_at: concurrentEvent.created_at }, status: 200 };
     }
     if (concurrentEvent) return { error: "identity_link_idempotency_conflict", status: 409 };
+    // The event request_id has a database-wide unique constraint. A collision
+    // outside this tenant must not be read to classify it; return a generic
+    // idempotency conflict instead of leaking the storage failure.
+    if (isIdentityLinkEventRequestIdConflict(error)) {
+      return { error: "identity_link_idempotency_conflict", status: 409 };
+    }
     // Approved identity mappings are unique per tenant in both directions.
     // Surface an expected collision as a conflict instead of an unhandled 500;
     // the atomic batch has rolled back both the event and request transition.
