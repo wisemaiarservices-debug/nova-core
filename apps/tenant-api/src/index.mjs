@@ -740,13 +740,13 @@ async function changeTenantMembership(db, tenant, actor, actorRole, requestId, b
   }
   const eventId = crypto.randomUUID();
   const results = await db.batch([
-    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = ?)")
+    db.prepare("INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = ?) AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships actor_m WHERE actor_m.tenant_id = ? AND actor_m.subject = ? AND actor_m.role = ? AND actor_m.status = 'active')")
       .bind(eventId, tenant, target.id, target.subject, actor, eventType, target.role,
         nextRole, target.status, nextStatus, body.reason, requestId, target.id, tenant,
-        target.subject, target.role, target.status),
-    db.prepare("UPDATE tenant_memberships SET role = ?, status = ? WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = ? AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ?)")
+        target.subject, target.role, target.status, tenant, tenant, actor, actorRole),
+    db.prepare("UPDATE tenant_memberships SET role = ?, status = ? WHERE id = ? AND tenant_id = ? AND subject = ? AND role = ? AND status = ? AND EXISTS (SELECT 1 FROM tenant_membership_events WHERE id = ? AND request_id = ?) AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships actor_m WHERE actor_m.tenant_id = ? AND actor_m.subject = ? AND actor_m.role = ? AND actor_m.status = 'active')")
       .bind(nextRole, nextStatus, target.id, tenant, target.subject, target.role,
-        target.status, eventId, requestId),
+        target.status, eventId, requestId, tenant, tenant, actor, actorRole),
   ]);
   if (!Array.isArray(results) || results.length !== 2 ||
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
