@@ -1027,8 +1027,9 @@ export default {
     const supabaseToken = request.headers.get("x-nova-supabase-access-token");
     const supabaseTokenDigest = request.headers.get("x-nova-supabase-token-sha256");
     if ((supabaseToken === null) !== (supabaseTokenDigest === null)) return error("request_not_authorized", 401);
-    if ((identityLinkChallengeCreate || identityLinkChallengeConsume) && supabaseToken === null)
+    if ((identityLinkChallengeCreate || identityLinkChallengeConsume || siteObservationList) && supabaseToken === null)
       return error("supabase_identity_required", 401);
+    let verifiedSupabaseIdentity = null;
     if (supabaseToken !== null) {
       const tokenDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(supabaseToken));
       const tokenDigestHex = Array.from(new Uint8Array(tokenDigest), byte => byte.toString(16).padStart(2, "0")).join("");
@@ -1041,7 +1042,7 @@ export default {
       // below. Avoid fetching the same JWKS twice for one request.
       if (!identityLinkChallengeCreate && !identityLinkChallengeConsume) {
         try {
-          await verifySupabaseAccessToken(supabaseToken, {
+          verifiedSupabaseIdentity = await verifySupabaseAccessToken(supabaseToken, {
             issuer: env.SUPABASE_AUTH_ISSUER,
             audience: env.SUPABASE_AUTH_AUDIENCE,
           });
@@ -1456,7 +1457,11 @@ export default {
         return data === null ? error("not_found", 404) : json({ data, request_id: requestId });
       }
       if (siteObservationList) {
-        if (request.method !== "GET") return error("not_found", 404);
+        if (request.method !== "GET" || !verifiedSupabaseIdentity) return error("not_found", 404);
+        const linkedIdentity = await rows(env.DB.prepare(
+          "SELECT id FROM tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved' AND supabase_issuer = ? AND supabase_subject = ? AND cloudflare_issuer = ? AND cloudflare_subject = ? LIMIT 2"
+        ).bind(tenant, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject, issuer, subject));
+        if (linkedIdentity.length !== 1) return error("not_found", 404);
         const observations = await readSiteObservations(env.DB, subject, tenant, siteObservationList[2]);
         return observations === null ? error("not_found", 404)
           : json({ data: observations, limit: 100, request_id: requestId });
