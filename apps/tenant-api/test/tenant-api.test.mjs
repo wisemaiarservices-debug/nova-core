@@ -41,7 +41,15 @@ class DB {
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_reviewers")) {
-          const reviewerRows = db.reviewerRows ?? [];
+          let reviewerRows = db.reviewerRows ?? [];
+          if (sql.includes("JOIN water_quality_criteria_entries e ON e.tenant_id = r.tenant_id AND e.jurisdiction = r.jurisdiction")) {
+            const entry = (db.criteriaRows ?? []).find(row =>
+              row.tenant_id === args[0] && row.id === args[2] && row.version === args[3]);
+            reviewerRows = reviewerRows.filter(row =>
+              row.reviewer_subject === args[1] && row.jurisdiction === entry?.jurisdiction);
+          } else if (sql.includes("SELECT DISTINCT r.reviewer_subject") && sql.includes("r.jurisdiction = ?")) {
+            reviewerRows = reviewerRows.filter(row => row.jurisdiction === args[2]);
+          }
           return { results: sql.includes("SELECT DISTINCT") ? reviewerRows.slice(0, 1) : reviewerRows };
         }
         if (sql.includes("FROM water_quality_criteria_reviewer_events")) return { results: db.reviewerEventRows ?? [] };
@@ -399,7 +407,12 @@ test("does not return criteria belonging to another tenant or unknown versions",
   const db = new DB(); db.criteriaRows = [];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
   assert.equal(response.status, 404);
-  assert.deepEqual(db.calls[1].args, ["tenant-a", "criteria-tn-1", "9.9"]);
+  const membershipRead = db.calls.find(call => call.sql.includes("FROM tenant_memberships"));
+  const metadataRead = db.calls.find(call => call.sql.includes("SELECT id, site_id, jurisdiction"));
+  assert.ok(membershipRead);
+  assert.ok(metadataRead);
+  assert.ok(db.calls.indexOf(membershipRead) < db.calls.indexOf(metadataRead));
+  assert.deepEqual(metadataRead.args, ["tenant-a", "criteria-tn-1", "9.9"]);
 });
 
 
