@@ -21,7 +21,7 @@ class DB {
         if (this.sql.includes("FROM tenant_memberships m JOIN tenants")) {
           return { results: db.owner ? [{ subject: this.args[1] }] : [] };
         }
-        if (this.sql.includes("FROM tenant_identity_link_requests WHERE id")) {
+        if (this.sql.includes("FROM tenant_identity_link_requests r WHERE r.id")) {
           return { results: db.request ? [db.request] : [] };
         }
         if (this.sql.includes("WHERE status = 'pending' ORDER BY")) return { results: [] };

@@ -62,8 +62,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
   if (!owner) return { error: "not_found", status: 404 };
 
   const priorEvent = await exactlyOne(db.prepare(
-    "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? LIMIT 2"
-  ).bind(idempotencyKey));
+    "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? AND tenant_id = ? LIMIT 2"
+  ).bind(idempotencyKey, tenantId));
   const expectedEvent = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "revoked";
   if (priorEvent) {
     if (priorEvent.link_request_id === requestId && priorEvent.event_type === expectedEvent &&
@@ -76,8 +76,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
     return { error: "identity_link_idempotency_conflict", status: 409 };
   }
   const request = await exactlyOne(db.prepare(
-    "SELECT id, status, tenant_id FROM tenant_identity_link_requests WHERE id = ? LIMIT 2"
-  ).bind(requestId));
+    "SELECT r.id, r.status, r.tenant_id FROM tenant_identity_link_requests r WHERE r.id = ? AND r.cloudflare_issuer = ? AND (r.tenant_id IS NULL OR r.tenant_id = ?) AND (? = 'revoke' OR (r.cloudflare_subject <> ? AND EXISTS (SELECT 1 FROM tenant_memberships requester WHERE requester.tenant_id = ? AND requester.subject = r.cloudflare_subject AND requester.status = 'active'))) LIMIT 2"
+  ).bind(requestId, actor.issuer, tenantId, decision, actor.subject, tenantId));
   if (!request) return { error: "not_found", status: 404 };
   const expected = decision === "revoke" ? "approved" : "pending";
   if (request.status !== expected || (request.tenant_id !== null && request.tenant_id !== tenantId)) {
@@ -101,8 +101,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
   } catch (error) {
     // A concurrent retry may have committed the same idempotency key first.
     const concurrentEvent = await exactlyOne(db.prepare(
-      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? LIMIT 2"
-    ).bind(idempotencyKey));
+      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? AND tenant_id = ? LIMIT 2"
+    ).bind(idempotencyKey, tenantId));
     if (concurrentEvent && concurrentEvent.link_request_id === requestId &&
         concurrentEvent.event_type === eventType && concurrentEvent.tenant_id === tenantId &&
         concurrentEvent.actor_cloudflare_issuer === actor.issuer &&
@@ -130,8 +130,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
     // decision has already committed. Re-read the idempotency key before
     // classifying the losing request as a conflict.
     const concurrentEvent = await exactlyOne(db.prepare(
-      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? LIMIT 2"
-    ).bind(idempotencyKey));
+      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? AND tenant_id = ? LIMIT 2"
+    ).bind(idempotencyKey, tenantId));
     if (concurrentEvent && concurrentEvent.link_request_id === requestId &&
         concurrentEvent.event_type === eventType && concurrentEvent.tenant_id === tenantId &&
         concurrentEvent.actor_cloudflare_issuer === actor.issuer &&
