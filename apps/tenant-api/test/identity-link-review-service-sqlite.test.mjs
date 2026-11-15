@@ -77,6 +77,14 @@ function fixture(t) {
       status TEXT NOT NULL,
       PRIMARY KEY (tenant_id, subject)
     );
+    CREATE TABLE tenant_resource_grants (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      action TEXT NOT NULL
+    );
   `);
   for (const migration of migrations) sqlite.exec(migration);
 
@@ -87,6 +95,10 @@ function fixture(t) {
   `);
   addMember.run(tenantId, owner.subject, "tenant_owner");
   addMember.run(tenantId, requester.subject, "operator");
+  sqlite.prepare(`INSERT INTO tenant_resource_grants
+    (id, tenant_id, subject, resource_type, resource_id, action)
+    VALUES ('owner-site-read', ?, ?, 'site', 'site-owner-only', 'read')`)
+    .run(tenantId, owner.subject);
 
   const createdAt = "2026-11-15T11:55:00.000Z";
   const consumedAt = "2026-11-15T11:56:00.000Z";
@@ -405,4 +417,38 @@ test("real SQLite allows the same identity pair to be independently approved in 
   `).all(supabaseIssuer, "supabase-user", requester.issuer, requester.subject)
     .map(row => ({ tenant_id: row.tenant_id, status: row.status })),
   [{ tenant_id: "tenant-independent", status: "approved" }, { tenant_id: tenantId, status: "approved" }]);
+});
+
+
+test("identity-link approval and revocation never provision tenant memberships or resource grants", async t => {
+  const { db, sqlite } = fixture(t);
+  const membershipSnapshot = () => sqlite.prepare(
+    "SELECT tenant_id, subject, role, status FROM tenant_memberships ORDER BY tenant_id, subject"
+  ).all().map(row => ({ tenant_id: row.tenant_id, subject: row.subject, role: row.role, status: row.status }));
+  const grantSnapshot = () => sqlite.prepare(
+    "SELECT id, tenant_id, subject, resource_type, resource_id, action FROM tenant_resource_grants ORDER BY id"
+  ).all().map(row => ({ id: row.id, tenant_id: row.tenant_id, subject: row.subject,
+    resource_type: row.resource_type, resource_id: row.resource_id, action: row.action }));
+  const membershipsBefore = membershipSnapshot();
+  const grantsBefore = grantSnapshot();
+
+  const approved = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Approve identity association only", "approve-no-implicit-grants", now);
+  assert.equal(approved.status, 200);
+  assert.equal(approved.data.status, "approved");
+  assert.deepEqual(membershipSnapshot(), membershipsBefore);
+  assert.deepEqual(grantSnapshot(), grantsBefore);
+  assert.equal(sqlite.prepare(
+    "SELECT role FROM tenant_memberships WHERE tenant_id = ? AND subject = ?"
+  ).get(tenantId, requester.subject).role, "operator");
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_resource_grants WHERE tenant_id = ? AND subject = ?"
+  ).get(tenantId, requester.subject).count, 0);
+
+  const revoked = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "revoke", "Revoke identity association only", "revoke-no-implicit-grants",
+    new Date("2026-11-15T12:01:00.000Z"));
+  assert.equal(revoked.status, 200);
+  assert.deepEqual(membershipSnapshot(), membershipsBefore);
+  assert.deepEqual(grantSnapshot(), grantsBefore);
 });
