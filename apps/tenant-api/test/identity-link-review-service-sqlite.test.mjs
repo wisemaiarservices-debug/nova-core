@@ -412,10 +412,11 @@ test("real SQLite active mapping indexes block ambiguous approved identities and
     "consume-second-mapping", new Date("2026-11-15T12:00:01.000Z"));
   assert.equal(secondRequest.status, 201);
 
-  await assert.rejects(() => decideIdentityLinkRequest(db, tenantId,
+  const duplicateSupabaseMapping = await decideIdentityLinkRequest(db, tenantId,
     secondRequest.data.link_request_id, owner, "approve", "Attempt duplicate mapping",
-    "approve-second-mapping", new Date("2026-11-15T12:00:02.000Z")),
-  /UNIQUE constraint failed/);
+    "approve-second-mapping", new Date("2026-11-15T12:00:02.000Z"));
+  assert.equal(duplicateSupabaseMapping.status, 409);
+  assert.equal(duplicateSupabaseMapping.error, "identity_link_mapping_conflict");
   assert.equal(sqlite.prepare("SELECT status FROM tenant_identity_link_requests WHERE id = ?")
     .get(secondRequest.data.link_request_id).status, "pending");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?")
@@ -470,10 +471,11 @@ test("real SQLite active mapping indexes also block a second Supabase identity f
     "consume-second-supabase-mapping", new Date("2026-11-15T12:00:02.000Z"));
   assert.equal(request.status, 201);
 
-  await assert.rejects(() => decideIdentityLinkRequest(db, tenantId,
+  const duplicateCloudflareMapping = await decideIdentityLinkRequest(db, tenantId,
     request.data.link_request_id, owner, "approve", "Attempt second Supabase mapping",
-    "approve-second-supabase-mapping", new Date("2026-11-15T12:00:03.000Z")),
-  /UNIQUE constraint failed/);
+    "approve-second-supabase-mapping", new Date("2026-11-15T12:00:03.000Z"));
+  assert.equal(duplicateCloudflareMapping.status, 409);
+  assert.equal(duplicateCloudflareMapping.error, "identity_link_mapping_conflict");
   assert.equal(sqlite.prepare("SELECT status FROM tenant_identity_link_requests WHERE id = ?")
     .get(request.data.link_request_id).status, "pending");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?")

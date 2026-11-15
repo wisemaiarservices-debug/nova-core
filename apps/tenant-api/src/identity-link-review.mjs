@@ -12,6 +12,16 @@ function validActor(value) {
     value.issuer.length <= 500 && typeof value.subject === "string" &&
     value.subject.length > 0 && value.subject.length <= 200;
 }
+function isApprovedIdentityMappingConflict(error) {
+  const message = error instanceof Error ? error.message : "";
+  const tenantScope = "UNIQUE constraint failed: tenant_identity_link_requests.tenant_id";
+  const supabaseIdentity = message.includes("tenant_identity_link_requests.supabase_issuer") &&
+    message.includes("tenant_identity_link_requests.supabase_subject");
+  const cloudflareIdentity = message.includes("tenant_identity_link_requests.cloudflare_issuer") &&
+    message.includes("tenant_identity_link_requests.cloudflare_subject");
+  return message.includes(tenantScope) && (supabaseIdentity || cloudflareIdentity);
+}
+
 async function exactlyOne(statement) {
   const result = await statement.all();
   return Array.isArray(result?.results) && result.results.length === 1
@@ -103,6 +113,12 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
         decided_at: concurrentEvent.created_at }, status: 200 };
     }
     if (concurrentEvent) return { error: "identity_link_idempotency_conflict", status: 409 };
+    // Approved identity mappings are unique per tenant in both directions.
+    // Surface an expected collision as a conflict instead of an unhandled 500;
+    // the atomic batch has rolled back both the event and request transition.
+    if (decision === "approve" && isApprovedIdentityMappingConflict(error)) {
+      return { error: "identity_link_mapping_conflict", status: 409 };
+    }
     throw error;
   }
   if (!Array.isArray(results) || results.length !== 2 ||
