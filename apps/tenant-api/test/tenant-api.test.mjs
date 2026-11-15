@@ -1848,7 +1848,7 @@ test("observation verification checks exact site grant before resolving observat
     call.sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS"));
   assert.ok(authorizationLookup, "observation lookup must include the exact site-grant predicate");
   assert.deepEqual(authorizationLookup.args, ["tenant-a", "observation-a", "operator@example.test"]);
-  assert.match(authorizationLookup.sql, /g\\.resource_id=o\\.site_id/);
+  assert.match(authorizationLookup.sql, /g\.resource_id=o\.site_id/);
   assert.equal(db.calls.some(call => call.sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")), false);
   assert.equal(db.calls.some(call => call.sql.includes("FROM sensor_calibrations")), false);
   assert.equal(db.calls.some(call => call.sql.includes("INSERT INTO observation_verification_events")), false);
