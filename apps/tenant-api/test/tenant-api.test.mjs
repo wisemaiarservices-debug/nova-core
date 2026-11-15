@@ -1318,6 +1318,28 @@ test("tenant owner revokes a pending invitation with an append-only event", asyn
 });
 
 
+test("invitation revocation reports not found when the conditional state update loses a race", async () => {
+  const db = new MembershipInvitationDB({ batchResult: [
+    { meta: { changes: 0 } }, { meta: { changes: 0 } },
+  ] });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-1/revoke",
+    "POST", JSON.stringify({ reason: "Access no longer required" })), env(db));
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).error, "membership_invitation_not_found");
+});
+
+test("invitation revocation surfaces a missing audit event after state change as 503", async () => {
+  const db = new MembershipInvitationDB({ batchResult: [
+    { meta: { changes: 1 } }, { meta: { changes: 0 } },
+  ] });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-1/revoke",
+    "POST", JSON.stringify({ reason: "Access no longer required" })), env(db));
+  assert.equal(response.status, 503);
+});
+
+
 class MembershipChangeDB {
   constructor({ actorRole = "tenant_owner", target = { id: "member-1", tenant_id: "tenant-a",
     subject: "member@example.test", role: "operator", status: "active" },
