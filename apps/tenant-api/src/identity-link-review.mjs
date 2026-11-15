@@ -43,6 +43,14 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
       !validId(idempotencyKey) || !(now instanceof Date) || !Number.isFinite(now.getTime())) {
     return { error: "identity_link_review_input_invalid", status: 400 };
   }
+  // Authenticate current tenant-owner authority before reading either the
+  // idempotency ledger or the protected identity-link request. Mutation SQL
+  // below repeats this predicate to close the authorization race.
+  const owner = await exactlyOne(db.prepare(
+    "SELECT m.subject FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.tenant_id = ? AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active' AND t.status = 'active' LIMIT 2"
+  ).bind(tenantId, actor.subject));
+  if (!owner) return { error: "not_found", status: 404 };
+
   const priorEvent = await exactlyOne(db.prepare(
     "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? LIMIT 2"
   ).bind(idempotencyKey));
