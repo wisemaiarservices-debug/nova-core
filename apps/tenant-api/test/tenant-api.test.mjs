@@ -42,7 +42,7 @@ class DB {
         if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_reviewers")) {
           let reviewerRows = db.reviewerRows ?? [];
-          if (sql.includes("JOIN water_quality_criteria_entries e")) {
+          if (sql.includes("e.id = ? AND e.version = ?")) {
             const entry = (db.criteriaRows ?? []).find(row =>
               row.tenant_id === args[0] && row.id === args[2] && row.version === args[3]);
             reviewerRows = reviewerRows.filter(row =>
