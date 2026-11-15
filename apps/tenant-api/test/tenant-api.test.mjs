@@ -22,6 +22,30 @@ class DB {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
         if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
+        if (sql.includes("SELECT e.id FROM water_quality_criteria_entries e")) {
+          const entry = (db.criteriaRows ?? []).find(row =>
+            row.tenant_id === args[0] && row.id === args[1] && row.version === args[2]);
+          if (!entry) return { results: [] };
+          const subject = args[3];
+          const memberships = db.membershipRows ?? (db.membership ? [{
+            subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
+            membership_status: "active", tenant_status: "active",
+          }] : []);
+          const member = memberships.length === 1 && memberships[0].subject === subject &&
+            memberships[0].tenant_id === args[0] && memberships[0].membership_status === "active" &&
+            memberships[0].tenant_status === "active" &&
+            ["tenant_owner", "tenant_admin", "operator", "analyst", "viewer", "service"].includes(memberships[0].role);
+          const grants = db.grantRows ?? (db.grant ? [{
+            subject: "operator@example.test", tenant_id: "tenant-a",
+            resource_type: "site", resource_id: entry.site_id, action: "read",
+          }] : []);
+          const memberHasGrant = member && (entry.site_id === null ||
+            grants.some(grant => grant.subject === subject && grant.tenant_id === args[0] &&
+              grant.resource_type === "site" && grant.resource_id === entry.site_id && grant.action === "read"));
+          const reviewer = (db.reviewerRows ?? []).some(row =>
+            row.reviewer_subject === subject && row.jurisdiction === entry.jurisdiction && row.status !== "revoked");
+          return { results: memberHasGrant || reviewer ? [{ id: entry.id }] : [] };
+        }
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
