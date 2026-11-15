@@ -76,20 +76,16 @@ export async function reviewObservation(db, tenant, observationId, reviewerSubje
       (body.decision !== "verify" && !validText(body.reason, 2000))) {
     return { error: "observation_verification_request_invalid", status: 400 };
   }
+  // Resolve protected observation fields only when this exact reviewer has an
+  // active assignment for the observation's site. The correlated predicate
+  // keeps unassigned reviewers from reading observation details.
   const observations = await db.prepare(
-    "SELECT id, tenant_id, site_id, verification_status FROM observations WHERE tenant_id = ? AND id = ? LIMIT 2"
-  ).bind(tenant, observationId).all();
+    "SELECT o.id, o.tenant_id, o.site_id, o.verification_status FROM observations o WHERE o.tenant_id = ? AND o.id = ? AND EXISTS (SELECT 1 FROM observation_reviewers r WHERE r.tenant_id = o.tenant_id AND r.site_id = o.site_id AND r.reviewer_subject = ? AND r.reviewer_role = 'measurement_reviewer' AND r.status = 'active') LIMIT 2"
+  ).bind(tenant, observationId, reviewerSubject).all();
   if (!Array.isArray(observations?.results) || observations.results.length !== 1) {
-    return { error: "observation_not_found", status: 404 };
-  }
-  const observation = observations.results[0];
-  const assignments = await db.prepare(
-    "SELECT reviewer_subject, reviewer_role FROM observation_reviewers WHERE tenant_id = ? AND site_id = ? AND reviewer_subject = ? AND reviewer_role = 'measurement_reviewer' AND status = 'active' LIMIT 2"
-  ).bind(tenant, observation.site_id, reviewerSubject).all();
-  if (!Array.isArray(assignments?.results) || assignments.results.length !== 1 ||
-      assignments.results[0].reviewer_subject !== reviewerSubject) {
     return { error: "observation_reviewer_assignment_not_found", status: 404 };
   }
+  const observation = observations.results[0];
   const ingestion = await db.prepare(
     "SELECT actor_type, actor_id FROM audit_events WHERE tenant_id = ? AND entity_type = 'observation' AND entity_id = ? AND action = 'observation.accepted' LIMIT 2"
   ).bind(tenant, observationId).all();

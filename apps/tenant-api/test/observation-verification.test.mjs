@@ -13,6 +13,7 @@ function database({ site = true, assignment = true, audit = true, membership = t
           state.calls.push({ sql, args: this.args });
           if (sql.includes("FROM tenant_memberships")) return { results: membership ? [{ subject: reviewer, tenant_id: "tenant-a", membership_status: "active", tenant_status: "active" }] : [] };
           if (sql.includes("FROM sites")) return { results: site ? [{ id: "site-a" }] : [] };
+          if (sql.includes("FROM observations o WHERE o.tenant_id")) return { results: assignment ? [{ ...observation, verification_status: status }] : [] };
           if (sql.includes("FROM observations WHERE tenant_id")) return { results: [{ ...observation, verification_status: status }] };
           if (sql.includes("FROM observation_reviewers")) return { results: assignment ? [
             { reviewer_subject: "reviewer@example.test", reviewer_role: "measurement_reviewer" },
@@ -90,6 +91,19 @@ test("verifies only a tenant-scoped observation with an active independent revie
   assert.match(db.state.batches[0][0].sql, /INSERT INTO observation_verification_events/);
   assert.match(db.state.batches[0][1].sql, /verification_status = \?/);
   assert.deepEqual(db.state.calls.find(x => x.sql.includes("FROM audit_events")).args, ["tenant-a", "obs-1"]);
+});
+
+test("checks reviewer assignment in the scoped observation lookup before exposing observation details", async () => {
+  const db = database({ assignment: false });
+  const result = await reviewObservation(db, "tenant-a", "obs-1", reviewer, "req-unassigned", {
+    decision: "verify", evidence_ref: "inspection:1",
+  });
+  assert.equal(result.error, "observation_reviewer_assignment_not_found");
+  assert.equal(db.state.calls.length, 1);
+  assert.match(db.state.calls[0].sql, /FROM observations o/);
+  assert.match(db.state.calls[0].sql, /EXISTS \(SELECT 1 FROM observation_reviewers/);
+  assert.deepEqual(db.state.calls[0].args, ["tenant-a", "obs-1", reviewer]);
+  assert.equal(db.state.batches.length, 0);
 });
 
 test("rejects missing reviewer assignment, missing ingestion provenance, and self-review", async () => {
