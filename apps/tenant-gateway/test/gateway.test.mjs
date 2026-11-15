@@ -783,3 +783,38 @@ test("rejects identity-link challenge creation without a Supabase bearer token",
   assert.equal(response.status, 401);
   assert.equal(forwarded, false);
 });
+
+
+test("preserves identity-link mapping conflict status through the Access gateway", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "tenant-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  let forwarded;
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/identity-links/request-1/decision", {
+      method: "POST",
+      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+      body: JSON.stringify({ decision: "approve", reason: "Duplicate mapping review",
+        idempotency_key: "decision-conflict-001" }),
+    }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      forwarded = request;
+      return new Response(JSON.stringify({ error: "identity_link_mapping_conflict" }), {
+        status: 409, headers: { "content-type": "application/json" },
+      });
+    } },
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "identity_link_mapping_conflict" });
+  assert.equal(new URL(forwarded.url).pathname,
+    "/internal/v1/tenants/tenant-a/identity-links/request-1/decision");
+  assert.equal(forwarded.method, "POST");
+  assert.equal(forwarded.headers.get("x-nova-verified-subject"), "tenant-owner");
+  assert.match(forwarded.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.ok(response.headers.get("x-request-id"));
+});
