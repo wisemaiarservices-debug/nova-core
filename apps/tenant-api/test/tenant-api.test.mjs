@@ -947,6 +947,28 @@ retrievable report\
 });
 
 
+test("laboratory report detail denies inactive or absent tenant members before grant or evidence reads", async () => {
+  const db = new DB({ membership: false, grant: true });
+  db.laboratoryEvidenceRows = [{
+    id: "lab-report-a", tenant_id: "tenant-a", site_id: "site-a",
+    evidence_type: "laboratory_report", file_name: "report.pdf",
+    media_type: "application/pdf", byte_length: 8,
+    sha256: "0".repeat(64), document_bytes: new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52]),
+    laboratory_name: "Declared lab", report_number: "RPT-1",
+    sample_reference: null, issued_at: "2026-10-01",
+    verification_status: "registered_unverified",
+    uploaded_by_subject: "owner@example.test", created_at: "2026-11-13T10:00:00Z",
+  }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/laboratory-reports/lab-report-a"),
+    env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM tenant_memberships")), true);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM tenant_resource_grants")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM laboratory_report_evidence")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM laboratory_report_evidence_events")), false);
+});
+
 class ProvisioningDB {
   constructor(batchResult, existingRows = []) {
     this.batchResult = batchResult;
