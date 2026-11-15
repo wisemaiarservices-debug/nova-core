@@ -24,7 +24,9 @@ class DB {
         if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
         if (sql.includes("SELECT e.id FROM water_quality_criteria_entries e")) {
           const entry = (db.criteriaRows ?? []).find(row =>
-            row.tenant_id === args[0] && row.id === args[1] && row.version === args[2]);
+            (row.tenant_id ?? args[0]) === args[0] &&
+            (row.id ?? args[1]) === args[1] &&
+            (row.version ?? args[2]) === args[2]);
           if (!entry) return { results: [] };
           const subject = args[3];
           const memberships = db.membershipRows ?? (db.membership ? [{
@@ -64,6 +66,17 @@ class DB {
         if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };
         if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
+        if (sql.includes("SELECT e.jurisdiction FROM water_quality_criteria_entries e")) {
+          const entry = (db.criteriaRows ?? []).find(row =>
+            (row.tenant_id ?? args[0]) === args[0] &&
+            (row.id ?? args[1]) === args[1] &&
+            (row.version ?? args[2]) === args[2]);
+          const assigned = (db.reviewerRows ?? []).some(row =>
+            row.reviewer_subject === args[4] && row.reviewer_role === args[5] &&
+            row.jurisdiction === entry?.jurisdiction && row.status === "active");
+          return { results: entry && entry.created_by_subject !== args[3] && assigned
+            ? [{ jurisdiction: entry.jurisdiction }] : [] };
+        }
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
