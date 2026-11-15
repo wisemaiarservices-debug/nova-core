@@ -1227,8 +1227,8 @@ test("authenticated Access subject accepts a one-time invitation into a tenant m
   assert.equal(result.role, "analyst");
   assert.equal(result.status, "active");
   assert.equal(db.batchCalls[0].length, 5);
-  assert.match(db.batchCalls[0][0].sql, /tenants WHERE id = \\? AND status = 'active'/);
-  assert.match(db.batchCalls[0][0].sql, /NOT EXISTS \\(SELECT 1 FROM tenant_memberships WHERE tenant_id = \\? AND subject = \\?\\)/);
+  assert.match(db.batchCalls[0][0].sql, /tenants WHERE id = \? AND status = 'active'/);
+  assert.match(db.batchCalls[0][0].sql, /NOT EXISTS \(SELECT 1 FROM tenant_memberships WHERE tenant_id = \? AND subject = \?\)/);
   assert.deepEqual(db.batchCalls[0][0].args.slice(-3), ["tenant-a", "tenant-a", "operator@example.test"]);
   assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_memberships/);
   assert.match(db.batchCalls[0][3].sql, /INSERT INTO tenant_membership_events/);
