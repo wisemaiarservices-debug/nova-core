@@ -1112,7 +1112,7 @@ export default {
               reason === "invalid_supabase_audience_configuration" ||
               reason === "rate_limit_secret_not_configured")
             return error("identity_configuration_invalid", 503);
-          if (reason === "invalid_supabase_token" || reason === "identity_link_dual_identity_invalid")
+          if (reason.startsWith("supabase_") || reason === "identity_link_dual_identity_invalid")
             return error("supabase_identity_not_authorized", 401);
           throw cause;
         }
