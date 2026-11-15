@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const migration = readFileSync(fileURLToPath(new URL("../../api/migrations/0031_membership_event_actor_active_membership_guard.sql", import.meta.url)), "utf8");
+const authorityMigration = readFileSync(fileURLToPath(new URL("../../api/migrations/0032_membership_event_actor_admin_authority_guard.sql", import.meta.url)), "utf8");
 
 function fixture(t) {
   const db = new DatabaseSync(":memory:");
@@ -19,6 +20,7 @@ function fixture(t) {
     INSERT INTO tenant_memberships VALUES ('tenant-1', 'operator-1', 'operator', 'active');
   `);
   db.exec(migration);
+  db.exec(authorityMigration);
   return db;
 }
 
