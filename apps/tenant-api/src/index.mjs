@@ -217,20 +217,16 @@ async function recordCriteriaReview(db, tenant, entryId, version, reviewerSubjec
       (body.decision === "reject" && (typeof body.reason !== "string" || body.reason.length < 1))) {
     return { error: "criteria_review_request_invalid", status: 400 };
   }
-  const entryRows = await rows(db.prepare(
-    "SELECT jurisdiction, created_by_subject FROM water_quality_criteria_entries WHERE tenant_id = ? AND id = ? AND version = ? LIMIT 1"
-  ).bind(tenant, entryId, version));
-  if (entryRows.length !== 1 || entryRows[0].created_by_subject === reviewerSubject) {
+  // Resolve the entry only when the authenticated subject already has an
+  // active reviewer assignment for its exact jurisdiction and role. This
+  // prevents an unassigned reviewer from reading entry metadata first.
+  const authorizedEntryRows = await rows(db.prepare(
+    "SELECT e.jurisdiction FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND e.id = ? AND e.version = ? AND e.created_by_subject <> ? AND EXISTS (SELECT 1 FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = e.tenant_id AND r.reviewer_subject = ? AND r.reviewer_role = ? AND r.jurisdiction = e.jurisdiction AND r.status = 'active') LIMIT 2"
+  ).bind(tenant, entryId, version, reviewerSubject, reviewerSubject, body.reviewer_role));
+  if (authorizedEntryRows.length !== 1 || typeof authorizedEntryRows[0].jurisdiction !== "string") {
     return { error: "reviewer_assignment_not_found", status: 404 };
   }
-  const jurisdiction = entryRows[0].jurisdiction;
-  const assignments = await rows(db.prepare(
-    "SELECT r.reviewer_subject, r.reviewer_role, r.jurisdiction FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = ? AND r.reviewer_subject = ? AND r.reviewer_role = ? AND r.jurisdiction = ? AND r.status = 'active' LIMIT 2"
-  ).bind(tenant, reviewerSubject, body.reviewer_role, jurisdiction));
-  if (assignments.length !== 1 || assignments[0].reviewer_subject !== reviewerSubject ||
-      assignments[0].reviewer_role !== body.reviewer_role || assignments[0].jurisdiction !== jurisdiction) {
-    return { error: "reviewer_assignment_not_found", status: 404 };
-  }
+  const jurisdiction = authorizedEntryRows[0].jurisdiction;
   const approvalId = crypto.randomUUID();
   const eventId = crypto.randomUUID();
   const reviewedAt = new Date().toISOString();
