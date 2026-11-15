@@ -1260,7 +1260,7 @@ test("invitation expiry treats a missing audit event after a state change as an 
   const response = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-expired/accept",
     "POST", JSON.stringify({ invitation_token: "A".repeat(43) })), env(db));
-  assert.equal(response.status, 500);
+  assert.equal(response.status, 503);
   assert.equal(db.batchCalls.length, 1);
 });
 
