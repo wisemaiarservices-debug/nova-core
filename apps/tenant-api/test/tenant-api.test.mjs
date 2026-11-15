@@ -133,6 +133,36 @@ test("denies missing and duplicate memberships without grant lookup", async () =
   assert.equal(duplicateResponse.status, 404);
   assert.equal(duplicate.calls.length, 2);
 });
+test("denies inactive memberships and suspended tenants before checking grants or reading resources", async () => {
+  const inactiveMembership = new DB();
+  inactiveMembership.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
+    membership_status: "inactive", tenant_status: "active",
+  }];
+  const inactiveResponse = await worker.fetch(await request(), env(inactiveMembership));
+  assert.equal(inactiveResponse.status, 404);
+  assert.equal(inactiveMembership.calls.length, 2,
+    "inactive membership must be rejected before grant lookup");
+  assert.equal(inactiveMembership.calls.some(call =>
+    call.sql.includes("FROM tenant_resource_grants")), false);
+  assert.equal(inactiveMembership.calls.some(call =>
+    /FROM (sites|assets|sources|observations|audit_events)/.test(call.sql)), false);
+
+  const suspendedTenant = new DB();
+  suspendedTenant.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
+    membership_status: "active", tenant_status: "suspended",
+  }];
+  const suspendedResponse = await worker.fetch(await request(), env(suspendedTenant));
+  assert.equal(suspendedResponse.status, 404);
+  assert.equal(suspendedTenant.calls.length, 2,
+    "suspended tenant must be rejected before grant lookup");
+  assert.equal(suspendedTenant.calls.some(call =>
+    call.sql.includes("FROM tenant_resource_grants")), false);
+  assert.equal(suspendedTenant.calls.some(call =>
+    /FROM (sites|assets|sources|observations|audit_events)/.test(call.sql)), false);
+});
+
 test("returns same not-found result for cross-tenant selection", async () => {
   const db = new DB();
   const response = await worker.fetch(await request({},
