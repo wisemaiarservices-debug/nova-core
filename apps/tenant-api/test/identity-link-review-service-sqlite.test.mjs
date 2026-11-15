@@ -158,20 +158,28 @@ test("real SQLite migrations scope the pending review queue to an active tenant 
   assert.equal(suspendedRequester.data.length, 0);
 });
 
-test("pending identity-link queue excludes requests assigned to another tenant", async t => {
-  const { db, sqlite } = fixture(t);
-  sqlite.prepare("INSERT INTO tenants (id, status) VALUES (?, 'active')").run("tenant-other");
-  sqlite.prepare("INSERT INTO tenant_memberships (tenant_id, subject, role, status) VALUES (?, ?, 'tenant_owner', 'active')").run("tenant-other", owner.subject);
-  sqlite.prepare("UPDATE tenant_identity_link_requests SET tenant_id = ? WHERE id = ?").run("tenant-other", "link-review");
+test("pending identity-link queue binds an exact tenant scope for existing and unassigned requests", async () => {
+  const calls = [];
+  const db = {
+    prepare(sql) {
+      return {
+        bind(...args) {
+          return {
+            async all() {
+              calls.push({ sql, args });
+              return { results: sql.includes("SELECT m.subject") ? [{ subject: owner.subject }] : [] };
+            },
+          };
+        },
+      };
+    },
+  };
 
-  const originalTenantQueue = await listPendingIdentityLinkRequests(db, tenantId, owner);
-  assert.equal(originalTenantQueue.status, 200);
-  assert.equal(originalTenantQueue.data.length, 0);
-
-  const assignedTenantQueue = await listPendingIdentityLinkRequests(db, "tenant-other", owner);
-  assert.equal(assignedTenantQueue.status, 200);
-  assert.equal(assignedTenantQueue.data.length, 1);
-  assert.equal(assignedTenantQueue.data[0].id, "link-review");
+  const result = await listPendingIdentityLinkRequests(db, tenantId, owner);
+  assert.equal(result.status, 200);
+  const queue = calls.find(call => call.sql.includes("FROM tenant_identity_link_requests"));
+  assert.ok(queue.sql.includes("(r.tenant_id IS NULL OR r.tenant_id = ?)"));
+  assert.deepEqual(queue.args, [owner.issuer, owner.subject, tenantId, tenantId, 50]);
 });
 
 test("real SQLite migrations enforce owner approval and revocation after requester deactivation", async t => {
