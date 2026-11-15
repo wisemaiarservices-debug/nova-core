@@ -2338,3 +2338,40 @@ test("identity-link challenge route enforces verified-identity rate limits befor
     assert.equal(db.batchCalls.length, 1, "only rate-limit storage is touched");
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("a valid linked Supabase JWT cannot substitute for the verified Cloudflare subject on tenant resource reads", async () => {
+  const db = new DB();
+  // Deliberately give the Supabase JWT subject membership and a grant, but
+  // not the independently verified Cloudflare subject from the gateway.
+  db.membershipRows = [{
+    subject: "supabase-user-1", tenant_id: "tenant-a", role: "viewer",
+    membership_status: "active", tenant_status: "active",
+  }];
+  db.grantRows = [{
+    subject: "supabase-user-1", tenant_id: "tenant-a",
+    resource_type: "site", resource_id: "site-a", action: "read",
+  }];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [identityJwk] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }), env(db));
+    assert.equal(response.status, 404);
+    const membershipRead = db.calls.find(call => call.sql.includes("FROM tenant_memberships"));
+    assert.ok(membershipRead);
+    assert.deepEqual(membershipRead.args, ["operator@example.test", "tenant-a"]);
+    assert.equal(db.calls.some(call => call.sql.includes("FROM tenant_identity_link_requests")), false,
+      "tenant resource authorization must not translate the Access subject through an identity-link record");
+    assert.equal(db.calls.some(call => /FROM (sites|assets|sources|observations|audit_events)/.test(call.sql)), false,
+      "resource data must not be read when the Access subject lacks active membership");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
