@@ -1851,7 +1851,7 @@ test("measurement quality assessment checks exact site grant before resolving ob
   assert.match(authorizationLookup.sql, /g\.resource_id=o\.site_id/);
   assert.equal(db.calls.some(call => call.sql.includes("FROM measurement_quality_policies")), false);
   assert.equal(db.calls.some(call => call.sql.includes("FROM sensor_calibrations")), false);
-  assert.equal(db.calls.some(call => call.includes?.("INSERT INTO measurement_quality_assessments")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("INSERT INTO measurement_quality_assessments")), false);
   assert.equal(db.batchCalls.length, 0);
 });
 
