@@ -603,7 +603,7 @@ test("identity-link decision hides requests and idempotency events owned by anot
   assert.equal(crossTenantProbe.status, 404);
   assert.equal(queries.length, 3);
   assert.match(queries[1], /tenant_id = \?/);
-  assert.match(queries[2], /tenant_id IS NULL OR tenant_id = \?/);
+  assert.match(queries[2], /r\.tenant_id IS NULL OR r\.tenant_id = \?/);
   assert.equal(sqlite.prepare(
     "SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?"
   ).get("other-tenant-approval-key").count, 1);
