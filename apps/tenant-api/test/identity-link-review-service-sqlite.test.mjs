@@ -303,11 +303,11 @@ test("real SQLite active mapping indexes block ambiguous approved identities and
   assert.equal(secondRequest.status, 201);
 
   await assert.rejects(() => decideIdentityLinkRequest(db, tenantId,
-    secondRequest.data.request_id, owner, "approve", "Attempt duplicate mapping",
+    secondRequest.data.link_request_id, owner, "approve", "Attempt duplicate mapping",
     "approve-second-mapping", new Date("2026-11-15T12:00:02.000Z")),
   /UNIQUE constraint failed/);
   assert.equal(sqlite.prepare("SELECT status FROM tenant_identity_link_requests WHERE id = ?")
-    .get(secondRequest.data.request_id).status, "pending");
+    .get(secondRequest.data.link_request_id).status, "pending");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?")
     .get("approve-second-mapping").count, 0);
 });
@@ -333,7 +333,7 @@ test("real SQLite permits a new independently reviewed link after owner revocati
     new Date("2026-11-15T12:00:03.000Z"));
   assert.equal(nextRequest.status, 201);
   const reapproved = await decideIdentityLinkRequest(db, tenantId,
-    nextRequest.data.request_id, owner, "approve", "Approve reviewed relink",
+    nextRequest.data.link_request_id, owner, "approve", "Approve reviewed relink",
     "approve-reviewed-relink", new Date("2026-11-15T12:00:04.000Z"));
   assert.equal(reapproved.status, 200);
 
