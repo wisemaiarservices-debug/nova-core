@@ -281,3 +281,63 @@ test("real SQLite migrations allow only one of two concurrent conflicting owner 
   assert.equal(decisionEvents.length, 1);
   assert.equal(decisionEvents[0].event_type, request.status);
 });
+
+
+test("real SQLite active mapping indexes block ambiguous approved identities and roll back owner event", async t => {
+  const { db, sqlite } = fixture(t);
+  const otherRequester = { issuer: requester.issuer, subject: "other-requester-sqlite" };
+  sqlite.prepare("INSERT INTO tenant_memberships (tenant_id, subject, role, status) VALUES (?, ?, 'operator', 'active')")
+    .run(tenantId, otherRequester.subject);
+
+  const first = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Approve first mapping", "approve-first-mapping", now);
+  assert.equal(first.status, 200);
+
+  const supabaseIdentity = { issuer: supabaseIssuer, subject: "supabase-user" };
+  const secondChallenge = await createIdentityLinkChallenge(db, supabaseIdentity,
+    otherRequester, "create-second-mapping", now);
+  assert.equal(secondChallenge.status, 201);
+  const secondRequest = await consumeIdentityLinkChallenge(db, secondChallenge.data.challenge_id,
+    secondChallenge.data.challenge, supabaseIdentity, otherRequester,
+    "consume-second-mapping", new Date("2026-11-15T12:00:01.000Z"));
+  assert.equal(secondRequest.status, 201);
+
+  await assert.rejects(() => decideIdentityLinkRequest(db, tenantId,
+    secondRequest.data.request_id, owner, "approve", "Attempt duplicate mapping",
+    "approve-second-mapping", new Date("2026-11-15T12:00:02.000Z")),
+  /UNIQUE constraint failed/);
+  assert.equal(sqlite.prepare("SELECT status FROM tenant_identity_link_requests WHERE id = ?")
+    .get(secondRequest.data.request_id).status, "pending");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?")
+    .get("approve-second-mapping").count, 0);
+});
+
+test("real SQLite permits a new independently reviewed link after owner revocation", async t => {
+  const { db, sqlite } = fixture(t);
+  const supabaseIdentity = { issuer: supabaseIssuer, subject: "supabase-user" };
+
+  const approved = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Approve original mapping", "approve-original-mapping", now);
+  assert.equal(approved.status, 200);
+  const revoked = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "revoke", "Revoke original mapping", "revoke-original-mapping",
+    new Date("2026-11-15T12:00:01.000Z"));
+  assert.equal(revoked.status, 200);
+
+  const nextChallenge = await createIdentityLinkChallenge(db, supabaseIdentity,
+    requester, "create-relink-challenge", new Date("2026-11-15T12:00:02.000Z"));
+  assert.equal(nextChallenge.status, 201);
+  const nextRequest = await consumeIdentityLinkChallenge(db, nextChallenge.data.challenge_id,
+    nextChallenge.data.challenge, supabaseIdentity, requester, "consume-relink-challenge",
+    new Date("2026-11-15T12:00:03.000Z"));
+  assert.equal(nextRequest.status, 201);
+  const reapproved = await decideIdentityLinkRequest(db, tenantId,
+    nextRequest.data.request_id, owner, "approve", "Approve reviewed relink",
+    "approve-reviewed-relink", new Date("2026-11-15T12:00:04.000Z"));
+  assert.equal(reapproved.status, 200);
+
+  assert.deepEqual(sqlite.prepare(
+    "SELECT status FROM tenant_identity_link_requests WHERE supabase_issuer = ? AND supabase_subject = ? AND cloudflare_issuer = ? AND cloudflare_subject = ? ORDER BY created_at, id"
+  ).all(supabaseIssuer, "supabase-user", requester.issuer, requester.subject).map(row => row.status),
+  ["revoked", "approved"]);
+});
