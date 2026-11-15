@@ -130,7 +130,8 @@ function fixture(t) {
   `).run("event-requested-review", "link-review", requester.issuer,
     requester.subject, "independently verified identities presented", "event-request-review");
 
-  return { sqlite, db: d1Adapter(sqlite) };
+  const db = d1Adapter(sqlite);
+  return { sqlite, db, queries: db.queries };
 }
 
 test("real SQLite migrations scope the pending review queue to an active tenant owner and requester membership", async t => {
