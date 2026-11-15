@@ -29,8 +29,8 @@ export async function listPendingIdentityLinkRequests(db, tenantId, actor, limit
   ).bind(tenantId, actor.subject));
   if (!owner) return { error: "not_found", status: 404 };
   const result = await db.prepare(
-    "SELECT r.id, r.supabase_issuer, r.supabase_subject, r.cloudflare_issuer, r.cloudflare_subject, r.created_at FROM tenant_identity_link_requests r WHERE r.status = 'pending' AND r.cloudflare_issuer = ? AND r.cloudflare_subject <> ? AND EXISTS (SELECT 1 FROM tenant_memberships requester WHERE requester.tenant_id = ? AND requester.subject = r.cloudflare_subject AND requester.status = 'active') ORDER BY r.created_at ASC, r.id ASC LIMIT ?"
-  ).bind(actor.issuer, actor.subject, tenantId, limit).all();
+    "SELECT r.id, r.supabase_issuer, r.supabase_subject, r.cloudflare_issuer, r.cloudflare_subject, r.created_at FROM tenant_identity_link_requests r WHERE r.status = 'pending' AND r.cloudflare_issuer = ? AND r.cloudflare_subject <> ? AND (r.tenant_id IS NULL OR r.tenant_id = ?) AND EXISTS (SELECT 1 FROM tenant_memberships requester WHERE requester.tenant_id = ? AND requester.subject = r.cloudflare_subject AND requester.status = 'active') ORDER BY r.created_at ASC, r.id ASC LIMIT ?"
+  ).bind(actor.issuer, actor.subject, tenantId, tenantId, limit).all();
   if (!Array.isArray(result?.results)) throw new Error("identity_link_review_storage_invalid");
   return { data: result.results, status: 200 };
 }
