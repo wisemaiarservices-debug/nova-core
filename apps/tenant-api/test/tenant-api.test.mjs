@@ -8,7 +8,7 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
+    this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.siteObservationRows = []; this.siteObservationAuthorizationRows = null; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
@@ -45,6 +45,12 @@ class DB {
           const reviewer = (db.reviewerRows ?? []).some(row =>
             row.reviewer_subject === subject && row.jurisdiction === entry.jurisdiction && row.status === "active");
           return { results: memberHasGrant || reviewer ? [{ id: entry.id }] : [] };
+        }
+        if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) {
+          return { results: db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []) };
+        }
+        if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) {
+          return { results: db.siteObservationRows };
         }
         if (sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS")) {
           return { results: db.observationSiteAuthorizationRows ?? [] };
@@ -2544,4 +2550,33 @@ test("a valid linked Supabase JWT cannot substitute for the verified Cloudflare 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("lists only bounded observations for an active site with an exact site read grant", async () => {
+  const db = new DB();
+  db.siteObservationRows = [
+    { id: "obs-2", tenant_id: "tenant-a", site_id: "site-a", metric: "soil_moisture", value: 24, unit: "%" },
+    { id: "obs-1", tenant_id: "tenant-a", site_id: "site-a", metric: "air_temperature", value: 21, unit: "Cel" },
+  ];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.limit, 100);
+  assert.deepEqual(payload.data, db.siteObservationRows);
+  const authorization = db.calls.find(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships"));
+  assert.deepEqual(authorization.args, ["operator@example.test", "tenant-a", "site-a"]);
+  const read = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
+  assert.deepEqual(read.args, ["tenant-a", "site-a"]);
+  assert.match(read.sql, /ORDER BY o\.observed_at DESC, o\.id DESC LIMIT 100/);
+  assert.match(read.sql, /src\.verification_status = 'verified'/);
+});
+
+test("does not read site observations without the exact active site grant", async () => {
+  const db = new DB({ grant: false });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
 });
