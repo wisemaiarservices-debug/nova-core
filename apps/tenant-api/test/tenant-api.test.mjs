@@ -2680,3 +2680,47 @@ test("does not read observations when Supabase and Access identities are not own
     assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
   });
 });
+
+
+
+test("approved identity-link inventory requires an active tenant owner and exact Access issuer", async () => {
+  const db = new DB();
+  db.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_owner", membership_status: "active", tenant_status: "active",
+  }];
+  db.identityLinkRows = [{
+    id: "approved-link-a",
+    supabase_issuer: "https://project.example.test/auth/v1",
+    supabase_subject: "supabase-user-a",
+    cloudflare_issuer: "https://example.cloudflareaccess.com",
+    cloudflare_subject: "operator-a",
+    created_at: "2026-11-15T10:00:00.000Z",
+    decided_at: "2026-11-15T10:05:00.000Z",
+    decided_by_cloudflare_subject: "operator@example.test",
+    reason: "Owner approved after independent review",
+  }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/approved"), env(db));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.data.length, 1);
+  assert.equal(payload.data[0].id, "approved-link-a");
+  const ownerQuery = db.calls.find(call => call.sql.includes("FROM tenant_memberships m JOIN tenants t"));
+  assert.deepEqual(ownerQuery.args, ["tenant-a", "operator@example.test"]);
+  const approvedQuery = db.calls.find(call => call.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'"));
+  assert.deepEqual(approvedQuery.args, ["tenant-a", "https://example.cloudflareaccess.com", 100]);
+  assert.match(approvedQuery.sql, /r\.cloudflare_issuer = \?/);
+});
+
+test("approved identity-link inventory returns not-found for inactive or non-owner membership", async () => {
+  const db = new DB();
+  db.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "viewer", membership_status: "active", tenant_status: "active",
+  }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/approved"), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.calls.some(call => call.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'")), false);
+});
