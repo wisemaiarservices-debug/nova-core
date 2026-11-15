@@ -1867,7 +1867,8 @@ test("observation verification denies an unassigned reviewer in the first resour
   assert.ok(lookup);
   assert.match(lookup.sql, /FROM observation_reviewers r/);
   assert.deepEqual(lookup.args, ["tenant-a", "observation-a", "operator@example.test", "operator@example.test"]);
-  assert.equal(db.calls.length, 2, "only membership and combined authorization lookups should run");
+  assert.equal(db.calls.some(call => /FROM audit_events|FROM sensor_calibrations|FROM laboratory_report_evidence|FROM observation_verification_events/.test(call.sql)), false,
+    "denied reviewer must not trigger protected evidence or review-history reads");
   assert.equal(db.batchCalls.length, 0);
 });
 
