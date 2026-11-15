@@ -21,6 +21,9 @@ const supabaseIssuer = "https://project.supabase.co/auth/v1";
 const now = new Date("2026-11-15T12:00:00.000Z");
 
 function d1Adapter(sqlite) {
+  // D1 serializes atomic batches. Queue transactions on this shared SQLite
+  // connection while allowing service-level reads to race before each batch.
+  let batchTail = Promise.resolve();
   return {
     prepare(sql) {
       return {
@@ -37,20 +40,24 @@ function d1Adapter(sqlite) {
         },
       };
     },
-    async batch(statements) {
-      sqlite.exec("BEGIN");
-      try {
-        const results = [];
-        for (const statement of statements) {
-          const result = await statement.run();
-          results.push(result);
+    batch(statements) {
+      const execute = async () => {
+        sqlite.exec("BEGIN");
+        try {
+          const results = [];
+          for (const statement of statements) {
+            results.push(await statement.run());
+          }
+          sqlite.exec("COMMIT");
+          return results;
+        } catch (error) {
+          sqlite.exec("ROLLBACK");
+          throw error;
         }
-        sqlite.exec("COMMIT");
-        return results;
-      } catch (error) {
-        sqlite.exec("ROLLBACK");
-        throw error;
-      }
+      };
+      const pending = batchTail.then(execute, execute);
+      batchTail = pending.then(() => undefined, () => undefined);
+      return pending;
     },
   };
 }
