@@ -38,7 +38,7 @@ export async function reviewMeasurementQualityPolicy(db,tenant,siteId,assetId,po
  const result=await db.prepare("INSERT INTO measurement_quality_policy_events(id,tenant_id,site_id,asset_id,policy_id,reviewer_subject,event_type,evidence_ref,reason,request_id) VALUES(?,?,?,?,?,?,?,?,?,?)")
  .bind(crypto.randomUUID(),tenant,siteId,assetId,policyId,reviewer,type,body.evidence_ref,body.reason??null,requestId).run();
  if(result?.meta?.changes!==1)return {error:"measurement_quality_policy_state_conflict",status:409};
- return {data:{policy_id:policyId,status:type,reviewer_subject:reviewer},status:201};
+ return {data:{policy_id:policyId,tenant_id:tenant,site_id:siteId,asset_id:assetId,status:type,reviewer_subject:reviewer},status:201};
 }
 
 async function exactlyOne(db,sql,values,errorCode){

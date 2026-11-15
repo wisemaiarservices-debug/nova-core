@@ -29,6 +29,12 @@ test("policy registration rejects absent, inverted or non-finite limits",async()
   assert.equal(r.status,400);
  }
 });
+test("policy review response includes exact tenant site and asset scope",async()=>{
+ const r=await reviewMeasurementQualityPolicy(dbFixture(),"tenant-1","site-1","asset-1","policy-1","reviewer","req-1",{decision:"verify",evidence_ref:"spec-1"});
+ assert.equal(r.status,201);
+ assert.deepEqual({policy_id:r.data.policy_id,tenant_id:r.data.tenant_id,site_id:r.data.site_id,asset_id:r.data.asset_id,status:r.data.status,reviewer_subject:r.data.reviewer_subject},
+  {policy_id:"policy-1",tenant_id:"tenant-1",site_id:"site-1",asset_id:"asset-1",status:"verified",reviewer_subject:"reviewer"});
+});
 test("policy submitter cannot approve own policy",async()=>{
  const r=await reviewMeasurementQualityPolicy(dbFixture(),"tenant-1","site-1","asset-1","policy-1","author","req-1",{decision:"verify",evidence_ref:"spec-1"});
  assert.equal(r.error,"policy_submitter_cannot_review");
