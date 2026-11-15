@@ -179,3 +179,24 @@ test("verified challenge orchestration never persists a pair with a shared issue
     assert.equal(db.row, null);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("reuses verified Supabase claims without a second JWKS fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetched = false;
+  globalThis.fetch = async () => { fetched = true; throw new Error("duplicate JWKS fetch"); };
+  try {
+    const pair = await verifyIdentityLinkIdentityPair({
+      supabaseToken: tokenFor(),
+      verifiedSupabaseIdentity: {
+        issuer: SUPABASE_ISSUER,
+        subject: "supabase-user",
+        audience: SUPABASE_AUDIENCE,
+      },
+      cloudflareIdentity: accessIdentity,
+      ...config,
+    });
+    assert.equal(pair.supabase.subject, "supabase-user");
+    assert.equal(fetched, false);
+  } finally { globalThis.fetch = originalFetch; }
+});
