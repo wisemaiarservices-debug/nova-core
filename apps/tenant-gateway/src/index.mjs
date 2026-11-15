@@ -250,7 +250,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       });
       try {
         const authorization = request.headers.get("authorization");
-        if ((identityLinkChallengeCreate || identityLinkChallengeConsume) && authorization === null)
+        if ((identityLinkChallengeCreate || identityLinkChallengeConsume || siteObservationList) && authorization === null)
           return error("supabase_authorization_required", 401);
         if (authorization !== null) {
           const match = authorization.match(/^Bearer ([A-Za-z0-9._~-]{1,16384})$/);
