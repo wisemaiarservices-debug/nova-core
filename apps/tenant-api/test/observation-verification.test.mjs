@@ -101,7 +101,7 @@ test("checks reviewer assignment in the scoped observation lookup before exposin
   assert.equal(result.error, "observation_reviewer_assignment_not_found");
   assert.equal(db.state.calls.length, 1);
   assert.match(db.state.calls[0].sql, /FROM observations o/);
-  assert.match(db.state.calls[0].sql, /EXISTS \\(SELECT 1 FROM observation_reviewers/);
+  assert.match(db.state.calls[0].sql, /EXISTS \(SELECT 1 FROM observation_reviewers/);
   assert.deepEqual(db.state.calls[0].args, ["tenant-a", "obs-1", reviewer]);
   assert.equal(db.state.batches.length, 0);
 });
