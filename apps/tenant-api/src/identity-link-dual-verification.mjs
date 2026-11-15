@@ -24,7 +24,7 @@ function validIdentity(identity) {
  */
 export async function verifyIdentityLinkIdentityPair({
   supabaseToken, cloudflareIdentity, accessIssuer, accessAudience,
-  supabaseIssuer, supabaseAudience,
+  supabaseIssuer, supabaseAudience, verifiedSupabaseIdentity = null,
 }) {
   if (typeof supabaseToken !== "string" || supabaseToken.length < 16 ||
       supabaseToken.length > 16384 || !validIdentity(cloudflareIdentity) ||
@@ -38,7 +38,9 @@ export async function verifyIdentityLinkIdentityPair({
     throw new Error("identity_link_dual_identity_invalid");
   }
 
-  const supabaseIdentity = await verifySupabaseAccessToken(supabaseToken, {
+  // HTTP callers may supply the exact claims returned by the route's
+  // successful verifier call. Direct helper callers still verify the JWT here.
+  const supabaseIdentity = verifiedSupabaseIdentity ?? await verifySupabaseAccessToken(supabaseToken, {
     issuer: supabaseIssuer,
     audience: supabaseAudience,
   });
