@@ -2718,7 +2718,7 @@ test("approved identity-link inventory requires an active tenant owner and exact
   const ownerQuery = db.calls.find(call => call.sql.includes("FROM tenant_memberships m JOIN tenants t"));
   assert.deepEqual(ownerQuery.args, ["tenant-a", "operator@example.test"]);
   const approvedQuery = db.calls.find(call => call.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'"));
-  assert.deepEqual(approvedQuery.args, ["tenant-a", "https://example.cloudflareaccess.com", 100]);
+  assert.deepEqual(approvedQuery.args, ["tenant-a", "https://example.cloudflareaccess.com", 20]);
   assert.match(approvedQuery.sql, /r\.cloudflare_issuer = \?/);
 });
 
