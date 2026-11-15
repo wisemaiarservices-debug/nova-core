@@ -630,8 +630,8 @@ async function changeTenantLifecycle(db, tenant, actor, requestId, body) {
       result.some(item => !item?.meta || !Number.isInteger(item.meta.changes))) {
     throw new Error("tenant_lifecycle_batch_invalid");
   }
-  if (result[0].meta.changes !== 1 || result[1].meta.changes !== 1) {
-    return { error: "tenant_lifecycle_transition_conflict", status: 409 };
+  if (result[0].meta.changes !== 1) {
+    return { error: "tenant_lifecycle_event_conflict", status: 409 };
   }
   const persisted = await rows(db.prepare(
     "SELECT status, last_lifecycle_event_id FROM tenants WHERE id = ? LIMIT 2"
