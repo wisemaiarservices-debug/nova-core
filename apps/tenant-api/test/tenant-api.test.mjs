@@ -43,7 +43,7 @@ class DB {
             grants.some(grant => grant.subject === subject && grant.tenant_id === args[0] &&
               grant.resource_type === "site" && grant.resource_id === entry.site_id && grant.action === "read"));
           const reviewer = (db.reviewerRows ?? []).some(row =>
-            row.reviewer_subject === subject && row.jurisdiction === entry.jurisdiction && row.status !== "revoked");
+            row.reviewer_subject === subject && row.jurisdiction === entry.jurisdiction && row.status === "active");
           return { results: memberHasGrant || reviewer ? [{ id: entry.id }] : [] };
         }
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
@@ -585,7 +585,7 @@ test("reviewer list and immutable assignment history are restricted to tenant ow
 
 const reviewEntryRow = { jurisdiction: "TN", created_by_subject: "criteria-author@example.test" };
 const reviewAssignmentRow = (subject, role, jurisdiction = "TN") => ({
-  reviewer_subject: subject, reviewer_role: role, jurisdiction,
+  reviewer_subject: subject, reviewer_role: role, jurisdiction, status: "active",
 });
 
 test("tenant owner/admin submits only an existing draft into review", async () => {
