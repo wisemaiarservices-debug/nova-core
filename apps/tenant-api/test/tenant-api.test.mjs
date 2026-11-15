@@ -47,6 +47,9 @@ class DB {
             row.reviewer_subject === subject && row.jurisdiction === entry.jurisdiction && row.status === "active");
           return { results: memberHasGrant || reviewer ? [{ id: entry.id }] : [] };
         }
+        if (sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships")) {
+          return { results: db.siteListRows ?? [] };
+        }
         if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) {
           return { results: db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []) };
         }
@@ -2581,6 +2584,42 @@ test("a valid linked Supabase JWT cannot substitute for the verified Cloudflare 
   }
 });
 
+
+test("lists only active sites with exact tenant membership and site-read grant after identity link approval", async () => {
+  await withTestSupabaseJwks(async () => {
+    const db = new DB();
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    db.siteListRows = [{ id: "site-a", name: "North Farm", timezone: "Africa/Tunis" }];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": testSupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites"), env(db));
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.limit, 100);
+    assert.deepEqual(payload.data, db.siteListRows);
+    const link = db.calls.find(call => call.sql.includes("tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved'"));
+    assert.deepEqual(link.args, ["tenant-a", testSupabaseIssuer, "supabase-user-123",
+      "https://example.cloudflareaccess.com", "operator@example.test"]);
+    const list = db.calls.find(call => call.sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships"));
+    assert.deepEqual(list.args, ["operator@example.test", "tenant-a"]);
+    assert.match(list.sql, /g\.resource_type = 'site'/);
+    assert.match(list.sql, /g\.action = 'read'/);
+    assert.match(list.sql, /s\.status = 'active'/);
+    assert.match(list.sql, /LIMIT 100/);
+  });
+});
+
+test("does not list tenant sites without an approved dual-identity link", async () => {
+  await withTestSupabaseJwks(async () => {
+    const db = new DB();
+    db.identityLinkRows = [];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": testSupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites"), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.some(call => call.sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships")), false);
+  });
+});
 
 test("requires a verified Supabase identity before site observation reads", async () => {
   const db = new DB();
