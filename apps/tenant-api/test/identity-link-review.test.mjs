@@ -100,6 +100,18 @@ test("idempotency key reuse with different decision content is rejected", async 
   assert.equal(db.batchCalls.length, 0);
 });
 
+test("globally unique idempotency-key collisions return a generic conflict without cross-tenant reads", async () => {
+  const db = new DB();
+  db.batchError = new Error("UNIQUE constraint failed: tenant_identity_link_events.request_id");
+  const result = await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "approve", "Reviewed independently", "key-used-in-another-tenant");
+  assert.equal(result.status, 409);
+  assert.equal(result.error, "identity_link_idempotency_conflict");
+  const eventReads = db.queries.filter(sql => sql.includes("FROM tenant_identity_link_events WHERE request_id"));
+  assert.equal(eventReads.length, 2);
+  assert.ok(eventReads.every(sql => sql.includes("tenant_id = ?")));
+});
+
 test("database failures are not disguised as idempotency conflicts", async () => {
   const db = new DB();
   db.batchError = new Error("temporary D1 failure");
