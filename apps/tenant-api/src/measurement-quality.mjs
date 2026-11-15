@@ -24,11 +24,11 @@ export async function reviewMeasurementQualityPolicy(db,tenant,siteId,assetId,po
  if(!onlyKeys(body,["decision","evidence_ref","reason"])||!["verify","reject","revoke"].includes(body.decision)||
  !validText(body.evidence_ref,500)||(body.decision!=="verify"&&!validText(body.reason,2000))||
  (body.reason!==undefined&&!validText(body.reason,2000)))return {error:"measurement_quality_policy_review_invalid",status:400};
+ const assigned=await db.prepare("SELECT reviewer_subject FROM observation_reviewers WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND reviewer_role='measurement_reviewer' AND status='active' LIMIT 2").bind(tenant,siteId,reviewer).all();
+ if(!Array.isArray(assigned?.results)||assigned.results.length!==1)return {error:"measurement_reviewer_assignment_not_found",status:404};
  const policy=await db.prepare("SELECT id,registered_by_subject FROM measurement_quality_policies WHERE tenant_id=? AND site_id=? AND asset_id=? AND id=? LIMIT 2").bind(tenant,siteId,assetId,policyId).all();
  if(!Array.isArray(policy?.results)||policy.results.length!==1)return {error:"measurement_quality_policy_not_found",status:404};
  if(policy.results[0].registered_by_subject===reviewer)return {error:"policy_submitter_cannot_review",status:409};
- const assigned=await db.prepare("SELECT reviewer_subject FROM observation_reviewers WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND reviewer_role='measurement_reviewer' AND status='active' LIMIT 2").bind(tenant,siteId,reviewer).all();
- if(!Array.isArray(assigned?.results)||assigned.results.length!==1)return {error:"measurement_reviewer_assignment_not_found",status:404};
  const history=await db.prepare("SELECT event_type FROM measurement_quality_policy_events WHERE tenant_id=? AND policy_id=? ORDER BY occurred_at DESC,rowid DESC LIMIT 1").bind(tenant,policyId).all();
  if(!Array.isArray(history?.results))throw new Error("measurement_quality_policy_history_invalid");
  const current=history.results[0]?.event_type??"registered_unverified";
