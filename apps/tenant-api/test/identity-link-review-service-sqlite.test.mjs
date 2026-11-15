@@ -188,7 +188,7 @@ test("real SQLite migrations enforce owner approval and revocation after request
   const wrongIssuer = await decideIdentityLinkRequest(db, tenantId, "link-review",
     { issuer: "https://attacker.example", subject: owner.subject },
     "approve", "Independent review completed", "wrong-issuer-decision", now);
-  assert.equal(wrongIssuer.status, 409);
+  assert.equal(wrongIssuer.status, 404);
   assert.equal(sqlite.prepare("SELECT status FROM tenant_identity_link_requests WHERE id = ?")
     .get("link-review").status, "pending");
 
@@ -229,7 +229,7 @@ test("real SQLite triggers reject cross-tenant owner decisions and preserve appe
 
   const denied = await decideIdentityLinkRequest(db, "tenant-other", "link-review", owner,
     "approve", "Wrong tenant", "cross-tenant-decision", now);
-  assert.equal(denied.status, 409);
+  assert.equal(denied.status, 404);
   assert.equal(sqlite.prepare("SELECT status FROM tenant_identity_link_requests WHERE id = ?")
     .get("link-review").status, "pending");
 
