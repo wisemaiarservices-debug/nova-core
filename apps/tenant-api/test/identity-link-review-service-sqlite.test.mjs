@@ -277,6 +277,41 @@ test("real SQLite migrations reject an identity-link challenge at its exact expi
   ).get("expired-challenge-consume-requested").count, 0);
 });
 
+test("real SQLite duplicate pending identity pairs roll back challenge consumption", async t => {
+  const { db, sqlite } = fixture(t);
+  const supabaseIdentity = {
+    issuer: supabaseIssuer,
+    subject: "supabase-user",
+    audience: "authenticated",
+  };
+  const cloudflareIdentity = {
+    issuer: requester.issuer,
+    subject: requester.subject,
+    audience: "nova-core",
+  };
+  const created = await createIdentityLinkChallenge(db, supabaseIdentity,
+    cloudflareIdentity, "duplicate-pair-create", now);
+  assert.equal(created.status, 201);
+
+  const consumed = await consumeIdentityLinkChallenge(db, created.data.challenge_id,
+    created.data.challenge, supabaseIdentity, cloudflareIdentity,
+    "duplicate-pair-consume", new Date("2026-11-15T12:00:01.000Z"));
+  assert.equal(consumed.status, 409);
+  assert.equal(consumed.error, "identity_link_request_already_pending");
+
+  const challenge = sqlite.prepare(
+    "SELECT status, consumed_at FROM tenant_identity_link_challenges WHERE id = ?"
+  ).get(created.data.challenge_id);
+  assert.equal(challenge.status, "pending");
+  assert.equal(challenge.consumed_at, null);
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_requests WHERE challenge_id = ?"
+  ).get(created.data.challenge_id).count, 0);
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?"
+  ).get("duplicate-pair-consume-requested").count, 0);
+});
+
 test("real SQLite migrations allow only one concurrent consume of the same identity-link challenge", async t => {
   const { db, sqlite } = fixture(t);
   const supabaseIdentity = {
