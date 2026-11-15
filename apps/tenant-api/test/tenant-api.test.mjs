@@ -1196,8 +1196,10 @@ test("tenant owner creates a one-time invitation without selecting the invitee i
   assert.equal(result.status, "pending");
   assert.match(result.invitation_token, /^[A-Za-z0-9_-]{43}$/);
   assert.equal(result.delivery.includes("out-of-band"), true);
-  assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_membership_invitations/);
-  assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_membership_invitation_events/);
+  assert.match(db.batchCalls[0][0].sql, /role = 'tenant_owner' AND status = 'active'/);
+  assert.match(db.batchCalls[0][1].sql, /role = 'tenant_owner' AND status = 'active'/);
+  assert.deepEqual(db.batchCalls[0][0].args.slice(-3), ["tenant-a", "tenant-a", "operator@example.test"]);
+  assert.deepEqual(db.batchCalls[0][1].args.slice(-3), ["tenant-a", "operator@example.test", "tenant-a"]);
 });
 
 test("only an active tenant owner can create or revoke membership invitations", async () => {
