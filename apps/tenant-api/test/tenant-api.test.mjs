@@ -65,6 +65,15 @@ class DB {
         if (sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS")) {
           return { results: db.observationSiteAuthorizationRows ?? [] };
         }
+        if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
+          const rows = db.membershipRows ?? (db.membership ? [{
+            subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
+            membership_status: "active", tenant_status: "active",
+          }] : []);
+          return { results: rows.filter(row => row.role === "tenant_owner" &&
+            row.membership_status === "active" && row.tenant_status === "active" &&
+            row.tenant_id === args[0] && row.subject === args[1]) };
+        }
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
