@@ -1255,8 +1255,10 @@ test("tenant owner revokes a pending invitation with an append-only event", asyn
     "POST", JSON.stringify({ reason: "Access no longer required" })), env(db));
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data.status, "revoked");
-  assert.match(db.batchCalls[0][0].sql, /UPDATE tenant_membership_invitations/);
-  assert.match(db.batchCalls[0][1].sql, /INSERT INTO tenant_membership_invitation_events/);
+  assert.match(db.batchCalls[0][0].sql, /role = 'tenant_owner' AND status = 'active'/);
+  assert.match(db.batchCalls[0][1].sql, /role = 'tenant_owner' AND status = 'active'/);
+  assert.deepEqual(db.batchCalls[0][0].args.slice(-3), ["tenant-a", "tenant-a", "operator@example.test"]);
+  assert.deepEqual(db.batchCalls[0][1].args.slice(-3), ["tenant-a", "tenant-a", "operator@example.test"]);
 });
 
 
