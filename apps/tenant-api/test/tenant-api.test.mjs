@@ -1544,9 +1544,22 @@ test("tenant owner suspends a tenant with an atomic immutable lifecycle event", 
   assert.match(db.batchCalls[0][1].sql, /last_lifecycle_event_id = \?/);
   assert.match(db.batchCalls[0][1].sql, /tenant_lifecycle_events WHERE id = \?/);
   assert.match(db.batchCalls[0][1].sql, /tenant_memberships WHERE tenant_id = \?/);
-  assert.deepEqual(db.batchCalls[0][1].args.slice(-3), ["tenant-a", "operator@example.test", "tenant-a"].slice(-3));
+  assert.deepEqual(db.batchCalls[0][1].args.slice(-3), ["suspended", "tenant-a", "operator@example.test"]);
 
   assert.equal(db.batchCalls[0][0].args[7], "tenant-suspend-001");
+});
+
+test("tenant lifecycle rejects a state update unless both audit and status writes succeed", async () => {
+  const db = new TenantLifecycleDB({ batchResult: [
+    { meta: { changes: 1 } }, { meta: { changes: 0 } },
+  ] });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-suspend-partial-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-actions", "POST",
+    JSON.stringify({ action: "suspend", reason: "Security review" })), env(db));
+  assert.equal(response.status, 409);
+  assert.equal(db.status, "active");
+  assert.match(db.batchCalls[0][1].sql, /tenant_lifecycle_events WHERE id = \?/);
+  assert.match(db.batchCalls[0][1].sql, /tenant_memberships WHERE tenant_id = \?/);
 });
 
 test("suspended tenant can be reactivated and active or suspended tenant can be archived", async () => {
