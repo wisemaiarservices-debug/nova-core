@@ -78,6 +78,22 @@ test("rejects identical identity-provider issuers before attempting Supabase ver
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("uses exact server-verified Supabase claims without fetching JWKS a second time", async () => {
+  let fetched = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { fetched = true; throw new Error("unexpected duplicate JWKS fetch"); };
+  try {
+    const pair = await verifyIdentityLinkIdentityPair({
+      supabaseToken: tokenFor(),
+      verifiedSupabaseIdentity: { issuer: SUPABASE_ISSUER, subject: "supabase-user",
+        audience: SUPABASE_AUDIENCE },
+      cloudflareIdentity: accessIdentity, ...config,
+    });
+    assert.equal(pair.supabase.subject, "supabase-user");
+    assert.equal(fetched, false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("rejects an invalid Supabase token rather than returning a partial identity pair", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ keys: [jwk] }), {
