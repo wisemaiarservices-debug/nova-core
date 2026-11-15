@@ -1921,6 +1921,66 @@ test("dual-auth HTTP routes create and consume a challenge bound to both verifie
 });
 
 
+test("identity-link HTTP routes reject invalid Supabase signatures before challenge or rate-limit persistence", async () => {
+  const originalFetch = globalThis.fetch;
+  let jwksFetchCount = 0;
+  globalThis.fetch = async url => {
+    jwksFetchCount += 1;
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [identityJwk] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    for (const [name, path, body] of [
+      ["create", "/internal/v1/identity-links/challenges", "{}"],
+      ["consume", "/internal/v1/identity-links/challenges/challenge-existing/consume",
+        JSON.stringify({ challenge: "test-challenge" })],
+    ]) {
+      const db = new IdentityLinkRouteDB();
+      const parts = identitySupabaseToken().split(".");
+      parts[2] = (parts[2][0] === "A" ? "B" : "A") + parts[2].slice(1);
+      const response = await worker.fetch(await request({
+        "x-nova-request-id": "identity-invalid-signature-" + name,
+        "x-nova-supabase-access-token": parts.join("."),
+      }, "https://private.internal" + path, "POST", body), env(db));
+      assert.equal(response.status, 401, name);
+      assert.equal((await response.json()).error, "supabase_identity_not_authorized", name);
+      assert.equal(db.identityChallengeRow, null, name + " must not create or consume a challenge");
+      assert.equal(db.batchCalls.length, 0, name + " must not charge rate limits or persist a challenge");
+    }
+    assert.equal(jwksFetchCount, 2, "one JWKS fetch per invalid-signature route request");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("identity-link HTTP routes fail closed on Supabase JWKS outages before challenge or rate-limit persistence", async () => {
+  const originalFetch = globalThis.fetch;
+  let jwksFetchCount = 0;
+  globalThis.fetch = async url => {
+    jwksFetchCount += 1;
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response("provider unavailable", { status: 503 });
+  };
+  try {
+    for (const [name, path, body] of [
+      ["create", "/internal/v1/identity-links/challenges", "{}"],
+      ["consume", "/internal/v1/identity-links/challenges/challenge-existing/consume",
+        JSON.stringify({ challenge: "test-challenge" })],
+    ]) {
+      const db = new IdentityLinkRouteDB();
+      const response = await worker.fetch(await request({
+        "x-nova-request-id": "identity-jwks-outage-" + name,
+        "x-nova-supabase-access-token": identitySupabaseToken(),
+      }, "https://private.internal" + path, "POST", body), env(db));
+      assert.equal(response.status, 503, name);
+      assert.equal((await response.json()).error, "supabase_identity_provider_unavailable", name);
+      assert.equal(db.identityChallengeRow, null, name + " must not create or consume a challenge");
+      assert.equal(db.batchCalls.length, 0, name + " must not charge rate limits or persist a challenge");
+    }
+    assert.equal(jwksFetchCount, 2, "one JWKS fetch per provider-outage route request");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("identity-link challenge route enforces verified-identity rate limits before challenge persistence", async () => {
   const db = new IdentityLinkRouteDB({ rateLimitDefaultCount: 5 });
   const originalFetch = globalThis.fetch;

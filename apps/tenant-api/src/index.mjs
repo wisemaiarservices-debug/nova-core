@@ -1037,7 +1037,7 @@ export default {
           });
         } catch (cause) {
           const reason = cause instanceof Error ? cause.message : "";
-          if (reason === "supabase_jwks_unavailable" || reason === "supabase_issuer_unavailable")
+          if (reason === "supabase_jwks_unavailable" || reason === "supabase_jwks_invalid" || reason === "supabase_issuer_unavailable")
             return error("supabase_identity_provider_unavailable", 503);
           if (reason === "invalid_supabase_issuer_configuration" ||
               reason === "invalid_supabase_audience_configuration")
@@ -1112,7 +1112,7 @@ export default {
               reason === "invalid_supabase_audience_configuration" ||
               reason === "rate_limit_secret_not_configured")
             return error("identity_configuration_invalid", 503);
-          if (reason === "invalid_supabase_token" || reason === "identity_link_dual_identity_invalid")
+          if (reason.startsWith("supabase_") || reason === "identity_link_dual_identity_invalid")
             return error("supabase_identity_not_authorized", 401);
           throw cause;
         }
