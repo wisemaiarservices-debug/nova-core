@@ -1996,7 +1996,7 @@ test("identity-link pending queue is restricted to an active tenant owner and ex
   assert.equal((await response.json()).data[0].id, "link-request-1");
   const pendingQuery = db.calls.find(call => call.sql.includes("FROM tenant_identity_link_requests"));
   assert.deepEqual(pendingQuery.args, ["https://example.cloudflareaccess.com",
-    "operator@example.test", "tenant-a", 50]);
+    "operator@example.test", "tenant-a", "tenant-a", 50]);
   assert.equal(db.calls.some(call => call.args?.includes("tenant-b")), false);
 });
 
