@@ -27,12 +27,12 @@ export async function reviewSensorCalibration(db,tenant,siteId,assetId,calibrati
  if(!validId(siteId)||!validId(assetId)||!validId(calibrationId)||!onlyKeys(body,["decision","evidence_ref","reason"])||
  !["verify","reject","revoke"].includes(body.decision)||!validText(body.evidence_ref,500)||
  (body.decision!=="verify"&&!validText(body.reason,2000))||(body.reason!==undefined&&!validText(body.reason,2000)))return {error:"calibration_verification_request_invalid",status:400};
+ const assignments=await db.prepare("SELECT reviewer_subject FROM sensor_calibration_reviewers WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND reviewer_role='calibration_reviewer' AND status='active' LIMIT 2").bind(tenant,siteId,reviewer).all();
+ if(!Array.isArray(assignments?.results)||assignments.results.length!==1)return {error:"calibration_reviewer_assignment_not_found",status:404};
  const record=await db.prepare("SELECT id,tenant_id,site_id,asset_id,registered_by_subject,certificate_evidence_id FROM sensor_calibrations WHERE tenant_id=? AND site_id=? AND asset_id=? AND id=? LIMIT 2").bind(tenant,siteId,assetId,calibrationId).all();
  if(!Array.isArray(record?.results)||record.results.length!==1)return {error:"sensor_calibration_not_found",status:404};
  const calibration=record.results[0];
  if(calibration.registered_by_subject===reviewer)return {error:"calibration_submitter_cannot_review",status:409};
- const assignments=await db.prepare("SELECT reviewer_subject FROM sensor_calibration_reviewers WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND reviewer_role='calibration_reviewer' AND status='active' LIMIT 2").bind(tenant,siteId,reviewer).all();
- if(!Array.isArray(assignments?.results)||assignments.results.length!==1)return {error:"calibration_reviewer_assignment_not_found",status:404};
  if(body.decision==="verify"&&!calibration.certificate_evidence_id)return {error:"calibration_certificate_evidence_required",status:409};
  if(calibration.certificate_evidence_id){
   if(body.decision==="verify"&&body.evidence_ref!==calibration.certificate_evidence_id)return {error:"calibration_review_must_reference_registered_certificate",status:409};
