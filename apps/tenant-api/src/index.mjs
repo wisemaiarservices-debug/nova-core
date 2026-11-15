@@ -779,11 +779,13 @@ async function createMembershipInvitation(db, tenant, actor, requestId, body) {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const statements = [
     db.prepare(
-      "INSERT INTO tenant_membership_invitations (id, tenant_id, role, token_sha256, created_by_subject, reason, request_id, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).bind(invitationId, tenant, body.role, tokenDigest, actor, body.reason, requestId, expiresAt),
+      "INSERT INTO tenant_membership_invitations (id, tenant_id, role, token_sha256, created_by_subject, reason, request_id, expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')"
+    ).bind(invitationId, tenant, body.role, tokenDigest, actor, body.reason, requestId, expiresAt,
+      tenant, tenant, actor),
     db.prepare(
-      "INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'created', ?, NULL, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND status = 'pending')"
-    ).bind(eventId, tenant, invitationId, actor, body.reason, requestId, invitationId, tenant),
+      "INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'created', ?, NULL, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_membership_invitations WHERE id = ? AND tenant_id = ? AND status = 'pending') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active') AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active')"
+    ).bind(eventId, tenant, invitationId, actor, body.reason, requestId, invitationId, tenant,
+        tenant, actor, tenant),
   ];
   const results = await db.batch(statements);
   if (!Array.isArray(results) || results.length !== 2 ||
@@ -859,10 +861,10 @@ async function revokeMembershipInvitation(db, tenant, invitationId, actor, reque
   const eventId = crypto.randomUUID();
   const now = new Date().toISOString();
   const results = await db.batch([
-    db.prepare("UPDATE tenant_membership_invitations SET status = 'revoked', revoked_at = ? WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ?")
-      .bind(now, invitationId, tenant, now),
-    db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'revoked', ?, NULL, ?, ? WHERE changes() = 1")
-      .bind(eventId, tenant, invitationId, actor, body.reason, requestId),
+    db.prepare("UPDATE tenant_membership_invitations SET status = 'revoked', revoked_at = ? WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ? AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(now, invitationId, tenant, now, tenant, tenant, actor),
+    db.prepare("INSERT INTO tenant_membership_invitation_events (id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id) SELECT ?, ?, ?, 'revoked', ?, NULL, ?, ? WHERE changes() = 1 AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(eventId, tenant, invitationId, actor, body.reason, requestId, tenant, tenant, actor),
   ]);
   if (!Array.isArray(results) || results.length !== 2 ||
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
