@@ -167,7 +167,8 @@ test("real SQLite migrations enforce owner approval and revocation after request
     WHERE link_request_id = ? ORDER BY created_at, id
   `).all("link-review");
   assert.deepEqual(events.map(event => event.event_type).sort(), ["approved", "requested", "revoked"]);
-  assert.ok(events.slice(1).every(event => event.actor_cloudflare_subject === owner.subject));
+  assert.ok(events.filter(event => event.event_type !== "requested")
+    .every(event => event.actor_cloudflare_subject === owner.subject));
 });
 
 test("real SQLite triggers reject cross-tenant owner decisions and preserve append-only audit", async t => {
