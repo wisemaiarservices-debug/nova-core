@@ -285,7 +285,7 @@ test("real SQLite migrations allow only one of two concurrent conflicting owner 
 
 test("real SQLite active mapping indexes block ambiguous approved identities and roll back owner event", async t => {
   const { db, sqlite } = fixture(t);
-  const otherRequester = { issuer: requester.issuer, subject: "other-requester-sqlite" };
+  const otherRequester = { issuer: requester.issuer, subject: "other-requester-sqlite", audience: "nova-core" };
   sqlite.prepare("INSERT INTO tenant_memberships (tenant_id, subject, role, status) VALUES (?, ?, 'operator', 'active')")
     .run(tenantId, otherRequester.subject);
 
@@ -293,7 +293,7 @@ test("real SQLite active mapping indexes block ambiguous approved identities and
     "approve", "Approve first mapping", "approve-first-mapping", now);
   assert.equal(first.status, 200);
 
-  const supabaseIdentity = { issuer: supabaseIssuer, subject: "supabase-user" };
+  const supabaseIdentity = { issuer: supabaseIssuer, subject: "supabase-user", audience: "authenticated" };
   const secondChallenge = await createIdentityLinkChallenge(db, supabaseIdentity,
     otherRequester, "create-second-mapping", now);
   assert.equal(secondChallenge.status, 201);
@@ -314,7 +314,8 @@ test("real SQLite active mapping indexes block ambiguous approved identities and
 
 test("real SQLite permits a new independently reviewed link after owner revocation", async t => {
   const { db, sqlite } = fixture(t);
-  const supabaseIdentity = { issuer: supabaseIssuer, subject: "supabase-user" };
+  const supabaseIdentity = { issuer: supabaseIssuer, subject: "supabase-user", audience: "authenticated" };
+  const cloudflareIdentity = { ...requester, audience: "nova-core" };
 
   const approved = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
     "approve", "Approve original mapping", "approve-original-mapping", now);
@@ -325,10 +326,10 @@ test("real SQLite permits a new independently reviewed link after owner revocati
   assert.equal(revoked.status, 200);
 
   const nextChallenge = await createIdentityLinkChallenge(db, supabaseIdentity,
-    requester, "create-relink-challenge", new Date("2026-11-15T12:00:02.000Z"));
+    cloudflareIdentity, "create-relink-challenge", new Date("2026-11-15T12:00:02.000Z"));
   assert.equal(nextChallenge.status, 201);
   const nextRequest = await consumeIdentityLinkChallenge(db, nextChallenge.data.challenge_id,
-    nextChallenge.data.challenge, supabaseIdentity, requester, "consume-relink-challenge",
+    nextChallenge.data.challenge, supabaseIdentity, cloudflareIdentity, "consume-relink-challenge",
     new Date("2026-11-15T12:00:03.000Z"));
   assert.equal(nextRequest.status, 201);
   const reapproved = await decideIdentityLinkRequest(db, tenantId,
