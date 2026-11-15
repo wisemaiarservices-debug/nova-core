@@ -1211,6 +1211,59 @@ test("only an active tenant owner can create or revoke membership invitations", 
   assert.equal(db.batchCalls.length, 0);
 });
 
+test("expired invitation returns 410 only after its state and audit event are written", async () => {
+  const db = new MembershipInvitationDB({
+    invitationRows: [{ id: "invite-expired", tenant_id: "tenant-a", role: "analyst",
+      status: "pending", reason: "Research access",
+      token_sha256: "0f007385b6f9d4b7eeb2748605afe1a984a0a3bfa3f014d09e2a784ce9e5cd1a",
+      expires_at: "2020-01-01T00:00:00.000Z" }],
+    batchResult: [{ meta: { changes: 1 } }, { meta: { changes: 1 } }],
+  });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-expired/accept",
+    "POST", JSON.stringify({ invitation_token: "A".repeat(43) })), env(db));
+  assert.equal(response.status, 410);
+  assert.equal((await response.json()).error, "membership_invitation_expired");
+  assert.equal(db.batchCalls.length, 1);
+  assert.equal(db.batchCalls[0].length, 2);
+  assert.match(db.batchCalls[0][0].sql, /status = 'expired'/);
+  assert.match(db.batchCalls[0][0].sql, /expires_at <= \?/);
+  assert.match(db.batchCalls[0][1].sql, /'expired'/);
+  assert.match(db.batchCalls[0][1].sql, /WHERE changes\(\) = 1/);
+  assert.equal(db.batchCalls[0][1].args[3], "operator@example.test");
+});
+
+test("invitation expiry does not report 410 when the conditional expiry update loses a race", async () => {
+  const db = new MembershipInvitationDB({
+    invitationRows: [{ id: "invite-expired", tenant_id: "tenant-a", role: "analyst",
+      status: "pending", reason: "Research access",
+      token_sha256: "0f007385b6f9d4b7eeb2748605afe1a984a0a3bfa3f014d09e2a784ce9e5cd1a",
+      expires_at: "2020-01-01T00:00:00.000Z" }],
+    batchResult: [{ meta: { changes: 0 } }, { meta: { changes: 0 } }],
+  });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-expired/accept",
+    "POST", JSON.stringify({ invitation_token: "A".repeat(43) })), env(db));
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "membership_invitation_expiry_conflict");
+  assert.equal(db.batchCalls.length, 1);
+});
+
+test("invitation expiry treats a missing audit event after a state change as an invariant failure", async () => {
+  const db = new MembershipInvitationDB({
+    invitationRows: [{ id: "invite-expired", tenant_id: "tenant-a", role: "analyst",
+      status: "pending", reason: "Research access",
+      token_sha256: "0f007385b6f9d4b7eeb2748605afe1a984a0a3bfa3f014d09e2a784ce9e5cd1a",
+      expires_at: "2020-01-01T00:00:00.000Z" }],
+    batchResult: [{ meta: { changes: 1 } }, { meta: { changes: 0 } }],
+  });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-expired/accept",
+    "POST", JSON.stringify({ invitation_token: "A".repeat(43) })), env(db));
+  assert.equal(response.status, 500);
+  assert.equal(db.batchCalls.length, 1);
+});
+
 test("authenticated Access subject accepts a one-time invitation into a tenant membership", async () => {
   const db = new MembershipInvitationDB({
     invitationRows: [{ id: "invite-1", tenant_id: "tenant-a", role: "analyst",
