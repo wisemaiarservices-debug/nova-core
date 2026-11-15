@@ -2181,6 +2181,47 @@ test("identity-link HTTP routes reject successful JWKS responses with no body", 
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("identity-link HTTP routes cancel chunked JWKS bodies that exceed the byte limit", async () => {
+  const originalFetch = globalThis.fetch;
+  let jwksFetchCount = 0;
+  let cancelCount = 0;
+  globalThis.fetch = async (url, init) => {
+    jwksFetchCount += 1;
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    assert.equal(init?.redirect, "error");
+    return {
+      ok: true,
+      headers: new Headers({ "content-type": "application/json" }),
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(65_536));
+          controller.enqueue(new Uint8Array(1));
+        },
+        cancel() { cancelCount += 1; },
+      }),
+    };
+  };
+  try {
+    for (const [name, path, body] of [
+      ["create", "/internal/v1/identity-links/challenges", "{}"],
+      ["consume", "/internal/v1/identity-links/challenges/challenge-existing/consume",
+        JSON.stringify({ challenge: "test-challenge" })],
+    ]) {
+      const db = new IdentityLinkRouteDB();
+      const response = await worker.fetch(await request({
+        "x-nova-request-id": "identity-jwks-chunked-overflow-" + name,
+        "x-nova-supabase-access-token": identitySupabaseToken(),
+      }, "https://private.internal" + path, "POST", body), env(db));
+      assert.equal(response.status, 503, name);
+      assert.equal((await response.json()).error, "supabase_identity_provider_unavailable", name);
+      assert.equal(db.identityChallengeRow, null, name + " must not create or consume a challenge");
+      assert.equal(db.batchCalls.length, 0, name + " must not charge rate limits or persist a challenge");
+    }
+    assert.equal(jwksFetchCount, 2, "one JWKS fetch per invalid-provider response");
+    assert.equal(cancelCount, 2, "oversized streaming bodies must be cancelled");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("identity-link HTTP routes reject redirected Supabase JWKS responses without writes", async () => {
   const originalFetch = globalThis.fetch;
   let jwksFetchCount = 0;
