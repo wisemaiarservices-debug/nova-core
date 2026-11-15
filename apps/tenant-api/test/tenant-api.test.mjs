@@ -68,7 +68,9 @@ class DB {
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
         if (sql.includes("FROM water_quality_criteria_entries e")) {
           const entry = (db.criteriaRows ?? []).find(row =>
-            row.tenant_id === args[0] && row.id === args[1] && row.version === args[2]);
+            (row.tenant_id ?? args[0]) === args[0] &&
+            (row.id ?? args[1]) === args[1] &&
+            (row.version ?? args[2]) === args[2]);
           const assigned = (db.reviewerRows ?? []).some(row =>
             row.reviewer_subject === args[4] && row.reviewer_role === args[5] &&
             row.jurisdiction === entry?.jurisdiction && row.status === "active");
