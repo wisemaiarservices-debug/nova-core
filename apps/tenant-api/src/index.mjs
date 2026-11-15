@@ -1318,9 +1318,10 @@ export default {
         if (qualityAssessment) {
           if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read") ||
               !onlyKeys(draftBody, [])) return error("not_found", 404);
-          const observed = await rows(env.DB.prepare("SELECT site_id FROM observations WHERE tenant_id=? AND id=? LIMIT 2")
-            .bind(tenant, qualityAssessment[2]));
-          if (observed.length !== 1 || !await hasSiteReadGrant(env.DB, tenant, subject, observed[0].site_id)) return error("not_found", 404);
+          const authorizedObservation = await rows(env.DB.prepare(
+            "SELECT o.id, o.site_id FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS (SELECT 1 FROM tenant_resource_grants g WHERE g.tenant_id=o.tenant_id AND g.subject=? AND g.resource_type='site' AND g.resource_id=o.site_id AND g.action='read') LIMIT 1"
+          ).bind(tenant, qualityAssessment[2], subject));
+          if (authorizedObservation.length !== 1 || authorizedObservation[0].id !== qualityAssessment[2]) return error("not_found", 404);
           const assessed = await assessMeasurementQuality(env.DB, tenant, qualityAssessment[2], requestId);
           return assessed.error ? json({ error: assessed.error }, assessed.status)
             : json({ data: assessed.data, request_id: requestId }, assessed.status);
