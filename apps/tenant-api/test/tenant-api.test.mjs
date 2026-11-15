@@ -66,7 +66,7 @@ class DB {
         if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };
         if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
-        if (sql.includes("FROM water_quality_criteria_entries e")) {
+        if (sql.includes("SELECT e.jurisdiction FROM water_quality_criteria_entries e")) {
           const entry = (db.criteriaRows ?? []).find(row =>
             (row.tenant_id ?? args[0]) === args[0] &&
             (row.id ?? args[1]) === args[1] &&
