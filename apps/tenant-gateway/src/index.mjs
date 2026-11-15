@@ -96,7 +96,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
     const identityLinkChallengeCreate = url.pathname === "/api/v1/identity-links/challenges";
     const identityLinkChallengeConsume = url.pathname.match(/^\/api\/v1\/identity-links\/challenges\/([^/]+)\/consume$/);
     const identityLinkPending = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/identity-links\/pending$/);
-    const identityLinkApproved = url.pathname.match(/^\\/api\\/v1\\/tenants\\/([^/]+)\\/identity-links\\/approved$/);
+    const identityLinkApproved = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/identity-links\/approved$/);
     const identityLinkDecision = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/identity-links\/([^/]+)\/decision$/);
       const siteList = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites$/);
       const siteObservationList = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/observations$/);
