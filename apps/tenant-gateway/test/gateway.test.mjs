@@ -807,3 +807,25 @@ test("routes bounded site observation reads through the signed Access gateway", 
   assert.equal(captured.headers.get("x-nova-supabase-access-token"), "test.supabase.token");
   assert.equal(captured.headers.get("x-nova-internal-signature")?.length, 64);
 });
+
+
+test("routes tenant site discovery through the signed dual-identity gateway", async () => {
+  let captured;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "site-list-reader", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites",
+    { headers: { "Cf-Access-Jwt-Assertion": "test-access-token", Authorization: "Bearer test.supabase.token" } }),
+    env({ TENANT_API: { fetch: async request => {
+      captured = request;
+      return new Response(JSON.stringify({ data: [{ id: "site-a", name: "North Farm" }], limit: 100 }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } } }));
+  assert.equal(response.status, 200);
+  assert.equal(new URL(captured.url).pathname, "/internal/v1/tenants/tenant-a/sites");
+  assert.equal(captured.headers.get("x-nova-verified-subject"), "site-list-reader");
+  assert.equal(captured.headers.get("x-nova-supabase-access-token"), "test.supabase.token");
+  assert.equal(captured.headers.get("x-nova-internal-signature")?.length, 64);
+});
