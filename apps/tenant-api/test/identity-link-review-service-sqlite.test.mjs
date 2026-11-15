@@ -342,3 +342,66 @@ test("real SQLite permits a new independently reviewed link after owner revocati
   ).all(supabaseIssuer, "supabase-user", requester.issuer, requester.subject).map(row => row.status),
   ["revoked", "approved"]);
 });
+
+
+test("real SQLite active mapping indexes also block a second Supabase identity for one Cloudflare identity", async t => {
+  const { db, sqlite } = fixture(t);
+  const first = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Approve original mapping", "approve-original-cloudflare-mapping", now);
+  assert.equal(first.status, 200);
+
+  const otherSupabase = { issuer: supabaseIssuer, subject: "other-supabase-identity", audience: "authenticated" };
+  const cloudflareIdentity = { ...requester, audience: "nova-core" };
+  const challenge = await createIdentityLinkChallenge(db, otherSupabase, cloudflareIdentity,
+    "create-second-supabase-mapping", new Date("2026-11-15T12:00:01.000Z"));
+  assert.equal(challenge.status, 201);
+  const request = await consumeIdentityLinkChallenge(db, challenge.data.challenge_id,
+    challenge.data.challenge, otherSupabase, cloudflareIdentity,
+    "consume-second-supabase-mapping", new Date("2026-11-15T12:00:02.000Z"));
+  assert.equal(request.status, 201);
+
+  await assert.rejects(() => decideIdentityLinkRequest(db, tenantId,
+    request.data.link_request_id, owner, "approve", "Attempt second Supabase mapping",
+    "approve-second-supabase-mapping", new Date("2026-11-15T12:00:03.000Z")),
+  /UNIQUE constraint failed/);
+  assert.equal(sqlite.prepare("SELECT status FROM tenant_identity_link_requests WHERE id = ?")
+    .get(request.data.link_request_id).status, "pending");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?")
+    .get("approve-second-supabase-mapping").count, 0);
+});
+
+test("real SQLite allows the same identity pair to be independently approved in separate tenants", async t => {
+  const { db, sqlite } = fixture(t);
+  const supabaseIdentity = { issuer: supabaseIssuer, subject: "supabase-user", audience: "authenticated" };
+  const cloudflareIdentity = { ...requester, audience: "nova-core" };
+  const first = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Approve in first tenant", "approve-pair-first-tenant", now);
+  assert.equal(first.status, 200);
+
+  sqlite.prepare("INSERT INTO tenants (id, status) VALUES (?, 'active')").run("tenant-independent");
+  const addMember = sqlite.prepare(`
+    INSERT INTO tenant_memberships (tenant_id, subject, role, status)
+    VALUES (?, ?, ?, 'active')
+  `);
+  addMember.run("tenant-independent", owner.subject, "tenant_owner");
+  addMember.run("tenant-independent", requester.subject, "operator");
+
+  const challenge = await createIdentityLinkChallenge(db, supabaseIdentity, cloudflareIdentity,
+    "create-pair-second-tenant", new Date("2026-11-15T12:00:01.000Z"));
+  assert.equal(challenge.status, 201);
+  const request = await consumeIdentityLinkChallenge(db, challenge.data.challenge_id,
+    challenge.data.challenge, supabaseIdentity, cloudflareIdentity,
+    "consume-pair-second-tenant", new Date("2026-11-15T12:00:02.000Z"));
+  assert.equal(request.status, 201);
+  const second = await decideIdentityLinkRequest(db, "tenant-independent",
+    request.data.link_request_id, owner, "approve", "Approve independently in second tenant",
+    "approve-pair-second-tenant", new Date("2026-11-15T12:00:03.000Z"));
+  assert.equal(second.status, 200);
+  assert.deepEqual(sqlite.prepare(`
+    SELECT tenant_id, status FROM tenant_identity_link_requests
+    WHERE supabase_issuer = ? AND supabase_subject = ?
+      AND cloudflare_issuer = ? AND cloudflare_subject = ?
+    ORDER BY tenant_id
+  `).all(supabaseIssuer, "supabase-user", requester.issuer, requester.subject),
+  [{ tenant_id: "tenant-independent", status: "approved" }, { tenant_id: tenantId, status: "approved" }]);
+});
