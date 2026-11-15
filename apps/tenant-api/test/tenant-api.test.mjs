@@ -46,6 +46,9 @@ class DB {
             row.reviewer_subject === subject && row.jurisdiction === entry.jurisdiction && row.status === "active");
           return { results: memberHasGrant || reviewer ? [{ id: entry.id }] : [] };
         }
+        if (sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS")) {
+          return { results: db.observationSiteAuthorizationRows ?? [] };
+        }
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
@@ -1834,6 +1837,23 @@ test("identity-link challenge endpoints require a dual-authenticated request", a
   }
 });
 
+
+test("measurement quality assessment checks exact site grant before resolving observation details", async () => {
+  const db = new DB({ membership: true, grant: false });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/measurement-quality-assessment",
+    "POST", "{}"), env(db));
+  assert.equal(response.status, 404);
+  const authorizationLookup = db.calls.find(call =>
+    call.sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS"));
+  assert.ok(authorizationLookup, "observation lookup must include the exact site-grant predicate");
+  assert.deepEqual(authorizationLookup.args, ["tenant-a", "observation-a", "operator@example.test"]);
+  assert.match(authorizationLookup.sql, /g\.resource_id=o\.site_id/);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM measurement_quality_policies")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM sensor_calibrations")), false);
+  assert.equal(db.calls.some(call => call.sql.includes("INSERT INTO measurement_quality_assessments")), false);
+  assert.equal(db.batchCalls.length, 0);
+});
 
 test("rejects a body changed after the gateway signed its digest before storage access", async () => {
   const db = new DB();
