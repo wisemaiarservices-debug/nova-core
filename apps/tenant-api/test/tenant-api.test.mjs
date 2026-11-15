@@ -1542,6 +1542,10 @@ test("tenant owner suspends a tenant with an atomic immutable lifecycle event", 
   assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_lifecycle_events/);
   assert.match(db.batchCalls[0][1].sql, /UPDATE tenants SET status = \?/);
   assert.match(db.batchCalls[0][1].sql, /last_lifecycle_event_id = \?/);
+  assert.match(db.batchCalls[0][1].sql, /tenant_lifecycle_events WHERE id = \?/);
+  assert.match(db.batchCalls[0][1].sql, /tenant_memberships WHERE tenant_id = \?/);
+  assert.deepEqual(db.batchCalls[0][1].args.slice(-3), ["tenant-a", "operator@example.test", "tenant-a"].slice(-3));
+
   assert.equal(db.batchCalls[0][0].args[7], "tenant-suspend-001");
 });
 
