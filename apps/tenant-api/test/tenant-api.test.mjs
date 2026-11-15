@@ -1847,11 +1847,27 @@ test("observation verification checks exact site grant before resolving observat
   const authorizationLookup = db.calls.find(call =>
     call.sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS"));
   assert.ok(authorizationLookup, "observation lookup must include the exact site-grant predicate");
-  assert.deepEqual(authorizationLookup.args, ["tenant-a", "observation-a", "operator@example.test"]);
+  assert.deepEqual(authorizationLookup.args, ["tenant-a", "observation-a", "operator@example.test", "operator@example.test"]);
   assert.match(authorizationLookup.sql, /g\.resource_id=o\.site_id/);
+  assert.match(authorizationLookup.sql, /FROM observation_reviewers r/);
+  assert.match(authorizationLookup.sql, /r\.reviewer_subject=\?/);
   assert.equal(db.calls.some(call => call.sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")), false);
   assert.equal(db.calls.some(call => call.sql.includes("FROM sensor_calibrations")), false);
   assert.equal(db.calls.some(call => call.sql.includes("INSERT INTO observation_verification_events")), false);
+  assert.equal(db.batchCalls.length, 0);
+});
+
+test("observation verification denies an unassigned reviewer in the first resource lookup", async () => {
+  const db = new DB({ membership: true, grant: true });
+  const response = await worker.fetch(await request({}, 
+    "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/verification",
+    "POST", JSON.stringify({ decision: "verify", evidence_ref: "inspection:1" })), env(db));
+  assert.equal(response.status, 404);
+  const lookup = db.calls.find(call => call.sql.includes("FROM observations o WHERE o.tenant_id=? AND o.id=? AND EXISTS"));
+  assert.ok(lookup);
+  assert.match(lookup.sql, /FROM observation_reviewers r/);
+  assert.deepEqual(lookup.args, ["tenant-a", "observation-a", "operator@example.test", "operator@example.test"]);
+  assert.equal(db.calls.length, 2, "only membership and combined authorization lookups should run");
   assert.equal(db.batchCalls.length, 0);
 });
 
