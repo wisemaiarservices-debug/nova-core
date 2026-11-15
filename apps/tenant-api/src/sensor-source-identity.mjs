@@ -35,7 +35,7 @@ export async function reviewSensorSourceMapping(db,tenant,siteId,assetId,mapping
  const result=await db.prepare("INSERT INTO sensor_source_mapping_events(id,tenant_id,site_id,asset_id,source_id,mapping_id,reviewer_subject,event_type,evidence_ref,reason,request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
  .bind(crypto.randomUUID(),tenant,siteId,assetId,found.results[0].source_id,mappingId,reviewer,type,body.evidence_ref,body.reason??null,requestId).run();
  if(result?.meta?.changes!==1) return {error:"sensor_source_mapping_state_conflict",status:409};
- return {data:{mapping_id:mappingId,status:type,reviewer_subject:reviewer},status:201};
+ return {data:{mapping_id:mappingId,tenant_id:tenant,site_id:siteId,asset_id:assetId,status:type,reviewer_subject:reviewer},status:201};
 }
 export async function resolveVerifiedSensorSourceMapping(db,tenant,observation){
  const result=await db.prepare("SELECT m.id,m.sensor_id,m.parameter,m.unit,m.effective_from,m.effective_to,e.event_type FROM sensor_source_identity_mappings m JOIN sensor_source_mapping_events e ON e.mapping_id=m.id AND e.tenant_id=m.tenant_id WHERE m.tenant_id=? AND m.site_id=? AND m.asset_id=? AND m.source_id=? AND m.parameter=? AND m.unit=? AND m.effective_from<=? AND (m.effective_to IS NULL OR m.effective_to>?) AND e.id=(SELECT e2.id FROM sensor_source_mapping_events e2 WHERE e2.tenant_id=m.tenant_id AND e2.mapping_id=m.id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1) AND e.event_type='verified' ORDER BY m.effective_from DESC LIMIT 2")
@@ -60,5 +60,5 @@ export async function assignSensorSourceMappingReviewer(db,tenant,siteId,actor,b
  :db.prepare("UPDATE sensor_source_mapping_reviewers SET status='revoked' WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND status='active'").bind(tenant,siteId,body.reviewer_subject);
  const result=await first.run();
  if(result?.meta?.changes!==1)return {error:"sensor_source_mapping_reviewer_state_conflict",status:409};
- return {data:{site_id:siteId,reviewer_subject:body.reviewer_subject,status:action==="assign"?"active":"revoked"},status:action==="assign"?201:200};
+ return {data:{tenant_id:tenant,site_id:siteId,reviewer_subject:body.reviewer_subject,status:action==="assign"?"active":"revoked"},status:action==="assign"?201:200};
 }
