@@ -623,15 +623,15 @@ async function changeTenantLifecycle(db, tenant, actor, requestId, body) {
     db.prepare("INSERT INTO tenant_lifecycle_events (id, tenant_id, actor_subject, event_type, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = ?) AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
       .bind(eventId, tenant, actor, transition.event, current, transition.to, body.reason,
         requestId, tenant, current, tenant, actor),
-    db.prepare("UPDATE tenants SET status = ?, last_lifecycle_event_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = ?")
-      .bind(transition.to, eventId, tenant, current),
+    db.prepare("UPDATE tenants SET status = ?, last_lifecycle_event_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = ? AND EXISTS (SELECT 1 FROM tenant_lifecycle_events WHERE id = ? AND tenant_id = ? AND actor_subject = ? AND event_type = ?) AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')")
+      .bind(transition.to, eventId, tenant, current, eventId, tenant, actor, transition.event, tenant, actor),
   ]);
   if (!Array.isArray(result) || result.length !== 2 ||
       result.some(item => !item?.meta || !Number.isInteger(item.meta.changes))) {
     throw new Error("tenant_lifecycle_batch_invalid");
   }
-  if (result[0].meta.changes !== 1) {
-    return { error: "tenant_lifecycle_event_conflict", status: 409 };
+  if (result[0].meta.changes !== 1 || result[1].meta.changes !== 1) {
+    return { error: "tenant_lifecycle_transition_conflict", status: 409 };
   }
   const persisted = await rows(db.prepare(
     "SELECT status, last_lifecycle_event_id FROM tenants WHERE id = ? LIMIT 2"
