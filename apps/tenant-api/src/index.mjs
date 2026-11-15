@@ -1106,7 +1106,7 @@ export default {
                 draftBody.challenge, pair.supabase, pair.cloudflare, requestId, input.now);
         } catch (cause) {
           const reason = cause instanceof Error ? cause.message : "";
-          if (reason === "supabase_jwks_unavailable" || reason === "supabase_issuer_unavailable")
+          if (reason === "supabase_jwks_unavailable" || reason === "supabase_jwks_invalid" || reason === "supabase_issuer_unavailable")
             return error("supabase_identity_provider_unavailable", 503);
           if (reason === "invalid_supabase_issuer_configuration" ||
               reason === "invalid_supabase_audience_configuration" ||
