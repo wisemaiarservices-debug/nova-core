@@ -126,7 +126,7 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
 
 
 /** Lists approved identity associations for an active tenant owner so they can be reviewed or revoked. */
-export async function listApprovedIdentityLinkRequests(db, tenantId, actor, limit = 100) {
+export async function listApprovedIdentityLinkRequests(db, tenantId, actor, limit = 20) {
   if (!validId(tenantId) || !validActor(actor) ||
       !Number.isInteger(limit) || limit < 1 || limit > 100) {
     return { error: "identity_link_review_input_invalid", status: 400 };
