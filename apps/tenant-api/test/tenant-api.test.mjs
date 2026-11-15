@@ -1939,3 +1939,42 @@ test("identity-link challenge route enforces verified-identity rate limits befor
     assert.equal(db.batchCalls.length, 1, "only rate-limit storage is touched");
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("identity-link challenge fails closed before storage when Supabase issuer or audience configuration is missing", async () => {
+  const originalFetch = globalThis.fetch;
+  let jwksFetches = 0;
+  globalThis.fetch = async () => {
+    jwksFetches += 1;
+    throw new Error("JWKS must not be fetched without explicit issuer and audience configuration");
+  };
+  try {
+    for (const key of ["SUPABASE_AUTH_ISSUER", "SUPABASE_AUTH_AUDIENCE"]) {
+      const db = new IdentityLinkRouteDB();
+      const configuration = env(db);
+      delete configuration[key];
+      const response = await worker.fetch(await request({
+        "x-nova-request-id": "identity-config-missing-" + key.toLowerCase(),
+        "x-nova-supabase-access-token": identitySupabaseToken(),
+      }, "https://private.internal/internal/v1/identity-links/challenges", "POST", "{}"), configuration);
+      assert.equal(response.status, 503, key + " must fail closed");
+      assert.equal((await response.json()).error, "supabase_identity_not_configured");
+      assert.equal(db.calls.length, 0, "missing identity configuration must not access tenant storage");
+      assert.equal(db.batchCalls.length, 0, "missing identity configuration must not charge rate limits");
+    }
+    assert.equal(jwksFetches, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("identity-link challenge rejects a gateway identity with the wrong Access audience before storage", async () => {
+  const db = new IdentityLinkRouteDB();
+  const response = await worker.fetch(await request({
+    "x-nova-request-id": "identity-access-audience-mismatch",
+    "x-nova-verified-audience": "unconfigured-or-wrong-audience",
+    "x-nova-supabase-access-token": identitySupabaseToken(),
+  }, "https://private.internal/internal/v1/identity-links/challenges", "POST", "{}"), env(db));
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "request_not_authorized");
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.batchCalls.length, 0);
+});
