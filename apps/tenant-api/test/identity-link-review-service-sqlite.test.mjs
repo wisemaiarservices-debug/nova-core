@@ -21,11 +21,14 @@ const supabaseIssuer = "https://project.supabase.co/auth/v1";
 const now = new Date("2026-11-15T12:00:00.000Z");
 
 function d1Adapter(sqlite) {
+  const queries = [];
   // D1 serializes atomic batches. Queue transactions on this shared SQLite
   // connection while allowing service-level reads to race before each batch.
   let batchTail = Promise.resolve();
   return {
+    queries,
     prepare(sql) {
+      queries.push(sql);
       return {
         bind(...args) {
           return {
@@ -451,4 +454,40 @@ test("identity-link approval and revocation never provision tenant memberships o
   assert.equal(revoked.status, 200);
   assert.deepEqual(membershipSnapshot(), membershipsBefore);
   assert.deepEqual(grantSnapshot(), grantsBefore);
+});
+
+
+test("identity-link decisions authorize active tenant owner before reading request or idempotency ledger", async t => {
+  const { db, sqlite, queries } = fixture(t);
+  const denied = await decideIdentityLinkRequest(db, tenantId, "link-review", requester,
+    "approve", "Unauthorized requester attempt", "unauthorized-before-read", now);
+  assert.equal(denied.status, 404);
+  assert.equal(queries.length, 1);
+  assert.match(queries[0], /tenant_memberships/);
+  assert.match(queries[0], /tenants/);
+  assert.match(queries[0], /role = 'tenant_owner'/);
+  assert.equal(sqlite.prepare(
+    "SELECT status FROM tenant_identity_link_requests WHERE id = ?"
+  ).get("link-review").status, "pending");
+});
+
+test("an idempotent owner decision replay is denied after owner membership is deactivated", async t => {
+  const { db, sqlite, queries } = fixture(t);
+  const first = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Approved while owner was active", "owner-replay-after-deactivation", now);
+  assert.equal(first.status, 200);
+  sqlite.prepare("UPDATE tenant_memberships SET status = 'suspended' WHERE tenant_id = ? AND subject = ?")
+    .run(tenantId, owner.subject);
+  queries.length = 0;
+
+  const replay = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Approved while owner was active", "owner-replay-after-deactivation",
+    new Date("2026-11-15T12:01:00.000Z"));
+  assert.equal(replay.status, 404);
+  assert.equal(queries.length, 1);
+  assert.match(queries[0], /tenant_memberships/);
+  assert.match(queries[0], /tenants/);
+  assert.equal(sqlite.prepare(
+    "SELECT status FROM tenant_identity_link_requests WHERE id = ?"
+  ).get("link-review").status, "approved");
 });
