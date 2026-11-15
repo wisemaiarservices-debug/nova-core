@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { registerMeasurementQualityPolicy, reviewMeasurementQualityPolicy, assessMeasurementQuality } from "../src/measurement-quality.mjs";
 globalThis.crypto ??= webcrypto;
-function dbFixture({observation={id:"obs-1",site_id:"site-1",source_id:"source-1",metric:"temperature",value:22,unit:"degC",observed_at:"2026-06-01T10:00:00Z",verification_status:"verified",provenance_json:"{}"},mapping=[{id:"map-1",asset_id:"asset-1",sensor_id:"sensor-1",parameter:"temperature",unit:"degC"}],calibration=[{id:"cal-1",calibrated_at:"2026-01-01T00:00:00Z",valid_until:"2026-12-01T00:00:00Z",uncertainty:null}],policy=[{id:"policy-1",minimum_value:0,maximum_value:40,version:"v1"}]}={}){
+function dbFixture({priorAssessment=[],observation={id:"obs-1",site_id:"site-1",source_id:"source-1",metric:"temperature",value:22,unit:"degC",observed_at:"2026-06-01T10:00:00Z",verification_status:"verified",provenance_json:"{}"},mapping=[{id:"map-1",asset_id:"asset-1",sensor_id:"sensor-1",parameter:"temperature",unit:"degC"}],calibration=[{id:"cal-1",calibrated_at:"2026-01-01T00:00:00Z",valid_until:"2026-12-01T00:00:00Z",uncertainty:null}],policy=[{id:"policy-1",minimum_value:0,maximum_value:40,version:"v1"}]}={}){
  const calls=[];
  return {calls,prepare(sql){return {sql,values:[],bind(...v){this.values=v;return this;},async all(){
   if(sql.includes("FROM assets"))return {results:[{id:"asset-1"}]};
-  if(sql.includes("FROM measurement_quality_assessments WHERE"))return {results:[]};
+  if(sql.includes("FROM measurement_quality_assessments WHERE"))return {results:priorAssessment};
   if(sql.includes("FROM observations WHERE"))return {results:observation?[observation]:[]};
   if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:mapping};
   if(sql.includes("FROM sensor_calibrations c JOIN"))return {results:calibration};
@@ -58,4 +58,12 @@ test("synthetic provenance is not promoted to field measurement quality",async()
  const db=dbFixture({observation:{id:"obs-1",site_id:"site-1",source_id:"source-1",metric:"temperature",value:22,unit:"degC",observed_at:"2026-06-01T10:00:00Z",verification_status:"verified",provenance_json:'{"provenance_class":"synthetic"}'}});
  const r=await assessMeasurementQuality(db,"tenant-1","obs-1","req-1");
  assert.equal(r.data.status,"not_assessed");assert.equal(r.data.reason_code,"non_field_evidence");
+});
+
+test("idempotency key cannot be reused for a different observation",async()=>{
+ const prior={id:"assessment-1",tenant_id:"tenant-1",observation_id:"obs-other",status:"passed",reason_code:"within_approved_policy_bounds"};
+ const db=dbFixture({priorAssessment:[prior]});
+ const r=await assessMeasurementQuality(db,"tenant-1","obs-1","req-1");
+ assert.deepEqual(r,{error:"measurement_quality_idempotency_conflict",status:409});
+ assert.equal(db.calls.length,0);
 });
