@@ -58,7 +58,10 @@ export async function assessMeasurementQuality(db,tenant,observationId,requestId
  if(!validId(observationId)||!validText(requestId,80))return {error:"measurement_quality_assessment_request_invalid",status:400};
  const prior=await db.prepare("SELECT id,tenant_id,observation_id,status,reason_code,mapping_id,calibration_id,policy_id,method_version FROM measurement_quality_assessments WHERE tenant_id=? AND request_id=? LIMIT 1").bind(tenant,requestId).all();
  if(!Array.isArray(prior?.results))throw new Error("measurement_quality_idempotency_lookup_invalid");
- if(prior.results.length===1)return {data:prior.results[0],status:200};
+ if(prior.results.length===1){
+  if(prior.results[0].observation_id!==observationId)return {error:"measurement_quality_idempotency_conflict",status:409};
+  return {data:prior.results[0],status:200};
+ }
  const observation=await exactlyOne(db,"SELECT id,tenant_id,site_id,source_id,metric,value,unit,observed_at,verification_status,provenance_json FROM observations WHERE tenant_id=? AND id=? LIMIT 2",[tenant,observationId]);
  if(!observation)return {error:"observation_not_found",status:404};
  if(observation.verification_status!=="verified")return assessmentResult(db,tenant,observation,requestId,"not_assessed","observation_not_verified");
