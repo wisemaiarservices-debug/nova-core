@@ -971,6 +971,7 @@ export default {
     const identityLinkChallengeConsume = url.pathname.match(/^\/internal\/v1\/identity-links\/challenges\/([^/]+)\/consume$/);
     const identityLinkPending = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/identity-links\/pending$/);
     const identityLinkDecision = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/identity-links\/([^/]+)\/decision$/);
+    const siteObservationList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/observations$/);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
     const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
     const reviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria\/reviewers\/assign$/);
