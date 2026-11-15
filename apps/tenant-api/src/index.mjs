@@ -1140,7 +1140,7 @@ export default {
       }
       if (identityLinkApproved) {
         const result = await listApprovedIdentityLinkRequests(env.DB, tenant,
-          { issuer, subject }, 100);
+          { issuer, subject }, 20);
         return result.error ? json({ error: result.error }, result.status)
           : json({ data: result.data, request_id: requestId });
       }
