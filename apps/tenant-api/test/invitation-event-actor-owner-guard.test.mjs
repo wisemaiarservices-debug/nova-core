@@ -27,13 +27,14 @@ function fixture(t) {
 
 function invitation(db, id, status, acceptedBy = null) {
   const now = new Date().toISOString();
+  const tokenDigest = db.prepare("SELECT lower(hex(randomblob(32))) AS value").get().value;
   db.prepare(`
     INSERT INTO tenant_membership_invitations
       (id, tenant_id, role, status, token_sha256, created_by_subject, accepted_by_subject,
        reason, request_id, expires_at, accepted_at, revoked_at)
     VALUES (?, 'tenant-1', 'analyst', ?, ?, 'owner-1', ?, 'test reason', ?, ?, ?, ?)
   `).run(
-    id, status, id.padStart(64, "0").slice(-64), acceptedBy, `request-${id}`,
+    id, status, tokenDigest, acceptedBy, `request-${id}`,
     new Date(Date.now() + 86400000).toISOString(),
     status === "accepted" ? now : null,
     status === "revoked" ? now : null
