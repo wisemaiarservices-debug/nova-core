@@ -792,7 +792,7 @@ test("routes bounded site observation reads through the signed Access gateway", 
   }) });
   const response = await gateway.fetch(new Request(
     "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/observations",
-    { headers: { "Cf-Access-Jwt-Assertion": "test-access-token" } }),
+    { headers: { "Cf-Access-Jwt-Assertion": "test-access-token", Authorization: "Bearer test.supabase.token" } }),
     env({ TENANT_API: { fetch: async request => {
       captured = request;
       return new Response(JSON.stringify({ data: [], limit: 100 }), {
@@ -804,5 +804,6 @@ test("routes bounded site observation reads through the signed Access gateway", 
   assert.equal(new URL(captured.url).pathname,
     "/internal/v1/tenants/tenant-a/sites/site-a/observations");
   assert.equal(captured.headers.get("x-nova-verified-subject"), "site-observation-reader");
+  assert.equal(captured.headers.get("x-nova-supabase-access-token"), "test.supabase.token");
   assert.equal(captured.headers.get("x-nova-internal-signature")?.length, 64);
 });
