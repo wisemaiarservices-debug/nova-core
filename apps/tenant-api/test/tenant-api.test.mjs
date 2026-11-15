@@ -2041,6 +2041,36 @@ test("identity-link HTTP routes reject structurally invalid successful Supabase 
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("identity-link HTTP routes reject duplicate key IDs in successful Supabase JWKS responses", async () => {
+  const originalFetch = globalThis.fetch;
+  let jwksFetchCount = 0;
+  globalThis.fetch = async url => {
+    jwksFetchCount += 1;
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [identityJwk, { ...identityJwk }] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    for (const [name, path, body] of [
+      ["create", "/internal/v1/identity-links/challenges", "{}"],
+      ["consume", "/internal/v1/identity-links/challenges/challenge-existing/consume",
+        JSON.stringify({ challenge: "test-challenge" })],
+    ]) {
+      const db = new IdentityLinkRouteDB();
+      const response = await worker.fetch(await request({
+        "x-nova-request-id": "identity-duplicate-jwks-kid-" + name,
+        "x-nova-supabase-access-token": identitySupabaseToken(),
+      }, "https://private.internal" + path, "POST", body), env(db));
+      assert.equal(response.status, 503, name);
+      assert.equal((await response.json()).error, "supabase_identity_provider_unavailable", name);
+      assert.equal(db.identityChallengeRow, null, name + " must not create or consume a challenge");
+      assert.equal(db.batchCalls.length, 0, name + " must not charge rate limits or persist a challenge");
+    }
+    assert.equal(jwksFetchCount, 2, "one JWKS fetch per invalid-provider response");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("identity-link challenge route enforces verified-identity rate limits before challenge persistence", async () => {
   const db = new IdentityLinkRouteDB({ rateLimitDefaultCount: 5 });
   const originalFetch = globalThis.fetch;
