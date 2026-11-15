@@ -8,12 +8,12 @@ import { listPendingIdentityLinkRequests, listApprovedIdentityLinkRequests, deci
 const actor = { issuer: "https://team.cloudflareaccess.com", subject: "owner-1" };
 class DB {
   constructor(request = { id: "link-1", status: "pending", tenant_id: null }, owner = true) {
-    this.request = request; this.owner = owner; this.approvedRows = []; this.batchCalls = []; this.priorEvent = null; this.batchError = null; this.queries = [];
+    this.request = request; this.owner = owner; this.approvedRows = []; this.batchCalls = []; this.priorEvent = null; this.batchError = null; this.queries = []; this.boundQueries = [];
   }
   prepare(sql) {
     this.queries.push(sql);
     const db = this;
-    return { sql, args: [], bind(...args) { this.args = args; return this; },
+    return { sql, args: [], bind(...args) { this.args = args; db.boundQueries.push({ sql, args }); return this; },
       async all() {
         if (this.sql.includes("FROM tenant_identity_link_events WHERE request_id")) {
           return { results: db.priorEvent ? [db.priorEvent] : [] };
@@ -25,7 +25,7 @@ class DB {
           return { results: db.request ? [db.request] : [] };
         }
         if (this.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'")) return { results: db.approvedRows };
-        if (this.sql.includes("WHERE status = 'pending' ORDER BY")) return { results: [] };
+        if (this.sql.includes("FROM tenant_identity_link_requests r WHERE r.status = 'pending'")) return { results: [] };
         return { results: [] };
       }
     };
@@ -123,12 +123,15 @@ test("owner review is independent and bound to the request Cloudflare issuer", a
   assert.deepEqual(db.batchCalls[0][0].args.slice(-6), ["tenant-1", "owner-1", actor.issuer, "approve", actor.subject, "approve"]);
 });
 
-test("pending review list excludes self-requests and mismatched Cloudflare issuers", async () => {
+test("pending review list is scoped to the selected tenant and excludes self-requests and mismatched issuers", async () => {
   const db = new DB();
   const result = await listPendingIdentityLinkRequests(db, "tenant-1", actor);
   assert.equal(result.status, 200);
-  assert.match(db.queries.find(sql => sql.includes("FROM tenant_identity_link_requests r")), /r\.cloudflare_issuer = \?/);
-  assert.match(db.queries.find(sql => sql.includes("FROM tenant_identity_link_requests r")), /r\.cloudflare_subject <> \?/);
+  const query = db.boundQueries.find(entry => entry.sql.includes("FROM tenant_identity_link_requests r"));
+  assert.match(query.sql, /r\.cloudflare_issuer = \?/);
+  assert.match(query.sql, /r\.cloudflare_subject <> \?/);
+  assert.match(query.sql, /\(r\.tenant_id IS NULL OR r\.tenant_id = \?\)/);
+  assert.deepEqual(query.args, [actor.issuer, actor.subject, "tenant-1", "tenant-1", 50]);
 });
 
 
