@@ -58,6 +58,26 @@ try {
   const invalidIdentity = await throughGateway(sitePath, "not.a.valid.jwt");
   assert.equal(invalidIdentity.response.status, 401);
 
+  // Exercise the identity-mapping uniqueness conflict through the actual
+  // gateway -> private Tenant API -> disposable D1 path. The fixture has one
+  // approved mapping and a second pending request for the same Supabase
+  // identity but a different Cloudflare subject.
+  const identityPendingPath = "/api/v1/tenants/tenant-http-a/identity-links/pending";
+  const pendingBeforeConflict = await throughGateway(identityPendingPath, accessToken("ci-human-subject"));
+  assert.equal(pendingBeforeConflict.response.status, 200, JSON.stringify(pendingBeforeConflict.body));
+  assert.equal(pendingBeforeConflict.body.data.some(row => row.id === "link-http-pending"), true);
+  const mappingConflict = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/identity-links/link-http-pending/decision",
+    accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "approve", reason: "CI duplicate identity mapping check",
+      idempotency_key: "ci-identity-mapping-conflict" }));
+  assert.equal(mappingConflict.response.status, 409, JSON.stringify(mappingConflict.body));
+  assert.equal(mappingConflict.body.error, "identity_link_mapping_conflict");
+  const pendingAfterConflict = await throughGateway(identityPendingPath, accessToken("ci-human-subject"));
+  assert.equal(pendingAfterConflict.response.status, 200, JSON.stringify(pendingAfterConflict.body));
+  assert.equal(pendingAfterConflict.body.data.some(row => row.id === "link-http-pending"), true,
+    "failed approval must leave the request pending after the atomic D1 rollback");
+
   // Exercise membership lifecycle and possession-based invitation using real
   // D1 rows through the public Access gateway and private Worker binding.
   const membershipActionsPath = "/api/v1/tenants/tenant-http-a/membership-actions";

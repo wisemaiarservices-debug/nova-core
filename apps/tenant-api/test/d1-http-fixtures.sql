@@ -97,3 +97,64 @@ VALUES
 ('obs-http-grant', 'site-http-a', 'tenant-http-a', 'asset-http-grant', 'source-http-grant',
  'neoagro', 'soil_moisture', 0.24, 'm3/m3', '2026-11-13T10:00:00Z',
  'ci-resource-grant-observation', 'unverified', '{}', '[]');
+
+
+-- Identity-link HTTP regression: one approved Supabase identity mapping and a
+-- second pending request attempting to claim the same identity in this tenant.
+-- All records are disposable local-D1 fixtures, never production identities.
+INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
+  ('membership-http-linked-approved', 'tenant-http-a', 'ci-linked-approved', 'operator', 'active'),
+  ('membership-http-linked-pending', 'tenant-http-a', 'ci-linked-pending', 'operator', 'active');
+
+INSERT INTO tenant_identity_link_challenges
+(id, supabase_issuer, supabase_subject, cloudflare_issuer, cloudflare_subject,
+ challenge_sha256, status, created_at, expires_at, consumed_at, request_id)
+VALUES
+('challenge-http-approved', 'https://project.supabase.co/auth/v1', 'ci-supabase-duplicate',
+ 'https://nova-ci.cloudflareaccess.com', 'ci-linked-approved',
+ 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'consumed',
+ '2026-11-15T10:00:00.000Z', '2026-11-15T10:05:00.000Z',
+ '2026-11-15T10:01:00.000Z', 'challenge-http-approved-request'),
+('challenge-http-pending', 'https://project.supabase.co/auth/v1', 'ci-supabase-duplicate',
+ 'https://nova-ci.cloudflareaccess.com', 'ci-linked-pending',
+ 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'consumed',
+ '2026-11-15T10:02:00.000Z', '2026-11-15T10:07:00.000Z',
+ '2026-11-15T10:03:00.000Z', 'challenge-http-pending-request');
+
+INSERT INTO tenant_identity_link_requests
+(id, challenge_id, supabase_issuer, supabase_subject, cloudflare_issuer,
+ cloudflare_subject, request_id)
+VALUES
+('link-http-approved', 'challenge-http-approved', 'https://project.supabase.co/auth/v1',
+ 'ci-supabase-duplicate', 'https://nova-ci.cloudflareaccess.com',
+ 'ci-linked-approved', 'link-http-approved-request'),
+('link-http-pending', 'challenge-http-pending', 'https://project.supabase.co/auth/v1',
+ 'ci-supabase-duplicate', 'https://nova-ci.cloudflareaccess.com',
+ 'ci-linked-pending', 'link-http-pending-request');
+
+INSERT INTO tenant_identity_link_events
+(id, link_request_id, event_type, previous_status, new_status, tenant_id,
+ actor_cloudflare_issuer, actor_cloudflare_subject, reason, request_id)
+VALUES
+('event-http-approved-requested', 'link-http-approved', 'requested', NULL, 'pending', NULL,
+ 'https://nova-ci.cloudflareaccess.com', 'ci-linked-approved',
+ 'CI fixture identity presented', 'event-http-approved-requested'),
+('event-http-pending-requested', 'link-http-pending', 'requested', NULL, 'pending', NULL,
+ 'https://nova-ci.cloudflareaccess.com', 'ci-linked-pending',
+ 'CI fixture identity presented', 'event-http-pending-requested');
+
+INSERT INTO tenant_identity_link_events
+(id, link_request_id, event_type, previous_status, new_status, tenant_id,
+ actor_cloudflare_issuer, actor_cloudflare_subject, reason, request_id)
+VALUES
+('event-http-approved-owner', 'link-http-approved', 'approved', 'pending', 'approved',
+ 'tenant-http-a', 'https://nova-ci.cloudflareaccess.com', 'ci-human-subject',
+ 'CI owner approved original mapping', 'event-http-approved-owner');
+
+UPDATE tenant_identity_link_requests
+SET status = 'approved', tenant_id = 'tenant-http-a',
+    decided_by_cloudflare_issuer = 'https://nova-ci.cloudflareaccess.com',
+    decided_by_cloudflare_subject = 'ci-human-subject',
+    reason = 'CI owner approved original mapping',
+    decided_at = '2026-11-15T10:04:00.000Z'
+WHERE id = 'link-http-approved';
