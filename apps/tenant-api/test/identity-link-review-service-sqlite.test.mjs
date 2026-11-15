@@ -158,6 +158,30 @@ test("real SQLite migrations scope the pending review queue to an active tenant 
   assert.equal(suspendedRequester.data.length, 0);
 });
 
+test("pending identity-link queue binds an exact tenant scope for existing and unassigned requests", async () => {
+  const calls = [];
+  const db = {
+    prepare(sql) {
+      return {
+        bind(...args) {
+          return {
+            async all() {
+              calls.push({ sql, args });
+              return { results: sql.includes("SELECT m.subject") ? [{ subject: owner.subject }] : [] };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const result = await listPendingIdentityLinkRequests(db, tenantId, owner);
+  assert.equal(result.status, 200);
+  const queue = calls.find(call => call.sql.includes("FROM tenant_identity_link_requests"));
+  assert.ok(queue.sql.includes("(r.tenant_id IS NULL OR r.tenant_id = ?)"));
+  assert.deepEqual(queue.args, [owner.issuer, owner.subject, tenantId, tenantId, 50]);
+});
+
 test("real SQLite migrations enforce owner approval and revocation after requester deactivation", async t => {
   const { db, sqlite } = fixture(t);
 
