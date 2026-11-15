@@ -242,6 +242,41 @@ test("real SQLite triggers reject cross-tenant owner decisions and preserve appe
 });
 
 
+test("real SQLite migrations reject an identity-link challenge at its exact expiry without writes", async t => {
+  const { db, sqlite } = fixture(t);
+  const supabaseIdentity = {
+    issuer: supabaseIssuer,
+    subject: "supabase-expired-user",
+    audience: "authenticated",
+  };
+  const cloudflareIdentity = {
+    issuer: requester.issuer,
+    subject: requester.subject,
+    audience: "nova-core",
+  };
+  const created = await createIdentityLinkChallenge(db, supabaseIdentity,
+    cloudflareIdentity, "expired-challenge-create", now);
+  assert.equal(created.status, 201);
+
+  const expired = await consumeIdentityLinkChallenge(db, created.data.challenge_id,
+    created.data.challenge, supabaseIdentity, cloudflareIdentity,
+    "expired-challenge-consume", new Date("2026-11-15T12:05:00.000Z"));
+  assert.equal(expired.status, 409);
+  assert.equal(expired.error, "identity_link_challenge_invalid_or_expired");
+
+  const challenge = sqlite.prepare(
+    "SELECT status, consumed_at FROM tenant_identity_link_challenges WHERE id = ?"
+  ).get(created.data.challenge_id);
+  assert.equal(challenge.status, "pending");
+  assert.equal(challenge.consumed_at, null);
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_requests WHERE challenge_id = ?"
+  ).get(created.data.challenge_id).count, 0);
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?"
+  ).get("expired-challenge-consume-requested").count, 0);
+});
+
 test("real SQLite migrations allow only one concurrent consume of the same identity-link challenge", async t => {
   const { db, sqlite } = fixture(t);
   const supabaseIdentity = {
