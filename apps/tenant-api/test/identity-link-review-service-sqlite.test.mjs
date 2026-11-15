@@ -556,6 +556,28 @@ test("identity-link approval and revocation never provision tenant memberships o
 
 
 
+
+test("identity-link decision does not read pending requests for a suspended requester", async t => {
+  const { db, sqlite, queries } = fixture(t);
+  sqlite.prepare("UPDATE tenant_memberships SET status = 'suspended' WHERE tenant_id = ? AND subject = ?")
+    .run(tenantId, requester.subject);
+  queries.length = 0;
+
+  const denied = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Attempt review after requester suspension", "suspended-requester-review", now);
+  assert.equal(denied.status, 404);
+  assert.equal(queries.length, 3);
+  assert.match(queries[2], /cloudflare_issuer = \?/);
+  assert.match(queries[2], /requester\.status = 'active'/);
+  assert.equal(sqlite.prepare(
+    "SELECT status FROM tenant_identity_link_requests WHERE id = ?"
+  ).get("link-review").status, "pending");
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?"
+  ).get("suspended-requester-review").count, 0);
+});
+
+
 test("identity-link decision hides requests and idempotency events owned by another tenant", async t => {
   const { db, sqlite, queries } = fixture(t);
   const otherTenant = "tenant-review-other";
