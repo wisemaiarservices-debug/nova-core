@@ -832,8 +832,8 @@ async function acceptMembershipInvitation(db, tenant, invitationId, subject, req
   const membershipEventId = crypto.randomUUID();
   const invitationEventId = crypto.randomUUID();
   const results = await db.batch([
-    db.prepare("UPDATE tenant_membership_invitations SET status = 'accepted', accepted_by_subject = ?, accepted_at = ? WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ?")
-      .bind(subject, now, invitationId, tenant, now),
+    db.prepare("UPDATE tenant_membership_invitations SET status = 'accepted', accepted_by_subject = ?, accepted_at = ? WHERE id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ? AND EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND NOT EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ?)")
+      .bind(subject, now, invitationId, tenant, now, tenant, tenant, subject),
     db.prepare("INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) SELECT ?, ?, ?, ?, 'active' WHERE changes() = 1")
       .bind(membershipId, tenant, subject, invitation.role),
     db.prepare("INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'tenant', ?, 'read' WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ?)")
