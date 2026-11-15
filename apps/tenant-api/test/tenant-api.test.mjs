@@ -1305,8 +1305,14 @@ test("tenant owner changes a member role with a matching append-only event in on
   assert.equal(db.batchCalls.length, 1);
   assert.match(db.batchCalls[0][0].sql, /INSERT INTO tenant_membership_events/);
   assert.match(db.batchCalls[0][1].sql, /UPDATE tenant_memberships SET role = \?, status = \?/);
+  assert.match(db.batchCalls[0][0].sql, /actor_m/);
+  assert.match(db.batchCalls[0][1].sql, /actor_m/);
   assert.deepEqual(db.batchCalls[0][0].args.slice(5, 10),
     ["role_changed", "operator", "analyst", "active", "active"]);
+  assert.deepEqual(db.batchCalls[0][0].args.slice(-4),
+    ["tenant-a", "tenant-a", "operator@example.test", "tenant_owner"]);
+  assert.deepEqual(db.batchCalls[0][1].args.slice(-4),
+    ["tenant-a", "tenant-a", "operator@example.test", "tenant_owner"]);
 });
 
 test("tenant admin may suspend a lower-privilege member but cannot change roles", async () => {
