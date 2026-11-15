@@ -17,8 +17,9 @@ class UnauthorizedCriteriaDB {
           async all() {
             db.calls.push({ operation: "all", sql, args });
             if (sql.includes("FROM tenant_memberships")) return { results: [] };
-            // If the handler reads criteria before authorizing, return a
-            // plausible row so the test detects the unauthorized data access.
+            if (sql.includes("FROM water_quality_criteria_reviewers")) return { results: [] };
+            // If the handler directly reads the criteria record before
+            // authorization, return a plausible row so the test detects it.
             if (sql.includes("FROM water_quality_criteria_entries")) {
               return { results: [{ id: "entry-1", site_id: "site-a", jurisdiction: "J-1",
                 version: "v1", entry_json: JSON.stringify({ criteria: [] }),
