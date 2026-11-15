@@ -110,3 +110,77 @@ test("governance POST routes authorize the Cloudflare Access subject, never a se
       "must stop before governance writes: " + path);
   }
 });
+
+
+class CriteriaDetailAuthorizationDB {
+  constructor() { this.calls = []; }
+  prepare(sql) {
+    const db = this;
+    return { bind(...args) {
+      return {
+        sql, args,
+        async all() {
+          db.calls.push({ operation: "all", sql, args });
+          if (sql.includes("FROM water_quality_criteria_entries e")) {
+            // The Access subject has no membership or reviewer assignment.
+            // The authorization-scoped query must therefore return no row.
+            return { results: [] };
+          }
+          throw new Error("unexpected criteria detail read: " + sql);
+        },
+        async run() {
+          db.calls.push({ operation: "run", sql, args });
+          if (sql.includes("INSERT INTO internal_request_nonces")) return { meta: { changes: 1 } };
+          throw new Error("unexpected criteria detail write: " + sql);
+        },
+      };
+    } };
+  }
+}
+
+async function signedGetRequest(path, requestId) {
+  const method = "GET";
+  const headers = new Headers({
+    "x-nova-verified-subject": "operator@example.test",
+    "x-nova-verified-issuer": "https://example.cloudflareaccess.com",
+    "x-nova-verified-audience": "aud",
+    "x-nova-gateway-issued-at": String(NOW),
+    "x-nova-request-id": requestId,
+  });
+  const bodyDigest = createHash("sha256").update("").digest("hex");
+  headers.set("x-nova-body-sha256", bodyDigest);
+  const canonical = JSON.stringify([
+    method, path, headers.get("x-nova-verified-subject"),
+    headers.get("x-nova-verified-issuer"), headers.get("x-nova-verified-audience"),
+    headers.get("x-nova-gateway-issued-at"), headers.get("x-nova-request-id"),
+    headers.get("x-nova-body-sha256"), null,
+  ]);
+  headers.set("x-nova-internal-signature",
+    createHmac("sha256", SECRET).update(canonical).digest("hex"));
+  return new Request("https://private.internal" + path, { method, headers });
+}
+
+test("water-quality criteria detail is authorization-scoped before entry, event, or approval reads", async () => {
+  const db = new CriteriaDetailAuthorizationDB();
+  const path = "/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-1/v1";
+  const request = await signedGetRequest(path, "criteria-detail-auth-before-read");
+  const response = await worker.fetch(request, {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: SECRET,
+    DB: db,
+  });
+
+  assert.equal(response.status, 404);
+  const reads = db.calls.filter(call => call.operation === "all");
+  assert.equal(reads.length, 1);
+  assert.match(reads[0].sql, /FROM water_quality_criteria_entries e/);
+  assert.match(reads[0].sql, /FROM tenant_memberships/);
+  assert.match(reads[0].sql, /FROM tenant_resource_grants/);
+  assert.match(reads[0].sql, /FROM water_quality_criteria_reviewers/);
+  assert.deepEqual(reads[0].args,
+    ["tenant-a", "criteria-1", "v1", "operator@example.test", "operator@example.test"]);
+  assert.equal(reads.some(call => /water_quality_criteria_(events|approvals)/.test(call.sql)), false);
+  assert.equal(db.calls.filter(call => call.operation === "run" &&
+    !call.sql.includes("INSERT INTO internal_request_nonces")).length, 0);
+});

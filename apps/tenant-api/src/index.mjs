@@ -1274,24 +1274,15 @@ export default {
           : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
       }
       if (criteriaDetail) {
+        // Authorize in the same scoped lookup that locates the entry. Do not
+        // load entry JSON, lifecycle events, or approvals before membership,
+        // site-grant, or jurisdiction-reviewer access has been established.
+        const authorized = await rows(env.DB.prepare(
+          "SELECT e.id FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND e.id = ? AND e.version = ? AND (EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.tenant_id = e.tenant_id AND m.subject = ? AND m.status = 'active' AND t.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service') AND (e.site_id IS NULL OR EXISTS (SELECT 1 FROM tenant_resource_grants g WHERE g.tenant_id = e.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = e.site_id AND g.action = 'read'))) OR EXISTS (SELECT 1 FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = e.tenant_id AND r.reviewer_subject = ? AND r.jurisdiction = e.jurisdiction AND r.status = 'active')) LIMIT 1"
+        ).bind(tenant, entryId, version, subject, subject));
+        if (authorized.length !== 1 || authorized[0].id !== entryId) return error("not_found", 404);
         const data = await readCriteriaRegistry(env.DB, tenant, entryId, version, subject);
-        if (data === null) return error("not_found", 404);
-        const membership = await rows(env.DB.prepare(
-          "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
-        ).bind(subject, tenant));
-        const memberCanRead = membership.length === 1 &&
-          membership[0].subject === subject && membership[0].tenant_id === tenant &&
-          membership[0].membership_status === "active" && membership[0].tenant_status === "active" &&
-          ROLE_ACTIONS[membership[0].role]?.has("read");
-        const memberHasSiteGrant = memberCanRead &&
-          (data.site_id === null || await hasSiteReadGrant(env.DB, tenant, subject, data.site_id));
-        if (memberHasSiteGrant) return json({ data, request_id: requestId });
-        const reviewer = await rows(env.DB.prepare(
-          "SELECT DISTINCT r.reviewer_subject, r.jurisdiction FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id AND t.status = 'active' WHERE r.tenant_id = ? AND r.reviewer_subject = ? AND r.jurisdiction = ? AND r.status = 'active' LIMIT 1"
-        ).bind(tenant, subject, data.jurisdiction));
-        return reviewer.length === 1 && reviewer[0].reviewer_subject === subject &&
-          reviewer[0].jurisdiction === data.jurisdiction
-          ? json({ data, request_id: requestId }) : error("not_found", 404);
+        return data === null ? error("not_found", 404) : json({ data, request_id: requestId });
       }
       if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload || labReportDetail) {
         const membership = await rows(env.DB.prepare(

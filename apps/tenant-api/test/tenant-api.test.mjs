@@ -22,6 +22,30 @@ class DB {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
         if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
+        if (sql.includes("SELECT e.id FROM water_quality_criteria_entries e")) {
+          const entry = (db.criteriaRows ?? []).find(row =>
+            row.tenant_id === args[0] && row.id === args[1] && row.version === args[2]);
+          if (!entry) return { results: [] };
+          const subject = args[3];
+          const memberships = db.membershipRows ?? (db.membership ? [{
+            subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
+            membership_status: "active", tenant_status: "active",
+          }] : []);
+          const member = memberships.length === 1 && memberships[0].subject === subject &&
+            memberships[0].tenant_id === args[0] && memberships[0].membership_status === "active" &&
+            memberships[0].tenant_status === "active" &&
+            ["tenant_owner", "tenant_admin", "operator", "analyst", "viewer", "service"].includes(memberships[0].role);
+          const grants = db.grantRows ?? (db.grant ? [{
+            subject: "operator@example.test", tenant_id: "tenant-a",
+            resource_type: "site", resource_id: entry.site_id, action: "read",
+          }] : []);
+          const memberHasGrant = member && (entry.site_id === null ||
+            grants.some(grant => grant.subject === subject && grant.tenant_id === args[0] &&
+              grant.resource_type === "site" && grant.resource_id === entry.site_id && grant.action === "read"));
+          const reviewer = (db.reviewerRows ?? []).some(row =>
+            row.reviewer_subject === subject && row.jurisdiction === entry.jurisdiction && row.status === "active");
+          return { results: memberHasGrant || reviewer ? [{ id: entry.id }] : [] };
+        }
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
@@ -365,15 +389,16 @@ test("jurisdiction reviewer with both approval roles can read a site-scoped entr
     entry_json: JSON.stringify({ id: "criteria-site-a" }),
   }];
   db.reviewerRows = [
-    { reviewer_subject: "operator@example.test", jurisdiction: "TN", reviewer_role: "regulatory_reviewer" },
-    { reviewer_subject: "operator@example.test", jurisdiction: "TN", reviewer_role: "domain_expert" },
+    { reviewer_subject: "operator@example.test", jurisdiction: "TN", reviewer_role: "regulatory_reviewer", status: "active" },
+    { reviewer_subject: "operator@example.test", jurisdiction: "TN", reviewer_role: "domain_expert", status: "active" },
   ];
   const response = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-site-a/1.0"), env(db));
   assert.equal(response.status, 200);
-  const reviewerQuery = db.calls.find(call => call.sql.includes("SELECT DISTINCT r.reviewer_subject"));
-  assert.deepEqual(reviewerQuery.args, ["tenant-a", "operator@example.test", "TN"]);
-  assert.match(reviewerQuery.sql, /LIMIT 1/);
+  const authorizationQuery = db.calls.find(call => call.sql.includes("SELECT e.id FROM water_quality_criteria_entries e"));
+  assert.deepEqual(authorizationQuery.args,
+    ["tenant-a", "criteria-site-a", "1.0", "operator@example.test", "operator@example.test"]);
+  assert.match(authorizationQuery.sql, /r.status = 'active'/);
 });
 
 test("criteria list binds the authenticated subject to both site-grant and reviewer-jurisdiction filters", async () => {
@@ -399,7 +424,9 @@ test("does not return criteria belonging to another tenant or unknown versions",
   const db = new DB(); db.criteriaRows = [];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
   assert.equal(response.status, 404);
-  assert.deepEqual(db.calls[1].args, ["tenant-a", "criteria-tn-1", "9.9"]);
+  const authorizationQuery = db.calls.find(call => call.sql.includes("SELECT e.id FROM water_quality_criteria_entries e"));
+  assert.deepEqual(authorizationQuery.args,
+    ["tenant-a", "criteria-tn-1", "9.9", "operator@example.test", "operator@example.test"]);
 });
 
 
@@ -561,7 +588,7 @@ test("reviewer list and immutable assignment history are restricted to tenant ow
 
 const reviewEntryRow = { jurisdiction: "TN", created_by_subject: "criteria-author@example.test" };
 const reviewAssignmentRow = (subject, role, jurisdiction = "TN") => ({
-  reviewer_subject: subject, reviewer_role: role, jurisdiction,
+  reviewer_subject: subject, reviewer_role: role, jurisdiction, status: "active",
 });
 
 test("tenant owner/admin submits only an existing draft into review", async () => {
