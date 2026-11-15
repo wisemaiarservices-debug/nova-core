@@ -123,3 +123,21 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
   return { data: { request_id: requestId, tenant_id: tenantId, status: eventType,
     decided_by: { issuer: actor.issuer, subject: actor.subject }, decided_at: decidedAt }, status: 200 };
 }
+
+
+/** Lists approved identity associations for an active tenant owner so they can be reviewed or revoked. */
+export async function listApprovedIdentityLinkRequests(db, tenantId, actor, limit = 100) {
+  if (!validId(tenantId) || !validActor(actor) ||
+      !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    return { error: "identity_link_review_input_invalid", status: 400 };
+  }
+  const owner = await exactlyOne(db.prepare(
+    "SELECT m.subject FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.tenant_id = ? AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active' AND t.status = 'active' LIMIT 2"
+  ).bind(tenantId, actor.subject));
+  if (!owner) return { error: "not_found", status: 404 };
+  const result = await db.prepare(
+    "SELECT r.id, r.supabase_issuer, r.supabase_subject, r.cloudflare_issuer, r.cloudflare_subject, r.created_at, r.decided_at, r.decided_by_cloudflare_subject, r.reason FROM tenant_identity_link_requests r WHERE r.tenant_id = ? AND r.status = 'approved' AND r.cloudflare_issuer = ? ORDER BY r.decided_at DESC, r.id DESC LIMIT ?"
+  ).bind(tenantId, actor.issuer, limit).all();
+  if (!Array.isArray(result?.results)) throw new Error("identity_link_review_storage_invalid");
+  return { data: result.results, status: 200 };
+}
