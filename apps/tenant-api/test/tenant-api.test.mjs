@@ -389,15 +389,16 @@ test("jurisdiction reviewer with both approval roles can read a site-scoped entr
     entry_json: JSON.stringify({ id: "criteria-site-a" }),
   }];
   db.reviewerRows = [
-    { reviewer_subject: "operator@example.test", jurisdiction: "TN", reviewer_role: "regulatory_reviewer" },
-    { reviewer_subject: "operator@example.test", jurisdiction: "TN", reviewer_role: "domain_expert" },
+    { reviewer_subject: "operator@example.test", jurisdiction: "TN", reviewer_role: "regulatory_reviewer", status: "active" },
+    { reviewer_subject: "operator@example.test", jurisdiction: "TN", reviewer_role: "domain_expert", status: "active" },
   ];
   const response = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-site-a/1.0"), env(db));
   assert.equal(response.status, 200);
-  const reviewerQuery = db.calls.find(call => call.sql.includes("SELECT DISTINCT r.reviewer_subject"));
-  assert.deepEqual(reviewerQuery.args, ["tenant-a", "operator@example.test", "TN"]);
-  assert.match(reviewerQuery.sql, /LIMIT 1/);
+  const authorizationQuery = db.calls.find(call => call.sql.includes("SELECT e.id FROM water_quality_criteria_entries e"));
+  assert.deepEqual(authorizationQuery.args,
+    ["tenant-a", "criteria-site-a", "1.0", "operator@example.test", "operator@example.test"]);
+  assert.match(authorizationQuery.sql, /r.status = 'active'/);
 });
 
 test("criteria list binds the authenticated subject to both site-grant and reviewer-jurisdiction filters", async () => {
@@ -423,7 +424,9 @@ test("does not return criteria belonging to another tenant or unknown versions",
   const db = new DB(); db.criteriaRows = [];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
   assert.equal(response.status, 404);
-  assert.deepEqual(db.calls[1].args, ["tenant-a", "criteria-tn-1", "9.9"]);
+  const authorizationQuery = db.calls.find(call => call.sql.includes("SELECT e.id FROM water_quality_criteria_entries e"));
+  assert.deepEqual(authorizationQuery.args,
+    ["tenant-a", "criteria-tn-1", "9.9", "operator@example.test", "operator@example.test"]);
 });
 
 
