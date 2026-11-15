@@ -168,10 +168,10 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         : identityLinkChallengeConsume
           ? "/internal/v1/identity-links/challenges/" + identityLinkChallengeConsume[1] + "/consume"
           : identityLinkPending
+            ? "/internal/v1/tenants/" + tenant + "/identity-links/pending"
             : identityLinkApproved
               ? "/internal/v1/tenants/" + tenant + "/identity-links/approved"
-            ? "/internal/v1/tenants/" + tenant + "/identity-links/pending"
-            : identityLinkDecision
+              : identityLinkDecision
               ? "/internal/v1/tenants/" + tenant + "/identity-links/" + identityLinkDecision[2] + "/decision"
         : tenantProvision
         ? "/internal/v1/tenants"
