@@ -2041,6 +2041,35 @@ test("identity-link HTTP routes reject structurally invalid successful Supabase 
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("identity-link HTTP routes reject redirected Supabase JWKS responses without writes", async () => {
+  const originalFetch = globalThis.fetch;
+  let jwksFetchCount = 0;
+  globalThis.fetch = async (url, init) => {
+    jwksFetchCount += 1;
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    assert.equal(init?.redirect, "error", "JWKS fetch must not follow redirects");
+    return new Response(null, { status: 302, headers: { location: "https://attacker.example/jwks.json" } });
+  };
+  try {
+    for (const [name, path, body] of [
+      ["create", "/internal/v1/identity-links/challenges", "{}"],
+      ["consume", "/internal/v1/identity-links/challenges/challenge-existing/consume",
+        JSON.stringify({ challenge: "test-challenge" })],
+    ]) {
+      const db = new IdentityLinkRouteDB();
+      const response = await worker.fetch(await request({
+        "x-nova-request-id": "identity-jwks-redirect-" + name,
+        "x-nova-supabase-access-token": identitySupabaseToken(),
+      }, "https://private.internal" + path, "POST", body), env(db));
+      assert.equal(response.status, 503, name);
+      assert.equal((await response.json()).error, "supabase_identity_provider_unavailable", name);
+      assert.equal(db.identityChallengeRow, null, name + " must not create or consume a challenge");
+      assert.equal(db.batchCalls.length, 0, name + " must not charge rate limits or persist a challenge");
+    }
+    assert.equal(jwksFetchCount, 2, "one JWKS fetch per invalid-provider response");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("identity-link HTTP routes reject duplicate key IDs in successful Supabase JWKS responses", async () => {
   const originalFetch = globalThis.fetch;
   let jwksFetchCount = 0;
