@@ -1879,6 +1879,24 @@ test("identity-link decision uses the gateway-derived owner identity and caller 
   assert.equal(db.batchCalls[0][0].args[9], "decision-idempotency-1");
 });
 
+test("identity-link decision route returns 409 for a duplicate approved identity mapping", async () => {
+  const db = new DB();
+  db.membershipRows = [{ subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_owner", membership_status: "active", tenant_status: "active" }];
+  db.identityLinkEventRows = [];
+  db.identityLinkRows = [{ id: "link-request-1", status: "pending", tenant_id: null }];
+  db.batchError = new Error("UNIQUE constraint failed: tenant_identity_link_requests.tenant_id, tenant_identity_link_requests.supabase_issuer, tenant_identity_link_requests.supabase_subject");
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/link-request-1/decision",
+    "POST", JSON.stringify({ decision: "approve", reason: "Duplicate mapping review",
+      idempotency_key: "decision-conflict-001" })), env(db));
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "identity_link_mapping_conflict" });
+  assert.equal(db.batchCalls.length, 1);
+  assert.equal(db.calls.some(call => call.sql.includes("FROM tenant_identity_link_events")), true,
+    "the route checks for a concurrent idempotent decision before returning the mapping conflict");
+});
+
 
 const IDENTITY_SUPABASE_ISSUER = "https://project.example.test/auth/v1";
 const IDENTITY_SUPABASE_AUDIENCE = "authenticated";
