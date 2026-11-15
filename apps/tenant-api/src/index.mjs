@@ -878,9 +878,13 @@ async function revokeMembershipInvitation(db, tenant, invitationId, actor, reque
       results.some(result => !result?.meta || !Number.isInteger(result.meta.changes))) {
     throw new Error("membership_invitation_revoke_batch_invalid");
   }
-  return results[0].meta.changes === 1 && results[1].meta.changes === 1
-    ? { data: { invitation_id: invitationId, status: "revoked" }, status: 200 }
-    : { error: "membership_invitation_not_found", status: 404 };
+  if (results[0].meta.changes !== 1) {
+    return { error: "membership_invitation_not_found", status: 404 };
+  }
+  if (results[1].meta.changes !== 1) {
+    throw new Error("membership_invitation_revoke_audit_invariant_failed");
+  }
+  return { data: { invitation_id: invitationId, status: "revoked" }, status: 200 };
 }
 
 async function createTenantForProvisioning(db, subject, body, requestId, allowlist) {
