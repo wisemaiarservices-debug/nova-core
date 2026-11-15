@@ -1652,6 +1652,10 @@ test("tenant owner transfers ownership atomically and audits both role changes",
   assert.match(db.batchCalls[0][1].sql, /role = 'tenant_owner' AND status = 'active'/);
   assert.match(db.batchCalls[0][2].sql, /new_role, previous_status/);
   assert.match(db.batchCalls[0][3].sql, /SET role = 'tenant_admin'/);
+  for (const statement of db.batchCalls[0]) {
+    assert.match(statement.sql, /EXISTS \(SELECT 1 FROM tenants WHERE id = \? AND status = 'active'\)/);
+    assert.ok(statement.args.includes("tenant-a"));
+  }
   assert.equal(db.batchCalls[0][2].args[6], "owner-transfer-001:actor");
   assert.deepEqual(db.batchCalls[0][2].args.slice(7, 10),
     ["owner-membership", "tenant-a", "operator@example.test"]);
