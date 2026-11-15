@@ -102,6 +102,22 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
     throw new Error("identity_link_review_batch_invalid");
   }
   if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
+    // The guarded INSERT can affect zero rows when an identical concurrent
+    // decision has already committed. Re-read the idempotency key before
+    // classifying the losing request as a conflict.
+    const concurrentEvent = await exactlyOne(db.prepare(
+      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? LIMIT 2"
+    ).bind(idempotencyKey));
+    if (concurrentEvent && concurrentEvent.link_request_id === requestId &&
+        concurrentEvent.event_type === eventType && concurrentEvent.tenant_id === tenantId &&
+        concurrentEvent.actor_cloudflare_issuer === actor.issuer &&
+        concurrentEvent.actor_cloudflare_subject === actor.subject &&
+        concurrentEvent.reason === reason) {
+      return { data: { request_id: requestId, tenant_id: tenantId, status: eventType,
+        decided_by: { issuer: actor.issuer, subject: actor.subject },
+        decided_at: concurrentEvent.created_at }, status: 200 };
+    }
+    if (concurrentEvent) return { error: "identity_link_idempotency_conflict", status: 409 };
     return { error: "identity_link_request_conflict", status: 409 };
   }
   return { data: { request_id: requestId, tenant_id: tenantId, status: eventType,

@@ -21,6 +21,9 @@ const supabaseIssuer = "https://project.supabase.co/auth/v1";
 const now = new Date("2026-11-15T12:00:00.000Z");
 
 function d1Adapter(sqlite) {
+  // D1 serializes atomic batches. Queue transactions on this shared SQLite
+  // connection while allowing service-level reads to race before each batch.
+  let batchTail = Promise.resolve();
   return {
     prepare(sql) {
       return {
@@ -37,20 +40,24 @@ function d1Adapter(sqlite) {
         },
       };
     },
-    async batch(statements) {
-      sqlite.exec("BEGIN");
-      try {
-        const results = [];
-        for (const statement of statements) {
-          const result = await statement.run();
-          results.push(result);
+    batch(statements) {
+      const execute = async () => {
+        sqlite.exec("BEGIN");
+        try {
+          const results = [];
+          for (const statement of statements) {
+            results.push(await statement.run());
+          }
+          sqlite.exec("COMMIT");
+          return results;
+        } catch (error) {
+          sqlite.exec("ROLLBACK");
+          throw error;
         }
-        sqlite.exec("COMMIT");
-        return results;
-      } catch (error) {
-        sqlite.exec("ROLLBACK");
-        throw error;
-      }
+      };
+      const pending = batchTail.then(execute, execute);
+      batchTail = pending.then(() => undefined, () => undefined);
+      return pending;
     },
   };
 }
@@ -232,4 +239,45 @@ test("real SQLite migrations allow only one concurrent consume of the same ident
   assert.equal(sqlite.prepare(
     "SELECT COUNT(*) AS count FROM tenant_identity_link_events e JOIN tenant_identity_link_requests r ON r.id = e.link_request_id WHERE r.challenge_id = ? AND e.event_type = 'requested'"
   ).get(created.data.challenge_id).count, 1);
+});
+
+
+test("real SQLite migrations make concurrent identical owner decisions idempotent", async t => {
+  const { db, sqlite } = fixture(t);
+  const decisions = await Promise.all([
+    decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+      "approve", "Concurrent independent review", "same-owner-decision-key", now),
+    decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+      "approve", "Concurrent independent review", "same-owner-decision-key", now),
+  ]);
+
+  assert.deepEqual(decisions.map(result => result.status), [200, 200]);
+  assert.ok(decisions.every(result => result.data.status === "approved"));
+  assert.equal(sqlite.prepare(
+    "SELECT COUNT(*) AS count FROM tenant_identity_link_events WHERE request_id = ?"
+  ).get("same-owner-decision-key").count, 1);
+  assert.equal(sqlite.prepare(
+    "SELECT status FROM tenant_identity_link_requests WHERE id = ?"
+  ).get("link-review").status, "approved");
+});
+
+test("real SQLite migrations allow only one of two concurrent conflicting owner decisions", async t => {
+  const { db, sqlite } = fixture(t);
+  const decisions = await Promise.all([
+    decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+      "approve", "Approve after review", "competing-approve-key", now),
+    decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+      "reject", "Reject after review", "competing-reject-key", now),
+  ]);
+
+  assert.deepEqual(decisions.map(result => result.status).sort(), [200, 409]);
+  const request = sqlite.prepare(
+    "SELECT status FROM tenant_identity_link_requests WHERE id = ?"
+  ).get("link-review");
+  assert.ok(["approved", "rejected"].includes(request.status));
+  const decisionEvents = sqlite.prepare(
+    "SELECT event_type, request_id FROM tenant_identity_link_events WHERE link_request_id = ? AND event_type IN ('approved', 'rejected')"
+  ).all("link-review");
+  assert.equal(decisionEvents.length, 1);
+  assert.equal(decisionEvents[0].event_type, request.status);
 });
