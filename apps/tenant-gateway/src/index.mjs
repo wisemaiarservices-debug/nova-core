@@ -26,7 +26,7 @@ function corsResponse(response, origin, preflight) {
   headers.set("Access-Control-Expose-Headers", "X-Request-Id");
   if (preflight) {
     headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    headers.set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type");
+    headers.set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Idempotency-Key");
     headers.set("Access-Control-Max-Age", "600");
   }
   const vary = new Set((headers.get("Vary") || "").split(",").map(value => value.trim()).filter(Boolean));
