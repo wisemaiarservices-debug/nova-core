@@ -1043,6 +1043,7 @@ async function withProvisioningJwks(callback) {
         createHmac("sha256", coreToOsSecret).update(canonical).digest("hex"));
       const body = JSON.parse(bodyText);
       assert.equal(body.display_name, "Research tenant");
+      const ownerAssertionClaims = JSON.parse(Buffer.from(body.owner_assertion.split(".")[1], "base64url").toString("utf8"));
       const permitHeader = Buffer.from(JSON.stringify({
         alg: "RS256", typ: "JWT", kid: novaOsPermitKeyId,
       })).toString("base64url");
@@ -1071,7 +1072,7 @@ async function withProvisioningJwks(callback) {
         authorization_permit: permitToken,
         permit_jti: permitClaims.jti,
         expires_at: permitClaims.exp,
-        replayed: false,
+        replayed: ownerAssertionClaims.exp <= now,
       } }), { status: 200, headers: { "content-type": "application/json" } });
     }
     throw new Error("unexpected provisioning fetch " + String(url));
@@ -1372,6 +1373,31 @@ test("tenant provisioning accepts concurrent exact retries whose replay permits 
     assert.equal(result.tenant_id, "tenant-race-winner");
     assert.equal(result.created, false);
     assert.equal(result.mapping_receipt_id, "provisioning-request-race");
+    assert.equal(novaOsAuthorizationCallCount > 0, true);
+    assert.equal(db.batchCalls.length, 1);
+  });
+});
+
+test("tenant provisioning delegates expired uncommitted retry to NOVA OS exact-consumption ledger", async () => {
+  const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 1 } })));
+  const expiredBody = JSON.stringify({
+    ...JSON.parse(provisioningBody),
+    nova_os_owner_assertion: novaOsOwnerAssertion(
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "aaaaaaaa-0000-4000-8000-000000000001",
+      now - 400, now - 100,
+    ),
+  });
+  await withProvisioningJwks(async () => {
+    const response = await worker.fetch(
+      await request(provisioningHeaders(), provisioningPath, "POST", expiredBody),
+      provisioningEnv(db),
+    );
+    assert.equal(response.status, 201);
+    const result = (await response.json()).data;
+    assert.equal(result.created, true);
+    assert.equal(result.tenant_status, "active");
     assert.equal(novaOsAuthorizationCallCount > 0, true);
     assert.equal(db.batchCalls.length, 1);
   });
