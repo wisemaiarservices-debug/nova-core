@@ -964,6 +964,10 @@ async function createTenantForProvisioning(
     }, status: 200 };
   }
 
+  if (!Number.isInteger(novaOsOwnerAssertion.expiresAt) ||
+      novaOsOwnerAssertion.expiresAt <= Math.floor(Date.now() / 1000)) {
+    return { error: "nova_os_owner_authorization_invalid", status: 401 };
+  }
   let authorize;
   try { authorize = createNovaOsOwnerAuthorizationClient(authorizationConfig); }
   catch { return { error: "nova_os_authorization_not_configured", status: 503 }; }
@@ -1218,6 +1222,8 @@ export default {
             supabaseSubject: verifiedSupabaseIdentity.subject,
             novaOsTenantId: draftBody?.nova_os_tenant_id,
           },
+          Math.floor(Date.now() / 1000),
+          { allowExpiredForCommittedRetry: true },
         );
       } catch (cause) {
         const reason = cause instanceof Error ? cause.message : "";
