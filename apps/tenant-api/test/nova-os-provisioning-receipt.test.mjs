@@ -5,11 +5,7 @@ import { createNovaOsProvisioningReceiptSigner } from "../src/nova-os-provisioni
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
-const { privateKey, publicKey } = generateKeyPairSync("rsa", {
-  modulusLength: 2048,
-  publicKeyEncoding: { type: "spki", format: "pem" },
-  privateKeyEncoding: { type: "pkcs8", format: "pem" },
-});
+const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const publicJwk = { ...publicKey.export({ format: "jwk" }), kid: "core-receipt-key-1", alg: "RS256", use: "sig" };
 const config = {
   issuer: "https://nova-core.example.test/provisioning",
