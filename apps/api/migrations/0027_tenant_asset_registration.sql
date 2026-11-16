@@ -13,6 +13,7 @@ CREATE TABLE tenant_asset_events (
   event_type TEXT NOT NULL CHECK (event_type IN ('created')),
   request_id TEXT NOT NULL UNIQUE CHECK (length(trim(request_id)) BETWEEN 1 AND 160),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE (tenant_id, asset_id, event_type),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
   FOREIGN KEY (asset_id, tenant_id, site_id)
     REFERENCES assets(id, tenant_id, site_id) ON DELETE RESTRICT
@@ -58,7 +59,7 @@ CREATE TABLE tenant_asset_creation_requests (
   asset_id TEXT NOT NULL,
   request_id TEXT NOT NULL UNIQUE CHECK (length(trim(request_id)) BETWEEN 1 AND 160),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE (tenant_id, actor_subject, idempotency_key),
+  UNIQUE (tenant_id, site_id, actor_subject, idempotency_key),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
   FOREIGN KEY (site_id, tenant_id) REFERENCES sites(id, tenant_id) ON DELETE RESTRICT,
   FOREIGN KEY (asset_id, tenant_id, site_id)
