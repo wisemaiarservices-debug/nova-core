@@ -25,9 +25,9 @@ MIGRATION_NAMES = (
     "0013_sensor_calibration_verification.sql",
     "0014_sensor_source_identity.sql",
     "0015_measurement_quality_engine.sql",
-    "0029_asset_tenant_site_composite_key.sql",
-    "0030_sensor_calibration_event_composite_key.sql",
-    "0031_measurement_quality_verified_source_guard.sql",
+    "0030_asset_tenant_site_composite_key.sql",
+    "0031_sensor_calibration_event_composite_key.sql",
+    "0032_measurement_quality_verified_source_guard.sql",
 )
 
 
