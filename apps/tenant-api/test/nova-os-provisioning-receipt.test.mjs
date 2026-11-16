@@ -23,6 +23,8 @@ const claims = {
   idempotencyKey: "provision-tenant-1",
   requestDigest: "a".repeat(64),
   ownerAssertionJti: "aaaaaaaa-0000-4000-8000-000000000001",
+  authorizationPermitJti: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  authorizationCorrelationId: "nova-provision:" + "a".repeat(64),
   jti: "provisioning-request-1",
 };
 
@@ -48,6 +50,8 @@ test("Core signs a short-lived RS256 receipt binding both identities and both te
   assert.equal(payload.idempotency_key, claims.idempotencyKey);
   assert.equal(payload.request_sha256, claims.requestDigest);
   assert.equal(payload.owner_assertion_jti, claims.ownerAssertionJti);
+  assert.equal(payload.authorization_permit_jti, claims.authorizationPermitJti);
+  assert.equal(payload.authorization_correlation_id, claims.authorizationCorrelationId);
   assert.equal(payload.jti, claims.jti);
   assert.ok(payload.exp - payload.iat <= 300);
   assert.equal(result.jti, claims.jti);
@@ -100,6 +104,8 @@ test("receipt signer rejects missing, weak, or invalid signing configuration", a
   await assert.rejects(() => signer({ ...claims, requestDigest: "not-a-sha256" }),
     /invalid_nova_os_receipt_claims/);
   await assert.rejects(() => signer({ ...claims, ownerAssertionJti: "not-a-uuid" }),
+    /invalid_nova_os_receipt_claims/);
+  await assert.rejects(() => signer({ ...claims, authorizationPermitJti: "not-a-uuid" }),
     /invalid_nova_os_receipt_claims/);
 });
 
