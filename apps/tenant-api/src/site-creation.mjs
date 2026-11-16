@@ -1,6 +1,6 @@
 function validText(value, max) {
   return typeof value === "string" && value.length > 0 && value.length <= max &&
-    value.trim() === value && !/[\\u0000-\\u001f\\u007f]/.test(value);
+    value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
 function validIdempotencyKey(value) {
   return validText(value, 160) && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
