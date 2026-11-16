@@ -62,11 +62,12 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
     assert.equal(captured.headers.get("x-nova-supabase-access-token"), "supabase.header.payload");
     const expectedTokenDigest = createHash("sha256").update("supabase.header.payload").digest("hex");
     assert.equal(captured.headers.get("x-nova-supabase-token-sha256"), expectedTokenDigest);
-    assert.equal(captured.headers.get("x-nova-idempotency-key"), expectedIdempotencyKey ?? null);
+    assert.equal(captured.headers.get("x-nova-idempotency-key"), null);
     const canonical = JSON.stringify(["GET", new URL(captured.url).pathname,
       captured.headers.get("x-nova-verified-subject"), captured.headers.get("x-nova-verified-issuer"),
       captured.headers.get("x-nova-verified-audience"), captured.headers.get("x-nova-gateway-issued-at"),
-      captured.headers.get("x-nova-request-id"), captured.headers.get("x-nova-body-sha256"), expectedTokenDigest]);
+      captured.headers.get("x-nova-request-id"), captured.headers.get("x-nova-body-sha256"), expectedTokenDigest,
+      captured.headers.get("x-nova-idempotency-key")]);
     const expectedSignature = createHmac("sha256", "test-only-internal-secret-with-32-bytes-minimum")
       .update(canonical).digest("hex");
     assert.equal(captured.headers.get("x-nova-internal-signature"), expectedSignature);
@@ -314,7 +315,7 @@ test("handles credentialed CORS preflight only for exact configured origins and 
   assert.equal(response.headers.get("access-control-allow-origin"), "https://nova-os-pied.vercel.app");
   assert.equal(response.headers.get("access-control-allow-credentials"), "true");
   assert.equal(response.headers.get("access-control-allow-methods"), "GET, POST, OPTIONS");
-  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Authorization, Content-Type");
+  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Authorization, Content-Type, Idempotency-Key");
   assert.match(response.headers.get("vary"), /Origin/);
   assert.match(response.headers.get("vary"), /Access-Control-Request-Method/);
 
