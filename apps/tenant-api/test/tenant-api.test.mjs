@@ -951,7 +951,16 @@ class ProvisioningDB {
         throw new Error("unexpected provisioning write");
       },
       async all() {
-        if (sql.includes("FROM tenant_provisioning_requests")) return { results: db.existingRows };
+        if (sql.includes("FROM tenant_provisioning_requests")) {
+          if (sql.includes("WHERE nova_os_tenant_id = ?")) {
+            return { results: db.existingRows.filter(row => row.nova_os_tenant_id === args[0]) };
+          }
+          if (sql.includes("WHERE r.actor_subject = ? AND r.idempotency_key = ?")) {
+            return { results: db.existingRows.filter(row => row.actor_subject === args[0] &&
+              row.idempotency_key === args[1]) };
+          }
+          return { results: db.existingRows };
+        }
         throw new Error("unexpected provisioning read");
       },
     }; } };
@@ -1063,6 +1072,7 @@ test("tenant provisioning returns the existing result only for the same dual ide
     "supabase-owner", "nova-tenant-001", "Research tenant",
   ])).digest("hex");
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
+    actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: digest, supabase_issuer: "https://project.example.test/auth/v1",
     supabase_subject: "supabase-owner", nova_os_tenant_id: "nova-tenant-001",
     tenant_id: "tenant-existing", display_name: "Research tenant", status: "active",
@@ -1079,6 +1089,7 @@ test("tenant provisioning returns the existing result only for the same dual ide
 
 test("tenant provisioning rejects idempotency key reuse across another Supabase identity or NOVA OS tenant", async () => {
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
+    actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: "0".repeat(64), supabase_issuer: "https://project.example.test/auth/v1",
     supabase_subject: "another-user", nova_os_tenant_id: "another-tenant",
     tenant_id: "tenant-existing", display_name: "Other name", status: "active",
