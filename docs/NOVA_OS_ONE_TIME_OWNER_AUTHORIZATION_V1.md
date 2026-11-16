@@ -60,3 +60,10 @@ NOVA OS must serialize authorization consumption against owner membership lifecy
 This is a coordinated NOVA OS + Core change. Do not merge or deploy either half independently. Require independent review of server-to-server authentication, ordered migrations, disposable PostgreSQL concurrency tests, Core Worker/D1 integration tests, exact issuer/audience/key pinning, end-to-end lost-response tests and an audited unlinked-tenant recovery procedure.
 
 Until implementation and tests pass, Core provisioning remains draft-only and must not be described as immediately revocation-safe.
+
+
+## Deterministic retry identifiers (implementation requirement)
+
+The stable Core correlation identifier must not be the gateway request/nonce ID: that value is intentionally single-use and changes on a browser retry. Core derives the correlation identifier deterministically from the canonical provisioning tuple, for example `nova-provision:<request_sha256>`. The canonical digest must cover the protocol version, Access issuer and subject, Supabase issuer and subject, NOVA OS tenant ID, owner-assertion JTI, idempotency key and normalized display name. Core computes it; callers never supply it. The same exact retry therefore derives the same correlation identifier without writing a pre-authorization provisioning record.
+
+NOVA OS creates and persists one unique permit JTI (UUID) with the first successful consumption. An identical retry, after the tenant/owner lock and active-state recheck, returns the same durable permit JTI and exact bound tuple; NOVA OS may issue a fresh short-lived signature/expiry over that same permit identity. A changed tuple is a conflict. Core stores the permit JTI with its durable provisioning request. The permit JTI is distinct from both the owner-assertion JTI and Core receipt JTI.
