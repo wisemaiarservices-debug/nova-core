@@ -119,9 +119,10 @@ Stop immediately and disable the staging provisioning path if any key/issuer/aud
 
 The runtime pull requests are based on prerequisite protocol branches. Preserve this dependency chain when preparing coordinated staging branches; do not merge a child PR against an unintegrated parent:
 
-- NOVA OS protocol: PR #56 `design/nova-os-one-time-owner-authorization-v1` → runtime PR #57 `feat/nova-os-one-time-owner-authorization-v1` → mapping correction PR #58 `fix/nova-os-mapping-honors-consumed-permit`.
-- NOVA Core protocol: PR #221 `design/nova-os-one-time-owner-authorization-v1` → runtime PR #222 `feat/nova-core-one-time-owner-authorization-v1`.
-- Before integration, verify each child PR's base SHA is the reviewed parent head. If a parent changes, update/rebase the child and rerun all affected checks.
-- The two repositories can be integrated independently into isolated staging branches, but staging deployment must wait until both repository chains are complete and their exact deployed SHAs are recorded.
+- NOVA OS protocol PR #56 (`design/nova-os-one-time-owner-authorization-v1`) and runtime PR #57 (`feat/nova-os-one-time-owner-authorization-v1`) are **sibling review branches**, not a strict base/head dependency: PR #56 head is `250d34e90435bc5d83cd3f0d80ce708f49cf27ec`, while PR #57 is based on `561fcfb1d05ae62c2b70c6d91a9267e58da242c2`. PR #57 includes its own runtime-aligned edits to the protocol document. Review both contracts together; do not claim PR #57 inherits PR #56's exact commit unless its base is deliberately updated and all affected checks rerun.
+- NOVA OS mapping correction PR #58 (`fix/nova-os-mapping-honors-consumed-permit`) is based on PR #57 head `997e6b76ea5d7c3b5046d64002f9b1e663812379`; preserve this dependency or rebase and retest.
+- NOVA Core protocol PR #221 (`design/nova-os-one-time-owner-authorization-v1`) → runtime PR #222 (`feat/nova-core-one-time-owner-authorization-v1`) is a true base/head dependency; PR #222 is based on PR #221 head `285d53d0bbc5e40f64f8eadcccdc025050024af2`.
+- Before integration, verify every PR's current base SHA and head SHA against the reviewed values. If a parent changes, update/rebase dependent branches and rerun all affected checks.
+- The two repositories can be integrated independently into isolated staging branches, but staging deployment must wait until both repository review sets are complete and their exact deployed SHAs are recorded.
 - Keep protocol and runtime changes reviewable as separate units. A successful child CI run does not replace review of its parent contract or prove the combined deployment.
 - Do not merge these branches directly to production as part of staging preparation.
