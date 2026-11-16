@@ -22,6 +22,15 @@ class DB {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
         if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
+        if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
+          const rows = db.membershipRows ?? (db.membership ? [{
+            subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
+            membership_status: "active", tenant_status: "active",
+          }] : []);
+          return { results: rows.filter(row => row.role === "tenant_owner" &&
+            row.membership_status === "active" && row.tenant_status === "active" &&
+            row.tenant_id === args[0] && row.subject === args[1]) };
+        }
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
@@ -1861,6 +1870,10 @@ test("identity-link pending queue is restricted to an active tenant owner and ex
 
 test("identity-link decision uses the gateway-derived owner identity and caller idempotency key", async () => {
   const db = new DB();
+  db.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_owner", membership_status: "active", tenant_status: "active",
+  }];
   db.identityLinkEventRows = [];
   db.identityLinkRows = [{ id: "link-request-1", status: "pending", tenant_id: null }];
   const response = await worker.fetch(await request({},
@@ -2450,4 +2463,47 @@ test("a valid linked Supabase JWT cannot substitute for the verified Cloudflare 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("approved identity-link inventory requires an active tenant owner and exact Access issuer", async () => {
+  const db = new DB();
+  db.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_owner", membership_status: "active", tenant_status: "active",
+  }];
+  db.identityLinkRows = [{
+    id: "approved-link-a",
+    supabase_issuer: "https://project.example.test/auth/v1",
+    supabase_subject: "supabase-user-a",
+    cloudflare_issuer: "https://example.cloudflareaccess.com",
+    cloudflare_subject: "operator-a",
+    created_at: "2026-11-15T10:00:00.000Z",
+    decided_at: "2026-11-15T10:05:00.000Z",
+    decided_by_cloudflare_subject: "operator@example.test",
+    reason: "Owner approved after independent review",
+  }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/approved"), env(db));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.data.length, 1);
+  assert.equal(payload.data[0].id, "approved-link-a");
+  const ownerQuery = db.calls.find(call => call.sql.includes("FROM tenant_memberships m JOIN tenants t"));
+  assert.deepEqual(ownerQuery.args, ["tenant-a", "operator@example.test"]);
+  const approvedQuery = db.calls.find(call => call.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'"));
+  assert.deepEqual(approvedQuery.args, ["tenant-a", "https://example.cloudflareaccess.com", 20]);
+  assert.match(approvedQuery.sql, /r\.cloudflare_issuer = \?/);
+});
+
+test("approved identity-link inventory returns not-found for inactive or non-owner membership", async () => {
+  const db = new DB();
+  db.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "viewer", membership_status: "active", tenant_status: "active",
+  }];
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/identity-links/approved"), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.calls.some(call => call.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'")), false);
 });
