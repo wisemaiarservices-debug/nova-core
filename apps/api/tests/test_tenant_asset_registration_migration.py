@@ -36,7 +36,8 @@ class TenantAssetRegistrationMigrationTests(unittest.TestCase):
             INSERT INTO tenant_memberships VALUES
               ('membership-a', 'tenant-a', 'owner-sub', 'tenant_owner', 'active');
             INSERT INTO assets VALUES
-              ('asset-a', 'tenant-a', 'site-a', 'unconfigured', 'Pump 01', 'pump', NULL);
+              ('asset-a', 'tenant-a', 'site-a', 'unconfigured', 'Pump 01', 'pump', NULL),
+              ('asset-b', 'tenant-a', 'site-a', 'unconfigured', 'Pump 02', 'pump', NULL);
         """)
         self.db.executescript(MIGRATION.read_text())
 
@@ -81,7 +82,7 @@ class TenantAssetRegistrationMigrationTests(unittest.TestCase):
             self.db.execute("""
               INSERT INTO tenant_asset_events
                 (id, tenant_id, site_id, asset_id, actor_subject, event_type, request_id)
-              VALUES ('event-b', 'tenant-a', 'site-a', 'asset-a', 'owner-sub', 'created', 'request-b')
+              VALUES ('event-b', 'tenant-a', 'site-a', 'asset-b', 'owner-sub', 'created', 'request-b')
             """)
         self.db.execute("UPDATE tenant_memberships SET role='tenant_owner' WHERE subject='owner-sub'")
         self.db.execute("UPDATE tenants SET status='suspended' WHERE id='tenant-a'")
@@ -115,13 +116,13 @@ class TenantAssetRegistrationMigrationTests(unittest.TestCase):
               INSERT INTO tenant_asset_creation_requests
                 (id, tenant_id, site_id, actor_subject, idempotency_key, request_sha256, asset_id, request_id)
               VALUES ('request-row-b', 'tenant-a', 'site-a', 'owner-sub', 'key-a',
-                      ?, 'asset-a', 'request-b')
+                      ?, 'asset-b', 'request-b')
             """, ("b" * 64,))
 
     def test_migration_declares_composite_tenant_site_asset_foreign_keys(self):
         sql = MIGRATION.read_text()
         self.assertIn("FOREIGN KEY (asset_id, tenant_id, site_id)", sql)
-        self.assertIn("UNIQUE (tenant_id, actor_subject, idempotency_key)", sql)
+        self.assertIn("UNIQUE (tenant_id, site_id, actor_subject, idempotency_key)", sql)
         self.assertIn("tenant_asset_creation_request_insert_guard", sql)
 
 
