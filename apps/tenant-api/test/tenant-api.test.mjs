@@ -990,7 +990,7 @@ const novaOsPermitJwk = {
 const coreToOsKeyId = "core-os-test-key";
 const coreToOsSecret = "test-only-Core-to-OS-shared-secret-with-32-bytes";
 const novaOsAuthorizationUrl = "https://project.example.test/functions/v1/nova-core-owner-authorization";
-function novaOsOwnerAssertion(subject = "supabase-owner", tenantId = "22222222-2222-4222-8222-222222222222", jti = "aaaaaaaa-0000-4000-8000-000000000001") {
+function novaOsOwnerAssertion(subject = "11111111-1111-4111-8111-111111111111", tenantId = "22222222-2222-4222-8222-222222222222", jti = "aaaaaaaa-0000-4000-8000-000000000001") {
   const b64 = value => Buffer.from(value).toString("base64url");
   const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: novaOsOwnerJwk.kid }));
   const claims = b64(JSON.stringify({
@@ -1005,7 +1005,7 @@ function novaOsOwnerAssertion(subject = "supabase-owner", tenantId = "22222222-2
   const input = header + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), novaOsOwnerKeyPair.privateKey).toString("base64url");
 }
-function provisioningSupabaseToken(subject = "supabase-owner") {
+function provisioningSupabaseToken(subject = "11111111-1111-4111-8111-111111111111") {
   const b64 = value => Buffer.from(value).toString("base64url");
   const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: provisioningJwk.kid }));
   const claims = b64(JSON.stringify({
@@ -1161,7 +1161,7 @@ test("tenant provisioning rejects owner assertions for another NOVA OS tenant", 
   const db = new ProvisioningDB([]);
   const body = JSON.stringify({
     ...JSON.parse(provisioningBody),
-    nova_os_owner_assertion: novaOsOwnerAssertion("supabase-owner", "33333333-3333-4333-8333-333333333333", "bbbbbbbb-0000-4000-8000-000000000002"),
+    nova_os_owner_assertion: novaOsOwnerAssertion("11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333", "bbbbbbbb-0000-4000-8000-000000000002"),
   });
   await withProvisioningJwks(async () => {
     const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", body), provisioningEnv(db));
@@ -1178,7 +1178,7 @@ test("tenant provisioning rejects receipt-incompatible tenant identifiers before
   const body = JSON.stringify({
     ...JSON.parse(provisioningBody),
     nova_os_tenant_id: invalidTenantId,
-    nova_os_owner_assertion: novaOsOwnerAssertion("supabase-owner", invalidTenantId),
+    nova_os_owner_assertion: novaOsOwnerAssertion("11111111-1111-4111-8111-111111111111", invalidTenantId),
   });
   await withProvisioningJwks(async () => {
     const response = await worker.fetch(
@@ -1239,7 +1239,7 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     assert.equal(decodedClaims.core_tenant_id, result.tenant_id);
     assert.equal(decodedClaims.nova_os_tenant_id, "22222222-2222-4222-8222-222222222222");
     assert.equal(decodedClaims.access_subject, "operator@example.test");
-    assert.equal(decodedClaims.supabase_subject, "supabase-owner");
+    assert.equal(decodedClaims.supabase_subject, "11111111-1111-4111-8111-111111111111");
     assert.equal(decodedClaims.owner_assertion_jti, "aaaaaaaa-0000-4000-8000-000000000001");
     assert.equal(decodedClaims.jti, "request-123");
     assert.equal(await webcrypto.subtle.verify(
@@ -1261,7 +1261,7 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     assert.match(sql, /nova_os_authorization_correlation_id/);
     const record = db.batchCalls[0].at(-1);
     assert.ok(record.args.includes("https://project.example.test/auth/v1"));
-    assert.ok(record.args.includes("supabase-owner"));
+    assert.ok(record.args.includes("11111111-1111-4111-8111-111111111111"));
     assert.ok(record.args.includes("22222222-2222-4222-8222-222222222222"));
     assert.ok(record.args.includes("aaaaaaaa-0000-4000-8000-000000000001"));
     assert.ok(record.args.includes("dddddddd-dddd-4ddd-8ddd-dddddddddddd"));
@@ -1274,14 +1274,14 @@ test("tenant provisioning returns the existing result only for the same dual ide
   const digest = createHash("sha256").update(JSON.stringify([
     "nova-core-tenant-provisioning-v1",
     "https://example.cloudflareaccess.com", "operator@example.test",
-    "https://project.example.test/auth/v1", "supabase-owner",
+    "https://project.example.test/auth/v1", "11111111-1111-4111-8111-111111111111",
     "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001",
     "bootstrap-001", "Research tenant",
   ])).digest("hex");
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
     actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: digest, supabase_issuer: "https://project.example.test/auth/v1",
-    supabase_subject: "supabase-owner", nova_os_tenant_id: "22222222-2222-4222-8222-222222222222", nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
+    supabase_subject: "11111111-1111-4111-8111-111111111111", nova_os_tenant_id: "22222222-2222-4222-8222-222222222222", nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
     id: "provisioning-request-existing",
     access_issuer: "https://example.cloudflareaccess.com",
     nova_os_authorization_permit_jti: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -1308,7 +1308,7 @@ test("tenant provisioning rejects idempotency key reuse across another Supabase 
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
     actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: "0".repeat(64), supabase_issuer: "https://project.example.test/auth/v1",
-    supabase_subject: "another-user", nova_os_tenant_id: "33333333-3333-4333-8333-333333333333", nova_os_assertion_jti: "cccccccc-0000-4000-8000-000000000003",
+    supabase_subject: "22222222-2222-4222-8222-222222222222", nova_os_tenant_id: "33333333-3333-4333-8333-333333333333", nova_os_assertion_jti: "cccccccc-0000-4000-8000-000000000003",
     tenant_id: "tenant-existing", display_name: "Other name", status: "active",
     membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
   }]);
