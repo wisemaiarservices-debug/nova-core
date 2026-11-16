@@ -65,6 +65,9 @@ test("receipt claim validation matches the NOVA OS verifier before provisioning 
   assert.equal(validateNovaOsProvisioningReceiptClaims({
     ...claims, coreTenantId: "tenant-core-1", jti: "provisioning-request-1",
   }), true);
+  assert.equal(validateNovaOsProvisioningReceiptClaims({
+    ...claims, accessIssuer: "https://access.example.test/",
+  }), true, "a root trailing slash follows the NOVA OS verifier's origin normalization");
   for (const invalid of [
     { ...claims, accessIssuer: "https://access.example.test/path" },
     { ...claims, accessSubject: "x".repeat(201) },
