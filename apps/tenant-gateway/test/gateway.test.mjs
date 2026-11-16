@@ -123,7 +123,6 @@ test("routes tenant water-quality criteria list and version reads through the ve
       } }), {
       ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience,
       INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
-      TENANT_PROVISIONING_SUBJECTS: "cloudflare-user",
       TENANT_API: { fetch: async request => {
         capturedPost = request;
         return new Response(JSON.stringify({ data: { status: "draft" } }), {
@@ -439,7 +438,8 @@ test("routes tenant creation only for an exact gateway provisioning allowlist su
   };
   const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants", {
     method: "POST", body: payload,
-    headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+    headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid",
+      "Authorization": "Bearer test.supabase.token" },
   }), configured);
   assert.equal(response.status, 201);
   assert.equal(new URL(forwarded.url).pathname, "/internal/v1/tenants");
