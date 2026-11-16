@@ -98,7 +98,7 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ("request-bound", "access-subject-a", "bootstrap-bound", "b" * 64,
               "tenant-a", "https://project.example.test/auth/v1",
-              "supabase-user-a", "nova-tenant-a", "owner-proof-a"))
+              "supabase-user-a", "nova-tenant-a", "owner-proof-a", "receipt-one"))
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute("""
                 INSERT INTO tenant_provisioning_requests
@@ -107,7 +107,7 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, ("request-second", "access-subject-b", "bootstrap-second", "d" * 64,
                   "tenant-a", "https://project.example.test/auth/v1",
-                  "supabase-user-b", "nova-tenant-a", "owner-proof-b"))
+                  "supabase-user-b", "nova-tenant-a", "owner-proof-b", "receipt-two"))
 
     def test_owner_assertion_jti_is_unique_across_provisioning_records(self):
         self.db.execute("""
