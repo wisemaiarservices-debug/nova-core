@@ -23,8 +23,11 @@ function replay(existing, digest) {
   return { data: { id: row.asset_id, name: row.name, asset_type: row.asset_type,
     external_ref: row.external_ref ?? null, status: row.status, created: false }, status: 200 };
 }
-export async function createTenantAsset(db, tenant, site, actor, requestId, idempotencyKey, requestDigest, body) {
+export async function createTenantAsset(db, tenant, site, actor, requestId, idempotencyKey, requestDigest, body, identityLink) {
   if (!validIdempotencyKey(idempotencyKey) || !/^[a-f0-9]{64}$/.test(requestDigest ?? "") ||
+      !identityLink || !validText(identityLink.supabaseIssuer, 500) ||
+      !validText(identityLink.supabaseSubject, 200) || !validText(identityLink.cloudflareIssuer, 500) ||
+      !validText(identityLink.cloudflareSubject, 200) ||
       !onlyKeys(body, ["name", "asset_type", "external_ref"]) ||
       !validText(body.name, 160) || !validText(body.asset_type, 80) ||
       (body.external_ref !== undefined && body.external_ref !== null &&
@@ -42,9 +45,11 @@ export async function createTenantAsset(db, tenant, site, actor, requestId, idem
   const externalRef = body.external_ref ?? null;
   const statements = [
     db.prepare(
-      "INSERT INTO assets (id, site_id, tenant_id, name, asset_type, external_ref, status, metadata_json) SELECT ?, ?, ?, ?, ?, ?, 'unconfigured', '{}' WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND tenant_id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')"
+      "INSERT INTO assets (id, site_id, tenant_id, name, asset_type, external_ref, status, metadata_json) SELECT ?, ?, ?, ?, ?, ?, 'unconfigured', '{}' WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND tenant_id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved' AND supabase_issuer = ? AND supabase_subject = ? AND cloudflare_issuer = ? AND cloudflare_subject = ?)"
     ).bind(assetId, site, tenant, body.name, body.asset_type, externalRef,
-      tenant, site, tenant, tenant, actor),
+      tenant, site, tenant, tenant, actor, tenant,
+      identityLink.supabaseIssuer, identityLink.supabaseSubject,
+      identityLink.cloudflareIssuer, identityLink.cloudflareSubject),
     db.prepare(
       "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'asset', ?, 'read' WHERE EXISTS (SELECT 1 FROM assets WHERE id = ? AND tenant_id = ? AND site_id = ? AND status = 'unconfigured') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id = ? AND subject = ? AND role = 'tenant_owner' AND status = 'active')"
     ).bind(grantId, tenant, actor, assetId, assetId, tenant, site, tenant, actor),
