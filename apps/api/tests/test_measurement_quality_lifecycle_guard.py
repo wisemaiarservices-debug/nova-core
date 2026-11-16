@@ -152,7 +152,7 @@ def test_database_rejects_mapping_for_different_asset_than_observation():
          observed_at, idempotency_key, verification_status, provenance_json, quality_flags_json)
         VALUES ('obs-b', 'site-a', 'tenant-a', 'asset-b', 'source-a', 'neoagro',
                 'ec', 1.5, 'dS/m', '2026-05-10T10:00:00Z', 'obs-key-b',
-                'verified', '{}', '[]')""")
+                'unverified', '{}', '[]')""")
     db.execute("""INSERT INTO audit_events
         (id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, details_json)
         VALUES ('audit-b', 'tenant-a', 'service', 'ingestion-service', 'observation.accepted',
@@ -162,6 +162,7 @@ def test_database_rejects_mapping_for_different_asset_than_observation():
          event_type, evidence_ref, request_id)
         VALUES ('obs-verified-b', 'tenant-a', 'site-a', 'obs-b', 'reviewer-a',
                 'measurement_reviewer', 'verified', 'inspection:observation-b', 'obs-review-b')""")
+    db.execute("UPDATE observations SET verification_status='verified' WHERE id='obs-b'")
 
     with pytest.raises(sqlite3.IntegrityError, match="quality result requires verified exact-scope"):
         assessment_insert(db, "cross-asset-mapping", observation_id="obs-b")
