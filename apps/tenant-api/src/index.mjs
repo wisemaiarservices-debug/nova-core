@@ -1,5 +1,6 @@
 import { json, error } from "./http.mjs";
 import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
+import { verifyNovaOsOwnerAssertion } from "./nova-os-provisioning-auth.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
@@ -886,11 +887,14 @@ async function revokeMembershipInvitation(db, tenant, invitationId, actor, reque
     : { error: "membership_invitation_not_found", status: 404 };
 }
 
-async function createTenantForProvisioning(db, subject, body, requestId, allowlist, supabaseIdentity) {
+async function createTenantForProvisioning(db, subject, body, requestId, allowlist, supabaseIdentity, novaOsOwnerAssertion) {
   if (!allowlist || !allowlist.has(subject)) return { error: "not_found", status: 404 };
   if (!supabaseIdentity || typeof supabaseIdentity.issuer !== "string" ||
-      typeof supabaseIdentity.subject !== "string" ||
-      !onlyKeys(body, ["display_name", "idempotency_key", "nova_os_tenant_id"]) ||
+      typeof supabaseIdentity.subject !== "string" || !novaOsOwnerAssertion ||
+      novaOsOwnerAssertion.supabaseIssuer !== supabaseIdentity.issuer ||
+      novaOsOwnerAssertion.supabaseSubject !== supabaseIdentity.subject ||
+      novaOsOwnerAssertion.novaOsTenantId !== body.nova_os_tenant_id ||
+      !onlyKeys(body, ["display_name", "idempotency_key", "nova_os_tenant_id", "nova_os_owner_assertion"]) ||
       typeof body.display_name !== "string" || body.display_name.trim() !== body.display_name ||
       body.display_name.length < 1 || body.display_name.length > 160 ||
       !validId(body.idempotency_key, 160) || !validId(body.nova_os_tenant_id, 120)) {
@@ -898,17 +902,18 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
   }
   const requestDigest = await sha256Hex(JSON.stringify([
     subject, supabaseIdentity.issuer, supabaseIdentity.subject,
-    body.nova_os_tenant_id, body.display_name,
+    body.nova_os_tenant_id, novaOsOwnerAssertion.jti, body.display_name,
   ]));
   const priorTenantBinding = await rows(db.prepare(
-    "SELECT actor_subject, idempotency_key, request_sha256, supabase_issuer, supabase_subject, nova_os_tenant_id FROM tenant_provisioning_requests WHERE nova_os_tenant_id = ? LIMIT 2"
+    "SELECT actor_subject, idempotency_key, request_sha256, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti FROM tenant_provisioning_requests WHERE nova_os_tenant_id = ? LIMIT 2"
   ).bind(body.nova_os_tenant_id));
   if (priorTenantBinding.length > 1) return { error: "tenant_provisioning_conflict", status: 409 };
   if (priorTenantBinding.length === 1) {
     const prior = priorTenantBinding[0];
     if (prior.actor_subject !== subject || prior.idempotency_key !== body.idempotency_key ||
         prior.request_sha256 !== requestDigest || prior.supabase_issuer !== supabaseIdentity.issuer ||
-        prior.supabase_subject !== supabaseIdentity.subject || prior.nova_os_tenant_id !== body.nova_os_tenant_id) {
+        prior.supabase_subject !== supabaseIdentity.subject || prior.nova_os_tenant_id !== body.nova_os_tenant_id ||
+        prior.nova_os_assertion_jti !== novaOsOwnerAssertion.jti) {
       return { error: "tenant_provisioning_conflict", status: 409 };
     }
   }
@@ -934,9 +939,9 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
       "INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, 'tenant_owner', NULL, 'active', 'Initial owner assigned by allowlisted tenant provisioning', ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(eventId, tenantId, membershipId, subject, subject, requestId, membershipId, tenantId),
     db.prepare(
-      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(requestId, subject, body.idempotency_key, requestDigest, tenantId,
-      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id, membershipId, tenantId),
+      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id, novaOsOwnerAssertion.jti, membershipId, tenantId),
   ];
   try {
     const results = await db.batch(statements);
@@ -957,12 +962,13 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
     // Read the durable outcome below; all other batch failures remain 503.
   }
   const existing = await rows(db.prepare(
-    "SELECT r.request_sha256, r.tenant_id, r.supabase_issuer, r.supabase_subject, r.nova_os_tenant_id, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
+    "SELECT r.request_sha256, r.tenant_id, r.supabase_issuer, r.supabase_subject, r.nova_os_tenant_id, r.nova_os_assertion_jti, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
   ).bind(subject, body.idempotency_key));
   if (existing.length !== 1) throw new Error("tenant_provisioning_storage_conflict");
   const row = existing[0];
   if (row.request_sha256 !== requestDigest || row.supabase_issuer !== supabaseIdentity.issuer ||
-      row.supabase_subject !== supabaseIdentity.subject || row.nova_os_tenant_id !== body.nova_os_tenant_id)
+      row.supabase_subject !== supabaseIdentity.subject || row.nova_os_tenant_id !== body.nova_os_tenant_id ||
+      row.nova_os_assertion_jti !== novaOsOwnerAssertion.jti)
     return { error: "idempotency_key_reused", status: 409 };
   if (row.role !== "tenant_owner" || row.membership_status !== "active" || row.status !== "active") {
     return { error: "tenant_provisioning_conflict", status: 409 };
@@ -1096,6 +1102,31 @@ export default {
         draftBody = JSON.parse(new TextDecoder().decode(rawBody));
       } catch { return error("invalid_request_body", 400); }
       if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody)) return error("invalid_request_body", 400);
+    }
+    let verifiedNovaOsOwnerAssertion = null;
+    if (tenantProvision) {
+      if (!verifiedSupabaseIdentity) return error("supabase_identity_required", 401);
+      try {
+        verifiedNovaOsOwnerAssertion = await verifyNovaOsOwnerAssertion(
+          draftBody?.nova_os_owner_assertion,
+          {
+            issuer: env.NOVA_OS_PROVISIONING_AUTH_ISSUER,
+            audience: env.NOVA_OS_PROVISIONING_AUTH_AUDIENCE,
+            jwk: env.NOVA_OS_PROVISIONING_AUTH_JWK,
+          },
+          {
+            supabaseIssuer: verifiedSupabaseIdentity.issuer,
+            supabaseSubject: verifiedSupabaseIdentity.subject,
+            novaOsTenantId: draftBody?.nova_os_tenant_id,
+          },
+        );
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : "";
+        if (reason === "invalid_nova_os_provisioning_configuration") {
+          return error("nova_os_provisioning_auth_not_configured", 503);
+        }
+        return error("nova_os_owner_authorization_invalid", 401);
+      }
     }
     try {
       if (!(await consumeRequestId(env.DB, requestId, issuedAt))) return error("request_not_authorized", 401);
@@ -1302,9 +1333,10 @@ export default {
         return json({ data: combined, request_id: requestId });
       }
       if (tenantProvision) {
-        if (!verifiedSupabaseIdentity) return error("supabase_identity_required", 401);
+        if (!verifiedSupabaseIdentity || !verifiedNovaOsOwnerAssertion) return error("supabase_identity_required", 401);
         const provisioned = await createTenantForProvisioning(env.DB, subject, draftBody, requestId,
-          configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS), verifiedSupabaseIdentity);
+          configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS),
+          verifiedSupabaseIdentity, verifiedNovaOsOwnerAssertion);
         return provisioned.error ? json({ error: provisioned.error }, provisioned.status)
           : json({ data: provisioned.data, request_id: requestId }, provisioned.status);
       }
