@@ -25,7 +25,7 @@ NOVA OS must serialize authorization consumption against owner membership lifecy
 
 - If suspension/revocation commits first, Core's authorization exchange fails and Core creates no tenant.
 - If consumption commits first, that exact provisioning attempt has been authorized and may complete despite a later revocation. This deterministic race winner must be documented; a cross-database transaction is not claimed.
-- Mapping still rechecks active owner status. If revocation occurs after Core commit but before mapping, the Core tenant remains unlinked and requires governed recovery.
+- Mapping verifies the immutable consumed-permit ledger and exact claim tuple instead of re-checking mutable tenant or owner status. An operation authorized before later suspension/revocation can finish mapping; the tenant must still exist, and mapping never reactivates it or grants access. Failures unrelated to a valid consumed permit still require governed recovery.
 
 ## Retry contract
 
