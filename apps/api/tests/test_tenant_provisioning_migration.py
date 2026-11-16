@@ -109,6 +109,23 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
                   "tenant-a", "https://project.example.test/auth/v1",
                   "supabase-user-b", "nova-tenant-a", "owner-proof-b"))
 
+    def test_owner_assertion_jti_is_unique_across_provisioning_records(self):
+        self.db.execute("""
+            INSERT INTO tenant_provisioning_requests
+              (id, actor_subject, idempotency_key, request_sha256, tenant_id,
+               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("request-one", "access-a", "key-one", "e" * 64, "tenant-a",
+              "https://project.example.test/auth/v1", "user-a", "nova-a", "proof-shared"))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("""
+                INSERT INTO tenant_provisioning_requests
+                  (id, actor_subject, idempotency_key, request_sha256, tenant_id,
+                   supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, ("request-two", "access-b", "key-two", "f" * 64, "tenant-a",
+                  "https://project.example.test/auth/v1", "user-b", "nova-b", "proof-shared"))
+
     def test_request_cannot_reference_unknown_tenant(self):
         with self.assertRaises(sqlite3.IntegrityError):
             self.insert_request(tenant="missing-tenant")
