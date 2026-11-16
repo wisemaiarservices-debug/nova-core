@@ -20,8 +20,8 @@ The following is the currently recorded PR #59 baseline; staging operators must 
 - [NOVA OS tenant administration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43974436766) — passed on that head.
 - NOVA OS PR #57 supplies the authorization-consumption endpoint and ledger; PR #59 supplies the required permit-bound mapping behavior. NOVA Core PR #222 supplies the matching Core caller/verifier and durable provisioning integration.
 - NOVA Core PR #221 exact protocol head: `285d53d0bbc5e40f64f8eadcccdc025050024af2`; CI [NOVA Core CI](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43948195993) passed.
-- NOVA Core PR #222 exact runtime head: `cfe42d7c96b4a16831f1cf6e225984d696f6f767`, based on PR #221 head above; CI [NOVA Core CI](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43968959728) passed.
-- Before staging, independently verify the three PRs' current head SHAs, base relationships, required checks, and migration order. If any head changes after review, rerun and reassess the full coordinated validation.
+- NOVA Core PR #222 exact runtime head: `1c8026ab2279fec3e28ea25f9d4b344794709ae3`, based on PR #221 head above; exact-head CI [NOVA Core CI](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43974847218) passed all three jobs (API tests, tenant Worker/D1 integration, research raster tests).
+- Before staging, independently verify the four coordinated PRs' current head SHAs, base relationships, required checks, and migration order. If any head changes after review, rerun and reassess the full coordinated validation.
 
 ## 2. Configuration inventory (names only; never put values in this file)
 
