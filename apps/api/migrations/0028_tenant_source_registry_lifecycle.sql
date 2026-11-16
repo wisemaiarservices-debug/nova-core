@@ -35,13 +35,36 @@ CREATE TABLE tenant_source_events (
   FOREIGN KEY (site_id, tenant_id) REFERENCES sites(id, tenant_id) ON DELETE RESTRICT,
   FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE RESTRICT,
   CHECK (
-    (event_type = 'registered' AND evidence_ref IS NULL AND reason IS NULL)
+    (event_type = 'registered' AND length(trim(evidence_ref)) BETWEEN 1 AND 500 AND reason IS NULL)
     OR (event_type = 'verified' AND length(trim(evidence_ref)) BETWEEN 1 AND 500 AND reason IS NULL)
     OR (event_type IN ('rejected', 'revoked') AND length(trim(evidence_ref)) BETWEEN 1 AND 500 AND length(trim(reason)) BETWEEN 1 AND 2000)
   )
 );
 CREATE INDEX idx_tenant_source_events_timeline
   ON tenant_source_events(tenant_id, source_id, occurred_at DESC, id);
+
+
+CREATE TABLE tenant_source_registration_requests (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) BETWEEN 1 AND 160),
+  tenant_id TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  actor_subject TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL CHECK (length(trim(idempotency_key)) BETWEEN 1 AND 160),
+  request_sha256 TEXT NOT NULL CHECK (length(request_sha256)=64 AND request_sha256 NOT GLOB '*[^a-f0-9]*'),
+  source_id TEXT NOT NULL,
+  request_id TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (tenant_id, site_id, actor_subject, idempotency_key),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
+  FOREIGN KEY (site_id, tenant_id) REFERENCES sites(id, tenant_id) ON DELETE RESTRICT,
+  FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE RESTRICT
+);
+CREATE TRIGGER tenant_source_registration_request_immutable_update
+BEFORE UPDATE ON tenant_source_registration_requests
+BEGIN SELECT RAISE(ABORT, 'source registration requests are immutable'); END;
+CREATE TRIGGER tenant_source_registration_request_immutable_delete
+BEFORE DELETE ON tenant_source_registration_requests
+BEGIN SELECT RAISE(ABORT, 'source registration requests cannot be deleted'); END;
 
 CREATE TRIGGER tenant_source_reviewer_assignment_guard
 BEFORE INSERT ON tenant_source_reviewers
