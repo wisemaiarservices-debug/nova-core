@@ -959,6 +959,7 @@ async function createTenantForProvisioning(
       membership_role: prior.role,
       membership_status: prior.membership_status,
       provisioning_request_id: prior.provisioning_request_id ?? prior.id,
+      authorization_permit_jti: prior.nova_os_authorization_permit_jti,
       created: false,
     }, status: 200 };
   }
@@ -1035,7 +1036,8 @@ async function createTenantForProvisioning(
       }
       return { data: { tenant_id: tenantId, display_name: body.display_name,
         tenant_status: "active", membership_id: membershipId, membership_role: "tenant_owner",
-        membership_status: "active", provisioning_request_id: requestId, created: true }, status: 201 };
+        membership_status: "active", provisioning_request_id: requestId,
+        authorization_permit_jti: permit.permitJti, created: true }, status: 201 };
     }
   } catch {
     // A concurrent exact request may have won the durable unique key.
@@ -1064,7 +1066,8 @@ async function createTenantForProvisioning(
   return { data: { tenant_id: row.tenant_id, display_name: row.display_name,
     tenant_status: row.status, membership_id: row.membership_id, membership_role: row.role,
     membership_status: row.membership_status,
-    provisioning_request_id: row.provisioning_request_id ?? row.id, created: false }, status: 200 };
+    provisioning_request_id: row.provisioning_request_id ?? row.id,
+    authorization_permit_jti: row.nova_os_authorization_permit_jti, created: false }, status: 200 };
 }
 
 export default {
@@ -1458,6 +1461,8 @@ export default {
             idempotencyKey: draftBody.idempotency_key,
             requestDigest,
             ownerAssertionJti: verifiedNovaOsOwnerAssertion.jti,
+            authorizationPermitJti: "00000000-0000-4000-8000-000000000000",
+            authorizationCorrelationId: "nova-provision:" + requestDigest,
             jti: "receipt-preflight",
           });
         } catch {
@@ -1486,12 +1491,15 @@ export default {
             idempotencyKey: draftBody.idempotency_key,
             requestDigest,
             ownerAssertionJti: verifiedNovaOsOwnerAssertion.jti,
+            authorizationPermitJti: provisioned.data.authorization_permit_jti,
+            authorizationCorrelationId: "nova-provision:" + requestDigest,
             jti: provisioned.data.provisioning_request_id,
           });
         } catch {
           return error("nova_os_mapping_receipt_unavailable", 503);
         }
-        const { provisioning_request_id: _provisioningRequestId, ...publicData } = provisioned.data;
+        const { provisioning_request_id: _provisioningRequestId,
+          authorization_permit_jti: _authorizationPermitJti, ...publicData } = provisioned.data;
         return json({ data: {
           ...publicData,
           mapping_receipt: receipt.token,
