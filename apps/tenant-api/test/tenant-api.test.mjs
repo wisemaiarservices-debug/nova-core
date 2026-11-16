@@ -1098,7 +1098,8 @@ test("tenant provisioning requires an exact configured Access subject allowlist"
 test("tenant provisioning rejects caller-selected owners and unknown fields", async () => {
   const db = new ProvisioningDB([]);
   const body = JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-002",
-    nova_os_tenant_id: "nova-tenant-001", initial_owner_subject: "attacker-subject" });
+    nova_os_tenant_id: "nova-tenant-001", nova_os_owner_assertion: novaOsOwnerAssertion(),
+    initial_owner_subject: "attacker-subject" });
   await withProvisioningJwks(async () => {
     const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", body), provisioningEnv(db));
     assert.equal(response.status, 400);
