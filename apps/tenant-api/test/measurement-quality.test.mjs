@@ -59,3 +59,13 @@ test("synthetic provenance is not promoted to field measurement quality",async()
  const r=await assessMeasurementQuality(db,"tenant-1","obs-1","req-1");
  assert.equal(r.data.status,"not_assessed");assert.equal(r.data.reason_code,"non_field_evidence");
 });
+
+test("disabled or unverified source cannot support a quality assessment",async()=>{
+ for (const sourceStatus of ["disabled","unverified"]) {
+  const db=dbFixture({sourceStatus});
+  const r=await assessMeasurementQuality(db,"tenant-1","obs-1","req-source-"+sourceStatus);
+  assert.equal(r.status,201);
+  assert.equal(r.data.status,"not_assessed");
+  assert.equal(r.data.reason_code,"verified_sensor_mapping_missing");
+ }
+});
