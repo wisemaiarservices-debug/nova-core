@@ -5,6 +5,12 @@ import { createTenantSite } from "../src/site-creation.mjs";
 
 globalThis.crypto ??= webcrypto;
 const digest = "a".repeat(64);
+const identityLink = {
+  supabaseIssuer: "https://project.example.test/auth/v1",
+  supabaseSubject: "supabase-owner",
+  cloudflareIssuer: "https://example.cloudflareaccess.com",
+  cloudflareSubject: "owner-sub",
+};
 
 class FakeDB {
   constructor() {
@@ -40,7 +46,7 @@ class FakeDB {
 test("first-site creation atomically inserts the site, exact owner read grant, audit and idempotency record", async () => {
   const db = new FakeDB();
   const result = await createTenantSite(db, "tenant-a", "owner-sub", "request-1",
-    "first-site-setup-1", digest, { name: "North Farm" });
+    "first-site-setup-1", digest, { name: "North Farm" }, identityLink);
   assert.equal(result.status, 201);
   assert.equal(result.data.tenant_id, "tenant-a");
   assert.equal(result.data.name, "North Farm");
@@ -60,7 +66,7 @@ test("same idempotency key and body replays the original site without a second w
   db.existing = [{ request_sha256: digest, site_id: "site-original",
     name: "North Farm", status: "active", timezone: null }];
   const result = await createTenantSite(db, "tenant-a", "owner-sub", "request-retry",
-    "first-site-setup-1", digest, { name: "North Farm" });
+    "first-site-setup-1", digest, { name: "North Farm" }, identityLink);
   assert.equal(result.status, 200);
   assert.equal(result.data.id, "site-original");
   assert.equal(result.data.created, false);
@@ -72,7 +78,7 @@ test("idempotency key cannot be reused for a different request digest", async ()
   db.existing = [{ request_sha256: digest, site_id: "site-original",
     name: "North Farm", status: "active", timezone: null }];
   const result = await createTenantSite(db, "tenant-a", "owner-sub", "request-retry",
-    "first-site-setup-1", "b".repeat(64), { name: "South Farm" });
+    "first-site-setup-1", "b".repeat(64), { name: "South Farm" }, identityLink);
   assert.deepEqual(result, { error: "site_creation_idempotency_conflict", status: 409 });
   assert.equal(db.batchStatements.length, 0);
 });
@@ -85,7 +91,7 @@ test("rejects extra fields, untrimmed names and malformed idempotency keys", asy
     ["bad key", { name: "North Farm" }],
   ]) {
     const result = await createTenantSite(db, "tenant-a", "owner-sub", "request-1",
-      key, digest, body);
+      key, digest, body, identityLink);
     assert.equal(result.status, 400);
   }
   assert.equal(db.batchStatements.length, 0);
@@ -95,5 +101,5 @@ test("failed atomic batch is not reported as a created site", async () => {
   const db = new FakeDB();
   db.batchError = new Error("audit trigger rejected");
   await assert.rejects(() => createTenantSite(db, "tenant-a", "owner-sub",
-    "request-1", "first-site-setup-1", digest, { name: "North Farm" }), /audit trigger rejected/);
+    "request-1", "first-site-setup-1", digest, { name: "North Farm" }, identityLink), /audit trigger rejected/);
 });
