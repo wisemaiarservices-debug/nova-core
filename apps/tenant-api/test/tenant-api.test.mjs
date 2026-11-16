@@ -8,7 +8,7 @@ const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
     this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
-    this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
+    this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.siteObservationRows = []; this.siteObservationAuthorizationRows = null; this.siteListRows = null; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
     this.batchCalls.push(statements);
@@ -22,6 +22,9 @@ class DB {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
         if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
+        if (sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships")) return { results: db.siteListRows ?? [] };
+        if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) return { results: db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []) };
+        if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) return { results: db.siteObservationRows ?? [] };
         if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
           const rows = db.membershipRows ?? (db.membership ? [{
             subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
@@ -2506,4 +2509,114 @@ test("approved identity-link inventory returns not-found for inactive or non-own
     "https://private.internal/internal/v1/tenants/tenant-a/identity-links/approved"), env(db));
   assert.equal(response.status, 404);
   assert.equal(db.calls.some(call => call.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'")), false);
+});
+
+
+test("lists only active sites with exact tenant membership and site-read grant after identity link approval", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
+    return new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  };
+  try {
+    const db = new DB();
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    db.siteListRows = [{ id: "site-a", name: "North Farm", timezone: "Africa/Tunis" }];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites"), env(db));
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.limit, 100);
+    assert.deepEqual(payload.data, db.siteListRows);
+    const link = db.calls.find(call => call.sql.includes("tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved'"));
+    assert.deepEqual(link.args, ["tenant-a", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
+      "https://example.cloudflareaccess.com", "operator@example.test"]);
+    const list = db.calls.find(call => call.sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships"));
+    assert.deepEqual(list.args, ["operator@example.test", "tenant-a"]);
+    assert.match(list.sql, /g\.resource_type = 'site'/);
+    assert.match(list.sql, /g\.action = 'read'/);
+    assert.match(list.sql, /s\.status = 'active'/);
+    assert.match(list.sql, /LIMIT 100/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("does not list tenant sites without an approved dual-identity link", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    const db = new DB();
+    db.identityLinkRows = [];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites"), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.some(call => call.sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships")), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("requires a verified Supabase identity before site observation reads", async () => {
+  const db = new DB();
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+  assert.equal(response.status, 401);
+  assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
+});
+
+test("lists bounded observations only after approved dual-identity and exact site grant checks", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    const db = new DB();
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    db.siteObservationRows = [
+      { id: "obs-2", tenant_id: "tenant-a", site_id: "site-a", metric: "soil_moisture", value: 24, unit: "%" },
+      { id: "obs-1", tenant_id: "tenant-a", site_id: "site-a", metric: "air_temperature", value: 21, unit: "Cel" },
+    ];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.limit, 100);
+    assert.deepEqual(payload.data, db.siteObservationRows);
+    const link = db.calls.find(call => call.sql.includes("tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved'"));
+    assert.deepEqual(link.args, ["tenant-a", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
+      "https://example.cloudflareaccess.com", "operator@example.test"]);
+    const authorization = db.calls.find(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships"));
+    assert.deepEqual(authorization.args, ["operator@example.test", "tenant-a", "site-a"]);
+    const read = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
+    assert.deepEqual(read.args, ["tenant-a", "site-a"]);
+    assert.match(read.sql, /ORDER BY o\.observed_at DESC, o\.id DESC LIMIT 100/);
+    assert.match(read.sql, /src\.verification_status = 'verified'/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("does not read site observations without the exact active site grant", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    const db = new DB({ grant: false });
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("does not read observations when Supabase and Access identities are not owner-linked", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    const db = new DB();
+    db.identityLinkRows = [];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+    assert.equal(response.status, 404);
+    assert.equal(db.calls.some(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")), false);
+    assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
+  } finally { globalThis.fetch = originalFetch; }
 });
