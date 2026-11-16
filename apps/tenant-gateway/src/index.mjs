@@ -26,7 +26,7 @@ function corsResponse(response, origin, preflight) {
   headers.set("Access-Control-Expose-Headers", "X-Request-Id");
   if (preflight) {
     headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    headers.set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type");
+    headers.set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Idempotency-Key");
     headers.set("Access-Control-Max-Age", "600");
   }
   const vary = new Set((headers.get("Vary") || "").split(",").map(value => value.trim()).filter(Boolean));
@@ -68,7 +68,8 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-gateway-issued-at"),
     headers.get("x-nova-request-id"),
     headers.get("x-nova-body-sha256"),
-    headers.get("x-nova-supabase-token-sha256")]);
+    headers.get("x-nova-supabase-token-sha256"),
+    headers.get("x-nova-idempotency-key")]);
 }
 async function signEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) throw new Error("internal_auth_not_configured");
@@ -99,6 +100,11 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
     const identityLinkApproved = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/identity-links\/approved$/);
     const identityLinkDecision = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/identity-links\/([^/]+)\/decision$/);
       const siteList = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites$/);
+      const assetCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets$/);
+      const sourceRegister = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources$/);
+      const sourceReviewerAssign = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/assign$/);
+      const sourceReviewerRevoke = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/revoke$/);
+      const sourceVerification = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/verification$/);
     const siteObservationList = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/observations$/);
     const match = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
       const criteriaCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
@@ -127,14 +133,14 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const qualityAssessment = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/measurement-quality-assessment$/);
       const labReportUpload = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
       const labReportDetail = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
-      if ((tenantProvision && request.method !== "POST") || ((identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision) && request.method !== "POST") || ((identityLinkPending || identityLinkApproved) && request.method !== "GET") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange || siteGrantChange || resourceGrantChange || ownershipTransfer || tenantLifecycle) && request.method !== "POST") || (tenantLifecycleEvents && request.method !== "GET") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkPending && !identityLinkApproved && !identityLinkDecision && !siteList && !siteObservationList && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle && !tenantLifecycleEvents && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+      if ((tenantProvision && request.method !== "POST") || ((identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision) && request.method !== "POST") || ((identityLinkPending || identityLinkApproved) && request.method !== "GET") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange || siteGrantChange || resourceGrantChange || ownershipTransfer || tenantLifecycle) && request.method !== "POST") || (tenantLifecycleEvents && request.method !== "GET") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !siteList && !assetCreate && !sourceRegister && !sourceReviewerAssign && !sourceReviewerRevoke && !sourceVerification && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkPending && !identityLinkApproved && !identityLinkDecision && !siteObservationList && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle && !tenantLifecycleEvents && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
           (request.method === "POST" && (!identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkDecision && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !tenantProvision && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle || criteriaDetail || match || labReportDetail)) ||
           (request.method === "GET" && (identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload))) return error("not_found", 404);
-      const tenant = tenantProvision ? null : siteList?.[1] ?? siteObservationList?.[1] ?? identityLinkPending?.[1] ?? identityLinkApproved?.[1] ?? identityLinkDecision?.[1] ?? membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? resourceGrantChange?.[1] ?? ownershipTransfer?.[1] ?? tenantLifecycle?.[1] ?? tenantLifecycleEvents?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
+      const tenant = tenantProvision ? null : sourceRegister?.[1] ?? sourceReviewerAssign?.[1] ?? sourceReviewerRevoke?.[1] ?? sourceVerification?.[1] ?? assetCreate?.[1] ?? siteList?.[1] ?? siteObservationList?.[1] ?? identityLinkPending?.[1] ?? identityLinkApproved?.[1] ?? identityLinkDecision?.[1] ?? membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? resourceGrantChange?.[1] ?? ownershipTransfer?.[1] ?? tenantLifecycle?.[1] ?? tenantLifecycleEvents?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
       const resourceId = match?.[3];
       const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2];
       const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3];
-      if ((!tenantProvision && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !validPathId(tenant, 120)) || (identityLinkChallengeConsume && !validPathId(identityLinkChallengeConsume[1])) || (identityLinkDecision && !validPathId(identityLinkDecision[2])) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validPathId((membershipInvitationAccept || membershipInvitationRevoke)[2])) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) || (siteList && !validPathId(siteList[1])) || (siteObservationList && !validPathId(siteObservationList[2])) ||
+      if ((!tenantProvision && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !validPathId(tenant, 120)) || (identityLinkChallengeConsume && !validPathId(identityLinkChallengeConsume[1])) || (identityLinkDecision && !validPathId(identityLinkDecision[2])) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validPathId((membershipInvitationAccept || membershipInvitationRevoke)[2])) || (match && (!ROUTES.has(match[2]) || !validPathId(resourceId))) || ((sourceRegister || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification) && (!validPathId((sourceRegister || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification)[1]) || !validPathId((sourceRegister || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification)[2]))) || (sourceVerification && !validPathId(sourceVerification[3])) || (assetCreate && (!validPathId(assetCreate[1]) || !validPathId(assetCreate[2]))) || (siteList && !validPathId(siteList[1])) || (siteObservationList && !validPathId(siteObservationList[2])) ||
           ((criteriaDetail || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess) && (!validPathId(entryId) || !validPathId(version, 80))) ||
           (observationVerification && !validPathId(observationVerification[2])) || (((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validPathId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validPathId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validPathId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview) && (!validPathId((sensorMappingRegister || sensorMappingReview)[2]) || !validPathId((sensorMappingRegister || sensorMappingReview)[3]))) || ((sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && !validPathId((sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2])) || (sensorMappingReview && !validPathId(sensorMappingReview[4])) || ((qualityPolicyRegister || qualityPolicyReview) && (!validPathId((qualityPolicyRegister || qualityPolicyReview)[2]) || !validPathId((qualityPolicyRegister || qualityPolicyReview)[3]))) || (qualityPolicyReview && !validPathId(qualityPolicyReview[4])) || (qualityAssessment && !validPathId(qualityAssessment[2])) || ((labReportUpload || labReportDetail) && !validPathId((labReportUpload ?? labReportDetail)[2]))) || (labReportDetail && !validPathId(labReportDetail[3]))) return error("not_found", 404);
       if (!env.TENANT_API || typeof env.ACCESS_ISSUER !== "string" ||
@@ -159,7 +165,17 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       if (tenantProvision && !configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS)?.has(principal.subject)) return error("not_found", 404);
 
       const requestId = crypto.randomUUID();
-      const internalPath = siteList
+      const internalPath = sourceRegister
+        ? "/internal/v1/tenants/" + tenant + "/sites/" + sourceRegister[2] + "/sources"
+        : sourceReviewerAssign
+          ? "/internal/v1/tenants/" + tenant + "/sites/" + sourceReviewerAssign[2] + "/source-reviewers/assign"
+          : sourceReviewerRevoke
+            ? "/internal/v1/tenants/" + tenant + "/sites/" + sourceReviewerRevoke[2] + "/source-reviewers/revoke"
+            : sourceVerification
+              ? "/internal/v1/tenants/" + tenant + "/sites/" + sourceVerification[2] + "/sources/" + sourceVerification[3] + "/verification"
+        : assetCreate
+        ? "/internal/v1/tenants/" + tenant + "/sites/" + assetCreate[2] + "/assets"
+        : siteList
         ? "/internal/v1/tenants/" + tenant + "/sites"
         : siteObservationList
           ? "/internal/v1/tenants/" + tenant + "/sites/" + siteObservationList[2] + "/observations"
@@ -255,8 +271,13 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         "accept": "application/json",
       });
       try {
+        if ((siteList || assetCreate || sourceRegister) && request.method === "POST") {
+          const idempotencyKey = request.headers.get("Idempotency-Key");
+          if (!validPathId(idempotencyKey, 160)) return error("invalid_idempotency_key", 400);
+          headers.set("x-nova-idempotency-key", idempotencyKey);
+        }
         const authorization = request.headers.get("authorization");
-        if ((tenantProvision || identityLinkChallengeCreate || identityLinkChallengeConsume || siteList || siteObservationList) && authorization === null)
+        if ((tenantProvision || identityLinkChallengeCreate || identityLinkChallengeConsume || siteList || assetCreate || siteObservationList) && authorization === null)
           return error("supabase_authorization_required", 401);
         if (authorization !== null) {
           const match = authorization.match(/^Bearer ([A-Za-z0-9._~-]{1,16384})$/);
@@ -297,7 +318,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         const requestedHeaders = (request.headers.get("access-control-request-headers") || "")
           .split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
         if (!["GET", "POST"].includes(requestedMethod) ||
-            requestedHeaders.some(header => !["accept", "authorization", "content-type"].includes(header))) {
+            requestedHeaders.some(header => !["accept", "authorization", "content-type", "idempotency-key"].includes(header))) {
           return error("cors_preflight_not_allowed", 403);
         }
         return corsResponse(new Response(null, { status: 204 }), origin, true);
