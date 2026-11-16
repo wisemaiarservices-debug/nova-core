@@ -22,7 +22,7 @@ const claims = {
   coreTenantId: "tenant-core-1",
   idempotencyKey: "provision-tenant-1",
   requestDigest: "a".repeat(64),
-  ownerAssertionJti: "owner-proof-1",
+  ownerAssertionJti: "aaaaaaaa-0000-4000-8000-000000000001",
   jti: "provisioning-request-1",
 };
 
@@ -75,6 +75,8 @@ test("receipt signer rejects missing, weak, or invalid signing configuration", a
   }), /invalid_nova_os_receipt_signing_configuration/);
   const signer = await createNovaOsProvisioningReceiptSigner(config);
   await assert.rejects(() => signer({ ...claims, requestDigest: "not-a-sha256" }),
+    /invalid_nova_os_receipt_claims/);
+  await assert.rejects(() => signer({ ...claims, ownerAssertionJti: "not-a-uuid" }),
     /invalid_nova_os_receipt_claims/);
 });
 
