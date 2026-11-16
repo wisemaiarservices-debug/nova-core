@@ -1131,6 +1131,19 @@ test("tenant provisioning rejects missing or invalid NOVA OS owner proof before 
   });
 });
 
+test("tenant provisioning fails closed when the one-time NOVA OS authorization client is not configured", async () => {
+  const db = new ProvisioningDB([]);
+  await withProvisioningJwks(async () => {
+    const incomplete = { ...provisioningEnv(db) };
+    delete incomplete.NOVA_OS_OWNER_AUTH_KEYS;
+    const response = await worker.fetch(
+      await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody), incomplete);
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "nova_os_authorization_not_configured");
+    assert.equal(db.batchCalls.length, 0);
+  });
+});
+
 test("tenant provisioning fails closed when the NOVA OS owner assertion verifier is not configured", async () => {
   const db = new ProvisioningDB([]);
   await withProvisioningJwks(async () => {
