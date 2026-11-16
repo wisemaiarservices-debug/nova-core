@@ -1,11 +1,11 @@
 # NOVA V1 owner-authorization staging validation runbook
 
-**Status:** staging-only execution plan. This document does not authorize production configuration, customer onboarding, migration, or deployment. The coordinated runtime changes remain draft in NOVA OS PR #57, NOVA OS mapping correction PR #58, and NOVA Core PR #222. PR #58 is a required part of the staging stack: it aligns the mapping endpoint with the one-time permit-consumption authorization boundary.
+**Status:** staging-only execution plan. This document does not authorize production configuration, customer onboarding, migration, or deployment. The coordinated runtime changes remain draft in NOVA OS PR #57, NOVA OS mapping correction PR #59, and NOVA Core PR #222. PR #59 is a required part of the staging stack: it aligns the mapping endpoint with the one-time permit-consumption authorization boundary.
 
 ## 1. Preconditions
 
 - Use isolated staging projects/accounts and disposable tenant data only.
-- Confirm NOVA OS PRs #57 and #58 and NOVA Core PR #222 are reviewed and merged to coordinated staging branches; verify migration/workflow checks pass at the exact deployed commits. Do not stage the #57 owner-authorization endpoint without the #58 mapping correction.
+- Confirm NOVA OS PRs #57 and #59 and NOVA Core PR #222 are reviewed and merged to coordinated staging branches; verify migration/workflow checks pass at the exact deployed commits. Do not stage the #57 owner-authorization endpoint without the #59 mapping correction.
 - Confirm a named staging operator, independent reviewer, rollback owner, and incident contact.
 - Record the exact OS and Core commit SHAs, migration versions, worker/function versions, deployment timestamps, and test run IDs.
 - Verify the staging Cloudflare Access application, Supabase project, NOVA OS Edge Functions, and NOVA Core Worker are distinct from production.
@@ -13,12 +13,14 @@
 
 ## 1A. Cross-repository code-validation baseline
 
-The following is the currently recorded PR #58 baseline; staging operators must re-fetch each PR head and its checks immediately before staging and record the exact deployed SHA. These links are historical CI evidence, not deployment approval:
+The following is the currently recorded PR #59 baseline; staging operators must re-fetch each PR head and its checks immediately before staging and record the exact deployed SHA. These links are historical CI evidence, not deployment approval:
 
-- NOVA OS PR #58 exact validated head: `a4bfda582e364be75e92d646d9384d932953a78b`.
-- [NOVA OS tenant migration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43961517073) — passed on that head.
-- [NOVA OS tenant administration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43961517005) — passed on that head.
-- NOVA OS PR #57 supplies the authorization-consumption endpoint and ledger; PR #58 supplies the required permit-bound mapping behavior. NOVA Core PR #222 supplies the matching Core caller/verifier and durable provisioning integration.
+- NOVA OS PR #59 exact validated head: `e3130156dd7da4e4b93edc5ed875deb598a81ee9`, based on PR #57 exact head `110116d844ed73e46ee85d3508c4bac740cd6230`.
+- [NOVA OS tenant migration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43974436761) — passed on that head.
+- [NOVA OS tenant administration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43974436766) — passed on that head.
+- NOVA OS PR #57 supplies the authorization-consumption endpoint and ledger; PR #59 supplies the required permit-bound mapping behavior. NOVA Core PR #222 supplies the matching Core caller/verifier and durable provisioning integration.
+- NOVA Core PR #221 exact protocol head: `285d53d0bbc5e40f64f8eadcccdc025050024af2`; CI [NOVA Core CI](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43948195993) passed.
+- NOVA Core PR #222 exact runtime head: `cfe42d7c96b4a16831f1cf6e225984d696f6f767`, based on PR #221 head above; CI [NOVA Core CI](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43968959728) passed.
 - Before staging, independently verify the three PRs' current head SHAs, base relationships, required checks, and migration order. If any head changes after review, rerun and reassess the full coordinated validation.
 
 ## 2. Configuration inventory (names only; never put values in this file)
@@ -120,7 +122,7 @@ Stop immediately and disable the staging provisioning path if any key/issuer/aud
 The runtime pull requests are based on prerequisite protocol branches. Preserve this dependency chain when preparing coordinated staging branches; do not merge a child PR against an unintegrated parent:
 
 - NOVA OS protocol PR #56 (`design/nova-os-one-time-owner-authorization-v1`) and runtime PR #57 (`feat/nova-os-one-time-owner-authorization-v1`) are **sibling review branches**, not a strict base/head dependency: PR #56 head is `250d34e90435bc5d83cd3f0d80ce708f49cf27ec`, while PR #57 is based on `561fcfb1d05ae62c2b70c6d91a9267e58da242c2`. PR #57 includes its own runtime-aligned edits to the protocol document. Review both contracts together; do not claim PR #57 inherits PR #56's exact commit unless its base is deliberately updated and all affected checks rerun.
-- NOVA OS mapping correction PR #58 (`fix/nova-os-mapping-honors-consumed-permit`) is based on PR #57 head `997e6b76ea5d7c3b5046d64002f9b1e663812379`; preserve this dependency or rebase and retest.
+- NOVA OS mapping correction PR #59 (`fix/nova-os-consumed-permit-mapping-on-validated-auth`) is based on PR #57 head `110116d844ed73e46ee85d3508c4bac740cd6230`; preserve this dependency or rebase and retest.
 - NOVA Core protocol PR #221 (`design/nova-os-one-time-owner-authorization-v1`) → runtime PR #222 (`feat/nova-core-one-time-owner-authorization-v1`) is a true base/head dependency; PR #222 is based on PR #221 head `285d53d0bbc5e40f64f8eadcccdc025050024af2`.
 - Before integration, verify every PR's current base SHA and head SHA against the reviewed values. If a parent changes, update/rebase dependent branches and rerun all affected checks.
 - The two repositories can be integrated independently into isolated staging branches, but staging deployment must wait until both repository review sets are complete and their exact deployed SHAs are recorded.
