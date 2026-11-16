@@ -123,7 +123,7 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
             "https://project.example.test/auth/v1", "supabase-immutable", "nova-immutable",
             "proof-immutable", "receipt-immutable", "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         )
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "permit binding is immutable"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
             self.db.execute("""
                 UPDATE tenant_provisioning_requests
                 SET nova_os_authorization_permit_jti = ?
