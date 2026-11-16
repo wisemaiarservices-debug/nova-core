@@ -28,13 +28,30 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
             tenant_id TEXT NOT NULL, subject TEXT NOT NULL, role TEXT NOT NULL,
             status TEXT NOT NULL, PRIMARY KEY(tenant_id, subject)
           );
+          CREATE TABLE tenant_resource_grants (
+            id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, subject TEXT NOT NULL,
+            resource_type TEXT NOT NULL, resource_id TEXT NOT NULL, action TEXT NOT NULL
+          );
+          CREATE TABLE assets (
+            id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, site_id TEXT NOT NULL,
+            name TEXT NOT NULL, asset_type TEXT NOT NULL, external_ref TEXT,
+            status TEXT NOT NULL DEFAULT 'unconfigured', metadata_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(id, tenant_id, site_id)
+          );
           INSERT INTO tenants VALUES ('tenant-a','active');
           INSERT INTO sites VALUES ('site-a','tenant-a','active');
           INSERT INTO tenant_memberships VALUES
             ('tenant-a','owner-sub','tenant_owner','active'),
             ('tenant-a','reviewer-sub','analyst','active');
         """)
+        self.db.executescript((ROOT / "migrations" / "0028_tenant_asset_registration.sql").read_text())
         self.db.executescript(MIGRATION.read_text())
+        self.db.executescript((ROOT / "migrations" / "0033_site_grant_mutation_guards.sql").read_text())
+        self.db.executemany(
+            "INSERT INTO tenant_resource_grants VALUES (?, 'tenant-a', ?, 'site', 'site-a', 'read')",
+            [('grant-owner', 'owner-sub'), ('grant-reviewer', 'reviewer-sub')],
+        )
+        self.db.execute("INSERT INTO assets(id,tenant_id,site_id,name,asset_type,status) VALUES ('asset-a','tenant-a','site-a','Pump A','pump','unconfigured')")
         self.db.execute("INSERT INTO sources(id,site_id,module,provider,source_type,display_name,tenant_id,registered_by_subject) VALUES ('source-a','site-a','neoagro','gateway-vendor','sensor_gateway','Gateway A','tenant-a','owner-sub')")
 
     def tearDown(self):
@@ -132,3 +149,50 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_source_lifecycle_event_rechecks_site_read_grant_at_insert(self):
+        self.db.execute("DELETE FROM tenant_resource_grants WHERE subject='owner-sub'")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'site grant'):
+            self.db.execute("""
+              INSERT INTO tenant_source_events
+              (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id)
+              VALUES ('event-no-grant','tenant-a','site-a','source-a','owner-sub','registered','evidence/source-a','request-no-grant')
+            """)
+
+    def test_reviewer_assignment_rechecks_assigner_site_read_grant(self):
+        self.db.execute("DELETE FROM tenant_resource_grants WHERE subject='owner-sub'")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'site read grant'):
+            self.db.execute("""
+              INSERT INTO tenant_source_reviewers
+              (tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref)
+              VALUES ('tenant-a','site-a','reviewer-sub','active','owner-sub','evidence/assignment')
+            """)
+
+    def test_reviewer_verification_rechecks_reviewers_site_read_grant(self):
+        self.db.execute("""
+          INSERT INTO tenant_source_reviewers
+          (tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref)
+          VALUES ('tenant-a','site-a','reviewer-sub','active','owner-sub','evidence/assignment')
+        """)
+        self.db.execute("""
+          INSERT INTO tenant_source_events
+          (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id)
+          VALUES ('event-register','tenant-a','site-a','source-a','owner-sub','registered','evidence/source-a','request-register')
+        """)
+        self.db.execute("DELETE FROM tenant_resource_grants WHERE subject='reviewer-sub'")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'site grant'):
+            self.db.execute("""
+              INSERT INTO tenant_source_events
+              (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id)
+              VALUES ('event-verify-no-grant','tenant-a','site-a','source-a','reviewer-sub','verified','evidence/verification','request-verify-no-grant')
+            """)
+
+    def test_asset_creation_event_rechecks_owner_site_read_grant(self):
+        self.db.execute("DELETE FROM tenant_resource_grants WHERE subject='owner-sub'")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'site grant'):
+            self.db.execute("""
+              INSERT INTO tenant_asset_events
+              (id,tenant_id,site_id,asset_id,actor_subject,event_type,request_id)
+              VALUES ('asset-event-no-grant','tenant-a','site-a','asset-a','owner-sub','created','asset-request-no-grant')
+            """)
