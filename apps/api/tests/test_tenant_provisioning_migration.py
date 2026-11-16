@@ -172,5 +172,26 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
             self.insert_request(tenant="missing-tenant")
 
 
+    def test_legacy_request_cannot_be_upgraded_to_nova_os_without_permit(self):
+        self.insert_request(request_id="legacy-request")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "authorization permit"):
+            self.db.execute("""
+                UPDATE tenant_provisioning_requests
+                SET nova_os_tenant_id = 'nova-tenant-upgraded'
+                WHERE id = 'legacy-request'
+            """)
+
+    def test_legacy_request_cannot_be_partially_backfilled_with_permit(self):
+        self.insert_request(request_id="legacy-partial")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "authorization permit"):
+            self.db.execute("""
+                UPDATE tenant_provisioning_requests
+                SET nova_os_tenant_id = 'nova-tenant-partial',
+                    access_issuer = 'https://access.example.test',
+                    nova_os_authorization_permit_jti = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                WHERE id = 'legacy-partial'
+            """)
+
+
 if __name__ == "__main__":
     unittest.main()
