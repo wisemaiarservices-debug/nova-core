@@ -83,7 +83,7 @@ A single D1 batch creates the asset with status `unconfigured`, an exact asset-l
 
 Asset registration does not assert that the equipment physically exists, is connected, is correctly configured, or has a known sensor identity. It does not register or verify a source, create a service credential, assign a reviewer, calibrate a sensor, or enable ingestion. Asset status remains `unconfigured` until a separate evidence-backed lifecycle exists.
 
-The unified migration sequence follows tenant provisioning: `0026_tenant_provisioning_identity_binding.sql`, `0027_tenant_site_creation.sql`, `0028_tenant_asset_registration.sql`, `0029_tenant_source_registry_lifecycle.sql`, `0030_asset_tenant_site_composite_key.sql`, `0031_sensor_calibration_event_composite_key.sql`, and `0032_measurement_quality_verified_source_guard.sql`. The asset migration adds append-only event and immutable idempotency ledgers with active-owner and exact tenant/site/asset guards.
+The unified migration sequence follows tenant provisioning: `0026_tenant_provisioning_identity_binding.sql`, `0027_tenant_site_creation.sql`, `0028_tenant_asset_registration.sql`, `0029_tenant_source_registry_lifecycle.sql`, `0030_asset_tenant_site_composite_key.sql`, `0031_sensor_calibration_event_composite_key.sql`, `0032_measurement_quality_verified_source_guard.sql`, and `0033_site_grant_mutation_guards.sql`. The asset migration adds append-only event and immutable idempotency ledgers with active-owner and exact tenant/site/asset guards.
 
 
 ## Site-scoped source registration and independent verification (draft follow-on)
@@ -117,6 +117,25 @@ Core creates the tenant, initial active owner membership, six initial tenant gra
 The receipt signer imports the configured PKCS#8 PEM using Web Crypto with `extractable=false` and `sign`-only usage. This makes the in-memory CryptoKey non-extractable after import; it does **not** mean the original PEM secret is stored in an HSM or is non-extractable at rest. Production must supply the PEM through an approved Cloudflare secret-management process, restrict who can read/change that secret, pin the corresponding public JWK/key ID in NOVA OS, document rotation and revocation, and verify issuer/audience agreement. No private key or production secret is committed to this repository.
 
 The draft Worker configuration intentionally has no public route, custom domain, D1 binding or Access configuration. Receipt signing fails closed with HTTP 503 when its required issuer, audience, key ID or private-key secret is absent. Owner assertion verification likewise fails closed when its pinned issuer, audience or public JWK is absent. Passing CI uses generated test keys and does not prove production keys or bindings are configured.
+
+
+
+### Cross-repository identifier contract
+
+The identifiers in the signed handoff are intentionally not all the same type:
+
+| Field | Issuer / source | Contract |
+|---|---|---|
+| Owner assertion `jti` | NOVA OS | UUID; persisted in the owner-assertion attempt ledger and referenced by the Core receipt |
+| Receipt `jti` | NOVA Core | Opaque text; exactly the durable Core provisioning-request ID |
+| `idempotency_key` | Original provisioning request | Opaque bounded text; bound to actor, tenant, request digest and owner assertion |
+| `request_sha256` | NOVA Core | Lowercase 64-character SHA-256 hex digest of the canonical provisioning request |
+| Supabase subject | Supabase Auth | Exact authenticated user ID; must match the NOVA OS owner attempt actor |
+| Access subject | Cloudflare Access | Exact verified gateway subject; recorded in the receipt and mapping audit |
+
+Do not impose UUID validation on the receipt `jti`: the Core provisioning-request ID and receipt audit column are intentionally text identifiers. The UUID constraint applies specifically to the NOVA OS owner-assertion `jti`, which is linked through a composite tenant/actor foreign key.
+
+A retry of the same provisioning request must resolve the original NOVA OS owner-assertion attempt and the original Core provisioning-request ID. Core may issue a fresh short-lived signature for the same durable receipt identity; it must not create a second tenant or invent a new receipt ID. A conflicting actor, tenant, assertion JTI, idempotency key or request digest must fail closed.
 
 ## Integrated CI and release boundary
 
