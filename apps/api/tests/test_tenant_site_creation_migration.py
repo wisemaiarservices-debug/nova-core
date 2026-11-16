@@ -1,6 +1,6 @@
 from pathlib import Path
 
-MIGRATION = Path(__file__).parents[1] / "migrations" / "0022_tenant_site_creation.sql"
+MIGRATION = Path(__file__).parents[1] / "migrations" / "0026_tenant_site_creation.sql"
 
 
 def test_site_creation_migration_adds_append_only_audit_and_idempotency_guards():
