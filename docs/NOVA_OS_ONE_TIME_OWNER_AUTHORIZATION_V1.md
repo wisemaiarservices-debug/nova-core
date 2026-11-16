@@ -1,6 +1,6 @@
 # NOVA Core integration: one-time NOVA OS owner authorization V1
 
-**Status:** protocol specification. Draft runtime implementations are in NOVA OS PR #57 and NOVA Core PR #222; neither is merged or production-ready.
+**Status:** proposed protocol; documentation only. No runtime implementation, schema migration, secret, production configuration or deployment is included.
 
 ## Current limitation
 
@@ -25,7 +25,7 @@ NOVA OS must serialize authorization consumption against owner membership lifecy
 
 - If suspension/revocation commits first, Core's authorization exchange fails and Core creates no tenant.
 - If consumption commits first, that exact provisioning attempt has been authorized and may complete despite a later revocation. This deterministic race winner must be documented; a cross-database transaction is not claimed.
-- Mapping verifies the immutable consumed-permit ledger and exact claim tuple rather than re-checking mutable owner membership. Therefore an operation authorized before later owner revocation can finish mapping. The NOVA OS tenant must still exist and remain active; mapping does not reactivate suspended tenants or grant access. Failures unrelated to owner revocation still require governed recovery.
+- Mapping verifies the immutable consumed-permit ledger and exact claim tuple instead of re-checking mutable tenant or owner status. An operation authorized before later suspension/revocation can finish mapping; the tenant must still exist, and mapping never reactivates it or grants access. Failures unrelated to a valid consumed permit still require governed recovery.
 
 ## Retry contract
 
@@ -67,3 +67,13 @@ Until implementation and tests pass, Core provisioning remains draft-only and mu
 The stable Core correlation identifier must not be the gateway request/nonce ID: that value is intentionally single-use and changes on a browser retry. Core derives the correlation identifier deterministically from the canonical provisioning tuple, for example `nova-provision:<request_sha256>`. The canonical digest must cover the protocol version, Access issuer and subject, Supabase issuer and subject, NOVA OS tenant ID, owner-assertion JTI, idempotency key and normalized display name. Core computes it; callers never supply it. The same exact retry therefore derives the same correlation identifier without writing a pre-authorization provisioning record.
 
 NOVA OS creates and persists one unique permit JTI (UUID) with the first successful consumption. An identical retry, after the tenant/owner lock and active-state recheck, returns the same durable permit JTI and exact bound tuple; NOVA OS may issue a fresh short-lived signature/expiry over that same permit identity. A changed tuple is a conflict. Core stores the permit JTI with its durable provisioning request. The permit JTI is distinct from both the owner-assertion JTI and Core receipt JTI.
+
+
+## Receipt-to-consumption binding
+
+The signed Core mapping receipt carries the durable `authorization_permit_jti` and deterministic `authorization_correlation_id`, in addition to the existing owner-assertion JTI and opaque receipt JTI. NOVA OS checks that permit JTI against its immutable authorization ledger and exact request tuple before writing the tenant mapping. Core persists the permit issuer, audience, key ID, JTI, correlation, issue time and expiry in the D1 provisioning record; the permit token itself is not persisted.
+
+The canonical digest includes the protocol version, Access issuer/subject, Supabase issuer/subject, NOVA OS tenant ID, owner-assertion JTI, idempotency key and display name. NOVA OS independently checks that the display name and idempotency key match the immutable owner attempt. The Core-to-OS HMAC signature covers the key ID, method, fixed path, timestamp, nonce and exact-body SHA-256. Redirects are rejected. The permit is verified against a pinned RS256 public JWK, exact issuer/audience and every bound claim before Core performs tenant, membership, grant or provisioning-record writes.
+
+
+The successful OS consumption is the authorization linearization point. Core may complete the exact attempt after a later owner/tenant suspension because the permit is durable and bound to the request. The OS mapping RPC validates that permit ledger entry rather than re-checking mutable membership state; it never reactivates a suspended tenant or grants additional access. A revoke that wins the consume lock still prevents issuance.
