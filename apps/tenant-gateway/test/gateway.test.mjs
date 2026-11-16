@@ -286,6 +286,36 @@ test("routes owner asset registration through the signed gateway with exact idem
   assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
 });
 
+test("routes tenant source registration through the signed gateway with body digest and idempotency", async () => {
+  let captured;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "source-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const body = JSON.stringify({
+    module: "neoagro", provider: "gateway-vendor", source_type: "sensor_gateway",
+    display_name: "North greenhouse gateway", evidence_ref: "evidence/source-1",
+  });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/sources",
+    { method: "POST", body, headers: {
+      "Cf-Access-Jwt-Assertion": "valid-access-token",
+      "Content-Type": "application/json",
+      "Idempotency-Key": "source-registration-1",
+    } }), env({ TENANT_API: { fetch: async request => {
+      captured = request;
+      return new Response(JSON.stringify({ data: { verification_status: "unverified" } }), {
+        status: 201, headers: { "content-type": "application/json" },
+      });
+    } } }));
+  assert.equal(response.status, 201);
+  assert.equal(new URL(captured.url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/sources");
+  assert.equal(await captured.text(), body);
+  assert.equal(captured.headers.get("x-nova-idempotency-key"), "source-registration-1");
+  assert.match(captured.headers.get("x-nova-body-sha256"), /^[a-f0-9]{64}$/);
+  assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+});
+
 test("routes bounded laboratory report uploads and larger evidence reads through Access", async () => {
   let captured;
   const gateway = createGateway({ verifyAccessToken: async () => ({
