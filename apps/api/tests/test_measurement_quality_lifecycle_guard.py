@@ -27,6 +27,7 @@ MIGRATION_NAMES = (
     "0015_measurement_quality_engine.sql",
     "0029_asset_tenant_site_composite_key.sql",
     "0030_sensor_calibration_event_composite_key.sql",
+    "0031_measurement_quality_verified_source_guard.sql",
 )
 
 
@@ -132,13 +133,43 @@ def database():
     return db
 
 
-def assessment_insert(db, request_id):
+def assessment_insert(db, request_id, observation_id="obs-a"):
     db.execute("""INSERT INTO measurement_quality_assessments
         (id, tenant_id, site_id, observation_id, mapping_id, calibration_id, policy_id,
          status, reason_code, observed_value, unit, method_version, request_id)
-        VALUES (?, 'tenant-a', 'site-a', 'obs-a', 'mapping-a', 'calibration-a', 'policy-a',
+        VALUES (?, 'tenant-a', 'site-a', ?, 'mapping-a', 'calibration-a', 'policy-a',
                 'passed', 'within_declared_policy', 1.5, 'dS/m', '1.0.0', ?)""",
-        ("assessment-" + request_id, request_id))
+        ("assessment-" + request_id, observation_id, request_id))
+
+
+def test_database_rejects_mapping_for_different_asset_than_observation():
+    db = database()
+    db.execute("""INSERT INTO assets
+        (id, site_id, tenant_id, name, asset_type, status)
+        VALUES ('asset-b', 'site-a', 'tenant-a', 'Different Sensor Asset', 'sensor', 'active')""")
+    db.execute("""INSERT INTO observations
+        (id, site_id, tenant_id, asset_id, source_id, module, metric, value, unit,
+         observed_at, idempotency_key, verification_status, provenance_json, quality_flags_json)
+        VALUES ('obs-b', 'site-a', 'tenant-a', 'asset-b', 'source-a', 'neoagro',
+                'ec', 1.5, 'dS/m', '2026-05-10T10:00:00Z', 'obs-key-b',
+                'unverified', '{}', '[]')""")
+    db.execute("""INSERT INTO audit_events
+        (id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, details_json)
+        VALUES ('audit-b', 'tenant-a', 'service', 'ingestion-service', 'observation.accepted',
+                'observation', 'obs-b', '{}')""")
+    db.execute("""INSERT INTO observation_verification_events
+        (id, tenant_id, site_id, observation_id, reviewer_subject, reviewer_role,
+         event_type, evidence_ref, request_id)
+        VALUES ('obs-verified-b', 'tenant-a', 'site-a', 'obs-b', 'reviewer-a',
+                'measurement_reviewer', 'verified', 'inspection:observation-b', 'obs-review-b')""")
+    db.execute("UPDATE observations SET verification_status='verified' WHERE id='obs-b'")
+
+    with pytest.raises(sqlite3.IntegrityError, match="quality result requires verified exact-scope"):
+        assessment_insert(db, "cross-asset-mapping", observation_id="obs-b")
+
+    assert db.execute(
+        "SELECT COUNT(*) FROM measurement_quality_assessments WHERE request_id='cross-asset-mapping'"
+    ).fetchone() == (0,)
 
 
 def revoke_mapping(db):
@@ -180,11 +211,12 @@ def test_valid_exact_scope_evidence_chain_allows_passed_assessment():
 @pytest.mark.parametrize(
     "revoke",
     [
+        lambda db: db.execute("UPDATE sources SET verification_status='disabled' WHERE id='source-a'"),
         revoke_mapping,
         revoke_calibration,
         revoke_policy,
     ],
-    ids=["mapping-revoked", "calibration-revoked", "policy-revoked"],
+    ids=["source-disabled", "mapping-revoked", "calibration-revoked", "policy-revoked"],
 )
 def test_database_rejects_stale_passed_assessment_after_evidence_revocation(revoke):
     db = database()
