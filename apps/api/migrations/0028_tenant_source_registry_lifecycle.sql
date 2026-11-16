@@ -91,6 +91,46 @@ CREATE TRIGGER tenant_source_reviewers_no_delete
 BEFORE DELETE ON tenant_source_reviewers
 BEGIN SELECT RAISE(ABORT, 'source reviewer assignments are retained'); END;
 
+
+CREATE TABLE tenant_source_reviewer_events (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) BETWEEN 1 AND 160),
+  tenant_id TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  reviewer_subject TEXT NOT NULL,
+  actor_subject TEXT NOT NULL,
+  event_type TEXT NOT NULL CHECK (event_type IN ('assigned','revoked')),
+  evidence_ref TEXT NOT NULL CHECK (length(trim(evidence_ref)) BETWEEN 1 AND 500),
+  reason TEXT,
+  request_id TEXT NOT NULL UNIQUE,
+  occurred_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (tenant_id,site_id,reviewer_subject)
+    REFERENCES tenant_source_reviewers(tenant_id,site_id,reviewer_subject) ON DELETE RESTRICT,
+  CHECK ((event_type='assigned' AND reason IS NULL) OR
+         (event_type='revoked' AND length(trim(reason)) BETWEEN 1 AND 2000))
+);
+CREATE TRIGGER tenant_source_reviewer_event_guard
+BEFORE INSERT ON tenant_source_reviewer_events
+WHEN NOT EXISTS (
+  SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id=m.tenant_id AND t.status='active'
+  WHERE m.tenant_id=NEW.tenant_id AND m.subject=NEW.actor_subject
+    AND m.status='active' AND m.role IN ('tenant_owner','tenant_admin')
+) OR (NEW.event_type='assigned' AND NOT EXISTS (
+  SELECT 1 FROM tenant_source_reviewers r WHERE r.tenant_id=NEW.tenant_id
+    AND r.site_id=NEW.site_id AND r.reviewer_subject=NEW.reviewer_subject
+    AND r.status='active' AND r.assigned_by_subject=NEW.actor_subject
+)) OR (NEW.event_type='revoked' AND NOT EXISTS (
+  SELECT 1 FROM tenant_source_reviewers r WHERE r.tenant_id=NEW.tenant_id
+    AND r.site_id=NEW.site_id AND r.reviewer_subject=NEW.reviewer_subject
+    AND r.status='revoked'
+))
+BEGIN SELECT RAISE(ABORT, 'source reviewer event requires current tenant admin authority'); END;
+CREATE TRIGGER tenant_source_reviewer_events_immutable_update
+BEFORE UPDATE ON tenant_source_reviewer_events
+BEGIN SELECT RAISE(ABORT, 'source reviewer events are immutable'); END;
+CREATE TRIGGER tenant_source_reviewer_events_immutable_delete
+BEFORE DELETE ON tenant_source_reviewer_events
+BEGIN SELECT RAISE(ABORT, 'source reviewer events cannot be deleted'); END;
+
 CREATE TRIGGER tenant_source_event_guard
 BEFORE INSERT ON tenant_source_events
 WHEN NOT EXISTS (
