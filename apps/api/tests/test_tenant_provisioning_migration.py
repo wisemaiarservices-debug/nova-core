@@ -19,6 +19,7 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
             );
         """)
         self.db.executescript((MIGRATIONS / "0017_tenant_provisioning_idempotency.sql").read_text())
+        self.db.executescript((MIGRATIONS / "0026_tenant_provisioning_identity_binding.sql").read_text())
         self.db.execute(
             "INSERT INTO tenants(id, display_name, status) VALUES ('tenant-a', 'Research tenant', 'active')"
         )
@@ -61,6 +62,52 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
             self.db.execute("DELETE FROM tenant_provisioning_requests WHERE id='request-1'")
+
+    def test_request_binds_verified_supabase_identity_and_nova_os_tenant(self):
+        self.db.execute("""
+            INSERT INTO tenant_provisioning_requests
+              (id, actor_subject, idempotency_key, request_sha256, tenant_id,
+               supabase_issuer, supabase_subject, nova_os_tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("request-bound", "access-subject-a", "bootstrap-bound", "b" * 64,
+              "tenant-a", "https://project.example.test/auth/v1",
+              "supabase-user-a", "nova-tenant-a"))
+        row = self.db.execute("""
+            SELECT supabase_issuer, supabase_subject, nova_os_tenant_id
+            FROM tenant_provisioning_requests WHERE id='request-bound'
+        """).fetchone()
+        self.assertEqual(row, ("https://project.example.test/auth/v1",
+                               "supabase-user-a", "nova-tenant-a"))
+
+    def test_identity_binding_must_be_complete(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "identity binding"):
+            self.db.execute("""
+                INSERT INTO tenant_provisioning_requests
+                  (id, actor_subject, idempotency_key, request_sha256, tenant_id,
+                   supabase_issuer, supabase_subject)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, ("request-partial", "access-subject-a", "bootstrap-partial",
+                  "c" * 64, "tenant-a", "https://project.example.test/auth/v1",
+                  "supabase-user-a"))
+
+    def test_nova_os_tenant_can_be_provisioned_only_once(self):
+        self.db.execute("""
+            INSERT INTO tenant_provisioning_requests
+              (id, actor_subject, idempotency_key, request_sha256, tenant_id,
+               supabase_issuer, supabase_subject, nova_os_tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("request-bound", "access-subject-a", "bootstrap-bound", "b" * 64,
+              "tenant-a", "https://project.example.test/auth/v1",
+              "supabase-user-a", "nova-tenant-a"))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("""
+                INSERT INTO tenant_provisioning_requests
+                  (id, actor_subject, idempotency_key, request_sha256, tenant_id,
+                   supabase_issuer, supabase_subject, nova_os_tenant_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, ("request-second", "access-subject-b", "bootstrap-second", "d" * 64,
+                  "tenant-a", "https://project.example.test/auth/v1",
+                  "supabase-user-b", "nova-tenant-a"))
 
     def test_request_cannot_reference_unknown_tenant(self):
         with self.assertRaises(sqlite3.IntegrityError):
