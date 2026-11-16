@@ -337,14 +337,14 @@ test("handles credentialed CORS preflight only for exact configured origins and 
     headers: {
       Origin: "https://nova-os-pied.vercel.app",
       "Access-Control-Request-Method": "POST",
-      "Access-Control-Request-Headers": "accept,authorization,content-type",
+      "Access-Control-Request-Headers": "accept,authorization,content-type,idempotency-key",
     },
   }), configured);
   assert.equal(response.status, 204);
   assert.equal(response.headers.get("access-control-allow-origin"), "https://nova-os-pied.vercel.app");
   assert.equal(response.headers.get("access-control-allow-credentials"), "true");
   assert.equal(response.headers.get("access-control-allow-methods"), "GET, POST, OPTIONS");
-  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Authorization, Content-Type");
+  assert.equal(response.headers.get("access-control-allow-headers"), "Accept, Authorization, Content-Type, Idempotency-Key");
   assert.match(response.headers.get("vary"), /Origin/);
   assert.match(response.headers.get("vary"), /Access-Control-Request-Method/);
 
