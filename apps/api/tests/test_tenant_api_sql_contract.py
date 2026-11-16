@@ -33,9 +33,9 @@ def test_private_tenant_api_sql_compiles_against_ordered_schema_migrations():
         MIGRATIONS / "0023_identity_link_distinct_issuers.sql",
         MIGRATIONS / "0024_tenant_identity_link_uniqueness.sql",
         MIGRATIONS / "0025_identity_link_rate_limits.sql",
-        MIGRATIONS / "0026_tenant_site_creation.sql",
-        MIGRATIONS / "0027_tenant_asset_registration.sql",
-        MIGRATIONS / "0028_tenant_source_registry_lifecycle.sql",
+        MIGRATIONS / "0027_tenant_site_creation.sql",
+        MIGRATIONS / "0028_tenant_asset_registration.sql",
+        MIGRATIONS / "0029_tenant_source_registry_lifecycle.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
 
