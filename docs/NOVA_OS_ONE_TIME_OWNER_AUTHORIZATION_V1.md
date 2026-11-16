@@ -52,7 +52,7 @@ NOVA OS must serialize authorization consumption against owner membership lifecy
 6. Reuse of assertion JTI or idempotency key with changed claims fails closed.
 7. Crash after consume but before Core commit can retry only with identical claims and active owner.
 8. Crash after Core commit but before browser response returns the same tenant and receipt identity without a second authorization or tenant.
-9. Revocation after Core commit but before NOVA OS mapping rejects mapping and records the unlinked state for recovery.
+9. A revocation that wins before authorization consumption prevents Core provisioning. If suspension/revocation occurs after successful consumption but before mapping, exact permit-bound mapping may complete; the NOVA OS tenant remains suspended and mapping does not restore access.
 10. No private key, service credential or service-role key reaches browser code, logs or source control.
 
 ## Release gates
