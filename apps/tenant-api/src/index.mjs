@@ -1623,7 +1623,12 @@ export default {
             owners[0].role !== "tenant_owner" || owners[0].membership_status !== "active" ||
             owners[0].tenant_status !== "active" || !await hasSiteReadGrant(env.DB, tenant, subject, assetCreate[2])) return error("not_found", 404);
         const created = await createTenantAsset(env.DB, tenant, assetCreate[2], subject, requestId,
-          request.headers.get("x-nova-idempotency-key"), request.headers.get("x-nova-body-sha256"), draftBody);
+          request.headers.get("x-nova-idempotency-key"), request.headers.get("x-nova-body-sha256"), draftBody, {
+            supabaseIssuer: verifiedSupabaseIdentity.issuer,
+            supabaseSubject: verifiedSupabaseIdentity.subject,
+            cloudflareIssuer: issuer,
+            cloudflareSubject: subject,
+          });
         return created.error ? json({ error: created.error }, created.status)
           : json({ data: created.data, request_id: requestId }, created.status);
       }
@@ -1643,7 +1648,12 @@ export default {
               owners[0].tenant_status !== "active") return error("not_found", 404);
           const created = await createTenantSite(env.DB, tenant, subject, requestId,
             request.headers.get("x-nova-idempotency-key"),
-            request.headers.get("x-nova-body-sha256"), draftBody);
+            request.headers.get("x-nova-body-sha256"), draftBody, {
+              supabaseIssuer: verifiedSupabaseIdentity.issuer,
+              supabaseSubject: verifiedSupabaseIdentity.subject,
+              cloudflareIssuer: issuer,
+              cloudflareSubject: subject,
+            });
           return created.error ? json({ error: created.error }, created.status)
             : json({ data: created.data, request_id: requestId }, created.status);
         }
