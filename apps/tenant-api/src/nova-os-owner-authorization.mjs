@@ -169,7 +169,7 @@ export function createNovaOsOwnerAuthorizationClient(config) {
         input.ownerAssertion.length < 32 || input.ownerAssertion.length > 16_384 ||
         !UUID.test(input.tenantId ?? "") || !UUID.test(input.supabaseSubject ?? "") ||
         !UUID.test(input.assertionJti ?? "") ||
-        !opaque(input.supabaseIssuer, 500) || !opaque(input.accessIssuer, 500) ||
+        !opaque(input.displayName, 160) || !opaque(input.supabaseIssuer, 500) || !opaque(input.accessIssuer, 500) ||
         !opaque(input.accessSubject, 200) || !opaque(input.idempotencyKey, 160) ||
         !/^[a-f0-9]{64}$/.test(input.requestSha256 ?? "") ||
         input.coreCorrelationId !== "nova-provision:" + input.requestSha256) {
@@ -178,6 +178,7 @@ export function createNovaOsOwnerAuthorizationClient(config) {
     const body = JSON.stringify({
       owner_assertion: input.ownerAssertion,
       tenant_id: input.tenantId,
+      display_name: input.displayName,
       idempotency_key: input.idempotencyKey,
       request_sha256: input.requestSha256,
       supabase_issuer: input.supabaseIssuer,
