@@ -977,8 +977,8 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
   }
   return { data: { tenant_id: row.tenant_id, display_name: row.display_name,
     tenant_status: row.status, membership_id: row.membership_id, membership_role: row.role,
-    membership_status: row.membership_status, provisioning_request_id: row.provisioning_request_id,
-    created: false }, status: 200 };
+    membership_status: row.membership_status,
+    provisioning_request_id: row.provisioning_request_id ?? row.id, created: false }, status: 200 };
 }
 
 export default {
