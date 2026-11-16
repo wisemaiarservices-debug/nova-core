@@ -75,7 +75,7 @@ Use fresh disposable tenant identities for each case. Capture only request IDs, 
 2. **Owner revoked before consumption:** endpoint denies; Core creates zero tenant, membership, grants, provisioning request, or audit rows.
 3. **Concurrent revocation wins:** the PostgreSQL two-session test proves consume fails if revocation obtains the tenant/member lock first.
 4. **Consumption wins:** the exact authorized attempt completes if consumption commits first; a later owner revocation does not create a duplicate or invalidate that already-consumed permit.
-5. **Suspended tenant:** new authorization consumption fails. If the tenant is suspended after consumption but before mapping, the current mapping RPC rejects because the tenant must remain active; record the resulting Core tenant as unlinked and use the governed recovery procedure. Mapping must never reactivate the tenant or grant access. This timing remains a release-gate scenario.
+5. **Suspended tenant:** new authorization consumption fails. If the tenant is suspended after consumption but before mapping, the exact consumed permit may complete identity mapping. Assert that the tenant remains suspended and no access is restored; mapping must never reactivate a tenant.
 6. **Bad HMAC:** wrong key ID, signature, timestamp, path, body digest, or replayed nonce is rejected.
 7. **Bad permit:** wrong key, issuer, audience, expiry, tenant, actor, Supabase identity, Access identity, assertion JTI, idempotency key, digest, correlation ID, or permit JTI fails before Core writes.
 8. **Changed retry:** same assertion/idempotency identity with changed request claims returns conflict and creates no second tenant.
