@@ -431,7 +431,13 @@ test("routes tenant creation only for an exact gateway provisioning allowlist su
     INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
     TENANT_API: { fetch: async request => {
       forwarded = request;
-      return new Response(JSON.stringify({ data: { tenant_status: "active" } }), {
+      return new Response(JSON.stringify({ data: {
+        tenant_id: "tenant-core-001",
+        tenant_status: "active",
+        mapping_receipt: "signed.core.mapping.receipt",
+        mapping_receipt_expires_at: 1_800_000_000,
+        mapping_receipt_id: "provisioning-request-001",
+      } }), {
         status: 201, headers: { "content-type": "application/json" },
       });
     } },
@@ -442,6 +448,10 @@ test("routes tenant creation only for an exact gateway provisioning allowlist su
       "Authorization": "Bearer test.supabase.token" },
   }), configured);
   assert.equal(response.status, 201);
+  const publicPayload = await response.json();
+  assert.equal(publicPayload.data.mapping_receipt, "signed.core.mapping.receipt");
+  assert.equal(publicPayload.data.mapping_receipt_id, "provisioning-request-001");
+  assert.equal(publicPayload.data.tenant_id, "tenant-core-001");
   assert.equal(new URL(forwarded.url).pathname, "/internal/v1/tenants");
   assert.equal(forwarded.method, "POST");
   assert.equal(await forwarded.text(), payload);
