@@ -849,3 +849,58 @@ test("routes tenant site discovery through the signed dual-identity gateway", as
   assert.equal(captured.headers.get("x-nova-supabase-access-token"), "test.supabase.token");
   assert.equal(captured.headers.get("x-nova-internal-signature")?.length, 64);
 });
+
+
+test("routes first-site creation with a signed idempotency key and dual identity", async () => {
+  let captured;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "site-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites",
+    { method: "POST", headers: {
+      "Cf-Access-Jwt-Assertion": "test-access-token",
+      Authorization: "Bearer test.supabase.token",
+      "Content-Type": "application/json",
+      "Idempotency-Key": "first-site-request-1",
+    }, body: JSON.stringify({ name: "North Farm" }) }),
+    env({ TENANT_API: { fetch: async request => {
+      captured = request;
+      return new Response(JSON.stringify({ data: { id: "site-generated", name: "North Farm", created: true } }), {
+        status: 201, headers: { "content-type": "application/json" },
+      });
+    } } }));
+  assert.equal(response.status, 201);
+  assert.equal(new URL(captured.url).pathname, "/internal/v1/tenants/tenant-a/sites");
+  assert.equal(captured.headers.get("x-nova-idempotency-key"), "first-site-request-1");
+  assert.equal(captured.headers.get("x-nova-supabase-access-token"), "test.supabase.token");
+  assert.equal(captured.headers.get("x-nova-internal-signature")?.length, 64);
+  assert.equal(await captured.text(), JSON.stringify({ name: "North Farm" }));
+});
+
+test("requires a valid idempotency key for first-site creation", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "site-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites",
+    { method: "POST", headers: {
+      "Cf-Access-Jwt-Assertion": "test-access-token",
+      Authorization: "Bearer test.supabase.token",
+      "Content-Type": "application/json",
+      "Idempotency-Key": "bad key",
+    }, body: JSON.stringify({ name: "North Farm" }) }), env());
+  assert.equal(response.status, 400);
+});
+
+test("allows idempotency-key in the exact-origin CORS preflight", async () => {
+  const response = await worker.fetch(new Request("https://gateway.test/api/v1/tenants/tenant-a/sites", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://operator.example.test",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "authorization, content-type, idempotency-key",
+    },
+  }), env({ CORS_ALLOWED_ORIGINS: "https://operator.example.test" }));
+  assert.equal(response.status, 204);
+});
