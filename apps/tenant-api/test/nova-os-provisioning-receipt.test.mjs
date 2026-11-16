@@ -85,3 +85,21 @@ test("receipt identifier remains stable across retries for the same durable prov
   assert.equal(first.jti, retry.jti);
   assert.equal(decode(first.token.split(".")[1]).jti, decode(retry.token.split(".")[1]).jti);
 });
+
+test("receipt signer imports its private RSA key as non-extractable", async () => {
+  const originalImportKey = crypto.subtle.importKey;
+  let importedPrivateKey;
+  try {
+    crypto.subtle.importKey = async function (...args) {
+      const key = await originalImportKey.apply(this, args);
+      if (args[0] === "pkcs8") importedPrivateKey = key;
+      return key;
+    };
+    await createNovaOsProvisioningReceiptSigner(config);
+    assert.ok(importedPrivateKey);
+    assert.equal(importedPrivateKey.extractable, false);
+    assert.deepEqual(importedPrivateKey.usages, ["sign"]);
+  } finally {
+    crypto.subtle.importKey = originalImportKey;
+  }
+});
