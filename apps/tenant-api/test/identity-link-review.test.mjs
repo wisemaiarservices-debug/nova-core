@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { listPendingIdentityLinkRequests, decideIdentityLinkRequest } from "../src/identity-link-review.mjs";
+import { listPendingIdentityLinkRequests, listApprovedIdentityLinkRequests, decideIdentityLinkRequest } from "../src/identity-link-review.mjs";
 
 const actor = { issuer: "https://team.cloudflareaccess.com", subject: "owner-1" };
 class DB {
   constructor(request = { id: "link-1", status: "pending", tenant_id: null }, owner = true) {
-    this.request = request; this.owner = owner; this.batchCalls = []; this.priorEvent = null; this.batchError = null; this.queries = [];
+    this.request = request; this.owner = owner; this.approvedRows = []; this.batchCalls = []; this.priorEvent = null; this.batchError = null; this.queries = [];
   }
   prepare(sql) {
     this.queries.push(sql);
@@ -24,6 +24,7 @@ class DB {
         if (this.sql.includes("FROM tenant_identity_link_requests r WHERE r.id")) {
           return { results: db.request ? [db.request] : [] };
         }
+        if (this.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'")) return { results: db.approvedRows };
         if (this.sql.includes("WHERE status = 'pending' ORDER BY")) return { results: [] };
         return { results: [] };
       }
@@ -159,4 +160,28 @@ test("owner can revoke an approved link after the linked member is inactive", as
   const eventSql = db.batchCalls[0][0].sql;
   assert.match(eventSql, /\? = 'revoke' OR EXISTS \(SELECT 1 FROM tenant_memberships requester/);
   assert.equal(db.batchCalls[0][0].args.at(-1), "revoke");
+});
+
+
+test("approved identity-link inventory is limited to active tenant owners and the exact Access issuer", async () => {
+  const deniedDb = new DB(undefined, false);
+  const denied = await listApprovedIdentityLinkRequests(deniedDb, "tenant-1", actor);
+  assert.equal(denied.status, 404);
+  assert.equal(deniedDb.queries.length, 1);
+
+  const db = new DB();
+  db.approvedRows = [{
+    id: "approved-link-1",
+    supabase_issuer: "https://project.supabase.co/auth/v1",
+    supabase_subject: "supabase-user-1",
+    cloudflare_issuer: actor.issuer,
+    cloudflare_subject: "operator-1",
+    status: "approved",
+  }];
+  const result = await listApprovedIdentityLinkRequests(db, "tenant-1", actor);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data, db.approvedRows);
+  const query = db.queries.find(sql => sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'"));
+  assert.match(query, /r\.cloudflare_issuer = \?/);
+  assert.match(query, /ORDER BY r\.decided_at DESC/);
 });
