@@ -886,15 +886,20 @@ async function revokeMembershipInvitation(db, tenant, invitationId, actor, reque
     : { error: "membership_invitation_not_found", status: 404 };
 }
 
-async function createTenantForProvisioning(db, subject, body, requestId, allowlist) {
+async function createTenantForProvisioning(db, subject, body, requestId, allowlist, supabaseIdentity) {
   if (!allowlist || !allowlist.has(subject)) return { error: "not_found", status: 404 };
-  if (!onlyKeys(body, ["display_name", "idempotency_key"]) ||
+  if (!supabaseIdentity || typeof supabaseIdentity.issuer !== "string" ||
+      typeof supabaseIdentity.subject !== "string" ||
+      !onlyKeys(body, ["display_name", "idempotency_key", "nova_os_tenant_id"]) ||
       typeof body.display_name !== "string" || body.display_name.trim() !== body.display_name ||
       body.display_name.length < 1 || body.display_name.length > 160 ||
-      !validId(body.idempotency_key, 160)) {
+      !validId(body.idempotency_key, 160) || !validId(body.nova_os_tenant_id, 120)) {
     return { error: "tenant_provisioning_request_invalid", status: 400 };
   }
-  const requestDigest = await sha256Hex(JSON.stringify([subject, body.display_name]));
+  const requestDigest = await sha256Hex(JSON.stringify([
+    subject, supabaseIdentity.issuer, supabaseIdentity.subject,
+    body.nova_os_tenant_id, body.display_name,
+  ]));
   const tenantId = "tenant-" + crypto.randomUUID();
   const membershipId = crypto.randomUUID();
   const eventId = crypto.randomUUID();
@@ -917,8 +922,9 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
       "INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, 'tenant_owner', NULL, 'active', 'Initial owner assigned by allowlisted tenant provisioning', ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(eventId, tenantId, membershipId, subject, subject, requestId, membershipId, tenantId),
     db.prepare(
-      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
-    ).bind(requestId, subject, body.idempotency_key, requestDigest, tenantId, membershipId, tenantId),
+      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+    ).bind(requestId, subject, body.idempotency_key, requestDigest, tenantId,
+      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id, membershipId, tenantId),
   ];
   try {
     const results = await db.batch(statements);
@@ -939,11 +945,13 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
     // Read the durable outcome below; all other batch failures remain 503.
   }
   const existing = await rows(db.prepare(
-    "SELECT r.request_sha256, r.tenant_id, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
+    "SELECT r.request_sha256, r.tenant_id, r.supabase_issuer, r.supabase_subject, r.nova_os_tenant_id, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
   ).bind(subject, body.idempotency_key));
   if (existing.length !== 1) throw new Error("tenant_provisioning_storage_conflict");
   const row = existing[0];
-  if (row.request_sha256 !== requestDigest) return { error: "idempotency_key_reused", status: 409 };
+  if (row.request_sha256 !== requestDigest || row.supabase_issuer !== supabaseIdentity.issuer ||
+      row.supabase_subject !== supabaseIdentity.subject || row.nova_os_tenant_id !== body.nova_os_tenant_id)
+    return { error: "idempotency_key_reused", status: 409 };
   if (row.role !== "tenant_owner" || row.membership_status !== "active" || row.status !== "active") {
     return { error: "tenant_provisioning_conflict", status: 409 };
   }
@@ -1029,7 +1037,7 @@ export default {
     const supabaseToken = request.headers.get("x-nova-supabase-access-token");
     const supabaseTokenDigest = request.headers.get("x-nova-supabase-token-sha256");
     if ((supabaseToken === null) !== (supabaseTokenDigest === null)) return error("request_not_authorized", 401);
-    if ((identityLinkChallengeCreate || identityLinkChallengeConsume || siteList || siteObservationList) && supabaseToken === null)
+    if ((tenantProvision || identityLinkChallengeCreate || identityLinkChallengeConsume || siteList || siteObservationList) && supabaseToken === null)
       return error("supabase_identity_required", 401);
     let verifiedSupabaseIdentity = null;
     if (supabaseToken !== null) {
@@ -1282,8 +1290,9 @@ export default {
         return json({ data: combined, request_id: requestId });
       }
       if (tenantProvision) {
+        if (!verifiedSupabaseIdentity) return error("supabase_identity_required", 401);
         const provisioned = await createTenantForProvisioning(env.DB, subject, draftBody, requestId,
-          configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS));
+          configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS), verifiedSupabaseIdentity);
         return provisioned.error ? json({ error: provisioned.error }, provisioned.status)
           : json({ data: provisioned.data, request_id: requestId }, provisioned.status);
       }
