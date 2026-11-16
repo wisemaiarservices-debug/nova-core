@@ -15,7 +15,7 @@
 
 ### NOVA OS Supabase Edge Function: `nova-core-owner-authorization`
 
-Provision through the staging Supabase secret manager:
+Provision through the staging Supabase secret manager. Confirm `supabase/config.toml` has `verify_jwt = false` for this function: the function authenticates the Core caller with its timestamped HMAC signature and nonce ledger, not a browser Supabase bearer token. Keep the function private operationally and do not add permissive CORS:
 
 - `NOVA_CORE_OWNER_AUTH_KEYS` — JSON object mapping a key ID to a dedicated random HMAC secret (32–512 characters). This is the verifier side of the Core-to-OS server authentication.
 - `NOVA_OS_PROVISIONING_AUTH_ISSUER`
