@@ -1352,8 +1352,8 @@ test("tenant provisioning accepts concurrent exact retries whose replay permits 
     nova_os_authorization_permit_audience: "nova-core-owner-authorization",
     nova_os_authorization_permit_key_id: "nova-os-permit-test-key",
     nova_os_authorization_correlation_id: "nova-provision:" + digest,
-    nova_os_authorization_permit_issued_at: now,
-    nova_os_authorization_permit_expires_at: now + 120,
+    nova_os_authorization_permit_issued_at: now - 5,
+    nova_os_authorization_permit_expires_at: now + 115,
     tenant_id: "tenant-race-winner", display_name: "Research tenant", status: "active",
     membership_id: "membership-race-winner", role: "tenant_owner", membership_status: "active",
   };
