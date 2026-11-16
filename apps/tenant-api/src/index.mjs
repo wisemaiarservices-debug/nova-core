@@ -49,7 +49,8 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-gateway-issued-at"),
     headers.get("x-nova-request-id"),
     headers.get("x-nova-body-sha256"),
-    headers.get("x-nova-supabase-token-sha256"),\n    headers.get("x-nova-idempotency-key")]);
+    headers.get("x-nova-supabase-token-sha256"),
+    headers.get("x-nova-idempotency-key")]);
 }
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
