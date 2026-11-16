@@ -981,7 +981,7 @@ const novaOsOwnerJwk = {
   ...novaOsOwnerKeyPair.publicKey.export({ format: "jwk" }),
   kid: "nova-os-owner-test-key", alg: "RS256", use: "sig", key_ops: ["verify"],
 };
-function novaOsOwnerAssertion(subject = "supabase-owner", tenantId = "nova-tenant-001", jti = "aaaaaaaa-0000-4000-8000-000000000001") {
+function novaOsOwnerAssertion(subject = "supabase-owner", tenantId = "22222222-2222-4222-8222-222222222222", jti = "aaaaaaaa-0000-4000-8000-000000000001") {
   const b64 = value => Buffer.from(value).toString("base64url");
   const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: novaOsOwnerJwk.kid }));
   const claims = b64(JSON.stringify({
@@ -1019,7 +1019,7 @@ async function withProvisioningJwks(callback) {
 const provisioningPath = "https://private.internal/internal/v1/tenants";
 const provisioningBody = JSON.stringify({
   display_name: "Research tenant", idempotency_key: "bootstrap-001",
-  nova_os_tenant_id: "nova-tenant-001",
+  nova_os_tenant_id: "22222222-2222-4222-8222-222222222222",
   nova_os_owner_assertion: novaOsOwnerAssertion(),
 });
 const provisioningHeaders = () => ({
@@ -1088,7 +1088,7 @@ test("tenant provisioning rejects owner assertions for another NOVA OS tenant", 
   const db = new ProvisioningDB([]);
   const body = JSON.stringify({
     ...JSON.parse(provisioningBody),
-    nova_os_owner_assertion: novaOsOwnerAssertion("supabase-owner", "another-tenant", "bbbbbbbb-0000-4000-8000-000000000002"),
+    nova_os_owner_assertion: novaOsOwnerAssertion("supabase-owner", "33333333-3333-4333-8333-333333333333", "bbbbbbbb-0000-4000-8000-000000000002"),
   });
   await withProvisioningJwks(async () => {
     const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", body), provisioningEnv(db));
@@ -1117,7 +1117,7 @@ test("tenant provisioning requires an exact configured Access subject allowlist"
 test("tenant provisioning rejects caller-selected owners and unknown fields", async () => {
   const db = new ProvisioningDB([]);
   const body = JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-002",
-    nova_os_tenant_id: "nova-tenant-001", nova_os_owner_assertion: novaOsOwnerAssertion(),
+    nova_os_tenant_id: "22222222-2222-4222-8222-222222222222", nova_os_owner_assertion: novaOsOwnerAssertion(),
     initial_owner_subject: "attacker-subject" });
   await withProvisioningJwks(async () => {
     const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", body), provisioningEnv(db));
@@ -1146,7 +1146,7 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     assert.equal(decodedHeader.alg, "RS256");
     assert.equal(decodedHeader.kid, "core-receipt-test-key");
     assert.equal(decodedClaims.core_tenant_id, result.tenant_id);
-    assert.equal(decodedClaims.nova_os_tenant_id, "nova-tenant-001");
+    assert.equal(decodedClaims.nova_os_tenant_id, "22222222-2222-4222-8222-222222222222");
     assert.equal(decodedClaims.access_subject, "operator@example.test");
     assert.equal(decodedClaims.supabase_subject, "supabase-owner");
     assert.equal(decodedClaims.owner_assertion_jti, "aaaaaaaa-0000-4000-8000-000000000001");
@@ -1169,7 +1169,7 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     const record = db.batchCalls[0].at(-1);
     assert.ok(record.args.includes("https://project.example.test/auth/v1"));
     assert.ok(record.args.includes("supabase-owner"));
-    assert.ok(record.args.includes("nova-tenant-001"));
+    assert.ok(record.args.includes("22222222-2222-4222-8222-222222222222"));
     assert.ok(record.args.includes("aaaaaaaa-0000-4000-8000-000000000001"));
     assert.ok(db.batchCalls[0].every(statement => !statement.args.includes("attacker-subject")));
   });
@@ -1178,12 +1178,12 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
 test("tenant provisioning returns the existing result only for the same dual identity and NOVA OS tenant", async () => {
   const digest = createHash("sha256").update(JSON.stringify([
     "operator@example.test", "https://project.example.test/auth/v1",
-    "supabase-owner", "nova-tenant-001", "aaaaaaaa-0000-4000-8000-000000000001", "Research tenant",
+    "supabase-owner", "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001", "Research tenant",
   ])).digest("hex");
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
     actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: digest, supabase_issuer: "https://project.example.test/auth/v1",
-    supabase_subject: "supabase-owner", nova_os_tenant_id: "nova-tenant-001", nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
+    supabase_subject: "supabase-owner", nova_os_tenant_id: "22222222-2222-4222-8222-222222222222", nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
     id: "provisioning-request-existing",
     tenant_id: "tenant-existing", display_name: "Research tenant", status: "active",
     membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
@@ -1202,7 +1202,7 @@ test("tenant provisioning rejects idempotency key reuse across another Supabase 
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
     actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: "0".repeat(64), supabase_issuer: "https://project.example.test/auth/v1",
-    supabase_subject: "another-user", nova_os_tenant_id: "another-tenant", nova_os_assertion_jti: "cccccccc-0000-4000-8000-000000000003",
+    supabase_subject: "another-user", nova_os_tenant_id: "33333333-3333-4333-8333-333333333333", nova_os_assertion_jti: "cccccccc-0000-4000-8000-000000000003",
     tenant_id: "tenant-existing", display_name: "Other name", status: "active",
     membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
   }]);
