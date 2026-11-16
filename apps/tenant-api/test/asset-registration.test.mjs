@@ -41,6 +41,11 @@ test("asset registration atomically creates an unconfigured asset, owner read gr
   assert.equal(db.batchStatements.length, 5);
   assert.match(db.batchStatements[0].sql, /INSERT INTO assets/);
   assert.match(db.batchStatements[0].sql, /'unconfigured'/);
+  assert.match(db.batchStatements[0].sql, /tenant_identity_link_requests/);
+  assert.deepEqual(db.batchStatements[0].args.slice(-5), [
+    "tenant-a", identityLink.supabaseIssuer, identityLink.supabaseSubject,
+    identityLink.cloudflareIssuer, identityLink.cloudflareSubject,
+  ]);
   assert.match(db.batchStatements[1].sql, /'asset', \?, 'read'/);
   assert.match(db.batchStatements[2].sql, /tenant_resource_grant_events/);
   assert.match(db.batchStatements[3].sql, /tenant_asset_events/);
@@ -77,6 +82,15 @@ test("idempotency conflict and invalid scope fields fail without writes", async 
       "request-1", "asset-onboarding-1", digest, body, identityLink);
     assert.equal(result.status, 400);
   }
+  assert.equal(db.batchStatements.length, 0);
+});
+
+test("asset creation requires the exact approved dual-identity pair", async () => {
+  const db = new FakeDB();
+  const result = await createTenantAsset(db, "tenant-a", "site-a", "owner-sub",
+    "request-1", "asset-onboarding-1", digest,
+    { name: "Pump 01", asset_type: "pump" }, null);
+  assert.equal(result.status, 400);
   assert.equal(db.batchStatements.length, 0);
 });
 
