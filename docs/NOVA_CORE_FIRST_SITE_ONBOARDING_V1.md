@@ -83,7 +83,7 @@ A single D1 batch creates the asset with status `unconfigured`, an exact asset-l
 
 Asset registration does not assert that the equipment physically exists, is connected, is correctly configured, or has a known sensor identity. It does not register or verify a source, create a service credential, assign a reviewer, calibrate a sensor, or enable ingestion. Asset status remains `unconfigured` until a separate evidence-backed lifecycle exists.
 
-The new schema migration is `0027_tenant_asset_registration.sql`, after the site-creation migration `0026`. It adds append-only event and immutable idempotency ledgers with active-owner and exact tenant/site/asset guards.
+The new schema migration is `0028_tenant_asset_registration.sql`, after the site-creation migration `0026`. It adds append-only event and immutable idempotency ledgers with active-owner and exact tenant/site/asset guards.
 
 
 ## Site-scoped source registration and independent verification (draft follow-on)
