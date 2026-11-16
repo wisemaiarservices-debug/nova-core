@@ -1052,6 +1052,34 @@ test("tenant provisioning rejects missing or invalid NOVA OS owner proof before 
   });
 });
 
+test("tenant provisioning fails closed when the NOVA OS owner assertion verifier is not configured", async () => {
+  const db = new ProvisioningDB([]);
+  await withProvisioningJwks(async () => {
+    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody), {
+      ...env(db), TENANT_PROVISIONING_SUBJECTS: "operator@example.test",
+    });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "nova_os_provisioning_auth_not_configured");
+    assert.equal(db.batchCalls.length, 0);
+    assert.equal(db.existingRows.length, 0);
+  });
+});
+
+test("tenant provisioning rejects owner assertions for another NOVA OS tenant", async () => {
+  const db = new ProvisioningDB([]);
+  const body = JSON.stringify({
+    ...JSON.parse(provisioningBody),
+    nova_os_owner_assertion: novaOsOwnerAssertion("supabase-owner", "another-tenant", "owner-proof-other"),
+  });
+  await withProvisioningJwks(async () => {
+    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", body), provisioningEnv(db));
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error, "nova_os_owner_authorization_invalid");
+    assert.equal(db.batchCalls.length, 0);
+    assert.equal(db.existingRows.length, 0);
+  });
+});
+
 test("tenant provisioning requires an exact configured Access subject allowlist", async () => {
   const db = new ProvisioningDB([]);
   await withProvisioningJwks(async () => {
