@@ -67,11 +67,11 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
         self.db.execute("""
             INSERT INTO tenant_provisioning_requests
               (id, actor_subject, idempotency_key, request_sha256, tenant_id,
-               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti, nova_os_receipt_jti)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ("request-bound", "access-subject-a", "bootstrap-bound", "b" * 64,
               "tenant-a", "https://project.example.test/auth/v1",
-              "supabase-user-a", "nova-tenant-a", "owner-proof-a"))
+              "supabase-user-a", "nova-tenant-a", "owner-proof-a", "receipt-one"))
         row = self.db.execute("""
             SELECT supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti
             FROM tenant_provisioning_requests WHERE id='request-bound'
@@ -94,8 +94,8 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
         self.db.execute("""
             INSERT INTO tenant_provisioning_requests
               (id, actor_subject, idempotency_key, request_sha256, tenant_id,
-               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti, nova_os_receipt_jti)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ("request-bound", "access-subject-a", "bootstrap-bound", "b" * 64,
               "tenant-a", "https://project.example.test/auth/v1",
               "supabase-user-a", "nova-tenant-a", "owner-proof-a"))
@@ -113,10 +113,10 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
         self.db.execute("""
             INSERT INTO tenant_provisioning_requests
               (id, actor_subject, idempotency_key, request_sha256, tenant_id,
-               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti, nova_os_receipt_jti)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ("request-one", "access-a", "key-one", "e" * 64, "tenant-a",
-              "https://project.example.test/auth/v1", "user-a", "nova-a", "proof-shared"))
+              "https://project.example.test/auth/v1", "user-a", "nova-a", "proof-shared", "receipt-a"))
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute("""
                 INSERT INTO tenant_provisioning_requests
@@ -124,7 +124,7 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
                    supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, ("request-two", "access-b", "key-two", "f" * 64, "tenant-a",
-                  "https://project.example.test/auth/v1", "user-b", "nova-b", "proof-shared"))
+                  "https://project.example.test/auth/v1", "user-b", "nova-b", "proof-shared", "receipt-b"))
 
     def test_request_cannot_reference_unknown_tenant(self):
         with self.assertRaises(sqlite3.IntegrityError):
