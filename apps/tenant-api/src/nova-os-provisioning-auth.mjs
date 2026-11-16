@@ -103,8 +103,8 @@ export async function verifyNovaOsOwnerAssertion(token, config, expected, nowSec
       claims.iat > now + CLOCK_SKEW_SECONDS || claims.iat < now - MAX_ASSERTION_LIFETIME_SECONDS ||
       claims.exp <= now || claims.exp <= claims.iat ||
       claims.exp - claims.iat > MAX_ASSERTION_LIFETIME_SECONDS ||
-      typeof claims.jti !== "string" || !claims.jti || claims.jti.length > 200 ||
-      claims.jti.trim() !== claims.jti) {
+      typeof claims.jti !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(claims.jti)) {
     throw new Error("invalid_nova_os_owner_assertion");
   }
   if (claims.nbf !== undefined &&

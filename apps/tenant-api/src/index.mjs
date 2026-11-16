@@ -1,7 +1,7 @@
 import { json, error } from "./http.mjs";
 import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
 import { verifyNovaOsOwnerAssertion } from "./nova-os-provisioning-auth.mjs";
-import { createNovaOsProvisioningReceiptSigner } from "./nova-os-provisioning-receipt.mjs";
+import { createNovaOsProvisioningReceiptSigner, validateNovaOsProvisioningReceiptClaims } from "./nova-os-provisioning-receipt.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
@@ -1359,14 +1359,30 @@ export default {
         } catch {
           return error("nova_os_mapping_receipt_not_configured", 503);
         }
-        const provisioned = await createTenantForProvisioning(env.DB, subject, draftBody, requestId,
-          configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS),
-          verifiedSupabaseIdentity, verifiedNovaOsOwnerAssertion);
-        if (provisioned.error) return json({ error: provisioned.error }, provisioned.status);
         const requestDigest = await sha256Hex(JSON.stringify([
           subject, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject,
           draftBody.nova_os_tenant_id, verifiedNovaOsOwnerAssertion.jti, draftBody.display_name,
         ]));
+        try {
+          validateNovaOsProvisioningReceiptClaims({
+            accessIssuer: issuer,
+            accessSubject: subject,
+            supabaseIssuer: verifiedSupabaseIdentity.issuer,
+            supabaseSubject: verifiedSupabaseIdentity.subject,
+            novaOsTenantId: draftBody.nova_os_tenant_id,
+            coreTenantId: "tenant-preflight",
+            idempotencyKey: draftBody.idempotency_key,
+            requestDigest,
+            ownerAssertionJti: verifiedNovaOsOwnerAssertion.jti,
+            jti: "receipt-preflight",
+          });
+        } catch {
+          return error("tenant_provisioning_receipt_claims_invalid", 400);
+        }
+        const provisioned = await createTenantForProvisioning(env.DB, subject, draftBody, requestId,
+          configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS),
+          verifiedSupabaseIdentity, verifiedNovaOsOwnerAssertion);
+        if (provisioned.error) return json({ error: provisioned.error }, provisioned.status);
         let receipt;
         try {
           receipt = await receiptSigner({
