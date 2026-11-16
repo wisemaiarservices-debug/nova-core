@@ -61,12 +61,17 @@ test("Core signs a short-lived RS256 receipt binding both identities and both te
   assert.equal(valid, true);
 });
 
-test("receipt signer rejects missing or weak signing configuration", async () => {
+test("receipt signer rejects missing, weak, or invalid signing configuration", async () => {
   await assert.rejects(() => createNovaOsProvisioningReceiptSigner({
     ...config, issuer: "http://insecure.example.test/issuer",
   }), /invalid_nova_os_receipt_signing_configuration/);
   await assert.rejects(() => createNovaOsProvisioningReceiptSigner({
     ...config, privateKeyPem: "not a private key",
+  }), /invalid_nova_os_receipt_signing_configuration/);
+  const { privateKey: weakKey } = generateKeyPairSync("rsa", { modulusLength: 1024 });
+  await assert.rejects(() => createNovaOsProvisioningReceiptSigner({
+    ...config,
+    privateKeyPem: weakKey.export({ type: "pkcs8", format: "pem" }).toString(),
   }), /invalid_nova_os_receipt_signing_configuration/);
   const signer = await createNovaOsProvisioningReceiptSigner(config);
   await assert.rejects(() => signer({ ...claims, requestDigest: "not-a-sha256" }),
