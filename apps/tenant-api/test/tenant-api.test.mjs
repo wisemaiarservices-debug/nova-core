@@ -976,11 +976,20 @@ const provisioningJwk = {
   kid: "provisioning-test-key", alg: "RS256", use: "sig", key_ops: ["verify"],
 };
 const novaOsOwnerKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const novaOsPermitKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const coreReceiptKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const novaOsOwnerJwk = {
   ...novaOsOwnerKeyPair.publicKey.export({ format: "jwk" }),
   kid: "nova-os-owner-test-key", alg: "RS256", use: "sig", key_ops: ["verify"],
 };
+const novaOsPermitKeyId = "nova-os-permit-test-key";
+const novaOsPermitJwk = {
+  ...novaOsPermitKeyPair.publicKey.export({ format: "jwk" }),
+  kid: novaOsPermitKeyId, alg: "RS256", use: "sig", key_ops: ["verify"],
+};
+const coreToOsKeyId = "core-os-test-key";
+const coreToOsSecret = "test-only-Core-to-OS-shared-secret-with-32-bytes";
+const novaOsAuthorizationUrl = "https://project.example.test/functions/v1/nova-core-owner-authorization";
 function novaOsOwnerAssertion(subject = "supabase-owner", tenantId = "22222222-2222-4222-8222-222222222222", jti = "aaaaaaaa-0000-4000-8000-000000000001") {
   const b64 = value => Buffer.from(value).toString("base64url");
   const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: novaOsOwnerJwk.kid }));
@@ -1008,11 +1017,56 @@ function provisioningSupabaseToken(subject = "supabase-owner") {
 }
 async function withProvisioningJwks(callback) {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async url => {
-    assert.equal(String(url), "https://project.example.test/auth/v1/.well-known/jwks.json");
-    return new Response(JSON.stringify({ keys: [provisioningJwk] }), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url) === "https://project.example.test/auth/v1/.well-known/jwks.json") {
+      return new Response(JSON.stringify({ keys: [provisioningJwk] }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (String(url) === novaOsAuthorizationUrl) {
+      assert.equal(init.method, "POST");
+      assert.equal(init.redirect, "error");
+      const headers = new Headers(init.headers);
+      const bodyText = init.body;
+      const bodyDigest = createHash("sha256").update(bodyText).digest("hex");
+      const canonical = ["POST", "/nova-core-owner-authorization", coreToOsKeyId,
+        headers.get("x-nova-core-timestamp"), headers.get("x-nova-core-nonce"), bodyDigest].join("\\n");
+      assert.equal(headers.get("x-nova-core-key-id"), coreToOsKeyId);
+      assert.equal(headers.get("x-nova-core-signature"),
+        createHmac("sha256", coreToOsSecret).update(canonical).digest("hex"));
+      const body = JSON.parse(bodyText);
+      const permitHeader = Buffer.from(JSON.stringify({
+        alg: "RS256", typ: "JWT", kid: novaOsPermitKeyId,
+      })).toString("base64url");
+      const permitClaims = {
+        iss: "https://nova-os.example.test/authorization",
+        aud: "nova-core-owner-authorization",
+        sub: body.access_subject,
+        access_issuer: body.access_issuer,
+        access_subject: body.access_subject,
+        supabase_issuer: body.supabase_issuer,
+        supabase_subject: body.supabase_subject,
+        nova_os_tenant_id: body.tenant_id,
+        owner_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
+        idempotency_key: body.idempotency_key,
+        request_sha256: body.request_sha256,
+        core_correlation_id: body.core_correlation_id,
+        jti: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        iat: now,
+        exp: now + 120,
+      };
+      const permitPayload = Buffer.from(JSON.stringify(permitClaims)).toString("base64url");
+      const permitInput = permitHeader + "." + permitPayload;
+      const permitToken = permitInput + "." +
+        sign("RSA-SHA256", Buffer.from(permitInput), novaOsPermitKeyPair.privateKey).toString("base64url");
+      return new Response(JSON.stringify({ data: {
+        authorization_permit: permitToken,
+        permit_jti: permitClaims.jti,
+        expires_at: permitClaims.exp,
+        replayed: false,
+      } }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("unexpected provisioning fetch " + String(url));
   };
   try { return await callback(); } finally { globalThis.fetch = originalFetch; }
 }
@@ -1030,6 +1084,12 @@ const provisioningEnv = db => ({
   NOVA_OS_PROVISIONING_AUTH_ISSUER: "https://nova-os.example.test/tenant-provisioning",
   NOVA_OS_PROVISIONING_AUTH_AUDIENCE: "nova-core-tenant-provisioning",
   NOVA_OS_PROVISIONING_AUTH_JWK: JSON.stringify(novaOsOwnerJwk),
+  NOVA_OS_OWNER_AUTHORIZATION_URL: novaOsAuthorizationUrl,
+  NOVA_OS_OWNER_AUTH_KEYS: JSON.stringify({ [coreToOsKeyId]: coreToOsSecret }),
+  NOVA_OS_OWNER_AUTH_ACTIVE_KEY_ID: coreToOsKeyId,
+  NOVA_OS_OWNER_AUTHORIZATION_PERMIT_ISSUER: "https://nova-os.example.test/authorization",
+  NOVA_OS_OWNER_AUTHORIZATION_PERMIT_AUDIENCE: "nova-core-owner-authorization",
+  NOVA_OS_OWNER_AUTHORIZATION_PERMIT_JWK: JSON.stringify(novaOsPermitJwk),
   NOVA_OS_MAPPING_RECEIPT_ISSUER: "https://nova-core.example.test/provisioning",
   NOVA_OS_MAPPING_RECEIPT_AUDIENCE: "https://nova-os.example.test/mapping",
   NOVA_OS_MAPPING_RECEIPT_KEY_ID: "core-receipt-test-key",
