@@ -33,6 +33,7 @@ def test_private_tenant_api_sql_compiles_against_ordered_schema_migrations():
         MIGRATIONS / "0023_identity_link_distinct_issuers.sql",
         MIGRATIONS / "0024_tenant_identity_link_uniqueness.sql",
         MIGRATIONS / "0025_identity_link_rate_limits.sql",
+        MIGRATIONS / "0026_tenant_provisioning_identity_binding.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
 
