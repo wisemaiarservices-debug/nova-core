@@ -1037,6 +1037,7 @@ async function withProvisioningJwks(callback) {
       assert.equal(headers.get("x-nova-core-signature"),
         createHmac("sha256", coreToOsSecret).update(canonical).digest("hex"));
       const body = JSON.parse(bodyText);
+      assert.equal(body.display_name, "Research tenant");
       const permitHeader = Buffer.from(JSON.stringify({
         alg: "RS256", typ: "JWT", kid: novaOsPermitKeyId,
       })).toString("base64url");
