@@ -34,8 +34,11 @@ export async function registerTenantSource(db,tenant,site,actor,requestId,idempo
 
 export async function assignTenantSourceReviewer(db,tenant,site,actor,body){
  if(!only(body,["reviewer_subject","evidence_ref"])||!textOk(body.reviewer_subject,200)||body.reviewer_subject===actor||!textOk(body.evidence_ref,500))return {error:"source_reviewer_request_invalid",status:400};
- const result=await db.prepare("INSERT INTO tenant_source_reviewers(tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref) SELECT ?,?,?,'active',?,? WHERE EXISTS(SELECT 1 FROM tenants WHERE id=? AND status='active') AND EXISTS(SELECT 1 FROM sites WHERE tenant_id=? AND id=? AND status='active') AND EXISTS(SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND subject=? AND status='active' AND role IN ('tenant_owner','tenant_admin')) AND EXISTS(SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND subject=? AND status='active') ON CONFLICT(tenant_id,site_id,reviewer_subject) DO NOTHING").bind(tenant,site,body.reviewer_subject,actor,body.evidence_ref,tenant,tenant,site,tenant,actor,tenant,body.reviewer_subject).run();
- if(result?.meta?.changes!==1)return {error:"source_reviewer_assignment_conflict",status:409};
+ const results=await db.batch([
+  db.prepare("INSERT INTO tenant_source_reviewers(tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref) SELECT ?,?,?,'active',?,? WHERE EXISTS(SELECT 1 FROM tenants WHERE id=? AND status='active') AND EXISTS(SELECT 1 FROM sites WHERE tenant_id=? AND id=? AND status='active') AND EXISTS(SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND subject=? AND status='active' AND role IN ('tenant_owner','tenant_admin')) AND EXISTS(SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND subject=? AND status='active') ON CONFLICT(tenant_id,site_id,reviewer_subject) DO NOTHING").bind(tenant,site,body.reviewer_subject,actor,body.evidence_ref,tenant,tenant,site,tenant,actor,tenant,body.reviewer_subject),
+  db.prepare("INSERT INTO tenant_source_reviewer_events(id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,request_id) SELECT ?,?,?,?,?,'assigned',?,? WHERE changes()=1").bind(crypto.randomUUID(),tenant,site,body.reviewer_subject,actor,body.evidence_ref,crypto.randomUUID()),
+ ]);
+ if(!Array.isArray(results)||results.length!==2||results[0]?.meta?.changes!==1||results[1]?.meta?.changes!==1)return {error:"source_reviewer_assignment_conflict",status:409};
  return {data:{tenant_id:tenant,site_id:site,reviewer_subject:body.reviewer_subject,status:"active"},status:201};
 }
 
