@@ -55,6 +55,11 @@ test("first-site creation atomically inserts the site, exact owner read grant, a
   assert.equal(db.batchStatements.length, 5);
   assert.match(db.batchStatements[0].sql, /INSERT INTO sites/);
   assert.match(db.batchStatements[0].sql, /role = 'tenant_owner'/);
+  assert.match(db.batchStatements[0].sql, /tenant_identity_link_requests/);
+  assert.deepEqual(db.batchStatements[0].args.slice(-5), [
+    "tenant-a", identityLink.supabaseIssuer, identityLink.supabaseSubject,
+    identityLink.cloudflareIssuer, identityLink.cloudflareSubject,
+  ]);
   assert.match(db.batchStatements[1].sql, /'site', \?, 'read'/);
   assert.match(db.batchStatements[2].sql, /tenant_site_grant_events/);
   assert.match(db.batchStatements[3].sql, /tenant_site_events/);
@@ -94,6 +99,14 @@ test("rejects extra fields, untrimmed names and malformed idempotency keys", asy
       key, digest, body, identityLink);
     assert.equal(result.status, 400);
   }
+  assert.equal(db.batchStatements.length, 0);
+});
+
+test("site creation requires the exact approved dual-identity pair", async () => {
+  const db = new FakeDB();
+  const result = await createTenantSite(db, "tenant-a", "owner-sub", "request-1",
+    "first-site-setup-1", digest, { name: "North Farm" }, null);
+  assert.equal(result.status, 400);
   assert.equal(db.batchStatements.length, 0);
 });
 
