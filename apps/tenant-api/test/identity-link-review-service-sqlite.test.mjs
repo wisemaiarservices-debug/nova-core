@@ -538,6 +538,9 @@ test("identity-link approval and revocation never provision tenant memberships o
   assert.equal(approved.data.status, "approved");
   assert.deepEqual(membershipSnapshot(), membershipsBefore);
   assert.deepEqual(grantSnapshot(), grantsBefore);
+  const approvedInventory = await listApprovedIdentityLinkRequests(db, tenantId, owner);
+  assert.equal(approvedInventory.status, 200);
+  assert.deepEqual(approvedInventory.data.map(row => row.id), ["link-review"]);
   assert.equal(sqlite.prepare(
     "SELECT role FROM tenant_memberships WHERE tenant_id = ? AND subject = ?"
   ).get(tenantId, requester.subject).role, "operator");
@@ -551,6 +554,12 @@ test("identity-link approval and revocation never provision tenant memberships o
   assert.equal(revoked.status, 200);
   assert.deepEqual(membershipSnapshot(), membershipsBefore);
   assert.deepEqual(grantSnapshot(), grantsBefore);
+  const revokedInventory = await listApprovedIdentityLinkRequests(db, tenantId, owner);
+  assert.equal(revokedInventory.status, 200);
+  assert.deepEqual(revokedInventory.data, []);
+  assert.equal(sqlite.prepare(
+    "SELECT status FROM tenant_memberships WHERE tenant_id = ? AND subject = ?"
+  ).get(tenantId, requester.subject).status, "active");
 });
 
 
