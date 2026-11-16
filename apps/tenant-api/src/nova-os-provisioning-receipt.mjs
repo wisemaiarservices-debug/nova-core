@@ -62,6 +62,8 @@ export function validateNovaOsProvisioningReceiptClaims(claims) {
       !opaque(claims?.idempotencyKey, 160) ||
       typeof claims?.requestDigest !== "string" || !/^[a-f0-9]{64}$/.test(claims.requestDigest) ||
       !opaque(claims?.ownerAssertionJti, 36) || !UUID.test(claims.ownerAssertionJti) ||
+      !opaque(claims?.authorizationPermitJti, 36) || !UUID.test(claims.authorizationPermitJti) ||
+      claims.authorizationCorrelationId !== "nova-provision:" + claims.requestDigest ||
       !opaque(claims?.jti, 200)) {
     throw new Error("invalid_nova_os_receipt_claims");
   }
@@ -113,6 +115,8 @@ export async function createNovaOsProvisioningReceiptSigner(config) {
       idempotency_key: claims.idempotencyKey,
       request_sha256: claims.requestDigest,
       owner_assertion_jti: claims.ownerAssertionJti,
+      authorization_permit_jti: claims.authorizationPermitJti,
+      authorization_correlation_id: claims.authorizationCorrelationId,
       jti: claims.jti,
       iat: now,
       exp: now + MAX_RECEIPT_SECONDS,
