@@ -45,7 +45,7 @@ function validHttpsOrigin(value, max) {
   try {
     const url = new URL(value);
     return url.protocol === "https:" && !url.username && !url.password &&
-      !url.search && !url.hash && url.origin === value;
+      !url.search && !url.hash && url.origin === (value.endsWith("/") ? value.slice(0, -1) : value);
   } catch { return false; }
 }
 
