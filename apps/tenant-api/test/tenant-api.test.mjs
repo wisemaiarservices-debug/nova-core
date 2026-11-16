@@ -1099,6 +1099,24 @@ test("tenant provisioning rejects owner assertions for another NOVA OS tenant", 
   });
 });
 
+test("tenant provisioning rejects receipt-incompatible tenant identifiers before any D1 writes", async () => {
+  const db = new ProvisioningDB([]);
+  const invalidTenantId = "not-a-uuid";
+  const body = JSON.stringify({
+    ...JSON.parse(provisioningBody),
+    nova_os_tenant_id: invalidTenantId,
+    nova_os_owner_assertion: novaOsOwnerAssertion("supabase-owner", invalidTenantId),
+  });
+  await withProvisioningJwks(async () => {
+    const response = await worker.fetch(
+      await request(provisioningHeaders(), provisioningPath, "POST", body), provisioningEnv(db));
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "tenant_provisioning_receipt_claims_invalid");
+    assert.equal(db.batchCalls.length, 0);
+    assert.equal(db.existingRows.length, 0);
+  });
+});
+
 test("tenant provisioning requires an exact configured Access subject allowlist", async () => {
   const db = new ProvisioningDB([]);
   await withProvisioningJwks(async () => {
