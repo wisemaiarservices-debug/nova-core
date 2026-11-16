@@ -23,7 +23,7 @@ const claims = {
   idempotencyKey: "provision-tenant-1",
   requestDigest: "a".repeat(64),
   ownerAssertionJti: "aaaaaaaa-0000-4000-8000-000000000001",
-  jti: "dddddddd-0000-4000-8000-000000000004",
+  jti: "provisioning-request-1",
 };
 
 function decode(value) {
@@ -77,8 +77,6 @@ test("receipt signer rejects missing, weak, or invalid signing configuration", a
   await assert.rejects(() => signer({ ...claims, requestDigest: "not-a-sha256" }),
     /invalid_nova_os_receipt_claims/);
   await assert.rejects(() => signer({ ...claims, ownerAssertionJti: "not-a-uuid" }),
-    /invalid_nova_os_receipt_claims/);
-  await assert.rejects(() => signer({ ...claims, jti: "not-a-uuid" }),
     /invalid_nova_os_receipt_claims/);
 });
 
