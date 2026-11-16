@@ -1876,7 +1876,9 @@ class IdentityLinkRouteDB extends DB {
 test("dual-auth HTTP routes create and consume a challenge bound to both verified identities", async () => {
   const db = new IdentityLinkRouteDB();
   const originalFetch = globalThis.fetch;
+  let jwksFetchCount = 0;
   globalThis.fetch = async url => {
+    jwksFetchCount += 1;
     assert.equal(String(url), IDENTITY_SUPABASE_ISSUER + "/.well-known/jwks.json");
     return new Response(JSON.stringify({ keys: [identityJwk] }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -1907,6 +1909,7 @@ test("dual-auth HTTP routes create and consume a challenge bound to both verifie
     assert.equal(consumedResponse.status, 201);
     assert.equal((await consumedResponse.json()).data.status, "pending");
     assert.equal(db.identityChallengeRow.status, "consumed");
+    assert.equal(jwksFetchCount, 2, "each challenge request must fetch and verify the configured JWKS exactly once");
     assert.equal(db.batchCalls.length, 3, "create and consume each charge rate limits; consumption also commits the challenge batch");
     assert.equal(db.batchCalls[0].length, 3);
     assert.equal(db.batchCalls[1].length, 3);

@@ -1027,19 +1027,23 @@ export default {
       if (typeof env.SUPABASE_AUTH_ISSUER !== "string" || !env.SUPABASE_AUTH_ISSUER ||
           typeof env.SUPABASE_AUTH_AUDIENCE !== "string" || !env.SUPABASE_AUTH_AUDIENCE)
         return error("supabase_identity_not_configured", 503);
-      try {
-        await verifySupabaseAccessToken(supabaseToken, {
-          issuer: env.SUPABASE_AUTH_ISSUER,
-          audience: env.SUPABASE_AUTH_AUDIENCE,
-        });
-      } catch (cause) {
-        const reason = cause instanceof Error ? cause.message : "";
-        if (reason === "supabase_jwks_unavailable" || reason === "supabase_issuer_unavailable")
-          return error("supabase_identity_provider_unavailable", 503);
-        if (reason === "invalid_supabase_issuer_configuration" ||
-            reason === "invalid_supabase_audience_configuration")
-          return error("supabase_identity_configuration_invalid", 503);
-        return error("supabase_identity_not_authorized", 401);
+      // Identity-link routes verify this token together with the gateway identity
+      // below. Avoid fetching the same JWKS twice for one request.
+      if (!identityLinkChallengeCreate && !identityLinkChallengeConsume) {
+        try {
+          await verifySupabaseAccessToken(supabaseToken, {
+            issuer: env.SUPABASE_AUTH_ISSUER,
+            audience: env.SUPABASE_AUTH_AUDIENCE,
+          });
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : "";
+          if (reason === "supabase_jwks_unavailable" || reason === "supabase_issuer_unavailable")
+            return error("supabase_identity_provider_unavailable", 503);
+          if (reason === "invalid_supabase_issuer_configuration" ||
+              reason === "invalid_supabase_audience_configuration")
+            return error("supabase_identity_configuration_invalid", 503);
+          return error("supabase_identity_not_authorized", 401);
+        }
       }
     }
     if (!env.DB) return error("storage_unavailable", 503);
