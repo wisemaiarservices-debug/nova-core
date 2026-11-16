@@ -84,3 +84,21 @@ A single D1 batch creates the asset with status `unconfigured`, an exact asset-l
 Asset registration does not assert that the equipment physically exists, is connected, is correctly configured, or has a known sensor identity. It does not register or verify a source, create a service credential, assign a reviewer, calibrate a sensor, or enable ingestion. Asset status remains `unconfigured` until a separate evidence-backed lifecycle exists.
 
 The new schema migration is `0027_tenant_asset_registration.sql`, after the site-creation migration `0026`. It adds append-only event and immutable idempotency ledgers with active-owner and exact tenant/site/asset guards.
+
+
+## Site-scoped source registration and independent verification (draft follow-on)
+
+Public gateway routes:
+
+- `POST /api/v1/tenants/{tenant}/sites/{site}/sources`
+- `POST /api/v1/tenants/{tenant}/sites/{site}/source-reviewers/assign`
+- `POST /api/v1/tenants/{tenant}/sites/{site}/source-reviewers/revoke`
+- `POST /api/v1/tenants/{tenant}/sites/{site}/sources/{source}/verification`
+
+Source registration is owner/admin-only and requires the exact active tenant, site and site-read grant. The request accepts module, provider, source type, display name, optional license reference and a source evidence reference. It deliberately does not accept endpoint URLs, credentials, tenant/site IDs, verification status or a source ID. Core generates the source ID, records the registrant and writes a registration event plus tenant/site/actor-scoped idempotency record. The source remains `unverified`.
+
+A tenant owner/admin may assign an active tenant member as a site-scoped source reviewer. The registrant cannot review their own source. Verification/rejection/revocation requires an active assigned reviewer, an evidence reference and (for rejection/revocation) a reason. The source table's verification status is updated only by the database lifecycle-event trigger: `verified` after approval, `unverified` after rejection, and `disabled` after revocation. Rejected sources cannot be re-verified through this initial lifecycle.
+
+The source registration evidence reference is a pointer, not proof that the referenced evidence is valid or that a physical device is connected. Verification is a human governance decision, not cryptographic proof of installation, accuracy, calibration, licensing or scientific validity.
+
+The existing ingestion Worker continues to require `verification_status='verified'`, exact tenant/site/module/source matching, an active site/asset, Cloudflare Access service-token authentication and a separately configured exact service/module/source grant. Source registration and review do not create service credentials or grants and do not enable ingestion.
