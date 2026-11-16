@@ -114,3 +114,14 @@ The staging release packet must include:
 Stop immediately and disable the staging provisioning path if any key/issuer/audience mismatch, unexpected tenant write, duplicate tenant, replay acceptance, cross-tenant read, private-key disclosure, ambiguous database state, or unexplained mapping discrepancy occurs. Preserve redacted evidence and resolve through a reviewed code/configuration change.
 
 **Production remains blocked** until coordinated OS/Core review, staging acceptance, independent security sign-off, production key custody and rotation plan, monitoring/alerting, rollback rehearsal, and explicit release authorization are complete.
+
+## 1B. Required branch dependency and integration order
+
+The runtime pull requests are based on prerequisite protocol branches. Preserve this dependency chain when preparing coordinated staging branches; do not merge a child PR against an unintegrated parent:
+
+- NOVA OS protocol: PR #56 `design/nova-os-one-time-owner-authorization-v1` → runtime PR #57 `feat/nova-os-one-time-owner-authorization-v1` → mapping correction PR #58 `fix/nova-os-mapping-honors-consumed-permit`.
+- NOVA Core protocol: PR #221 `design/nova-os-one-time-owner-authorization-v1` → runtime PR #222 `feat/nova-core-one-time-owner-authorization-v1`.
+- Before integration, verify each child PR's base SHA is the reviewed parent head. If a parent changes, update/rebase the child and rerun all affected checks.
+- The two repositories can be integrated independently into isolated staging branches, but staging deployment must wait until both repository chains are complete and their exact deployed SHAs are recorded.
+- Keep protocol and runtime changes reviewable as separate units. A successful child CI run does not replace review of its parent contract or prove the combined deployment.
+- Do not merge these branches directly to production as part of staging preparation.
