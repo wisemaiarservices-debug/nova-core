@@ -38,16 +38,12 @@ export async function createNovaOsProvisioningReceiptSigner(config) {
   try {
     privateKey = await crypto.subtle.importKey(
       "pkcs8", pemBytes(config.privateKeyPem),
-      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, true, ["sign"],
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"],
     );
-    const metadata = await crypto.subtle.exportKey("jwk", privateKey);
-    const decode = value => Uint8Array.from(
-      atob(value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4)),
-      character => character.charCodeAt(0),
-    );
-    const modulus = typeof metadata.n === "string" ? decode(metadata.n) : new Uint8Array();
-    const exponent = typeof metadata.e === "string" ? decode(metadata.e) : new Uint8Array();
-    if (modulus.length < 256 || modulus[0] < 0x80 ||
+    const algorithm = privateKey.algorithm;
+    const exponent = algorithm?.publicExponent;
+    if (!Number.isInteger(algorithm?.modulusLength) || algorithm.modulusLength < 2048 ||
+        !(exponent instanceof Uint8Array) ||
         exponent.length !== 3 || exponent[0] !== 1 || exponent[1] !== 0 || exponent[2] !== 1) {
       throw new Error("invalid_nova_os_receipt_signing_configuration");
     }
