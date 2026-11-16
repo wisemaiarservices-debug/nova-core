@@ -14,6 +14,8 @@ Request headers:
 - `Idempotency-Key` (1–160 characters; restricted identifier syntax)
 - `Content-Type: application/json`
 
+The exact-origin credentialed CORS preflight allows `Idempotency-Key` as well as the authorization and JSON headers required by the browser workflow.
+
 Request body accepts exactly one field:
 
 ```json
