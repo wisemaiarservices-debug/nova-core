@@ -61,12 +61,17 @@ test("Core signs a short-lived RS256 receipt binding both identities and both te
   assert.equal(valid, true);
 });
 
-test("receipt signer rejects missing or weak signing configuration", async () => {
+test("receipt signer rejects missing, weak, or invalid signing configuration", async () => {
   await assert.rejects(() => createNovaOsProvisioningReceiptSigner({
     ...config, issuer: "http://insecure.example.test/issuer",
   }), /invalid_nova_os_receipt_signing_configuration/);
   await assert.rejects(() => createNovaOsProvisioningReceiptSigner({
     ...config, privateKeyPem: "not a private key",
+  }), /invalid_nova_os_receipt_signing_configuration/);
+  const { privateKey: weakKey } = generateKeyPairSync("rsa", { modulusLength: 1024 });
+  await assert.rejects(() => createNovaOsProvisioningReceiptSigner({
+    ...config,
+    privateKeyPem: weakKey.export({ type: "pkcs8", format: "pem" }).toString(),
   }), /invalid_nova_os_receipt_signing_configuration/);
   const signer = await createNovaOsProvisioningReceiptSigner(config);
   await assert.rejects(() => signer({ ...claims, requestDigest: "not-a-sha256" }),
@@ -79,4 +84,22 @@ test("receipt identifier remains stable across retries for the same durable prov
   const retry = await signer(claims);
   assert.equal(first.jti, retry.jti);
   assert.equal(decode(first.token.split(".")[1]).jti, decode(retry.token.split(".")[1]).jti);
+});
+
+test("receipt signer imports its private RSA key as non-extractable", async () => {
+  const originalImportKey = crypto.subtle.importKey;
+  let importedPrivateKey;
+  try {
+    crypto.subtle.importKey = async function (...args) {
+      const key = await originalImportKey.apply(this, args);
+      if (args[0] === "pkcs8") importedPrivateKey = key;
+      return key;
+    };
+    await createNovaOsProvisioningReceiptSigner(config);
+    assert.ok(importedPrivateKey);
+    assert.equal(importedPrivateKey.extractable, false);
+    assert.deepEqual(importedPrivateKey.usages, ["sign"]);
+  } finally {
+    crypto.subtle.importKey = originalImportKey;
+  }
 });
