@@ -1244,25 +1244,40 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     assert.match(sql, /'tenant_owner', 'active'/);
     assert.match(sql, /INSERT INTO tenant_membership_events/);
     assert.match(sql, /INSERT INTO tenant_provisioning_requests/);
+    assert.match(sql, /nova_os_authorization_permit_jti/);
+    assert.match(sql, /nova_os_authorization_correlation_id/);
     const record = db.batchCalls[0].at(-1);
     assert.ok(record.args.includes("https://project.example.test/auth/v1"));
     assert.ok(record.args.includes("supabase-owner"));
     assert.ok(record.args.includes("22222222-2222-4222-8222-222222222222"));
     assert.ok(record.args.includes("aaaaaaaa-0000-4000-8000-000000000001"));
+    assert.ok(record.args.includes("dddddddd-dddd-4ddd-8ddd-dddddddddddd"));
+    assert.ok(record.args.includes("https://example.cloudflareaccess.com"));
     assert.ok(db.batchCalls[0].every(statement => !statement.args.includes("attacker-subject")));
   });
 });
 
 test("tenant provisioning returns the existing result only for the same dual identity and NOVA OS tenant", async () => {
   const digest = createHash("sha256").update(JSON.stringify([
-    "operator@example.test", "https://project.example.test/auth/v1",
-    "supabase-owner", "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001", "Research tenant",
+    "nova-core-tenant-provisioning-v1",
+    "https://example.cloudflareaccess.com", "operator@example.test",
+    "https://project.example.test/auth/v1", "supabase-owner",
+    "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001",
+    "bootstrap-001", "Research tenant",
   ])).digest("hex");
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
     actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: digest, supabase_issuer: "https://project.example.test/auth/v1",
     supabase_subject: "supabase-owner", nova_os_tenant_id: "22222222-2222-4222-8222-222222222222", nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
     id: "provisioning-request-existing",
+    access_issuer: "https://example.cloudflareaccess.com",
+    nova_os_authorization_permit_jti: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    nova_os_authorization_permit_issuer: "https://nova-os.example.test/authorization",
+    nova_os_authorization_permit_audience: "nova-core-owner-authorization",
+    nova_os_authorization_permit_key_id: "nova-os-permit-test-key",
+    nova_os_authorization_correlation_id: "nova-provision:" + digest,
+    nova_os_authorization_permit_issued_at: now,
+    nova_os_authorization_permit_expires_at: now + 120,
     tenant_id: "tenant-existing", display_name: "Research tenant", status: "active",
     membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
   }]);
