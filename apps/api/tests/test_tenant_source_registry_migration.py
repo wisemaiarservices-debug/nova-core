@@ -4,7 +4,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "migrations" / "0028_tenant_source_registry_lifecycle.sql"
+MIGRATION = ROOT / "migrations" / "0029_tenant_source_registry_lifecycle.sql"
 
 
 class TenantSourceRegistryMigrationTests(unittest.TestCase):
