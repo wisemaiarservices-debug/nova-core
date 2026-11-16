@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, webcrypto } from "node:crypto";
-import { createNovaOsProvisioningReceiptSigner } from "../src/nova-os-provisioning-receipt.mjs";
+import { createNovaOsProvisioningReceiptSigner, validateNovaOsProvisioningReceiptClaims } from "../src/nova-os-provisioning-receipt.mjs";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -18,7 +18,7 @@ const claims = {
   accessSubject: "access-owner-1",
   supabaseIssuer: "https://project.example.test/auth/v1",
   supabaseSubject: "supabase-owner-1",
-  novaOsTenantId: "nova-tenant-1",
+  novaOsTenantId: "22222222-2222-4222-8222-222222222222",
   coreTenantId: "tenant-core-1",
   idempotencyKey: "provision-tenant-1",
   requestDigest: "a".repeat(64),
@@ -59,6 +59,26 @@ test("Core signs a short-lived RS256 receipt binding both identities and both te
     Buffer.from(signaturePart.replace(/-/g, "+").replace(/_/g, "/"), "base64"),
     new TextEncoder().encode(headerPart + "." + payloadPart));
   assert.equal(valid, true);
+});
+
+test("receipt claim validation matches the NOVA OS verifier before provisioning writes", () => {
+  assert.equal(validateNovaOsProvisioningReceiptClaims({
+    ...claims, coreTenantId: "tenant-core-1", jti: "provisioning-request-1",
+  }), true);
+  for (const invalid of [
+    { ...claims, accessIssuer: "https://access.example.test/path" },
+    { ...claims, accessSubject: "x".repeat(201) },
+    { ...claims, supabaseIssuer: "http://project.example.test/auth/v1" },
+    { ...claims, supabaseSubject: "x".repeat(201) },
+    { ...claims, novaOsTenantId: "not-a-uuid" },
+    { ...claims, coreTenantId: "tenant/core" },
+    { ...claims, idempotencyKey: " key " },
+    { ...claims, jti: "x".repeat(201) },
+  ]) {
+    assert.throws(() => validateNovaOsProvisioningReceiptClaims({
+      ...invalid, coreTenantId: invalid.coreTenantId ?? "tenant-core-1",
+    }), /invalid_nova_os_receipt_claims/);
+  }
 });
 
 test("receipt signer rejects missing, weak, or invalid signing configuration", async () => {
