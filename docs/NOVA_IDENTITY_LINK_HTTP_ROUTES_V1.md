@@ -15,7 +15,7 @@ Requires:
 - A Supabase Auth bearer JWT in `Authorization: Bearer <token>`.
 - Both identity providers configured with exact issuer and audience values in the private Worker.
 
-Body must be an empty JSON object. The private Worker independently verifies the forwarded token and then the dual-verification helper verifies it again while binding the Supabase identity to the already gateway-verified Cloudflare identity.
+Body must be an empty JSON object. The private Worker validates the signed gateway envelope and forwards the Supabase token to the dual-verification helper. That helper performs the single authoritative Supabase JWT verification for the request while binding the verified Supabase identity to the independently gateway-verified Cloudflare identity. The same one-verification rule applies when consuming a challenge.
 
 Response contains a one-time challenge ID, a 256-bit random challenge and expiry. Only the challenge digest is persisted. The raw Supabase JWT and raw challenge are never written to the database or audit events.
 
