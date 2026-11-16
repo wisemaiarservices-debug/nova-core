@@ -19,7 +19,10 @@ export async function registerTenantSource(db,tenant,site,actor,requestId,idempo
  if(prior.results.length>1)throw new Error("source_registration_idempotency_ambiguous");
  if(prior.results.length===1){
   if(prior.results[0].request_sha256!==requestSha256)return {error:"source_registration_idempotency_conflict",status:409};
-  return {data:{id:prior.results[0].source_id,tenant_id:tenant,site_id:site,verification_status:"unverified"},status:200,replayed:true};
+  const existing=await db.prepare("SELECT id,verification_status FROM sources WHERE id=? AND tenant_id=? AND site_id=? LIMIT 2").bind(prior.results[0].source_id,tenant,site).all();
+  if(!Array.isArray(existing?.results))throw new Error("source_registration_replay_lookup_invalid");
+  if(existing.results.length!==1)return {error:"source_registration_replay_source_not_found",status:404};
+  return {data:{id:existing.results[0].id,tenant_id:tenant,site_id:site,verification_status:existing.results[0].verification_status},status:200,replayed:true};
  }
  const sourceId=crypto.randomUUID();
  const statements=[
