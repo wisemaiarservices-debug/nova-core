@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { listPendingIdentityLinkRequests, decideIdentityLinkRequest } from "../src/identity-link-review.mjs";
+import { listPendingIdentityLinkRequests, listApprovedIdentityLinkRequests, decideIdentityLinkRequest } from "../src/identity-link-review.mjs";
 import { createIdentityLinkChallenge, consumeIdentityLinkChallenge } from "../src/identity-link-challenge-service.mjs";
 
 const migrationDir = new URL("../../api/migrations/", import.meta.url);
@@ -645,4 +645,62 @@ test("an idempotent owner decision replay is denied after owner membership is de
   assert.equal(sqlite.prepare(
     "SELECT status FROM tenant_identity_link_requests WHERE id = ?"
   ).get("link-review").status, "approved");
+});
+
+
+test("real SQLite approved identity inventory is isolated by tenant and active owner membership", async t => {
+  const { db, sqlite } = fixture(t);
+
+  const approvedPrimary = await decideIdentityLinkRequest(db, tenantId, "link-review", owner,
+    "approve", "Primary tenant approval", "inventory-primary-approval",
+    new Date("2026-11-15T12:00:10.000Z"));
+  assert.equal(approvedPrimary.status, 200);
+
+  // Create a second active tenant with the same owner and a different approved
+  // identity association. The selected tenant must never see this row.
+  const otherTenant = "tenant-inventory-other";
+  sqlite.prepare("INSERT INTO tenants (id, status) VALUES (?, 'active')").run(otherTenant);
+  sqlite.prepare(`
+    INSERT INTO tenant_memberships (tenant_id, subject, role, status)
+    VALUES (?, ?, 'tenant_owner', 'active')
+  `).run(otherTenant, owner.subject);
+
+  const otherSupabase = {
+    issuer: supabaseIssuer,
+    subject: "supabase-user-other-tenant",
+    audience: "authenticated",
+  };
+  const otherCloudflare = {
+    issuer: owner.issuer,
+    subject: "linked-user-other-tenant",
+    audience: "nova-core",
+  };
+  const challenge = await createIdentityLinkChallenge(db, otherSupabase,
+    otherCloudflare, "inventory-other-challenge", new Date("2026-11-15T12:00:20.000Z"));
+  assert.equal(challenge.status, 201);
+  const consumed = await consumeIdentityLinkChallenge(db, challenge.data.challenge_id,
+    challenge.data.challenge, otherSupabase, otherCloudflare, "inventory-other-consume",
+    new Date("2026-11-15T12:00:21.000Z"));
+  assert.equal(consumed.status, 201);
+  const approvedOther = await decideIdentityLinkRequest(db, otherTenant,
+    consumed.data.link_request_id, owner, "approve", "Other tenant approval",
+    "inventory-other-approval", new Date("2026-11-15T12:00:22.000Z"));
+  assert.equal(approvedOther.status, 200);
+
+  const primaryInventory = await listApprovedIdentityLinkRequests(db, tenantId, owner);
+  assert.equal(primaryInventory.status, 200);
+  assert.deepEqual(primaryInventory.data.map(row => row.id), ["link-review"]);
+  assert.ok(primaryInventory.data.every(row => row.cloudflare_issuer === owner.issuer));
+
+  const otherInventory = await listApprovedIdentityLinkRequests(db, otherTenant, owner);
+  assert.equal(otherInventory.status, 200);
+  assert.deepEqual(otherInventory.data.map(row => row.id), [consumed.data.link_request_id]);
+
+  const nonOwner = await listApprovedIdentityLinkRequests(db, tenantId, requester);
+  assert.equal(nonOwner.status, 404);
+
+  sqlite.prepare("UPDATE tenant_memberships SET status = 'suspended' WHERE tenant_id = ? AND subject = ?")
+    .run(tenantId, owner.subject);
+  const suspendedOwner = await listApprovedIdentityLinkRequests(db, tenantId, owner);
+  assert.equal(suspendedOwner.status, 404);
 });
