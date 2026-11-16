@@ -16,7 +16,7 @@ const publicJwk = { ...publicKey.export({ format: "jwk" }), kid: permitKeyId,
   alg: "RS256", use: "sig", key_ops: ["verify"] };
 const privatePem = privateKey.export({ type: "pkcs8", format: "pem" });
 const input = {
-  ownerAssertion: "header.payload.signature",
+  ownerAssertion: "header.payload.signature.test-long-token",
   displayName: "Research tenant",
   tenantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   assertionJti: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
