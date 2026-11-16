@@ -49,6 +49,47 @@ BEGIN
   SELECT RAISE(ABORT, 'NOVA OS authorization permit binding is incomplete or invalid');
 END;
 
+
+-- A legacy row must not be upgraded to a NOVA OS-bound tenant through UPDATE
+-- without the same complete permit tuple required for a new insert.
+CREATE TRIGGER tenant_provisioning_requests_authorization_permit_update_check
+BEFORE UPDATE OF nova_os_tenant_id, access_issuer, nova_os_authorization_permit_jti,
+  nova_os_authorization_permit_issuer, nova_os_authorization_permit_audience,
+  nova_os_authorization_permit_key_id, nova_os_authorization_correlation_id,
+  nova_os_authorization_permit_issued_at, nova_os_authorization_permit_expires_at
+ON tenant_provisioning_requests
+WHEN NEW.nova_os_tenant_id IS NOT NULL AND NOT (
+  NEW.access_issuer IS NOT NULL
+  AND length(trim(NEW.access_issuer)) BETWEEN 9 AND 500
+  AND NEW.access_issuer = trim(NEW.access_issuer)
+  AND substr(NEW.access_issuer, 1, 8) = 'https://'
+  AND NEW.nova_os_authorization_permit_jti IS NOT NULL
+  AND length(NEW.nova_os_authorization_permit_jti) = 36
+  AND substr(NEW.nova_os_authorization_permit_jti, 9, 1) = '-'
+  AND substr(NEW.nova_os_authorization_permit_jti, 14, 1) = '-'
+  AND substr(NEW.nova_os_authorization_permit_jti, 19, 1) = '-'
+  AND substr(NEW.nova_os_authorization_permit_jti, 24, 1) = '-'
+  AND lower(replace(NEW.nova_os_authorization_permit_jti, '-', '')) NOT GLOB '*[^0-9a-f]*'
+  AND NEW.nova_os_authorization_permit_issuer IS NOT NULL
+  AND length(trim(NEW.nova_os_authorization_permit_issuer)) BETWEEN 1 AND 500
+  AND NEW.nova_os_authorization_permit_issuer = trim(NEW.nova_os_authorization_permit_issuer)
+  AND substr(NEW.nova_os_authorization_permit_issuer, 1, 8) = 'https://'
+  AND NEW.nova_os_authorization_permit_audience IS NOT NULL
+  AND length(trim(NEW.nova_os_authorization_permit_audience)) BETWEEN 1 AND 256
+  AND NEW.nova_os_authorization_permit_audience = trim(NEW.nova_os_authorization_permit_audience)
+  AND NEW.nova_os_authorization_permit_key_id IS NOT NULL
+  AND length(NEW.nova_os_authorization_permit_key_id) BETWEEN 1 AND 80
+  AND NEW.nova_os_authorization_permit_key_id NOT GLOB '*[^A-Za-z0-9._-]*'
+  AND NEW.nova_os_authorization_correlation_id = 'nova-provision:' || NEW.request_sha256
+  AND typeof(NEW.nova_os_authorization_permit_issued_at) = 'integer'
+  AND typeof(NEW.nova_os_authorization_permit_expires_at) = 'integer'
+  AND NEW.nova_os_authorization_permit_expires_at > NEW.nova_os_authorization_permit_issued_at
+  AND NEW.nova_os_authorization_permit_expires_at - NEW.nova_os_authorization_permit_issued_at BETWEEN 1 AND 120
+)
+BEGIN
+  SELECT RAISE(ABORT, 'NOVA OS authorization permit binding is incomplete or invalid');
+END;
+
 CREATE TRIGGER tenant_provisioning_requests_authorization_permit_immutable
 BEFORE UPDATE OF access_issuer, nova_os_authorization_permit_jti,
   nova_os_authorization_permit_issuer, nova_os_authorization_permit_audience,
