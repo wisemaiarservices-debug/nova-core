@@ -65,7 +65,7 @@ test("verifies Access JWT and forwards only a fresh minimal identity envelope", 
     const canonical = JSON.stringify(["GET", new URL(captured.url).pathname,
       captured.headers.get("x-nova-verified-subject"), captured.headers.get("x-nova-verified-issuer"),
       captured.headers.get("x-nova-verified-audience"), captured.headers.get("x-nova-gateway-issued-at"),
-      captured.headers.get("x-nova-request-id"), captured.headers.get("x-nova-body-sha256"), expectedTokenDigest]);
+      captured.headers.get("x-nova-request-id"), captured.headers.get("x-nova-body-sha256"), expectedTokenDigest, captured.headers.get("x-nova-idempotency-key")]);
     const expectedSignature = createHmac("sha256", "test-only-internal-secret-with-32-bytes-minimum")
       .update(canonical).digest("hex");
     assert.equal(captured.headers.get("x-nova-internal-signature"), expectedSignature);
