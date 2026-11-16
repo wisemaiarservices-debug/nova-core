@@ -11,7 +11,7 @@ const config = {
   issuer: "https://nova-core.example.test/provisioning",
   audience: "https://nova-os.example.test/mapping",
   keyId: "core-receipt-key-1",
-  privateKeyPem: privateKey,
+  privateKeyPem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
 };
 const claims = {
   accessIssuer: "https://access.example.test",
