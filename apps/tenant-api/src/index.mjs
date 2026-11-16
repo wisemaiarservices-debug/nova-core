@@ -1353,9 +1353,12 @@ export default {
         if (sourceReviewerRevoke) {
           if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
               !await hasSiteReadGrant(env.DB, tenant, subject, sourceReviewerRevoke[2])) return error("not_found", 404);
-          if (!onlyKeys(draftBody, ["reviewer_subject", "reason"]) || !validSubject(draftBody.reviewer_subject) || !validSubject(draftBody.reason)) return error("source_reviewer_request_invalid", 400);
-          const revoked = await env.DB.prepare("UPDATE tenant_source_reviewers SET status='revoked' WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND status='active' AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND subject=? AND status='active' AND role IN ('tenant_owner','tenant_admin'))").bind(tenant, sourceReviewerRevoke[2], draftBody.reviewer_subject, tenant, subject).run();
-          return revoked?.meta?.changes === 1
+          if (!onlyKeys(draftBody, ["reviewer_subject", "reason", "evidence_ref"]) || !validSubject(draftBody.reviewer_subject) || !validSubject(draftBody.reason) || !validSubject(draftBody.evidence_ref)) return error("source_reviewer_request_invalid", 400);
+          const revoked = await env.DB.batch([
+            env.DB.prepare("UPDATE tenant_source_reviewers SET status='revoked' WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND status='active' AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND subject=? AND status='active' AND role IN ('tenant_owner','tenant_admin'))").bind(tenant, sourceReviewerRevoke[2], draftBody.reviewer_subject, tenant, subject),
+            env.DB.prepare("INSERT INTO tenant_source_reviewer_events(id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,reason,request_id) SELECT ?,?,?,?,?,'revoked',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), tenant, sourceReviewerRevoke[2], draftBody.reviewer_subject, subject, draftBody.evidence_ref, draftBody.reason, requestId),
+          ]);
+          return Array.isArray(revoked) && revoked[0]?.meta?.changes === 1 && revoked[1]?.meta?.changes === 1
             ? json({ data: { tenant_id: tenant, site_id: sourceReviewerRevoke[2], reviewer_subject: draftBody.reviewer_subject, status: "revoked" }, request_id: requestId })
             : error("source_reviewer_revocation_conflict", 409);
         }
