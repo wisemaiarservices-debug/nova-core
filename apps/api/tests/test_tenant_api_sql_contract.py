@@ -37,6 +37,7 @@ def test_private_tenant_api_sql_compiles_against_ordered_schema_migrations():
         MIGRATIONS / "0027_tenant_site_creation.sql",
         MIGRATIONS / "0028_tenant_asset_registration.sql",
         MIGRATIONS / "0029_tenant_source_registry_lifecycle.sql",
+        MIGRATIONS / "0033_site_grant_mutation_guards.sql",
     ):
         db.executescript(migration.read_text(encoding="utf-8"))
 
