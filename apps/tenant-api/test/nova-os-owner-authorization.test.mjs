@@ -126,3 +126,48 @@ test("Core authorization client fails closed when endpoint or key-ring configura
   assert.throws(() => createNovaOsOwnerAuthorizationClient({ ...config(), keysJson: "{}" }),
     /nova_os_authorization_not_configured/);
 });
+
+
+test("permit verifier rejects every substituted identity and request-binding claim", async () => {
+  const verifierConfig = {
+    issuer: "https://nova-os.example.test/authorization",
+    audience: "nova-core-owner-authorization",
+    jwk: JSON.stringify(publicJwk),
+  };
+  const mismatches = [
+    { tenantId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" },
+    { assertionJti: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" },
+    { idempotencyKey: "bootstrap-002" },
+    { supabaseIssuer: "https://other-project.example.test/auth/v1" },
+    { supabaseSubject: "22222222-2222-4222-8222-222222222222" },
+    { accessIssuer: "https://other-access.example.test" },
+    { accessSubject: "different-owner@example.test" },
+    { requestSha256: "b".repeat(64), coreCorrelationId: "nova-provision:" + "b".repeat(64) },
+  ];
+  for (const mismatch of mismatches) {
+    const alteredExpected = { ...input, ...mismatch };
+    const permit = signedPermit(input);
+    await assert.rejects(() => verifyNovaOsOwnerAuthorizationPermit(
+      permit.token, verifierConfig, alteredExpected, now),
+    /nova_os_authorization_permit_invalid/);
+  }
+});
+
+test("permit verifier rejects expired, future-issued and overlong permits", async () => {
+  const verifierConfig = {
+    issuer: "https://nova-os.example.test/authorization",
+    audience: "nova-core-owner-authorization",
+    jwk: JSON.stringify(publicJwk),
+  };
+  const cases = [
+    { iat: now - 121, exp: now - 1 },
+    { iat: now + 31, exp: now + 100 },
+    { iat: now - 10, exp: now + 121 },
+  ];
+  for (const claims of cases) {
+    const permit = signedPermit(input, claims);
+    await assert.rejects(() => verifyNovaOsOwnerAuthorizationPermit(
+      permit.token, verifierConfig, input, now),
+    /nova_os_authorization_permit_invalid/);
+  }
+});
