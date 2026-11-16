@@ -123,3 +123,20 @@ The draft Worker configuration intentionally has no public route, custom domain,
 PR #219's exact integrated head passed all three jobs: API tests, tenant Worker/D1 integration (including the ordered migration chain), and research raster tests. This is code-level validation only. It does not verify production Cloudflare Access policy, CORS allowlist, Supabase issuer/audience/signing algorithm, NOVA OS owner-assertion key, receipt-signing secret, production key pinning, pilot tenant/site evidence, ingestion service credentials/grants, rollback, or operational smoke tests.
 
 No production migration, secret, binding, tenant, permission, source verification, ingestion activation, merge or deployment has been performed.
+
+
+## Cross-repository NOVA OS integration audit — 2026-11-16
+
+The current default branches of the `NovaOS` and `neohaven-nova-os-website` repositories were inspected for the server-side owner-assertion issuer. Neither currently contains a provisioning assertion endpoint, Supabase Edge Function, or server-side signing implementation. The visible application code is a frontend; therefore the issuer, audience and pinned public JWK expected by Core are currently an integration contract, not a verified working NOVA OS service.
+
+The legacy `NovaOS` Supabase schema migration also defines broad `anon, authenticated` policies with unrestricted `USING (true)` / `WITH CHECK (true)` access for its dashboard tables. Treat that schema as demo-only. It must not be used as the tenant identity or sensitive production data store until its policies are replaced with least-privilege, tenant-aware RLS and the server-side owner assertion service is implemented.
+
+Required upstream work before provisioning can be enabled:
+1. Implement a trusted server-side NOVA OS owner-assertion endpoint (never sign this proof in browser code).
+2. Derive owner status, active membership, active tenant and Supabase issuer/subject from server-verified records, not request fields.
+3. Sign RS256 assertions with a protected server-side key and publish/pin a rotation-aware public JWK.
+4. Bind assertion issuer, audience, Supabase issuer/subject, NOVA OS tenant ID, role/status, iat/exp and unique JTI exactly to Core's verifier contract.
+5. Replace demo-wide Supabase RLS policies before using the project for tenant or operator data.
+6. Add contract tests that generate an assertion from the upstream service and verify it through Core's real verifier.
+
+No upstream code, Supabase policies, secrets, or production settings were changed by this audit.
