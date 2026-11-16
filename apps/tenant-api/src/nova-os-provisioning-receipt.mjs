@@ -26,6 +26,48 @@ function validIssuer(value) {
   } catch { return false; }
 }
 
+function opaque(value, max) {
+  return typeof value === "string" && value.length >= 1 && value.length <= max &&
+    value.trim() === value;
+}
+
+function validHttpsIdentifier(value, max) {
+  if (!opaque(value, max)) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password &&
+      !url.search && !url.hash && url.pathname !== "/";
+  } catch { return false; }
+}
+
+function validHttpsOrigin(value, max) {
+  if (!opaque(value, max)) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password &&
+      !url.search && !url.hash && url.origin === value;
+  } catch { return false; }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CORE_TENANT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+
+export function validateNovaOsProvisioningReceiptClaims(claims) {
+  if (!validHttpsOrigin(claims?.accessIssuer, 500) ||
+      !opaque(claims?.accessSubject, 200) ||
+      !validHttpsIdentifier(claims?.supabaseIssuer, 500) ||
+      !opaque(claims?.supabaseSubject, 200) ||
+      !opaque(claims?.novaOsTenantId, 120) || !UUID.test(claims.novaOsTenantId) ||
+      !opaque(claims?.coreTenantId, 120) || !CORE_TENANT_ID.test(claims.coreTenantId) ||
+      !opaque(claims?.idempotencyKey, 160) ||
+      typeof claims?.requestDigest !== "string" || !/^[a-f0-9]{64}$/.test(claims.requestDigest) ||
+      !opaque(claims?.ownerAssertionJti, 36) || !UUID.test(claims.ownerAssertionJti) ||
+      !opaque(claims?.jti, 200)) {
+    throw new Error("invalid_nova_os_receipt_claims");
+  }
+  return true;
+}
+
 export async function createNovaOsProvisioningReceiptSigner(config) {
   if (!config || !validIssuer(config.issuer) ||
       typeof config.audience !== "string" || !config.audience ||
@@ -53,16 +95,7 @@ export async function createNovaOsProvisioningReceiptSigner(config) {
   }
 
   return async claims => {
-    const required = [
-      claims?.accessIssuer, claims?.accessSubject, claims?.supabaseIssuer,
-      claims?.supabaseSubject, claims?.novaOsTenantId, claims?.coreTenantId,
-      claims?.idempotencyKey, claims?.requestDigest, claims?.ownerAssertionJti, claims?.jti,
-    ];
-    if (required.some(value => typeof value !== "string" || !value || value.length > 512) ||
-        !/^[a-f0-9]{64}$/.test(claims.requestDigest) ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(claims.ownerAssertionJti)) {
-      throw new Error("invalid_nova_os_receipt_claims");
-    }
+    validateNovaOsProvisioningReceiptClaims(claims);
     const now = Math.floor(Date.now() / 1000);
     const header = base64Url(encoder.encode(JSON.stringify({
       alg: "RS256", typ: "JWT", kid: config.keyId,
