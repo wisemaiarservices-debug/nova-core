@@ -26,6 +26,7 @@ MIGRATION_NAMES = (
     "0014_sensor_source_identity.sql",
     "0015_measurement_quality_engine.sql",
     "0016_asset_tenant_site_composite_key.sql",
+    "0017_sensor_calibration_event_composite_key.sql",
 )
 
 
