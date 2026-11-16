@@ -1,19 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-globalThis.crypto ??= webcrypto;
 import { createTenantSite } from "../src/site-creation.mjs";
 
+globalThis.crypto ??= webcrypto;
 const digest = "a".repeat(64);
+
 class FakeDB {
-  constructor() { this.existing = []; this.batchStatements = []; this.batchResult = null; this.batchError = null; this.lookupCount = 0; }
+  constructor() {
+    this.existing = [];
+    this.batchStatements = [];
+    this.batchResult = null;
+    this.batchError = null;
+    this.lookupCount = 0;
+  }
   prepare(sql) {
     const db = this;
-    return { bind(...args) { return { sql, args, async all() {
-      db.lookupCount += 1;
-      assert.match(sql, /tenant_site_creation_requests/);
-      return { results: db.existing };
-    } }; };
+    return {
+      bind(...args) {
+        return {
+          sql,
+          args,
+          async all() {
+            db.lookupCount += 1;
+            assert.match(sql, /tenant_site_creation_requests/);
+            return { results: db.existing };
+          },
+        };
+      },
+    };
   }
   async batch(statements) {
     this.batchStatements = statements;
