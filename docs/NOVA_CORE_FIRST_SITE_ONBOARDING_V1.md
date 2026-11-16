@@ -67,3 +67,18 @@ The draft includes:
 - ordered disposable-D1 migration and gateway/private-Worker integration CI.
 
 No production migration, live grant, site, source, credential, environment change, merge or deployment is included. Production rollout still requires exact production Access/CORS and Supabase configuration, reviewed migrations, and approved operational smoke/rollback checks.
+
+
+## Owner-only asset registration (draft follow-on)
+
+Public gateway: `POST /api/v1/tenants/{tenant}/sites/{site}/assets`
+
+Private Tenant API: `POST /internal/v1/tenants/{tenant}/sites/{site}/assets`
+
+The request accepts only `name`, `asset_type`, and optional `external_ref`. The server generates the asset ID and binds the asset to the exact tenant and site from the route. The Cloudflare Access and Supabase identities must already be linked and approved for that tenant; the actor must be its active owner and hold the exact site read grant. Admins and other roles are denied in this initial onboarding workflow.
+
+A single D1 batch creates the asset with status `unconfigured`, an exact asset-level `read` grant for the owner, the resource-grant audit event, an immutable asset-created event, and a tenant/site/actor-scoped idempotency record. Replaying the same key and body returns the original asset; a different body digest returns HTTP 409.
+
+Asset registration does not assert that the equipment physically exists, is connected, is correctly configured, or has a known sensor identity. It does not register or verify a source, create a service credential, assign a reviewer, calibrate a sensor, or enable ingestion. Asset status remains `unconfigured` until a separate evidence-backed lifecycle exists.
+
+The new schema migration is `0027_tenant_asset_registration.sql`, after the site-creation migration `0026`. It adds append-only event and immutable idempotency ledgers with active-owner and exact tenant/site/asset guards.
