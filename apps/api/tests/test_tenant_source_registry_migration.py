@@ -35,7 +35,7 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
             ('tenant-a','reviewer-sub','analyst','active');
         """)
         self.db.executescript(MIGRATION.read_text())
-        self.db.execute(\"INSERT INTO sources(id,site_id,module,provider,source_type,display_name,tenant_id,registered_by_subject) VALUES ('source-a','site-a','neoagro','gateway-vendor','sensor_gateway','Gateway A','tenant-a','owner-sub')\")
+        self.db.execute("INSERT INTO sources(id,site_id,module,provider,source_type,display_name,tenant_id,registered_by_subject) VALUES ('source-a','site-a','neoagro','gateway-vendor','sensor_gateway','Gateway A','tenant-a','owner-sub')")
 
     def tearDown(self):
         self.db.close()
