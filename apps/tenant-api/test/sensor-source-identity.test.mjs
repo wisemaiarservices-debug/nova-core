@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { registerSensorSourceMapping, reviewSensorSourceMapping, resolveVerifiedSensorSourceMapping } from "../src/sensor-source-identity.mjs";
 globalThis.crypto ??= webcrypto;
-function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[]}={}){
+function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[],sourceStatus="verified"}={}){
  const calls=[];
  return {calls,prepare(sql){return {sql,values:[],bind(...v){this.values=v;return this;},async all(){
   if(sql.includes("FROM assets"))return {results:[{id:"asset-1"}]};
   if(sql.includes("FROM sources"))return {results:[{id:"source-1",site_id:"site-1"}]};
   if(sql.includes("FROM sensor_source_identity_mappings WHERE"))return {results:[{id:"map-1",source_id:"source-1",registered_by_subject:owner}]};
   if(sql.includes("FROM sensor_source_mapping_reviewers"))return {results:[{reviewer_subject:reviewer}]};
-  if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:matches};
+  if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:sourceStatus==="verified"?matches:[]};
   if(sql.includes("FROM sensor_source_mapping_events"))return {results:history};
   throw Error(sql);
  },async run(){calls.push({sql,values:this.values});return {meta:{changes:1}};}};},async batch(stmts){calls.push(...stmts.map(x=>({sql:x.sql,values:x.values})));return stmts.map(()=>({meta:{changes:1}}));}};
@@ -45,4 +45,13 @@ test("resolver fails closed when zero or multiple verified mappings match",async
  const obs={site_id:"site-1",asset_id:"asset-1",source_id:"source-1",metric:"air_temperature",unit:"degC",observed_at:"2026-02-01T00:00:00.000Z"};
  assert.equal(await resolveVerifiedSensorSourceMapping(dbFixture({matches:[]}),"tenant-1",obs),null);
  assert.equal(await resolveVerifiedSensorSourceMapping(dbFixture({matches:[{},{}]}),"tenant-1",obs),null);
+});
+
+test("resolver rejects mappings whose source is disabled or unverified",async()=>{
+ const obs={site_id:"site-1",asset_id:"asset-1",source_id:"source-1",metric:"air_temperature",unit:"degC",observed_at:"2026-02-01T00:00:00.000Z"};
+ const matches=[{id:"map-1",sensor_id:"sensor-7",parameter:"air_temperature",unit:"degC",effective_from:"2026-01-01T00:00:00.000Z",effective_to:null}];
+ for (const sourceStatus of ["disabled","unverified"]) {
+  const result=await resolveVerifiedSensorSourceMapping(dbFixture({matches,sourceStatus}),"tenant-1",obs);
+  assert.equal(result,null);
+ }
 });
