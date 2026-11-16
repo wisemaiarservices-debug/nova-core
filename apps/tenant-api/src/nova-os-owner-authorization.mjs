@@ -134,6 +134,7 @@ export async function verifyNovaOsOwnerAuthorizationPermit(token, config, expect
     issuer: claims.iss,
     audience: claims.aud,
     permitJti: claims.jti,
+    permitKeyId: header.kid,
     permitIssuedAt: claims.iat,
     permitExpiresAt: claims.exp,
     ownerAssertionJti: claims.owner_assertion_jti,
@@ -196,6 +197,7 @@ export function createNovaOsOwnerAuthorizationClient(config) {
     try {
       response = await fetch(config.endpoint, {
         method: "POST",
+        redirect: "error",
         headers: {
           "content-type": "application/json",
           "cache-control": "no-store",
