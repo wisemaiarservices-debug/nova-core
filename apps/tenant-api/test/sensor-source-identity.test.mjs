@@ -46,3 +46,12 @@ test("resolver fails closed when zero or multiple verified mappings match",async
  assert.equal(await resolveVerifiedSensorSourceMapping(dbFixture({matches:[]}),"tenant-1",obs),null);
  assert.equal(await resolveVerifiedSensorSourceMapping(dbFixture({matches:[{},{}]}),"tenant-1",obs),null);
 });
+
+test("resolver rejects mappings whose source is disabled or unverified",async()=>{
+ const obs={site_id:"site-1",asset_id:"asset-1",source_id:"source-1",metric:"air_temperature",unit:"degC",observed_at:"2026-02-01T00:00:00.000Z"};
+ const matches=[{id:"map-1",sensor_id:"sensor-7",parameter:"air_temperature",unit:"degC",effective_from:"2026-01-01T00:00:00.000Z",effective_to:null}];
+ for (const sourceStatus of ["disabled","unverified"]) {
+  const result=await resolveVerifiedSensorSourceMapping(dbFixture({matches,sourceStatus}),"tenant-1",obs);
+  assert.equal(result,null);
+ }
+});
