@@ -67,17 +67,17 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
         self.db.execute("""
             INSERT INTO tenant_provisioning_requests
               (id, actor_subject, idempotency_key, request_sha256, tenant_id,
-               supabase_issuer, supabase_subject, nova_os_tenant_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ("request-bound", "access-subject-a", "bootstrap-bound", "b" * 64,
               "tenant-a", "https://project.example.test/auth/v1",
-              "supabase-user-a", "nova-tenant-a"))
+              "supabase-user-a", "nova-tenant-a", "owner-proof-a"))
         row = self.db.execute("""
-            SELECT supabase_issuer, supabase_subject, nova_os_tenant_id
+            SELECT supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti
             FROM tenant_provisioning_requests WHERE id='request-bound'
         """).fetchone()
         self.assertEqual(row, ("https://project.example.test/auth/v1",
-                               "supabase-user-a", "nova-tenant-a"))
+                               "supabase-user-a", "nova-tenant-a", "owner-proof-a"))
 
     def test_identity_binding_must_be_complete(self):
         with self.assertRaisesRegex(sqlite3.IntegrityError, "identity binding"):
@@ -94,20 +94,20 @@ class TenantProvisioningMigrationTests(unittest.TestCase):
         self.db.execute("""
             INSERT INTO tenant_provisioning_requests
               (id, actor_subject, idempotency_key, request_sha256, tenant_id,
-               supabase_issuer, supabase_subject, nova_os_tenant_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, ("request-bound", "access-subject-a", "bootstrap-bound", "b" * 64,
               "tenant-a", "https://project.example.test/auth/v1",
-              "supabase-user-a", "nova-tenant-a"))
+              "supabase-user-a", "nova-tenant-a", "owner-proof-a"))
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute("""
                 INSERT INTO tenant_provisioning_requests
                   (id, actor_subject, idempotency_key, request_sha256, tenant_id,
-                   supabase_issuer, supabase_subject, nova_os_tenant_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, ("request-second", "access-subject-b", "bootstrap-second", "d" * 64,
                   "tenant-a", "https://project.example.test/auth/v1",
-                  "supabase-user-b", "nova-tenant-a"))
+                  "supabase-user-b", "nova-tenant-a", "owner-proof-b"))
 
     def test_request_cannot_reference_unknown_tenant(self):
         with self.assertRaises(sqlite3.IntegrityError):
