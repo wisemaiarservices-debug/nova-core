@@ -22,7 +22,7 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
             source_type TEXT NOT NULL, display_name TEXT NOT NULL, endpoint_reference TEXT,
             verification_status TEXT NOT NULL DEFAULT 'unverified',
             verification_method TEXT, license_reference TEXT, metadata_json TEXT NOT NULL DEFAULT '{}',
-            tenant_id TEXT NOT NULL
+            tenant_id TEXT NOT NULL, updated_at TEXT
           );
           CREATE TABLE tenant_memberships (
             tenant_id TEXT NOT NULL, subject TEXT NOT NULL, role TEXT NOT NULL,
