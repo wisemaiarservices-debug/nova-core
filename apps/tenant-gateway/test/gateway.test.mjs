@@ -255,6 +255,37 @@ test("routes site-scoped observation reviewer assignment and verification throug
 });
 
 
+
+
+test("routes owner asset registration through the signed gateway with exact idempotency key", async () => {
+  let captured;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "asset-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const body = JSON.stringify({ name: "Pump 01", asset_type: "pump" });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/assets",
+    { method: "POST", body, headers: {
+      "Cf-Access-Jwt-Assertion": "valid-access-token",
+      Authorization: "Bearer supabase.header.payload",
+      "Content-Type": "application/json",
+      "Idempotency-Key": "asset-onboarding-1",
+    } }), env({ TENANT_API: { fetch: async request => {
+      captured = request;
+      return new Response(JSON.stringify({ data: { status: "unconfigured" } }), {
+        status: 201, headers: { "content-type": "application/json" },
+      });
+    } } }));
+  assert.equal(response.status, 201);
+  assert.equal(captured.method, "POST");
+  assert.equal(new URL(captured.url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/assets");
+  assert.equal(await captured.text(), body);
+  assert.equal(captured.headers.get("x-nova-idempotency-key"), "asset-onboarding-1");
+  assert.equal(captured.headers.get("x-nova-supabase-access-token"), "supabase.header.payload");
+  assert.match(captured.headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+});
+
 test("routes bounded laboratory report uploads and larger evidence reads through Access", async () => {
   let captured;
   const gateway = createGateway({ verifyAccessToken: async () => ({
