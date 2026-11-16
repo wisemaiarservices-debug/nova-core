@@ -964,10 +964,9 @@ async function createTenantForProvisioning(
     }, status: 200 };
   }
 
-  if (!Number.isInteger(novaOsOwnerAssertion.expiresAt) ||
-      novaOsOwnerAssertion.expiresAt <= Math.floor(Date.now() / 1000)) {
-    return { error: "nova_os_owner_authorization_invalid", status: 401 };
-  }
+  // Expiry for a first consume versus an exact already-consumed replay is
+  // decided atomically by NOVA OS. Core verifies the signature and bindings,
+  // then delegates the replay/active-owner decision to the OS ledger RPC.
   let authorize;
   try { authorize = createNovaOsOwnerAuthorizationClient(authorizationConfig); }
   catch { return { error: "nova_os_authorization_not_configured", status: 503 }; }
