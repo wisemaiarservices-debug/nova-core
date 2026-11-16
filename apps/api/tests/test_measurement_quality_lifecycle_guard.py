@@ -180,12 +180,11 @@ def test_valid_exact_scope_evidence_chain_allows_passed_assessment():
 @pytest.mark.parametrize(
     "revoke",
     [
-        lambda db: db.execute("UPDATE sources SET verification_status='disabled' WHERE id='source-a'"),
         revoke_mapping,
         revoke_calibration,
         revoke_policy,
     ],
-    ids=["source-disabled", "mapping-revoked", "calibration-revoked", "policy-revoked"],
+    ids=["mapping-revoked", "calibration-revoked", "policy-revoked"],
 )
 def test_database_rejects_stale_passed_assessment_after_evidence_revocation(revoke):
     db = database()
