@@ -17,6 +17,7 @@ const publicJwk = { ...publicKey.export({ format: "jwk" }), kid: permitKeyId,
 const privatePem = privateKey.export({ type: "pkcs8", format: "pem" });
 const input = {
   ownerAssertion: "header.payload.signature",
+  displayName: "Research tenant",
   tenantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   assertionJti: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   idempotencyKey: "bootstrap-001",
