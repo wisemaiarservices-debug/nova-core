@@ -1032,7 +1032,7 @@ async function withProvisioningJwks(callback) {
       const bodyText = init.body;
       const bodyDigest = createHash("sha256").update(bodyText).digest("hex");
       const canonical = ["POST", "/nova-core-owner-authorization", coreToOsKeyId,
-        headers.get("x-nova-core-timestamp"), headers.get("x-nova-core-nonce"), bodyDigest].join("\\n");
+        headers.get("x-nova-core-timestamp"), headers.get("x-nova-core-nonce"), bodyDigest].join("\n");
       assert.equal(headers.get("x-nova-core-key-id"), coreToOsKeyId);
       assert.equal(headers.get("x-nova-core-signature"),
         createHmac("sha256", coreToOsSecret).update(canonical).digest("hex"));
