@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import { registerTenantSource, assignTenantSourceReviewer, reviewTenantSource } from "../src/source-registry.mjs";
 globalThis.crypto ??= webcrypto;
 
-function fixture({owner=true,site=true,prior=[],reviewer=true,source=true,registrant="owner-sub",history=[{event_type:"registered"}]}={}){
+function fixture({owner=true,site=true,prior=[],reviewer=true,source=true,sourceStatus="unverified",registrant="owner-sub",history=[{event_type:"registered"}]}={}){
  const calls=[];
  return {calls,prepare(sql){return {sql,values:[],bind(...values){this.values=values;return this;},
   async all(){
@@ -12,7 +12,7 @@ function fixture({owner=true,site=true,prior=[],reviewer=true,source=true,regist
    if(sql.includes("FROM sites WHERE"))return {results:site?[{id:"site-a"}]:[]};
    if(sql.includes("tenant_source_registration_requests"))return {results:prior};
    if(sql.includes("FROM tenant_source_reviewers"))return {results:reviewer?[{reviewer_subject:"reviewer-sub"}]:[]};
-   if(sql.includes("FROM sources WHERE"))return {results:source?[{id:"source-a",registered_by_subject:registrant}]:[]};
+   if(sql.includes("FROM sources WHERE"))return {results:source?[{id:"source-a",registered_by_subject:registrant,verification_status:sourceStatus}]:[]};
    if(sql.includes("FROM tenant_source_events"))return {results:history};
    throw Error("unexpected query "+sql);
   },
@@ -29,12 +29,20 @@ test("source registration fails closed for non-admin actor or inactive site",asy
  assert.equal((await registerTenantSource(fixture({owner:false}),"tenant-a","site-a","owner-sub","request-a","key-a","a".repeat(64),body)).status,404);
  assert.equal((await registerTenantSource(fixture({site:false}),"tenant-a","site-a","owner-sub","request-a","key-a","a".repeat(64),body)).status,404);
 });
-test("source registration replay returns same source and changed body conflicts",async()=>{
+test("source registration replay returns the current source status and changed body conflicts",async()=>{
  const prior=[{source_id:"source-a",request_sha256:"a".repeat(64)}];
- const replay=await registerTenantSource(fixture({prior}),"tenant-a","site-a","owner-sub","request-b","key-a","a".repeat(64),body);
- assert.equal(replay.status,200);assert.equal(replay.replayed,true);assert.equal(replay.data.id,"source-a");
+ for (const sourceStatus of ["unverified","verified","disabled"]) {
+  const replay=await registerTenantSource(fixture({prior,sourceStatus}),"tenant-a","site-a","owner-sub","request-b","key-a","a".repeat(64),body);
+  assert.equal(replay.status,200);assert.equal(replay.replayed,true);assert.equal(replay.data.id,"source-a");
+  assert.equal(replay.data.verification_status,sourceStatus);
+ }
  const conflict=await registerTenantSource(fixture({prior}),"tenant-a","site-a","owner-sub","request-b","key-a","b".repeat(64),body);
  assert.equal(conflict.status,409);
+});
+test("source registration replay fails closed when the referenced source is missing",async()=>{
+ const prior=[{source_id:"source-a",request_sha256:"a".repeat(64)}];
+ const replay=await registerTenantSource(fixture({prior,source:false}),"tenant-a","site-a","owner-sub","request-b","key-a","a".repeat(64),body);
+ assert.equal(replay.status,404);
 });
 test("source registration rejects caller-supplied endpoint or credential fields",async()=>{
  const r=await registerTenantSource(fixture(),"tenant-a","site-a","owner-sub","request-a","key-a","a".repeat(64),{...body,endpoint_reference:"https://example.invalid"});
