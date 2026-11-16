@@ -263,7 +263,7 @@ test("routes bounded laboratory report uploads and larger evidence reads through
   const payload = JSON.stringify({ document_base64: "A".repeat(90000) });
   const upload = await gateway.fetch(new Request(
     "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/laboratory-reports",
-    { method: "POST", headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+    { method: "POST", headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid", "Authorization": "Bearer test.supabase.token" },
       body: payload }), {
     ACCESS_ISSUER: "https://example.cloudflareaccess.com", ACCESS_AUDIENCE: "aud",
     INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
@@ -422,7 +422,7 @@ test("routes tenant creation only for an exact gateway provisioning allowlist su
   const gateway = createGateway({ verifyAccessToken: async () => ({
     subject: "provisioning-principal", issuer: "https://example.cloudflareaccess.com", audience: "aud",
   }) });
-  const payload = JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-001" });
+  const payload = JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-001", nova_os_tenant_id: "nova-tenant-001" });
   let forwarded;
   const configured = {
     ACCESS_ISSUER: "https://example.cloudflareaccess.com",
@@ -438,7 +438,8 @@ test("routes tenant creation only for an exact gateway provisioning allowlist su
   };
   const response = await gateway.fetch(new Request("https://gateway.test/api/v1/tenants", {
     method: "POST", body: payload,
-    headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+    headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid",
+      "Authorization": "Bearer test.supabase.token" },
   }), configured);
   assert.equal(response.status, 201);
   assert.equal(new URL(forwarded.url).pathname, "/internal/v1/tenants");
@@ -762,6 +763,28 @@ test("routes dual-identity challenge and owner-review endpoints through the sign
       assert.equal(request.headers.get("x-nova-supabase-access-token"), null);
     }
   }
+});
+
+test("rejects Core tenant provisioning without a Supabase bearer token", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "cloudflare-user", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  let forwarded = false;
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants", {
+      method: "POST",
+      headers: { "Cf-Access-Jwt-Assertion": "valid", "content-type": "application/json" },
+      body: JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-001", nova_os_tenant_id: "nova-tenant-001" }),
+    }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_PROVISIONING_SUBJECTS: "cloudflare-user",
+    TENANT_API: { fetch: async () => { forwarded = true; return new Response(null); } },
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "supabase_authorization_required");
+  assert.equal(forwarded, false);
 });
 
 test("rejects identity-link challenge creation without a Supabase bearer token", async () => {
