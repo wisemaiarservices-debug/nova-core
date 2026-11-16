@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { registerSensorSourceMapping, reviewSensorSourceMapping, resolveVerifiedSensorSourceMapping } from "../src/sensor-source-identity.mjs";
 globalThis.crypto ??= webcrypto;
-function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[]}={}){
+function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[],sourceStatus="verified"}={}){
  const calls=[];
  return {calls,prepare(sql){return {sql,values:[],bind(...v){this.values=v;return this;},async all(){
   if(sql.includes("FROM assets"))return {results:[{id:"asset-1"}]};
   if(sql.includes("FROM sources"))return {results:[{id:"source-1",site_id:"site-1"}]};
   if(sql.includes("FROM sensor_source_identity_mappings WHERE"))return {results:[{id:"map-1",source_id:"source-1",registered_by_subject:owner}]};
   if(sql.includes("FROM sensor_source_mapping_reviewers"))return {results:[{reviewer_subject:reviewer}]};
-  if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:matches};
+  if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:sourceStatus==="verified"?matches:[]};
   if(sql.includes("FROM sensor_source_mapping_events"))return {results:history};
   throw Error(sql);
  },async run(){calls.push({sql,values:this.values});return {meta:{changes:1}};}};},async batch(stmts){calls.push(...stmts.map(x=>({sql:x.sql,values:x.values})));return stmts.map(()=>({meta:{changes:1}}));}};
