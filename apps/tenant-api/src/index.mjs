@@ -15,6 +15,9 @@ import { verifyIdentityLinkIdentityPair } from "./identity-link-dual-verificatio
 import { createIdentityLinkChallenge, consumeIdentityLinkChallenge } from "./identity-link-challenge-service.mjs";
 import { consumeIdentityLinkRateLimit } from "./identity-link-rate-limit.mjs";
 import { listPendingIdentityLinkRequests, listApprovedIdentityLinkRequests, decideIdentityLinkRequest } from "./identity-link-review.mjs";
+import { createTenantSite } from "./site-creation.mjs";
+import { createTenantAsset } from "./asset-registration.mjs";
+import { registerTenantSource, assignTenantSourceReviewer, reviewTenantSource } from "./source-registry.mjs";
 
 const ROLE_ACTIONS = {
   tenant_owner: new Set(["read", "create", "update", "delete", "ingest", "manage_members"]),
@@ -50,7 +53,8 @@ function canonicalEnvelope(method, path, headers) {
     headers.get("x-nova-gateway-issued-at"),
     headers.get("x-nova-request-id"),
     headers.get("x-nova-body-sha256"),
-    headers.get("x-nova-supabase-token-sha256")]);
+    headers.get("x-nova-supabase-token-sha256"),
+    headers.get("x-nova-idempotency-key")]);
 }
 async function verifyEnvelope(secret, method, path, headers) {
   if (typeof secret !== "string" || secret.length < 32) return false;
@@ -1002,6 +1006,11 @@ export default {
     const identityLinkApproved = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/identity-links\/approved$/);
     const identityLinkDecision = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/identity-links\/([^/]+)\/decision$/);
     const siteList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites$/);
+    const assetCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets$/);
+    const sourceRegister = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources$/);
+    const sourceReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/assign$/);
+    const sourceReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/revoke$/);
+    const sourceVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/verification$/);
     const siteObservationList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/observations$/);
     const match = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/(sites|assets|sources|observations|audit-events)\/([^/]+)$/);
     const criteriaCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/water-quality-criteria$/);
@@ -1030,14 +1039,14 @@ export default {
     const qualityAssessment = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/observations\/([^/]+)\/measurement-quality-assessment$/);
     const labReportUpload = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports$/);
     const labReportDetail = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/laboratory-reports\/([^/]+)$/);
-    if ((tenantProvision && request.method !== "POST") || ((identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision) && request.method !== "POST") || ((identityLinkPending || identityLinkApproved) && request.method !== "GET") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange || siteGrantChange || resourceGrantChange || ownershipTransfer || tenantLifecycle) && request.method !== "POST") || (tenantLifecycleEvents && request.method !== "GET") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkPending && !identityLinkApproved && !identityLinkDecision && !siteList && !siteObservationList && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle && !tenantLifecycleEvents && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
-        (request.method === "POST" && (!identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkDecision && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !tenantProvision && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle || criteriaDetail || match || labReportDetail)) ||
-        (request.method === "GET" && (identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload))) return error("not_found", 404);
-    const tenant = siteList?.[1] ?? siteObservationList?.[1] ?? identityLinkPending?.[1] ?? identityLinkApproved?.[1] ?? identityLinkDecision?.[1] ?? membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? resourceGrantChange?.[1] ?? ownershipTransfer?.[1] ?? tenantLifecycle?.[1] ?? tenantLifecycleEvents?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
+    if ((tenantProvision && request.method !== "POST") || ((identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision) && request.method !== "POST") || ((identityLinkPending || identityLinkApproved) && request.method !== "GET") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange || siteGrantChange || resourceGrantChange || ownershipTransfer || tenantLifecycle) && request.method !== "POST") || (tenantLifecycleEvents && request.method !== "GET") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !siteList && !assetCreate && !sourceRegister && !sourceReviewerAssign && !sourceReviewerRevoke && !sourceVerification && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkPending && !identityLinkApproved && !identityLinkDecision && !siteObservationList && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle && !tenantLifecycleEvents && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !labReportDetail) || url.search || url.hash ||
+        (request.method === "POST" && (!identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkDecision && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !labReportUpload && !tenantProvision && !siteList && !assetCreate && !sourceRegister && !sourceReviewerAssign && !sourceReviewerRevoke && !sourceVerification && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle || criteriaDetail || match || labReportDetail)) ||
+        (request.method === "GET" && (identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload || sourceRegister || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification))) return error("not_found", 404);
+    const tenant = sourceRegister?.[1] ?? sourceReviewerAssign?.[1] ?? sourceReviewerRevoke?.[1] ?? sourceVerification?.[1] ?? assetCreate?.[1] ?? siteList?.[1] ?? siteObservationList?.[1] ?? identityLinkPending?.[1] ?? identityLinkApproved?.[1] ?? identityLinkDecision?.[1] ?? membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? resourceGrantChange?.[1] ?? ownershipTransfer?.[1] ?? tenantLifecycle?.[1] ?? tenantLifecycleEvents?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
-    if ((!tenantProvision && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !validId(tenant, 120)) || (identityLinkChallengeConsume && !validId(identityLinkChallengeConsume[1])) || (identityLinkDecision && !validId(identityLinkDecision[2])) || (resourceId && !validId(resourceId)) || (siteObservationList && !validId(siteObservationList[2])) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validId((membershipInvitationAccept || membershipInvitationRevoke)[2])) ||
+    if ((!tenantProvision && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !validId(tenant, 120)) || (identityLinkChallengeConsume && !validId(identityLinkChallengeConsume[1])) || (identityLinkDecision && !validId(identityLinkDecision[2])) || (resourceId && !validId(resourceId)) || ((sourceRegister || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification) && !validId((sourceRegister || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification)[2])) || (sourceVerification && !validId(sourceVerification[3])) || (assetCreate && !validId(assetCreate[2])) || (siteObservationList && !validId(siteObservationList[2])) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validId((membershipInvitationAccept || membershipInvitationRevoke)[2])) ||
         (entryId && (!validId(entryId) || !validId(version, 80))) ||
         (observationVerification && !validId(observationVerification[2])) ||
         ((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && (!validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2]) || !validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[3]))) || (sensorMappingReview && !validId(sensorMappingReview[4])) || ((qualityPolicyRegister || qualityPolicyReview) && (!validId((qualityPolicyRegister || qualityPolicyReview)[2]) || !validId((qualityPolicyRegister || qualityPolicyReview)[3]))) || (qualityPolicyReview && !validId(qualityPolicyReview[4])) || (qualityAssessment && !validId(qualityAssessment[2])) || ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||
@@ -1060,7 +1069,7 @@ export default {
     const supabaseToken = request.headers.get("x-nova-supabase-access-token");
     const supabaseTokenDigest = request.headers.get("x-nova-supabase-token-sha256");
     if ((supabaseToken === null) !== (supabaseTokenDigest === null)) return error("request_not_authorized", 401);
-    if ((tenantProvision || identityLinkChallengeCreate || identityLinkChallengeConsume || siteList || siteObservationList) && supabaseToken === null)
+    if ((tenantProvision || identityLinkChallengeCreate || identityLinkChallengeConsume || siteList || assetCreate || siteObservationList) && supabaseToken === null)
       return error("supabase_identity_required", 401);
     let verifiedSupabaseIdentity = null;
     if (supabaseToken !== null) {
@@ -1408,7 +1417,7 @@ export default {
           reviewer[0].jurisdiction === data.jurisdiction
           ? json({ data, request_id: requestId }) : error("not_found", 404);
       }
-      if (criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload || labReportDetail) {
+      if (sourceRegister || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification || criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload || labReportDetail) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
@@ -1422,6 +1431,38 @@ export default {
             draftBody, observationReviewerAssign ? "assign" : "revoke");
           return assigned.error ? json({ error: assigned.error }, assigned.status)
             : json({ data: assigned.data, request_id: requestId }, assigned.status);
+        }
+        if (sourceRegister) {
+          if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, sourceRegister[2])) return error("not_found", 404);
+          const key = request.headers.get("x-nova-idempotency-key");
+          const digest = request.headers.get("x-nova-body-sha256");
+          const registered = await registerTenantSource(env.DB, tenant, sourceRegister[2], subject, requestId, key, digest, draftBody);
+          return registered.error ? json({ error: registered.error }, registered.status) : json({ data: registered.data, request_id: requestId, replayed: Boolean(registered.replayed) }, registered.status);
+        }
+        if (sourceReviewerAssign) {
+          if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, sourceReviewerAssign[2])) return error("not_found", 404);
+          const assigned = await assignTenantSourceReviewer(env.DB, tenant, sourceReviewerAssign[2], subject, draftBody);
+          return assigned.error ? json({ error: assigned.error }, assigned.status) : json({ data: assigned.data, request_id: requestId }, assigned.status);
+        }
+        if (sourceReviewerRevoke) {
+          if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, sourceReviewerRevoke[2])) return error("not_found", 404);
+          if (!onlyKeys(draftBody, ["reviewer_subject", "reason", "evidence_ref"]) || !validSubject(draftBody.reviewer_subject) || !validSubject(draftBody.reason) || !validSubject(draftBody.evidence_ref)) return error("source_reviewer_request_invalid", 400);
+          const revoked = await env.DB.batch([
+            env.DB.prepare("UPDATE tenant_source_reviewers SET status='revoked' WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND status='active' AND EXISTS (SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND subject=? AND status='active' AND role IN ('tenant_owner','tenant_admin')) AND EXISTS (SELECT 1 FROM tenant_resource_grants WHERE tenant_id=? AND subject=? AND resource_type='site' AND resource_id=? AND action='read')").bind(tenant, sourceReviewerRevoke[2], draftBody.reviewer_subject, tenant, subject, tenant, subject, sourceReviewerRevoke[2]),
+            env.DB.prepare("INSERT INTO tenant_source_reviewer_events(id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,reason,request_id) SELECT ?,?,?,?,?,'revoked',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), tenant, sourceReviewerRevoke[2], draftBody.reviewer_subject, subject, draftBody.evidence_ref, draftBody.reason, requestId),
+          ]);
+          return Array.isArray(revoked) && revoked[0]?.meta?.changes === 1 && revoked[1]?.meta?.changes === 1
+            ? json({ data: { tenant_id: tenant, site_id: sourceReviewerRevoke[2], reviewer_subject: draftBody.reviewer_subject, status: "revoked" }, request_id: requestId })
+            : error("source_reviewer_revocation_conflict", 409);
+        }
+        if (sourceVerification) {
+          if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read") ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, sourceVerification[2])) return error("not_found", 404);
+          const reviewed = await reviewTenantSource(env.DB, tenant, sourceVerification[2], sourceVerification[3], subject, requestId, draftBody);
+          return reviewed.error ? json({ error: reviewed.error }, reviewed.status) : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
         }
         if (qualityPolicyRegister) {
           if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
@@ -1569,12 +1610,53 @@ export default {
         const data = await readCriteriaRegistry(env.DB, tenant, entryId, version, subject);
         return data === null ? error("not_found", 404) : json({ data, request_id: requestId });
       }
-      if (siteList) {
-        if (request.method !== "GET" || !verifiedSupabaseIdentity) return error("not_found", 404);
+      if (assetCreate) {
+        if (request.method !== "POST" || !verifiedSupabaseIdentity) return error("not_found", 404);
         const linkedIdentity = await rows(env.DB.prepare(
           "SELECT id FROM tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved' AND supabase_issuer = ? AND supabase_subject = ? AND cloudflare_issuer = ? AND cloudflare_subject = ? LIMIT 2"
         ).bind(tenant, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject, issuer, subject));
         if (linkedIdentity.length !== 1) return error("not_found", 404);
+        const owners = await rows(env.DB.prepare(
+          "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+        ).bind(subject, tenant));
+        if (owners.length !== 1 || owners[0].subject !== subject || owners[0].tenant_id !== tenant ||
+            owners[0].role !== "tenant_owner" || owners[0].membership_status !== "active" ||
+            owners[0].tenant_status !== "active" || !await hasSiteReadGrant(env.DB, tenant, subject, assetCreate[2])) return error("not_found", 404);
+        const created = await createTenantAsset(env.DB, tenant, assetCreate[2], subject, requestId,
+          request.headers.get("x-nova-idempotency-key"), request.headers.get("x-nova-body-sha256"), draftBody, {
+            supabaseIssuer: verifiedSupabaseIdentity.issuer,
+            supabaseSubject: verifiedSupabaseIdentity.subject,
+            cloudflareIssuer: issuer,
+            cloudflareSubject: subject,
+          });
+        return created.error ? json({ error: created.error }, created.status)
+          : json({ data: created.data, request_id: requestId }, created.status);
+      }
+      if (siteList) {
+        if (!verifiedSupabaseIdentity) return error("not_found", 404);
+        const linkedIdentity = await rows(env.DB.prepare(
+          "SELECT id FROM tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved' AND supabase_issuer = ? AND supabase_subject = ? AND cloudflare_issuer = ? AND cloudflare_subject = ? LIMIT 2"
+        ).bind(tenant, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject, issuer, subject));
+        if (linkedIdentity.length !== 1) return error("not_found", 404);
+        if (request.method === "POST") {
+          if (!onlyKeys(draftBody, ["name"])) return error("invalid_request_body", 400);
+          const owners = await rows(env.DB.prepare(
+            "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
+          ).bind(subject, tenant));
+          if (owners.length !== 1 || owners[0].subject !== subject || owners[0].tenant_id !== tenant ||
+              owners[0].role !== "tenant_owner" || owners[0].membership_status !== "active" ||
+              owners[0].tenant_status !== "active") return error("not_found", 404);
+          const created = await createTenantSite(env.DB, tenant, subject, requestId,
+            request.headers.get("x-nova-idempotency-key"),
+            request.headers.get("x-nova-body-sha256"), draftBody, {
+              supabaseIssuer: verifiedSupabaseIdentity.issuer,
+              supabaseSubject: verifiedSupabaseIdentity.subject,
+              cloudflareIssuer: issuer,
+              cloudflareSubject: subject,
+            });
+          return created.error ? json({ error: created.error }, created.status)
+            : json({ data: created.data, request_id: requestId }, created.status);
+        }
         const sites = await rows(env.DB.prepare(
           "SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships m ON m.tenant_id = s.tenant_id AND m.subject = ? AND m.status = 'active' JOIN tenants t ON t.id = s.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = s.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = s.id AND g.action = 'read' WHERE s.tenant_id = ? AND s.status = 'active' ORDER BY s.name ASC, s.id ASC LIMIT 100"
         ).bind(subject, tenant));
