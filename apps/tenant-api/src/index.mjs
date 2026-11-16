@@ -1060,10 +1060,18 @@ async function createTenantForProvisioning(
       row.nova_os_authorization_permit_issuer !== permit.issuer ||
       row.nova_os_authorization_permit_audience !== permit.audience ||
       row.nova_os_authorization_permit_key_id !== permit.permitKeyId ||
-      row.nova_os_authorization_correlation_id !== coreCorrelationId ||
-      row.nova_os_authorization_permit_issued_at !== permit.permitIssuedAt ||
-      row.nova_os_authorization_permit_expires_at !== permit.permitExpiresAt) {
+      row.nova_os_authorization_correlation_id !== coreCorrelationId) {
     return { error: "idempotency_key_reused", status: 409 };
+  }
+  // Concurrent exact requests can receive separately signed short-lived
+  // permits for the same immutable OS consumption (same permit JTI). Their
+  // iat/exp may differ; the winning atomic Core insert owns the durable
+  // timestamps. Compare stable authorization identity above, not token timing.
+  if (!Number.isInteger(row.nova_os_authorization_permit_issued_at) ||
+      !Number.isInteger(row.nova_os_authorization_permit_expires_at) ||
+      row.nova_os_authorization_permit_expires_at <= row.nova_os_authorization_permit_issued_at ||
+      row.nova_os_authorization_permit_expires_at - row.nova_os_authorization_permit_issued_at > 120) {
+    return { error: "tenant_provisioning_conflict", status: 409 };
   }
   if (row.role !== "tenant_owner" || row.membership_status !== "active" || row.status !== "active") {
     return { error: "tenant_provisioning_conflict", status: 409 };
