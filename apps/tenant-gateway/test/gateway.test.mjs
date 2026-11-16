@@ -783,3 +783,25 @@ test("rejects identity-link challenge creation without a Supabase bearer token",
   assert.equal(response.status, 401);
   assert.equal(forwarded, false);
 });
+
+
+test("routes approved identity-link inventory through the signed owner-authenticated gateway", async () => {
+  let captured;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "tenant-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/identity-links/approved",
+    { headers: { "Cf-Access-Jwt-Assertion": "test-access-token" } }),
+    env({ TENANT_API: { fetch: async request => {
+      captured = request;
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } } }));
+  assert.equal(response.status, 200);
+  assert.equal(new URL(captured.url).pathname,
+    "/internal/v1/tenants/tenant-a/identity-links/approved");
+  assert.equal(captured.headers.get("x-nova-verified-subject"), "tenant-owner");
+  assert.equal(captured.headers.get("x-nova-internal-signature")?.length, 64);
+});
