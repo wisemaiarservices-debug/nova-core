@@ -940,9 +940,10 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
       "INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, 'tenant_owner', NULL, 'active', 'Initial owner assigned by allowlisted tenant provisioning', ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(eventId, tenantId, membershipId, subject, subject, requestId, membershipId, tenantId),
     db.prepare(
-      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti, nova_os_receipt_jti) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(requestId, subject, body.idempotency_key, requestDigest, tenantId,
-      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id, novaOsOwnerAssertion.jti, membershipId, tenantId),
+      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id, novaOsOwnerAssertion.jti,
+      requestId, membershipId, tenantId),
   ];
   try {
     const results = await db.batch(statements);
