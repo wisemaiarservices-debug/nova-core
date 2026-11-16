@@ -719,6 +719,7 @@ test("routes dual-identity challenge and owner-review endpoints through the sign
   const forwarded = [];
   const token = "header.payload.signature";
   const payloads = [
+    ["POST", "https://gateway.test/api/v1/tenants", JSON.stringify({ display_name: "Research tenant", idempotency_key: "bootstrap-001", nova_os_tenant_id: "nova-tenant-001" }), "/internal/v1/tenants", true],
     ["POST", "https://gateway.test/api/v1/identity-links/challenges", "{}", "/internal/v1/identity-links/challenges", true],
     ["POST", "https://gateway.test/api/v1/identity-links/challenges/challenge-1/consume",
       JSON.stringify({ challenge: "a".repeat(43) }),
