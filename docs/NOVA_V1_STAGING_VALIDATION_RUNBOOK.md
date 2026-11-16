@@ -1,15 +1,25 @@
 # NOVA V1 owner-authorization staging validation runbook
 
-**Status:** staging-only execution plan. This document does not authorize production configuration, customer onboarding, migration, or deployment. The coordinated runtime changes remain draft in NOVA OS PR #57 and NOVA Core PR #222.
+**Status:** staging-only execution plan. This document does not authorize production configuration, customer onboarding, migration, or deployment. The coordinated runtime changes remain draft in NOVA OS PR #57, NOVA OS mapping correction PR #58, and NOVA Core PR #222. PR #58 is a required part of the staging stack: it aligns the mapping endpoint with the one-time permit-consumption authorization boundary.
 
 ## 1. Preconditions
 
 - Use isolated staging projects/accounts and disposable tenant data only.
-- Confirm both PRs are reviewed, merged to coordinated staging branches, and their migration/workflow checks pass at the exact deployed commits.
+- Confirm NOVA OS PRs #57 and #58 and NOVA Core PR #222 are reviewed and merged to coordinated staging branches; verify migration/workflow checks pass at the exact deployed commits. Do not stage the #57 owner-authorization endpoint without the #58 mapping correction.
 - Confirm a named staging operator, independent reviewer, rollback owner, and incident contact.
 - Record the exact OS and Core commit SHAs, migration versions, worker/function versions, deployment timestamps, and test run IDs.
 - Verify the staging Cloudflare Access application, Supabase project, NOVA OS Edge Functions, and NOVA Core Worker are distinct from production.
 - No production tenant, production credential, or real customer data may be used.
+
+## 1A. Cross-repository code-validation baseline
+
+The following is the currently recorded PR #58 baseline; staging operators must re-fetch each PR head and its checks immediately before staging and record the exact deployed SHA. These links are historical CI evidence, not deployment approval:
+
+- NOVA OS PR #58 exact validated head: `a4bfda582e364be75e92d646d9384d932953a78b`.
+- [NOVA OS tenant migration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43961517073) — passed on that head.
+- [NOVA OS tenant administration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43961517005) — passed on that head.
+- NOVA OS PR #57 supplies the authorization-consumption endpoint and ledger; PR #58 supplies the required permit-bound mapping behavior. NOVA Core PR #222 supplies the matching Core caller/verifier and durable provisioning integration.
+- Before staging, independently verify the three PRs' current head SHAs, base relationships, required checks, and migration order. If any head changes after review, rerun and reassess the full coordinated validation.
 
 ## 2. Configuration inventory (names only; never put values in this file)
 
