@@ -892,36 +892,107 @@ async function revokeMembershipInvitation(db, tenant, invitationId, actor, reque
     : { error: "membership_invitation_not_found", status: 404 };
 }
 
-async function createTenantForProvisioning(db, subject, body, requestId, allowlist, supabaseIdentity, novaOsOwnerAssertion) {
+async function createTenantForProvisioning(
+  db, subject, body, requestId, allowlist, supabaseIdentity,
+  novaOsOwnerAssertion, accessIssuer, authorizationConfig,
+) {
   if (!allowlist || !allowlist.has(subject)) return { error: "not_found", status: 404 };
   if (!supabaseIdentity || typeof supabaseIdentity.issuer !== "string" ||
       typeof supabaseIdentity.subject !== "string" || !novaOsOwnerAssertion ||
       novaOsOwnerAssertion.supabaseIssuer !== supabaseIdentity.issuer ||
       novaOsOwnerAssertion.supabaseSubject !== supabaseIdentity.subject ||
       novaOsOwnerAssertion.novaOsTenantId !== body.nova_os_tenant_id ||
+      typeof accessIssuer !== "string" || !accessIssuer.startsWith("https://") ||
       !onlyKeys(body, ["display_name", "idempotency_key", "nova_os_tenant_id", "nova_os_owner_assertion"]) ||
       typeof body.display_name !== "string" || body.display_name.trim() !== body.display_name ||
       body.display_name.length < 1 || body.display_name.length > 160 ||
       !validId(body.idempotency_key, 160) || !validId(body.nova_os_tenant_id, 120)) {
     return { error: "tenant_provisioning_request_invalid", status: 400 };
   }
+
+  // This canonical digest is independent of gateway request/nonce IDs, so an
+  // exact retry derives the same Core correlation ID after a lost response.
   const requestDigest = await sha256Hex(JSON.stringify([
-    subject, supabaseIdentity.issuer, supabaseIdentity.subject,
-    body.nova_os_tenant_id, novaOsOwnerAssertion.jti, body.display_name,
+    "nova-core-tenant-provisioning-v1",
+    accessIssuer, subject,
+    supabaseIdentity.issuer, supabaseIdentity.subject,
+    body.nova_os_tenant_id, novaOsOwnerAssertion.jti,
+    body.idempotency_key, body.display_name,
   ]));
-  const priorTenantBinding = await rows(db.prepare(
-    "SELECT actor_subject, idempotency_key, request_sha256, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti FROM tenant_provisioning_requests WHERE nova_os_tenant_id = ? LIMIT 2"
-  ).bind(body.nova_os_tenant_id));
-  if (priorTenantBinding.length > 1) return { error: "tenant_provisioning_conflict", status: 409 };
-  if (priorTenantBinding.length === 1) {
-    const prior = priorTenantBinding[0];
+  const coreCorrelationId = "nova-provision:" + requestDigest;
+
+  // Resolve a committed request before asking NOVA OS for another permit.
+  // This is essential for the Core-committed / browser-response-lost case.
+  const priorRows = await rows(db.prepare(
+    "SELECT r.id AS provisioning_request_id, r.actor_subject, r.idempotency_key, r.request_sha256, r.supabase_issuer, r.supabase_subject, r.nova_os_tenant_id, r.nova_os_assertion_jti, r.access_issuer, r.nova_os_authorization_permit_jti, r.nova_os_authorization_permit_issuer, r.nova_os_authorization_permit_audience, r.nova_os_authorization_permit_key_id, r.nova_os_authorization_correlation_id, r.nova_os_authorization_permit_issued_at, r.nova_os_authorization_permit_expires_at, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.nova_os_tenant_id = ? OR (r.actor_subject = ? AND r.idempotency_key = ?) LIMIT 2"
+  ).bind(body.nova_os_tenant_id, subject, body.idempotency_key));
+  if (priorRows.length > 1) return { error: "tenant_provisioning_conflict", status: 409 };
+  if (priorRows.length === 1) {
+    const prior = priorRows[0];
     if (prior.actor_subject !== subject || prior.idempotency_key !== body.idempotency_key ||
         prior.request_sha256 !== requestDigest || prior.supabase_issuer !== supabaseIdentity.issuer ||
-        prior.supabase_subject !== supabaseIdentity.subject || prior.nova_os_tenant_id !== body.nova_os_tenant_id ||
-        prior.nova_os_assertion_jti !== novaOsOwnerAssertion.jti) {
+        prior.supabase_subject !== supabaseIdentity.subject ||
+        prior.nova_os_tenant_id !== body.nova_os_tenant_id ||
+        prior.nova_os_assertion_jti !== novaOsOwnerAssertion.jti ||
+        prior.access_issuer !== accessIssuer) {
+      return { error: "idempotency_key_reused", status: 409 };
+    }
+    if (!validId(prior.nova_os_authorization_permit_jti, 36) ||
+        prior.nova_os_authorization_permit_issuer !== authorizationConfig?.permitIssuer ||
+        prior.nova_os_authorization_permit_audience !== authorizationConfig?.permitAudience ||
+        !validId(prior.nova_os_authorization_permit_key_id, 80) ||
+        prior.nova_os_authorization_correlation_id !== coreCorrelationId ||
+        !Number.isInteger(prior.nova_os_authorization_permit_issued_at) ||
+        !Number.isInteger(prior.nova_os_authorization_permit_expires_at)) {
       return { error: "tenant_provisioning_conflict", status: 409 };
     }
+    if (prior.role !== "tenant_owner" || prior.membership_status !== "active" ||
+        prior.status !== "active") {
+      return { error: "tenant_provisioning_conflict", status: 409 };
+    }
+    return { data: {
+      tenant_id: prior.tenant_id,
+      display_name: prior.display_name,
+      tenant_status: prior.status,
+      membership_id: prior.membership_id,
+      membership_role: prior.role,
+      membership_status: prior.membership_status,
+      provisioning_request_id: prior.provisioning_request_id ?? prior.id,
+      created: false,
+    }, status: 200 };
   }
+
+  let authorize;
+  try { authorize = createNovaOsOwnerAuthorizationClient(authorizationConfig); }
+  catch { return { error: "nova_os_authorization_not_configured", status: 503 }; }
+  let permit;
+  try {
+    permit = await authorize({
+      ownerAssertion: body.nova_os_owner_assertion,
+      tenantId: body.nova_os_tenant_id,
+      assertionJti: novaOsOwnerAssertion.jti,
+      idempotencyKey: body.idempotency_key,
+      requestSha256: requestDigest,
+      supabaseIssuer: supabaseIdentity.issuer,
+      supabaseSubject: supabaseIdentity.subject,
+      accessIssuer,
+      accessSubject: subject,
+      coreCorrelationId,
+    });
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : "";
+    if (reason === "nova_os_owner_not_active") return { error: "not_found", status: 404 };
+    if (reason === "nova_os_authorization_conflict") {
+      return { error: "tenant_provisioning_conflict", status: 409 };
+    }
+    if (reason === "nova_os_authorization_not_configured") {
+      return { error: "nova_os_authorization_not_configured", status: 503 };
+    }
+    return { error: "nova_os_authorization_unavailable", status: 503 };
+  }
+
+  // No tenant, membership, grant, provisioning request or audit writes occur
+  // until the signed permit has been verified against the pinned NOVA OS key.
   const tenantId = "tenant-" + crypto.randomUUID();
   const membershipId = crypto.randomUUID();
   const eventId = crypto.randomUUID();
@@ -944,10 +1015,12 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
       "INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, 'tenant_owner', NULL, 'active', 'Initial owner assigned by allowlisted tenant provisioning', ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(eventId, tenantId, membershipId, subject, subject, requestId, membershipId, tenantId),
     db.prepare(
-      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti, nova_os_receipt_jti) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti, nova_os_receipt_jti, access_issuer, nova_os_authorization_permit_jti, nova_os_authorization_permit_issuer, nova_os_authorization_permit_audience, nova_os_authorization_permit_key_id, nova_os_authorization_correlation_id, nova_os_authorization_permit_issued_at, nova_os_authorization_permit_expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(requestId, subject, body.idempotency_key, requestDigest, tenantId,
-      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id, novaOsOwnerAssertion.jti,
-      requestId, membershipId, tenantId),
+      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id,
+      novaOsOwnerAssertion.jti, requestId, accessIssuer, permit.permitJti,
+      permit.issuer, permit.audience, permit.permitKeyId, permit.coreCorrelationId,
+      permit.permitIssuedAt, permit.permitExpiresAt, membershipId, tenantId),
   ];
   try {
     const results = await db.batch(statements);
@@ -964,18 +1037,26 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
         membership_status: "active", provisioning_request_id: requestId, created: true }, status: 201 };
     }
   } catch {
-    // A concurrent request with the same actor/key can win the unique key.
-    // Read the durable outcome below; all other batch failures remain 503.
+    // A concurrent exact request may have won the durable unique key.
+    // Resolve the committed record below; changed requests remain conflicts.
   }
   const existing = await rows(db.prepare(
-    "SELECT r.id AS provisioning_request_id, r.request_sha256, r.tenant_id, r.supabase_issuer, r.supabase_subject, r.nova_os_tenant_id, r.nova_os_assertion_jti, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
+    "SELECT r.id AS provisioning_request_id, r.request_sha256, r.tenant_id, r.supabase_issuer, r.supabase_subject, r.nova_os_tenant_id, r.nova_os_assertion_jti, r.access_issuer, r.nova_os_authorization_permit_jti, r.nova_os_authorization_permit_issuer, r.nova_os_authorization_permit_audience, r.nova_os_authorization_permit_key_id, r.nova_os_authorization_correlation_id, r.nova_os_authorization_permit_issued_at, r.nova_os_authorization_permit_expires_at, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
   ).bind(subject, body.idempotency_key));
   if (existing.length !== 1) throw new Error("tenant_provisioning_storage_conflict");
   const row = existing[0];
   if (row.request_sha256 !== requestDigest || row.supabase_issuer !== supabaseIdentity.issuer ||
       row.supabase_subject !== supabaseIdentity.subject || row.nova_os_tenant_id !== body.nova_os_tenant_id ||
-      row.nova_os_assertion_jti !== novaOsOwnerAssertion.jti)
+      row.nova_os_assertion_jti !== novaOsOwnerAssertion.jti || row.access_issuer !== accessIssuer ||
+      row.nova_os_authorization_permit_jti !== permit.permitJti ||
+      row.nova_os_authorization_permit_issuer !== permit.issuer ||
+      row.nova_os_authorization_permit_audience !== permit.audience ||
+      row.nova_os_authorization_permit_key_id !== permit.permitKeyId ||
+      row.nova_os_authorization_correlation_id !== coreCorrelationId ||
+      row.nova_os_authorization_permit_issued_at !== permit.permitIssuedAt ||
+      row.nova_os_authorization_permit_expires_at !== permit.permitExpiresAt) {
     return { error: "idempotency_key_reused", status: 409 };
+  }
   if (row.role !== "tenant_owner" || row.membership_status !== "active" || row.status !== "active") {
     return { error: "tenant_provisioning_conflict", status: 409 };
   }
@@ -1360,8 +1441,10 @@ export default {
           return error("nova_os_mapping_receipt_not_configured", 503);
         }
         const requestDigest = await sha256Hex(JSON.stringify([
-          subject, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject,
-          draftBody.nova_os_tenant_id, verifiedNovaOsOwnerAssertion.jti, draftBody.display_name,
+          "nova-core-tenant-provisioning-v1",
+          issuer, subject, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject,
+          draftBody.nova_os_tenant_id, verifiedNovaOsOwnerAssertion.jti,
+          draftBody.idempotency_key, draftBody.display_name,
         ]));
         try {
           validateNovaOsProvisioningReceiptClaims({
@@ -1381,7 +1464,14 @@ export default {
         }
         const provisioned = await createTenantForProvisioning(env.DB, subject, draftBody, requestId,
           configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS),
-          verifiedSupabaseIdentity, verifiedNovaOsOwnerAssertion);
+          verifiedSupabaseIdentity, verifiedNovaOsOwnerAssertion, issuer, {
+            endpoint: env.NOVA_OS_OWNER_AUTHORIZATION_URL,
+            keysJson: env.NOVA_OS_OWNER_AUTH_KEYS,
+            activeKeyId: env.NOVA_OS_OWNER_AUTH_ACTIVE_KEY_ID,
+            permitIssuer: env.NOVA_OS_OWNER_AUTHORIZATION_PERMIT_ISSUER,
+            permitAudience: env.NOVA_OS_OWNER_AUTHORIZATION_PERMIT_AUDIENCE,
+            permitJwk: env.NOVA_OS_OWNER_AUTHORIZATION_PERMIT_JWK,
+          });
         if (provisioned.error) return json({ error: provisioned.error }, provisioned.status);
         let receipt;
         try {
