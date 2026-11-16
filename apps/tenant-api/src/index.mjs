@@ -976,6 +976,7 @@ async function createTenantForProvisioning(
     permit = await authorize({
       ownerAssertion: body.nova_os_owner_assertion,
       tenantId: body.nova_os_tenant_id,
+      displayName: body.display_name,
       assertionJti: novaOsOwnerAssertion.jti,
       idempotencyKey: body.idempotency_key,
       requestSha256: requestDigest,
