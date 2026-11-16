@@ -1175,7 +1175,7 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
   });
 });
 
-test("tenant provisioning returns the existing result only for the same dual identity and NOVA OS tenant", async () => {
+test("tenant provisioning replays the same durable Core tenant and receipt after a lost response", async () => {
   const digest = createHash("sha256").update(JSON.stringify([
     "operator@example.test", "https://project.example.test/auth/v1",
     "supabase-owner", "nova-tenant-001", "owner-proof-001", "Research tenant",
@@ -1189,12 +1189,31 @@ test("tenant provisioning returns the existing result only for the same dual ide
     membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
   }]);
   await withProvisioningJwks(async () => {
-    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody), provisioningEnv(db));
-    assert.equal(response.status, 200);
-    const result = (await response.json()).data;
+    // The first successful Core response is deliberately discarded to model
+    // a network failure after the durable provisioning transaction committed.
+    const lostResponse = await worker.fetch(await request(
+      provisioningHeaders(), provisioningPath, "POST", provisioningBody,
+    ), provisioningEnv(db));
+    assert.equal(lostResponse.status, 200);
+    await lostResponse.arrayBuffer();
+
+    // A retry uses a fresh gateway request ID but the same owner assertion,
+    // tenant binding and idempotency key stored by NOVA OS.
+    const retry = await worker.fetch(await request({
+      ...provisioningHeaders(), "x-nova-request-id": "request-after-lost-response",
+    }, provisioningPath, "POST", provisioningBody), provisioningEnv(db));
+    assert.equal(retry.status, 200);
+    const result = (await retry.json()).data;
     assert.equal(result.tenant_id, "tenant-existing");
     assert.equal(result.created, false);
     assert.equal(result.mapping_receipt_id, "provisioning-request-existing");
+    assert.equal(db.batchCalls.length, 2);
+    assert.equal(result.mapping_receipt.split(".").length, 3);
+    const claims = JSON.parse(Buffer.from(result.mapping_receipt.split(".")[1], "base64url").toString("utf8"));
+    assert.equal(claims.core_tenant_id, "tenant-existing");
+    assert.equal(claims.nova_os_tenant_id, "nova-tenant-001");
+    assert.equal(claims.idempotency_key, "bootstrap-001");
+    assert.equal(claims.jti, "provisioning-request-existing");
   });
 });
 
