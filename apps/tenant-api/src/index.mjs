@@ -900,6 +900,18 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
     subject, supabaseIdentity.issuer, supabaseIdentity.subject,
     body.nova_os_tenant_id, body.display_name,
   ]));
+  const priorTenantBinding = await rows(db.prepare(
+    "SELECT actor_subject, idempotency_key, request_sha256, supabase_issuer, supabase_subject, nova_os_tenant_id FROM tenant_provisioning_requests WHERE nova_os_tenant_id = ? LIMIT 2"
+  ).bind(body.nova_os_tenant_id));
+  if (priorTenantBinding.length > 1) return { error: "tenant_provisioning_conflict", status: 409 };
+  if (priorTenantBinding.length === 1) {
+    const prior = priorTenantBinding[0];
+    if (prior.actor_subject !== subject || prior.idempotency_key !== body.idempotency_key ||
+        prior.request_sha256 !== requestDigest || prior.supabase_issuer !== supabaseIdentity.issuer ||
+        prior.supabase_subject !== supabaseIdentity.subject || prior.nova_os_tenant_id !== body.nova_os_tenant_id) {
+      return { error: "tenant_provisioning_conflict", status: 409 };
+    }
+  }
   const tenantId = "tenant-" + crypto.randomUUID();
   const membershipId = crypto.randomUUID();
   const eventId = crypto.randomUUID();
