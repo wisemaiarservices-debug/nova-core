@@ -933,9 +933,11 @@ retrievable report\
 
 
 class ProvisioningDB {
-  constructor(batchResult, existingRows = []) {
+  constructor(batchResult, existingRows = [], concurrentRows = null) {
     this.batchResult = batchResult;
     this.existingRows = existingRows;
+    this.concurrentRows = concurrentRows;
+    this.afterBatch = false;
     this.batchCalls = [];
     this.nonces = new Set();
   }
@@ -952,14 +954,16 @@ class ProvisioningDB {
       },
       async all() {
         if (sql.includes("FROM tenant_provisioning_requests")) {
+          const rows = db.afterBatch && db.concurrentRows !== null
+            ? db.concurrentRows : db.existingRows;
           if (sql.includes("WHERE nova_os_tenant_id = ?")) {
-            return { results: db.existingRows.filter(row => row.nova_os_tenant_id === args[0]) };
+            return { results: rows.filter(row => row.nova_os_tenant_id === args[0]) };
           }
           if (sql.includes("WHERE r.actor_subject = ? AND r.idempotency_key = ?")) {
-            return { results: db.existingRows.filter(row => row.actor_subject === args[0] &&
+            return { results: rows.filter(row => row.actor_subject === args[0] &&
               row.idempotency_key === args[1]) };
           }
-          return { results: db.existingRows };
+          return { results: rows };
         }
         throw new Error("unexpected provisioning read");
       },
@@ -967,6 +971,7 @@ class ProvisioningDB {
   }
   async batch(statements) {
     this.batchCalls.push(statements);
+    this.afterBatch = true;
     return this.batchResult;
   }
 }
@@ -1324,6 +1329,51 @@ test("tenant provisioning returns the existing result only for the same dual ide
     assert.equal(novaOsAuthorizationCallCount, beforeAuthorizationCalls,
       "committed retries must not consume a new NOVA OS permit");
     assert.equal(db.batchCalls.length, 0);
+  });
+});
+
+test("tenant provisioning accepts concurrent exact retries whose replay permits have different token timestamps", async () => {
+  const digest = createHash("sha256").update(JSON.stringify([
+    "nova-core-tenant-provisioning-v1",
+    "https://example.cloudflareaccess.com", "operator@example.test",
+    "https://project.example.test/auth/v1", "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001",
+    "bootstrap-001", "Research tenant",
+  ])).digest("hex");
+  const committed = {
+    actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
+    request_sha256: digest, supabase_issuer: "https://project.example.test/auth/v1",
+    supabase_subject: "11111111-1111-4111-8111-111111111111",
+    nova_os_tenant_id: "22222222-2222-4222-8222-222222222222",
+    nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
+    id: "provisioning-request-race", access_issuer: "https://example.cloudflareaccess.com",
+    nova_os_authorization_permit_jti: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    nova_os_authorization_permit_issuer: "https://nova-os.example.test/authorization",
+    nova_os_authorization_permit_audience: "nova-core-owner-authorization",
+    nova_os_authorization_permit_key_id: "nova-os-permit-test-key",
+    nova_os_authorization_correlation_id: "nova-provision:" + digest,
+    nova_os_authorization_permit_issued_at: now,
+    nova_os_authorization_permit_expires_at: now + 120,
+    tenant_id: "tenant-race-winner", display_name: "Research tenant", status: "active",
+    membership_id: "membership-race-winner", role: "tenant_owner", membership_status: "active",
+  };
+  const db = new ProvisioningDB(
+    Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })),
+    [],
+    [committed],
+  );
+  await withProvisioningJwks(async () => {
+    const response = await worker.fetch(
+      await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody),
+      provisioningEnv(db),
+    );
+    assert.equal(response.status, 200);
+    const result = (await response.json()).data;
+    assert.equal(result.tenant_id, "tenant-race-winner");
+    assert.equal(result.created, false);
+    assert.equal(result.mapping_receipt_id, "provisioning-request-race");
+    assert.equal(novaOsAuthorizationCallCount > 0, true);
+    assert.equal(db.batchCalls.length, 1);
   });
 });
 
