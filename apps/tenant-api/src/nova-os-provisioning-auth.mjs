@@ -57,7 +57,7 @@ function configuredJwk(value, kid) {
  * The public JWK is pinned in Core Worker configuration. No token-controlled
  * key URL or algorithm is accepted.
  */
-export async function verifyNovaOsOwnerAssertion(token, config, expected, nowSeconds = Math.floor(Date.now() / 1000)) {
+export async function verifyNovaOsOwnerAssertion(token, config, expected, nowSeconds = Math.floor(Date.now() / 1000), options = {}) {
   if (typeof config?.issuer !== "string" || !validHttpsIdentifier(config.issuer, 500) ||
       typeof config?.audience !== "string" || !config.audience.trim() || config.audience.length > 256) {
     throw new Error("invalid_nova_os_provisioning_configuration");
@@ -100,8 +100,9 @@ export async function verifyNovaOsOwnerAssertion(token, config, expected, nowSec
       claims.role !== "owner" || claims.membership_status !== "active" ||
       claims.tenant_status !== "active" ||
       !Number.isInteger(claims.iat) || !Number.isInteger(claims.exp) ||
-      claims.iat > now + CLOCK_SKEW_SECONDS || claims.iat < now - MAX_ASSERTION_LIFETIME_SECONDS ||
-      claims.exp <= now || claims.exp <= claims.iat ||
+      claims.iat > now + CLOCK_SKEW_SECONDS ||
+      (!options.allowExpiredForCommittedRetry && claims.iat < now - MAX_ASSERTION_LIFETIME_SECONDS) ||
+      (!options.allowExpiredForCommittedRetry && claims.exp <= now) || claims.exp <= claims.iat ||
       claims.exp - claims.iat > MAX_ASSERTION_LIFETIME_SECONDS ||
       typeof claims.jti !== "string" ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(claims.jti)) {
