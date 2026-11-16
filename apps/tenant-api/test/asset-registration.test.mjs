@@ -5,6 +5,12 @@ import { createTenantAsset } from "../src/asset-registration.mjs";
 
 globalThis.crypto ??= webcrypto;
 const digest = "a".repeat(64);
+const identityLink = {
+  supabaseIssuer: "https://project.example.test/auth/v1",
+  supabaseSubject: "supabase-owner",
+  cloudflareIssuer: "https://example.cloudflareaccess.com",
+  cloudflareSubject: "owner-sub",
+};
 
 class FakeDB {
   constructor() { this.existing = []; this.batchStatements = []; this.batchError = null; }
@@ -26,7 +32,7 @@ test("asset registration atomically creates an unconfigured asset, owner read gr
   const db = new FakeDB();
   const result = await createTenantAsset(db, "tenant-a", "site-a", "owner-sub",
     "request-1", "asset-onboarding-1", digest,
-    { name: "Irrigation Pump 01", asset_type: "pump", external_ref: "pump-001" });
+    { name: "Irrigation Pump 01", asset_type: "pump", external_ref: "pump-001" }, identityLink);
   assert.equal(result.status, 201);
   assert.equal(result.data.tenant_id, "tenant-a");
   assert.equal(result.data.site_id, "site-a");
@@ -46,7 +52,7 @@ test("same idempotency key and digest replay the original asset without a second
   db.existing = [{ request_sha256: digest, asset_id: "asset-original",
     name: "Pump 01", asset_type: "pump", external_ref: null, status: "unconfigured" }];
   const result = await createTenantAsset(db, "tenant-a", "site-a", "owner-sub",
-    "request-retry", "asset-onboarding-1", digest, { name: "Pump 01", asset_type: "pump" });
+    "request-retry", "asset-onboarding-1", digest, { name: "Pump 01", asset_type: "pump" }, identityLink);
   assert.equal(result.status, 200);
   assert.equal(result.data.id, "asset-original");
   assert.equal(result.data.created, false);
@@ -59,7 +65,7 @@ test("idempotency conflict and invalid scope fields fail without writes", async 
     name: "Pump 01", asset_type: "pump", status: "unconfigured" }];
   const conflict = await createTenantAsset(db, "tenant-a", "site-a", "owner-sub",
     "request-retry", "asset-onboarding-1", "b".repeat(64),
-    { name: "Other Pump", asset_type: "pump" });
+    { name: "Other Pump", asset_type: "pump" }, identityLink);
   assert.equal(conflict.status, 409);
   for (const body of [
     { name: "Pump 01", asset_type: "pump", tenant_id: "tenant-b" },
@@ -68,7 +74,7 @@ test("idempotency conflict and invalid scope fields fail without writes", async 
     { name: "Pump 01", asset_type: "pump", external_ref: "x".repeat(241) },
   ]) {
     const result = await createTenantAsset(new FakeDB(), "tenant-a", "site-a", "owner-sub",
-      "request-1", "asset-onboarding-1", digest, body);
+      "request-1", "asset-onboarding-1", digest, body, identityLink);
     assert.equal(result.status, 400);
   }
   assert.equal(db.batchStatements.length, 0);
@@ -79,5 +85,5 @@ test("failed asset batch is not reported as successful registration", async () =
   db.batchError = new Error("audit rejected");
   await assert.rejects(() => createTenantAsset(db, "tenant-a", "site-a", "owner-sub",
     "request-1", "asset-onboarding-1", digest,
-    { name: "Pump 01", asset_type: "pump" }), /audit rejected/);
+    { name: "Pump 01", asset_type: "pump" }, identityLink), /audit rejected/);
 });
