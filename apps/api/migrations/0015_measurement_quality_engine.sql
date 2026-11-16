@@ -103,6 +103,9 @@ AND NOT EXISTS (
    ON m.id=NEW.mapping_id AND m.tenant_id=o.tenant_id AND m.site_id=o.site_id
   AND m.source_id=o.source_id AND m.parameter=o.metric AND m.unit=o.unit
   AND m.effective_from<=o.observed_at AND (m.effective_to IS NULL OR m.effective_to>o.observed_at)
+ JOIN sources src
+   ON src.id=m.source_id AND src.tenant_id=m.tenant_id AND src.site_id=m.site_id
+  AND src.verification_status='verified'
  JOIN sensor_source_mapping_events me
    ON me.mapping_id=m.id AND me.tenant_id=m.tenant_id AND me.event_type='verified'
   AND me.id=(SELECT e.id FROM sensor_source_mapping_events e
