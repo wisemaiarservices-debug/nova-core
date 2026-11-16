@@ -4,6 +4,8 @@
 
 PRAGMA foreign_keys = ON;
 
+ALTER TABLE sources ADD COLUMN registered_by_subject TEXT;
+
 CREATE TABLE tenant_source_reviewers (
   tenant_id TEXT NOT NULL,
   site_id TEXT NOT NULL,
@@ -85,7 +87,7 @@ WHEN NOT EXISTS (
       AND m.subject=r.reviewer_subject AND m.status='active'
     WHERE r.tenant_id=NEW.tenant_id AND r.site_id=NEW.site_id
       AND r.reviewer_subject=NEW.actor_subject AND r.status='active'
-      AND NEW.actor_subject<>(SELECT created_by_subject FROM sources WHERE id=NEW.source_id)
+      AND NEW.actor_subject<>(SELECT registered_by_subject FROM sources WHERE id=NEW.source_id)
   )
 ) OR (
   (NEW.event_type IN ('verified','rejected') AND EXISTS (
