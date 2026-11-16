@@ -990,7 +990,8 @@ const novaOsPermitJwk = {
 const coreToOsKeyId = "core-os-test-key";
 const coreToOsSecret = "test-only-Core-to-OS-shared-secret-with-32-bytes";
 const novaOsAuthorizationUrl = "https://project.example.test/functions/v1/nova-core-owner-authorization";
-function novaOsOwnerAssertion(subject = "11111111-1111-4111-8111-111111111111", tenantId = "22222222-2222-4222-8222-222222222222", jti = "aaaaaaaa-0000-4000-8000-000000000001") {
+let novaOsAuthorizationCallCount = 0;
+function novaOsOwnerAssertion(subject = "11111111-1111-4111-8111-111111111111", tenantId = "22222222-2222-4222-8222-222222222222", jti = "aaaaaaaa-0000-4000-8000-000000000001", issuedAt = now - 10, expiresAt = now + 120) {
   const b64 = value => Buffer.from(value).toString("base64url");
   const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: novaOsOwnerJwk.kid }));
   const claims = b64(JSON.stringify({
@@ -1000,7 +1001,7 @@ function novaOsOwnerAssertion(subject = "11111111-1111-4111-8111-111111111111", 
     supabase_issuer: "https://project.example.test/auth/v1",
     nova_os_tenant_id: tenantId,
     role: "owner", membership_status: "active", tenant_status: "active",
-    iat: now - 10, exp: now + 120, jti,
+    iat: issuedAt, exp: expiresAt, jti,
   }));
   const input = header + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), novaOsOwnerKeyPair.privateKey).toString("base64url");
@@ -1024,6 +1025,7 @@ async function withProvisioningJwks(callback) {
       });
     }
     if (String(url) === novaOsAuthorizationUrl) {
+      novaOsAuthorizationCallCount += 1;
       assert.equal(init.method, "POST");
       assert.equal(init.redirect, "error");
       const headers = new Headers(init.headers);
@@ -1241,6 +1243,13 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     assert.equal(decodedClaims.access_subject, "operator@example.test");
     assert.equal(decodedClaims.supabase_subject, "11111111-1111-4111-8111-111111111111");
     assert.equal(decodedClaims.owner_assertion_jti, "aaaaaaaa-0000-4000-8000-000000000001");
+    assert.equal(decodedClaims.authorization_permit_jti, "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+    assert.equal(decodedClaims.authorization_correlation_id, "nova-provision:" + createHash("sha256").update(JSON.stringify([
+      "nova-core-tenant-provisioning-v1", "https://example.cloudflareaccess.com", "operator@example.test",
+      "https://project.example.test/auth/v1", "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001",
+      "bootstrap-001", "Research tenant",
+    ])).digest("hex"));
     assert.equal(decodedClaims.jti, "request-123");
     assert.equal(await webcrypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
@@ -1295,12 +1304,25 @@ test("tenant provisioning returns the existing result only for the same dual ide
     membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
   }]);
   await withProvisioningJwks(async () => {
-    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody), provisioningEnv(db));
+    const beforeAuthorizationCalls = novaOsAuthorizationCallCount;
+    const expiredRetryBody = JSON.stringify({
+      ...JSON.parse(provisioningBody),
+      nova_os_owner_assertion: novaOsOwnerAssertion(
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "aaaaaaaa-0000-4000-8000-000000000001",
+        now - 400, now - 160,
+      ),
+    });
+    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", expiredRetryBody), provisioningEnv(db));
     assert.equal(response.status, 200);
     const result = (await response.json()).data;
     assert.equal(result.tenant_id, "tenant-existing");
     assert.equal(result.created, false);
     assert.equal(result.mapping_receipt_id, "provisioning-request-existing");
+    assert.equal(novaOsAuthorizationCallCount, beforeAuthorizationCalls,
+      "committed retries must not consume a new NOVA OS permit");
+    assert.equal(db.batchCalls.length, 0);
   });
 });
 
