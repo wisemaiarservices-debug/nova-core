@@ -102,7 +102,7 @@ class TenantAssetRegistrationMigrationTests(unittest.TestCase):
         self.db.execute("""
           INSERT INTO tenant_asset_events
             (id, tenant_id, site_id, asset_id, actor_subject, event_type, request_id)
-          VALUES ('event-b', 'tenant-a', 'site-a', 'asset-a', 'owner-sub', 'created', 'request-b')
+          VALUES ('event-b', 'tenant-a', 'site-a', 'asset-b', 'owner-sub', 'created', 'request-b')
         """)
         values = ("request-row-a", "tenant-a", "site-a", "owner-sub", "key-a",
                   "a" * 64, "asset-a", "request-a")
