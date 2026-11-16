@@ -1,6 +1,7 @@
 import { json, error } from "./http.mjs";
 import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
 import { verifyNovaOsOwnerAssertion } from "./nova-os-provisioning-auth.mjs";
+import { createNovaOsProvisioningReceiptSigner } from "./nova-os-provisioning-receipt.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
@@ -939,9 +940,10 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
       "INSERT INTO tenant_membership_events (id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id) SELECT ?, ?, ?, ?, ?, 'created', NULL, 'tenant_owner', NULL, 'active', 'Initial owner assigned by allowlisted tenant provisioning', ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(eventId, tenantId, membershipId, subject, subject, requestId, membershipId, tenantId),
     db.prepare(
-      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
+      "INSERT INTO tenant_provisioning_requests (id, actor_subject, idempotency_key, request_sha256, tenant_id, supabase_issuer, supabase_subject, nova_os_tenant_id, nova_os_assertion_jti, nova_os_receipt_jti) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ?)"
     ).bind(requestId, subject, body.idempotency_key, requestDigest, tenantId,
-      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id, novaOsOwnerAssertion.jti, membershipId, tenantId),
+      supabaseIdentity.issuer, supabaseIdentity.subject, body.nova_os_tenant_id, novaOsOwnerAssertion.jti,
+      requestId, membershipId, tenantId),
   ];
   try {
     const results = await db.batch(statements);
@@ -955,14 +957,14 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
       }
       return { data: { tenant_id: tenantId, display_name: body.display_name,
         tenant_status: "active", membership_id: membershipId, membership_role: "tenant_owner",
-        membership_status: "active", created: true }, status: 201 };
+        membership_status: "active", provisioning_request_id: requestId, created: true }, status: 201 };
     }
   } catch {
     // A concurrent request with the same actor/key can win the unique key.
     // Read the durable outcome below; all other batch failures remain 503.
   }
   const existing = await rows(db.prepare(
-    "SELECT r.request_sha256, r.tenant_id, r.supabase_issuer, r.supabase_subject, r.nova_os_tenant_id, r.nova_os_assertion_jti, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
+    "SELECT r.id AS provisioning_request_id, r.request_sha256, r.tenant_id, r.supabase_issuer, r.supabase_subject, r.nova_os_tenant_id, r.nova_os_assertion_jti, t.display_name, t.status, m.id AS membership_id, m.role, m.status AS membership_status FROM tenant_provisioning_requests r JOIN tenants t ON t.id = r.tenant_id JOIN tenant_memberships m ON m.tenant_id = r.tenant_id AND m.subject = r.actor_subject WHERE r.actor_subject = ? AND r.idempotency_key = ? LIMIT 2"
   ).bind(subject, body.idempotency_key));
   if (existing.length !== 1) throw new Error("tenant_provisioning_storage_conflict");
   const row = existing[0];
@@ -975,7 +977,8 @@ async function createTenantForProvisioning(db, subject, body, requestId, allowli
   }
   return { data: { tenant_id: row.tenant_id, display_name: row.display_name,
     tenant_status: row.status, membership_id: row.membership_id, membership_role: row.role,
-    membership_status: row.membership_status, created: false }, status: 200 };
+    membership_status: row.membership_status,
+    provisioning_request_id: row.provisioning_request_id ?? row.id, created: false }, status: 200 };
 }
 
 export default {
@@ -1336,11 +1339,49 @@ export default {
       }
       if (tenantProvision) {
         if (!verifiedSupabaseIdentity || !verifiedNovaOsOwnerAssertion) return error("supabase_identity_required", 401);
+        let receiptSigner;
+        try {
+          receiptSigner = await createNovaOsProvisioningReceiptSigner({
+            issuer: env.NOVA_OS_MAPPING_RECEIPT_ISSUER,
+            audience: env.NOVA_OS_MAPPING_RECEIPT_AUDIENCE,
+            keyId: env.NOVA_OS_MAPPING_RECEIPT_KEY_ID,
+            privateKeyPem: env.NOVA_OS_MAPPING_RECEIPT_PRIVATE_KEY,
+          });
+        } catch {
+          return error("nova_os_mapping_receipt_not_configured", 503);
+        }
         const provisioned = await createTenantForProvisioning(env.DB, subject, draftBody, requestId,
           configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS),
           verifiedSupabaseIdentity, verifiedNovaOsOwnerAssertion);
-        return provisioned.error ? json({ error: provisioned.error }, provisioned.status)
-          : json({ data: provisioned.data, request_id: requestId }, provisioned.status);
+        if (provisioned.error) return json({ error: provisioned.error }, provisioned.status);
+        const requestDigest = await sha256Hex(JSON.stringify([
+          subject, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject,
+          draftBody.nova_os_tenant_id, verifiedNovaOsOwnerAssertion.jti, draftBody.display_name,
+        ]));
+        let receipt;
+        try {
+          receipt = await receiptSigner({
+            accessIssuer: issuer,
+            accessSubject: subject,
+            supabaseIssuer: verifiedSupabaseIdentity.issuer,
+            supabaseSubject: verifiedSupabaseIdentity.subject,
+            novaOsTenantId: draftBody.nova_os_tenant_id,
+            coreTenantId: provisioned.data.tenant_id,
+            idempotencyKey: draftBody.idempotency_key,
+            requestDigest,
+            ownerAssertionJti: verifiedNovaOsOwnerAssertion.jti,
+            jti: provisioned.data.provisioning_request_id,
+          });
+        } catch {
+          return error("nova_os_mapping_receipt_unavailable", 503);
+        }
+        const { provisioning_request_id: _provisioningRequestId, ...publicData } = provisioned.data;
+        return json({ data: {
+          ...publicData,
+          mapping_receipt: receipt.token,
+          mapping_receipt_expires_at: receipt.expiresAt,
+          mapping_receipt_id: receipt.jti,
+        }, request_id: requestId }, provisioned.status);
       }
       if (criteriaReview) {
         const reviewed = await recordCriteriaReview(env.DB, tenant, entryId, version, subject, requestId, draftBody);

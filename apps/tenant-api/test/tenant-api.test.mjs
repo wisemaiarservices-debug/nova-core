@@ -976,6 +976,7 @@ const provisioningJwk = {
   kid: "provisioning-test-key", alg: "RS256", use: "sig", key_ops: ["verify"],
 };
 const novaOsOwnerKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const coreReceiptKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const novaOsOwnerJwk = {
   ...novaOsOwnerKeyPair.publicKey.export({ format: "jwk" }),
   kid: "nova-os-owner-test-key", alg: "RS256", use: "sig", key_ops: ["verify"],
@@ -1029,6 +1030,24 @@ const provisioningEnv = db => ({
   NOVA_OS_PROVISIONING_AUTH_ISSUER: "https://nova-os.example.test/tenant-provisioning",
   NOVA_OS_PROVISIONING_AUTH_AUDIENCE: "nova-core-tenant-provisioning",
   NOVA_OS_PROVISIONING_AUTH_JWK: JSON.stringify(novaOsOwnerJwk),
+  NOVA_OS_MAPPING_RECEIPT_ISSUER: "https://nova-core.example.test/provisioning",
+  NOVA_OS_MAPPING_RECEIPT_AUDIENCE: "https://nova-os.example.test/mapping",
+  NOVA_OS_MAPPING_RECEIPT_KEY_ID: "core-receipt-test-key",
+  NOVA_OS_MAPPING_RECEIPT_PRIVATE_KEY: coreReceiptKeyPair.privateKey.export({ type: "pkcs8", format: "pem" }),
+});
+
+test("tenant provisioning fails closed before writes when the Core mapping receipt signer is not configured", async () => {
+  const db = new ProvisioningDB([]);
+  await withProvisioningJwks(async () => {
+    const incomplete = { ...provisioningEnv(db) };
+    delete incomplete.NOVA_OS_MAPPING_RECEIPT_PRIVATE_KEY;
+    const response = await worker.fetch(
+      await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody), incomplete);
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "nova_os_mapping_receipt_not_configured");
+    assert.equal(db.batchCalls.length, 0);
+    assert.equal(db.existingRows.length, 0);
+  });
 });
 
 test("tenant provisioning requires a Supabase bearer in addition to the verified Access identity", async () => {
@@ -1119,6 +1138,28 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     assert.equal(result.membership_status, "active");
     assert.equal(result.created, true);
     assert.match(result.tenant_id, /^tenant-[0-9a-f-]{36}$/);
+    assert.equal(result.mapping_receipt_id, "request-123");
+    assert.ok(result.mapping_receipt_expires_at > now);
+    const [receiptHeader, receiptClaims, receiptSignature] = result.mapping_receipt.split(".");
+    const decodedHeader = JSON.parse(Buffer.from(receiptHeader, "base64url").toString("utf8"));
+    const decodedClaims = JSON.parse(Buffer.from(receiptClaims, "base64url").toString("utf8"));
+    assert.equal(decodedHeader.alg, "RS256");
+    assert.equal(decodedHeader.kid, "core-receipt-test-key");
+    assert.equal(decodedClaims.core_tenant_id, result.tenant_id);
+    assert.equal(decodedClaims.nova_os_tenant_id, "nova-tenant-001");
+    assert.equal(decodedClaims.access_subject, "operator@example.test");
+    assert.equal(decodedClaims.supabase_subject, "supabase-owner");
+    assert.equal(decodedClaims.owner_assertion_jti, "owner-proof-001");
+    assert.equal(decodedClaims.jti, "request-123");
+    assert.equal(await webcrypto.subtle.verify(
+      "RSASSA-PKCS1-v1_5",
+      await webcrypto.subtle.importKey("jwk", {
+        ...coreReceiptKeyPair.publicKey.export({ format: "jwk" }),
+        key_ops: ["verify"], ext: true,
+      }, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]),
+      Buffer.from(receiptSignature, "base64url"),
+      new TextEncoder().encode(receiptHeader + "." + receiptClaims),
+    ), true);
     assert.equal(db.batchCalls.length, 1);
     const sql = db.batchCalls[0].map(statement => statement.sql).join("\n");
     assert.match(sql, /INSERT INTO tenant_memberships/);
@@ -1143,6 +1184,7 @@ test("tenant provisioning returns the existing result only for the same dual ide
     actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: digest, supabase_issuer: "https://project.example.test/auth/v1",
     supabase_subject: "supabase-owner", nova_os_tenant_id: "nova-tenant-001", nova_os_assertion_jti: "owner-proof-001",
+    id: "provisioning-request-existing",
     tenant_id: "tenant-existing", display_name: "Research tenant", status: "active",
     membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
   }]);
@@ -1152,6 +1194,7 @@ test("tenant provisioning returns the existing result only for the same dual ide
     const result = (await response.json()).data;
     assert.equal(result.tenant_id, "tenant-existing");
     assert.equal(result.created, false);
+    assert.equal(result.mapping_receipt_id, "provisioning-request-existing");
   });
 });
 

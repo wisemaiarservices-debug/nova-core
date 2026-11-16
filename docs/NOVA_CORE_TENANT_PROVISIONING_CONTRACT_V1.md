@@ -92,6 +92,34 @@ The active tenant owner or admin may grant or revoke one exact site/action grant
 
 Only active owners/admins may read the newest 100 tenant-scoped membership, invitation and site-grant events. Event rows are append-only. Membership events capture actor, subject, prior/new role, prior/new status, reason, request ID and timestamp. Invitation events capture the corresponding invitation lifecycle, actor, subject and reason.
 
+## NOVA OS mapping receipt
+
+The dual-identity provisioning response includes a short-lived Core-signed `mapping_receipt` only after the Core tenant, initial owner, grants and immutable provisioning request have committed successfully.
+
+The receipt is RS256-signed by a dedicated Core private key and binds:
+- exact Core issuer and NOVA OS mapping audience;
+- verified Cloudflare Access issuer and subject;
+- independently verified Supabase issuer and subject;
+- exact NOVA OS tenant ID and generated Core tenant ID;
+- original idempotency key and canonical request SHA-256 digest;
+- NOVA OS owner assertion JTI;
+- stable Core provisioning-request ID as the receipt JTI;
+- issued-at and five-minute expiry.
+
+The receipt JTI is the immutable Core provisioning request ID, so retries for the same committed request can issue a fresh short-lived signature with the same durable receipt identity. The Core tenant ID is never accepted from the caller.
+
+### Core signing configuration
+
+The private Tenant API requires these server-only environment values before it performs the provisioning write:
+- `NOVA_OS_MAPPING_RECEIPT_ISSUER`
+- `NOVA_OS_MAPPING_RECEIPT_AUDIENCE`
+- `NOVA_OS_MAPPING_RECEIPT_KEY_ID`
+- `NOVA_OS_MAPPING_RECEIPT_PRIVATE_KEY` — PKCS#8 RS256 private key
+
+Missing or invalid signing configuration fails closed before provisioning database writes. The matching public JWK must be pinned in the NOVA OS mapping function under a separate configuration value. The private key must never be exposed to the gateway, browser, logs or response.
+
+The receipt is evidence that Core committed the exact provisioning request. It does not itself write the NOVA OS mapping or authorize any subsequent mapping mutation. A separate NOVA OS server-side function must verify the receipt, recheck active owner membership at mutation time and atomically set the nullable Core tenant mapping with append-only audit.
+
 ## Explicitly not implemented
 
 - Ownership transfer and owner promotion.
