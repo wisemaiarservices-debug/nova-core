@@ -1870,6 +1870,10 @@ test("identity-link pending queue is restricted to an active tenant owner and ex
 
 test("identity-link decision uses the gateway-derived owner identity and caller idempotency key", async () => {
   const db = new DB();
+  db.membershipRows = [{
+    subject: "operator@example.test", tenant_id: "tenant-a",
+    role: "tenant_owner", membership_status: "active", tenant_status: "active",
+  }];
   db.identityLinkEventRows = [];
   db.identityLinkRows = [{ id: "link-request-1", status: "pending", tenant_id: null }];
   const response = await worker.fetch(await request({},
