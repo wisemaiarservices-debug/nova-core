@@ -2,6 +2,7 @@ import { json, error } from "./http.mjs";
 import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
 import { verifyNovaOsOwnerAssertion } from "./nova-os-provisioning-auth.mjs";
 import { createNovaOsProvisioningReceiptSigner, validateNovaOsProvisioningReceiptClaims } from "./nova-os-provisioning-receipt.mjs";
+import { createNovaOsOwnerAuthorizationClient } from "./nova-os-owner-authorization.mjs";
 import { validateWaterQualityCriteriaRegistryEntry, resolveApprovedWaterQualityCriteria } from "./water-quality-criteria-registry.mjs";
 import { assessWaterQualityAgainstDeclaredCriteria } from "./water-quality-criteria-assessment.mjs";
 import { resolveWaterQualitySampleEvidence } from "./water-quality-sample-evidence.mjs";
