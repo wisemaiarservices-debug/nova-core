@@ -664,6 +664,12 @@ test("real SQLite approved identity inventory is isolated by tenant and active o
     INSERT INTO tenant_memberships (tenant_id, subject, role, status)
     VALUES (?, ?, 'tenant_owner', 'active')
   `).run(otherTenant, owner.subject);
+  // The linked Access identity must already be an active member in the tenant;
+  // identity association itself must not create membership or grants.
+  sqlite.prepare(`
+    INSERT INTO tenant_memberships (tenant_id, subject, role, status)
+    VALUES (?, 'linked-user-other-tenant', 'operator', 'active')
+  `).run(otherTenant);
 
   const otherSupabase = {
     issuer: supabaseIssuer,
