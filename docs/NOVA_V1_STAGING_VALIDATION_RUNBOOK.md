@@ -410,3 +410,23 @@ Regression coverage includes revoked, disabled and unverified sources, wrong mod
 Treat PR #232 as a required dependency before enabling new measurement-quality assessments in staging. Exact-head CI is green; still exercise revocation after observation verification but before a new assessment. Confirm no new `passed` or `failed` assessment is created after source revocation. Historical assessment retrieval and exact idempotent replay must remain auditable and must not be represented as a newly performed assessment.
 
 No staging or production database was queried or changed during this audit.
+
+
+## 15. Sensor-to-source mapping approval lifecycle gate
+
+Core PR #233 is stacked on PR #232 (which is stacked on #231). It prevents a mapping from being newly verified when its underlying source or mapped resources are no longer eligible.
+
+- Exact PR #233 head: `0ff95b3e365928c37c65719bec8059598ffc5371`.
+- Exact-head CI [run 44199115481](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44199115481) passed all three jobs: API/security tests, tenant Worker tests including disposable D1 migrations and gateway/private Worker integration, and research raster tests.
+- A mapping's `verify` decision now requires the exact source to remain verified in the same tenant; source scope must be global or the exact mapping site; tenant and site must remain active; and the mapped asset must remain active in that tenant/site.
+- If any condition fails, verification returns `sensor_source_mapping_source_not_active_or_verified` and writes no verification event. Reject/revoke decisions remain available to record governance changes.
+- Existing mapping events remain immutable. The check applies to new verification decisions only.
+
+Staging evidence required before activation:
+- [ ] Verified exact-site source and explicitly global verified source both permit approval only for the matching tenant/site/asset.
+- [ ] Unverified, rejected, revoked, disabled, wrong-tenant, wrong-site, inactive-site, inactive-tenant and inactive-asset sources/resources cannot receive a new verified mapping event.
+- [ ] Source revocation between mapping registration and reviewer approval causes verification to fail without an event.
+- [ ] Assigned independent reviewer and active tenant membership/site-grant checks remain enforced.
+- [ ] Mapping revocation after prior verification remains append-only and blocks subsequent quality assessments through the latest-event resolver.
+
+**Stop condition:** Do not enable mapping approval until PRs #231, #232 and #233 are reviewed together, their exact-head CI remains green, and the staging lifecycle cases above pass. CI is not staging E2E and this runbook does not authorize deployment or migration.
