@@ -372,3 +372,22 @@ These tests are included in the combined Core candidate's previously recorded ex
 ### Release gate
 
 Before enabling first-site or asset onboarding in staging, exercise (1) exact retry after a successful commit with response deliberately dropped, (2) changed-body retry under the same idempotency key, (3) induced batch failure before commit, and (4) owner suspension/identity-link revocation before retry. Verify the first and only first case returns the original resource when authorization remains active; all authorization failures remain denied. Capture redacted results and retain the original request key/digest securely for incident recovery.
+
+
+## 15. Observation ingestion source-revocation race (2026-11-17)
+
+### Finding
+
+The ingestion Worker checks the source's `verification_status='verified'` during `resolveObservationOwnership`, then calls `persistObservation` in a separate D1 operation. Before this follow-up, the database observation insert guard enforced tenant/site/source ownership and active-tenant state, but did not recheck the source's current verification status or module at insert time. A source could therefore be revoked after the Worker lookup and before the observation insert.
+
+### Remediation candidate
+
+Core PR #231 adds migration `0035_observation_ingestion_requires_verified_source.sql`. Its `BEFORE INSERT` trigger rechecks active tenant, active site, exact tenant/source/module scope, verified source status and either exact site scope or an explicitly global source. This makes the database insert the final lifecycle authorization boundary; the Worker's early check remains useful for request rejection and clear error handling.
+
+Regression tests cover unverified and disabled sources, verified source acceptance, revocation between early lookup and insert, explicitly global source behavior, module/tenant/site mismatch and inactive tenant/site. The SQL trigger was independently exercised against SQLite with the expected reject/accept behavior. Full GitHub CI for PR #231 is not yet reported as started or passed.
+
+### Release gate
+
+Treat PR #231 as a required dependency before enabling observation ingestion in staging. Apply migration `0035` only after the complete Core migration chain is validated on a disposable clone and the normal staging migration approval is recorded. Verify the actual Worker deployment is bound to the database containing the trigger. Do not claim the race is closed in any environment until the migration has been applied and the deployed Worker/database combination has passed the staging revocation-race test.
+
+No staging or production database was queried or changed during this source audit.
