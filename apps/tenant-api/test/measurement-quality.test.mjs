@@ -51,7 +51,8 @@ test("concurrent policy revocation requires verified to remain the latest event"
  const write=db.calls.find(x=>x.sql.includes("INSERT INTO measurement_quality_policy_events"));
  assert.match(write.sql,/ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1/);
 });
-\ntest("verified observation with exact mapping, current verified calibration and approved policy passes",async()=>{
+
+test("verified observation with exact mapping, current verified calibration and approved policy passes",async()=>{
  const r=await assessMeasurementQuality(dbFixture(),"tenant-1","obs-1","req-1");
  assert.equal(r.status,201);assert.equal(r.data.status,"passed");assert.equal(r.data.reason_code,"within_approved_policy_bounds");
 });
