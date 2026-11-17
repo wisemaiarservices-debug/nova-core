@@ -25,6 +25,7 @@ test("concurrent calibration revocation requires verified to remain the latest e
  assert.equal(r.error,"calibration_verification_state_conflict");
  assert.match(db.insertSql,/ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1/);
 });
-\ntest("requires a linked certificate before approval",async()=>{const d=fake();d.prepare=(sql)=>({bind(){return this;},async all(){if(sql.includes("FROM sensor_calibrations"))return {results:[{id:"cal-1",tenant_id:"t-1",site_id:"s-1",asset_id:"a-1",registered_by_subject:"owner",certificate_evidence_id:null}]};if(sql.includes("FROM sensor_calibration_reviewers"))return {results:[{reviewer_subject:"reviewer"}]};throw Error(sql);}});const r=await reviewSensorCalibration(d,"t-1","s-1","a-1","cal-1","reviewer","req-1",base);assert.equal(r.error,"calibration_certificate_evidence_required");});
+
+test("requires a linked certificate before approval",async()=>{const d=fake();d.prepare=(sql)=>({bind(){return this;},async all(){if(sql.includes("FROM sensor_calibrations"))return {results:[{id:"cal-1",tenant_id:"t-1",site_id:"s-1",asset_id:"a-1",registered_by_subject:"owner",certificate_evidence_id:null}]};if(sql.includes("FROM sensor_calibration_reviewers"))return {results:[{reviewer_subject:"reviewer"}]};throw Error(sql);}});const r=await reviewSensorCalibration(d,"t-1","s-1","a-1","cal-1","reviewer","req-1",base);assert.equal(r.error,"calibration_certificate_evidence_required");});
 
 test("rejects a review that cites a different certificate reference",async()=>{const r=await reviewSensorCalibration(fake(),"t-1","s-1","a-1","cal-1","reviewer","req-1",{...base,evidence_ref:"other-report"});assert.equal(r.error,"calibration_review_must_reference_registered_certificate");});
