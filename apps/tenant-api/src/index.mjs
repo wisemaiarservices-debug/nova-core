@@ -398,13 +398,14 @@ async function assessStoredCriteria(db, tenant, entryId, version, context, sampl
   }, status: 200 };
 }
 
-async function readCriteriaReviewers(db, tenant) {
+async function readCriteriaReviewers(db, tenant, subject) {
+  const reviewerAccess = "EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ? AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin'))";
   const reviewers = await rows(db.prepare(
-    "SELECT reviewer_subject, reviewer_role, jurisdiction, status, assigned_by_subject, assignment_evidence_ref, created_at FROM water_quality_criteria_reviewers WHERE tenant_id = ? ORDER BY jurisdiction, reviewer_role, reviewer_subject LIMIT 200"
-  ).bind(tenant));
+    "SELECT reviewer_subject, reviewer_role, jurisdiction, status, assigned_by_subject, assignment_evidence_ref, created_at FROM water_quality_criteria_reviewers WHERE tenant_id = ? AND " + reviewerAccess + " ORDER BY jurisdiction, reviewer_role, reviewer_subject LIMIT 200"
+  ).bind(tenant, tenant, subject));
   const events = await rows(db.prepare(
-    "SELECT reviewer_subject, reviewer_role, jurisdiction, event_type, actor_subject, evidence_ref, reason, request_id, occurred_at FROM water_quality_criteria_reviewer_events WHERE tenant_id = ? ORDER BY occurred_at DESC LIMIT 500"
-  ).bind(tenant));
+    "SELECT reviewer_subject, reviewer_role, jurisdiction, event_type, actor_subject, evidence_ref, reason, request_id, occurred_at FROM water_quality_criteria_reviewer_events WHERE tenant_id = ? AND " + reviewerAccess + " ORDER BY occurred_at DESC LIMIT 500"
+  ).bind(tenant, tenant, subject));
   return { reviewers, events };
 }
 
@@ -1614,7 +1615,7 @@ export default {
         }
         if (reviewerList) {
           if (!["tenant_owner", "tenant_admin"].includes(membership[0].role)) return error("not_found", 404);
-          const data = await readCriteriaReviewers(env.DB, tenant);
+          const data = await readCriteriaReviewers(env.DB, tenant, subject);
           return json({ data, request_id: requestId });
         }
         if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
