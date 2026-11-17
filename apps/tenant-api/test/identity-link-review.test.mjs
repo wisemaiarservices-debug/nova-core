@@ -44,7 +44,7 @@ test("pending requests are visible only to active tenant owners", async () => {
   const allowed = await listPendingIdentityLinkRequests(allowedDb, "tenant-1", actor);
   assert.equal(allowed.status, 200);
   const query = allowedDb.queries.find(sql => sql.includes("r.status = 'pending'"));
-  assert.match(query, /EXISTS \\(SELECT 1 FROM tenant_memberships owner JOIN tenants t/);
+  assert.match(query, /EXISTS \(SELECT 1 FROM tenant_memberships owner JOIN tenants t/);
   assert.match(query, /owner.subject = \? AND owner.role = 'tenant_owner' AND owner.status = 'active'/);
 });
 test("approval records owner event and guarded update atomically", async () => {
@@ -211,7 +211,7 @@ test("approved identity-link inventory enforces bounded page size and stable ten
   const inventoryQuery = db.queryBindings[1];
   assert.deepEqual(inventoryQuery.args, ["tenant-1", actor.issuer, actor.subject, 100]);
   assert.match(inventoryQuery.sql, /WHERE r\.tenant_id = \? AND r\.status = 'approved' AND r\.cloudflare_issuer = \?/);
-  assert.match(inventoryQuery.sql, /EXISTS \\(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+  assert.match(inventoryQuery.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
   assert.match(inventoryQuery.sql, /m\.subject = \? AND m\.role = 'tenant_owner' AND m\.status = 'active'/);
   assert.match(inventoryQuery.sql, /ORDER BY r\.decided_at DESC, r\.id DESC LIMIT \?/);
 });
