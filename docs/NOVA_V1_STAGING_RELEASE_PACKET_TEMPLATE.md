@@ -325,3 +325,14 @@ The assessment request key is bound to its observation. Cross-observation reuse 
 - [ ] Repeat for passed/failed and not_assessed outcomes and verify tenant isolation.
 
 The concurrent insert regression currently simulates the database conflict result; it is not a live concurrent D1 race. Independent review and staging concurrency E2E remain mandatory. CI does not authorize deployment or production activation.
+
+
+## 13. Consolidated governed ingestion and assessment candidate
+
+Draft PR [#237](https://github.com/wisemaiarservices-debug/nova-core/pull/237) consolidates PRs #231–#236 on top of #229. Consolidated head: `b433caaa156bfe3bd2c1a511bdced7ccd1bf2aaf`; runtime source head: `10659aebd639e8f66dfc327927d8a8e5293471f8`. The single commit above the runtime source adds only `docs/NOVA_V1_GOVERNED_INGESTION_ASSESSMENT_INTEGRATION.md`; no runtime files changed. No separate workflow run was reported for the docs-only commit. The unchanged runtime head passed [CI run 44202004431](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44202004431), all three jobs.
+
+- [ ] Review consolidated PR #237 and all child PRs #231–#236.
+- [ ] Do not interpret the #236 CI run as live staging concurrency evidence.
+- [ ] Complete the real staging race/replay, migration rehearsal, independent review and configuration/key reconciliation gates before activation.
+
+PR #237 remains draft/unmerged. No deployment or migration is authorized.
