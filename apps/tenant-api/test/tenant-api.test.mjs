@@ -7,7 +7,7 @@ import worker from "../src/index.mjs";
 const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
-    this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set(); this.revokeIdentityLinkAfterCheck = false;
+    this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set(); this.revokeIdentityLinkAfterCheck = false; this.revokeSiteGrantAfterAuthorization = false; this.revokeMembershipAfterAuthorization = false;
     this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.siteObservationRows = []; this.siteObservationAuthorizationRows = null; this.siteListRows = null; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
@@ -29,8 +29,16 @@ class DB {
         if (sql.includes("EXISTS (SELECT 1 FROM tenant_identity_link_requests") &&
             !(db.identityLinkRows ?? []).length) return { results: [] };
         if (sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships")) return { results: db.siteListRows ?? [] };
-        if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) return { results: db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []) };
-        if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) return { results: db.siteObservationRows ?? [] };
+        if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) {
+          const result = db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []);
+          if (db.revokeSiteGrantAfterAuthorization) db.grant = false;
+          if (db.revokeMembershipAfterAuthorization) db.membership = false;
+          return { results: result };
+        }
+        if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) {
+          if (sql.includes("EXISTS (SELECT 1 FROM tenant_memberships") && (!db.membership || !db.grant)) return { results: [] };
+          return { results: db.siteObservationRows ?? [] };
+        }
         if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
           const rows = db.membershipRows ?? (db.membership ? [{
             subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
@@ -2791,8 +2799,10 @@ test("lists bounded observations only after approved dual-identity and exact sit
     const authorization = db.calls.find(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships"));
     assert.deepEqual(authorization.args, ["operator@example.test", "tenant-a", "site-a"]);
     const read = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
-    assert.deepEqual(read.args, ["tenant-a", "site-a", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
+    assert.deepEqual(read.args, ["tenant-a", "site-a", "operator@example.test", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
       "https://example.cloudflareaccess.com", "operator@example.test"]);
+    assert.match(read.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+    assert.match(read.sql, /g\.resource_type = 'site'/);
     assert.match(read.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
     assert.match(read.sql, /ORDER BY o\.observed_at DESC, o\.id DESC LIMIT 100/);
     assert.match(read.sql, /src\.verification_status = 'verified'/);
@@ -2818,6 +2828,32 @@ test("observation feed rechecks the approved identity link in the protected data
     const protectedRead = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
     assert.ok(protectedRead);
     assert.match(protectedRead.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("observation feed rechecks membership and site grant in the protected data query", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    for (const revoked of ["membership", "site grant"]) {
+      const db = new DB();
+      db.identityLinkRows = [{ id: "approved-link-1" }];
+      db.siteObservationRows = [
+        { id: "obs-private", tenant_id: "tenant-a", site_id: "site-a", metric: "soil_moisture", value: 24, unit: "%" },
+      ];
+      if (revoked === "membership") db.revokeMembershipAfterAuthorization = true;
+      else db.revokeSiteGrantAfterAuthorization = true;
+      const response = await worker.fetch(await request({
+        "x-nova-supabase-access-token": identitySupabaseToken(),
+      }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+      assert.equal(response.status, 200, revoked);
+      assert.deepEqual((await response.json()).data, [],
+        revoked + " revoked after preliminary authorization must not disclose observations");
+      const protectedRead = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
+      assert.ok(protectedRead);
+      assert.match(protectedRead.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+      assert.match(protectedRead.sql, /g\.action = 'read'/);
+    }
   } finally { globalThis.fetch = originalFetch; }
 });
 
