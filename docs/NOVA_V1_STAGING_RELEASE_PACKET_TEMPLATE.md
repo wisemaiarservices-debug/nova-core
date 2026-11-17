@@ -309,3 +309,19 @@ For passed/failed assessments, the final database write rechecks exact observati
 - [ ] Confirm blocked attempts are durable `not_assessed` results and historical assessment records remain immutable.
 
 CI does not replace staging E2E. Production activation remains gated.
+
+
+## 12. Assessment idempotency and concurrent replay
+
+Core PR #236 exact head `10659aebd639e8f66dfc327927d8a8e5293471f8` passed [CI run 44202004431](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44202004431), all three jobs (API/security, tenant Worker/D1 integration, research raster).
+
+The assessment request key is bound to its observation. Cross-observation reuse returns `409 measurement_quality_idempotency_conflict`; same-observation replay returns the original immutable assessment. Assessment inserts use the existing unique `(tenant_id, request_id)` constraint with conflict-safe writes; concurrent losers reload the winner and verify observation identity. No migration was added.
+
+- [ ] Review PR #236 with dependencies #231–#235.
+- [ ] Verify same-observation retries return the original assessment.
+- [ ] Verify cross-observation key reuse returns 409 without disclosing another assessment.
+- [ ] Exercise true simultaneous duplicate requests against staging D1 and confirm one durable row and consistent winner responses.
+- [ ] Exercise same-key/different-observation races and confirm conflict without cross-observation disclosure.
+- [ ] Repeat for passed/failed and not_assessed outcomes and verify tenant isolation.
+
+The concurrent insert regression currently simulates the database conflict result; it is not a live concurrent D1 race. Independent review and staging concurrency E2E remain mandatory. CI does not authorize deployment or production activation.
