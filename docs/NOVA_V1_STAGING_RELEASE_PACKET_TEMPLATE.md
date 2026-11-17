@@ -298,7 +298,7 @@ CI is not staging evidence. No production enablement until independent review an
 
 ## 11. Atomic assessment-time governance gate
 
-Core PR #235 at exact head `1161afaf3e8a37a989b483015ece44d32a63b0b1` passed [CI run 44201209835](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44201209835) with all three jobs successful (API/security, tenant Worker/D1 integration, research raster).
+Core PR #235 at exact head `eb519ab020fcd9eb05bf6e74df37b0845ded7603` passed [CI run 44201439932](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44201439932) with all three jobs successful (API/security, tenant Worker/D1 integration, research raster).
 
 For passed/failed assessments, the final database write rechecks exact observation verification, active tenant/site/asset, live source, latest verified mapping, latest valid calibration, and latest effective quality policy including bounds/version. If governance changes before the write, the system records `not_assessed` with `governance_state_changed_before_assessment`, not a stale pass/fail. Historical assessments are never rewritten.
 
