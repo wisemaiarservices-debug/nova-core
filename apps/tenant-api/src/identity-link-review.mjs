@@ -106,8 +106,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
   } catch (error) {
     // A concurrent retry may have committed the same idempotency key first.
     const concurrentEvent = await exactlyOne(db.prepare(
-      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? AND tenant_id = ? LIMIT 2"
-    ).bind(idempotencyKey, tenantId));
+      "SELECT ev.link_request_id, ev.event_type, ev.tenant_id, ev.actor_cloudflare_issuer, ev.actor_cloudflare_subject, ev.reason, ev.created_at FROM tenant_identity_link_events ev WHERE ev.request_id = ? AND ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active') LIMIT 2"
+    ).bind(idempotencyKey, tenantId, actor.subject));
     if (concurrentEvent && concurrentEvent.link_request_id === requestId &&
         concurrentEvent.event_type === eventType && concurrentEvent.tenant_id === tenantId &&
         concurrentEvent.actor_cloudflare_issuer === actor.issuer &&
@@ -141,8 +141,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
     // decision has already committed. Re-read the idempotency key before
     // classifying the losing request as a conflict.
     const concurrentEvent = await exactlyOne(db.prepare(
-      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? AND tenant_id = ? LIMIT 2"
-    ).bind(idempotencyKey, tenantId));
+      "SELECT ev.link_request_id, ev.event_type, ev.tenant_id, ev.actor_cloudflare_issuer, ev.actor_cloudflare_subject, ev.reason, ev.created_at FROM tenant_identity_link_events ev WHERE ev.request_id = ? AND ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active') LIMIT 2"
+    ).bind(idempotencyKey, tenantId, actor.subject));
     if (concurrentEvent && concurrentEvent.link_request_id === requestId &&
         concurrentEvent.event_type === eventType && concurrentEvent.tenant_id === tenantId &&
         concurrentEvent.actor_cloudflare_issuer === actor.issuer &&
