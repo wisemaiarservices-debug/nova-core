@@ -47,6 +47,8 @@ class DB {
             id: args[1], tenant_id: args[0], name: "Test resource",
           }] : []) };
         }
+        if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
           const rows = db.membershipRows ?? (db.membership ? [{
@@ -78,8 +80,6 @@ class DB {
         }
         if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
-        if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
-        if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_reviewers")) {
           const reviewerRows = db.reviewerRows ?? [];
           return { results: sql.includes("SELECT DISTINCT") ? reviewerRows.slice(0, 1) : reviewerRows };
