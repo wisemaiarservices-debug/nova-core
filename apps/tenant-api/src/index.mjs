@@ -1164,8 +1164,9 @@ export default {
         !(await verifyEnvelope(env.INTERNAL_AUTH_SECRET, request.method, url.pathname, request.headers))) {
       return error("request_not_authorized", 401);
     }
-    if (tenantProvision && !configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS)?.has(subject))
-      return error("not_found", 404);
+    // The provisioning allowlist is checked inside createTenantForProvisioning
+    // only after exact committed-request recovery, so allowlist removal cannot
+    // strand a previously authorized mapping receipt.
     const supabaseToken = request.headers.get("x-nova-supabase-access-token");
     const supabaseTokenDigest = request.headers.get("x-nova-supabase-token-sha256");
     if ((supabaseToken === null) !== (supabaseTokenDigest === null)) return error("request_not_authorized", 401);
