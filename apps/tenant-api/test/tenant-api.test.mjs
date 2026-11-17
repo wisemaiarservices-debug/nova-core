@@ -657,7 +657,7 @@ test("reviewer list and immutable assignment history are restricted to tenant ow
   assert.equal(reviewerReads.length, 2);
   for (const read of reviewerReads) {
     assert.match(read.sql, /tenant_memberships m JOIN tenants t/);
-    assert.deepEqual(read.args, ["tenant-a", "tenant-a", "operator@example.test"]);
+    assert.deepEqual(read.args, ["tenant-a", "operator@example.test"]);
   }
   const viewer = new DB();
   const denied = await worker.fetch(await request({},
@@ -1330,13 +1330,13 @@ class MembershipEventsDB {
       },
       async all() {
         db.calls.push({ sql, args });
+        if (sql.includes("FROM tenant_membership_events")) return { results: db.revokeBeforeAuditRead ? [] : db.eventRows };
+        if (sql.includes("FROM tenant_membership_invitation_events")) return { results: [] };
+        if (sql.includes("FROM tenant_site_grant_events")) return { results: [] };
+        if (sql.includes("FROM tenant_resource_grant_events")) return { results: [] };
         if (sql.includes("FROM tenant_memberships")) return { results: [{
           subject: "operator@example.test", tenant_id: args[1], role: db.role, membership_status: "active",
         }] };
-        if (sql.includes("FROM tenant_membership_events")) return { results: db.revokeBeforeAuditRead ? [] : db.eventRows };
-        if (sql.includes("FROM tenant_membership_invitation_events")) return { results: db.revokeBeforeAuditRead ? [] : [] };
-        if (sql.includes("FROM tenant_site_grant_events")) return { results: db.revokeBeforeAuditRead ? [] : [] };
-        if (sql.includes("FROM tenant_resource_grant_events")) return { results: db.revokeBeforeAuditRead ? [] : [] };
         throw new Error("unexpected audit read SQL");
       },
     }; } };
@@ -1358,7 +1358,7 @@ test("tenant owners and admins read only their tenant's bounded membership audit
     assert.equal(audit[0].event_type, "membership_created");
     assert.equal(audit[0].tenant_id, "tenant-a");
     const query = db.calls.find(call => call.sql.includes("FROM tenant_membership_events"));
-    assert.deepEqual(query.args, ["tenant-a", "tenant-a", "operator@example.test"]);
+    assert.deepEqual(query.args, ["tenant-a", "operator@example.test"]);
     assert.match(query.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
     assert.match(query.sql, /m\.status = 'active' AND m\.role IN \('tenant_owner','tenant_admin'\)/);
     assert.match(query.sql, /ORDER BY created_at DESC, id DESC LIMIT 100/);
@@ -1376,7 +1376,7 @@ test("membership audit reads return no history if owner/admin authority is revok
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).data, []);
   const query = db.calls.find(call => call.sql.includes("FROM tenant_membership_events"));
-  assert.deepEqual(query.args, ["tenant-a", "tenant-a", "operator@example.test"]);
+  assert.deepEqual(query.args, ["tenant-a", "operator@example.test"]);
   assert.match(query.sql, /m\.status = 'active'/);
 });
 
