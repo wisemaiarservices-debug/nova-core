@@ -26,6 +26,11 @@ export async function reviewSensorSourceMapping(db,tenant,siteId,assetId,mapping
  if(found.results[0].registered_by_subject===reviewer)return {error:"sensor_source_mapping_submitter_cannot_review",status:409};
  const reviewerRows=await db.prepare("SELECT reviewer_subject FROM sensor_source_mapping_reviewers WHERE tenant_id=? AND site_id=? AND reviewer_subject=? AND status='active' LIMIT 2").bind(tenant,siteId,reviewer).all();
  if(!Array.isArray(reviewerRows?.results)||reviewerRows.results.length!==1)return {error:"sensor_source_mapping_reviewer_not_assigned",status:404};
+ if(body.decision==="verify"){
+  const activeSource=await db.prepare("SELECT s.id FROM sources s JOIN tenants t ON t.id=s.tenant_id AND t.status='active' JOIN sites st ON st.id=? AND st.tenant_id=s.tenant_id AND st.status='active' JOIN assets a ON a.id=? AND a.tenant_id=s.tenant_id AND a.site_id=st.id AND a.status='active' WHERE s.id=? AND s.tenant_id=? AND s.verification_status='verified' AND (s.site_id IS NULL OR s.site_id=?) LIMIT 2")
+   .bind(siteId,assetId,found.results[0].source_id,tenant,siteId).all();
+  if(!Array.isArray(activeSource?.results)||activeSource.results.length!==1)return {error:"sensor_source_mapping_source_not_active_or_verified",status:409};
+ }
  const history=await db.prepare("SELECT event_type FROM sensor_source_mapping_events WHERE tenant_id=? AND mapping_id=? ORDER BY occurred_at DESC,rowid DESC LIMIT 1").bind(tenant,mappingId).all();
  if(!Array.isArray(history?.results))throw new Error("sensor_source_mapping_history_invalid");
  const current=history.results[0]?.event_type??"registered_unverified";
