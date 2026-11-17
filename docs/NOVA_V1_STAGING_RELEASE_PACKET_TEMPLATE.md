@@ -273,9 +273,9 @@ A response lost after a site/asset commit is not a reason to create a replacemen
 
 ## 9. Sensor-to-source mapping approval lifecycle
 
-Core PR #233 is a draft child of PR #232, following PR #231. Exact-head CI passed at `0ff95b3e365928c37c65719bec8059598ffc5371`, run [44199115481](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44199115481), with all three jobs successful (API/security, tenant Worker/D1 integration, research raster).
+Core PR #233 is a draft child of PR #232, following PR #231. Exact-head CI passed at `bb901fe9cc4ef67ded575b2b8d34873a4085df1a`, run [44199420503](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44199420503), with all three jobs successful (API/security, tenant Worker/D1 integration, research raster).
 
-The mapping verification path now checks that the exact source remains verified in the same tenant, is global or scoped to the exact mapping site, and that the tenant, site and mapped asset remain active. Invalid lifecycle or scope produces `sensor_source_mapping_source_not_active_or_verified` without a verification event. Reject/revoke actions remain available; immutable history is not rewritten.
+The final mapping-event INSERT atomically rechecks that the exact source remains verified in the same tenant, is global or scoped to the exact mapping site, and that the tenant, site and mapped asset remain active. It also rechecks active tenant membership, reviewer assignment and exact mapping identity at write time. Invalid lifecycle or scope produces `sensor_source_mapping_source_not_active_or_verified` without a verification event. Reject/revoke actions remain available; immutable history is not rewritten.
 
 - [ ] Review PR #233 together with dependencies #231 and #232.
 - [ ] Verify exact-site and global-source happy paths in staging.
