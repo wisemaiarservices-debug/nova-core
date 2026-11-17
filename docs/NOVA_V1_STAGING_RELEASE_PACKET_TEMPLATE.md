@@ -154,3 +154,17 @@ Stop the staging flow immediately if any unexpected tenant write, duplicate tena
 | Staging exit | NOT APPROVED | <release authority> | <signed packet> |
 
 **This packet authorizes nothing by itself.** Staging execution requires explicit approval through the organization's release process. Production remains a separate decision requiring independent security sign-off, production key custody/rotation, monitoring, rollback rehearsal, pilot approval and explicit production authorization.
+
+
+## 8. Follow-up Core response-boundary hardening
+
+Record whether Core PR #228 is included in the coordinated staging candidate.
+
+- [ ] PR #228 exact reviewed/deployed SHA recorded: `46ca757c110313270f7212dab91a933dbdb47e44` (re-fetch before staging).
+- [ ] Exact-head CI [run 44189340065](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44189340065) verified successful for API, tenant Worker/D1 integration, and research raster tests.
+- [ ] Streaming response reader enforces 16 KiB before unbounded buffering; oversized streams are cancelled; malformed/oversized Content-Length is rejected before body read.
+- [ ] Exact 16 KiB acceptance and rejection/cancellation regression tests reviewed.
+- [ ] Coordinated Core integration branch includes the reviewed PR #228 change; record final combined SHA and rerun all affected checks.
+- [ ] PR #228 remains draft/unmerged until independent review and explicit staging approval.
+
+This follow-up changes the Core private authorization HTTP response handling only. It does not replace the cross-repository staging E2E matrix, key custody review, migration checks, or release approvals.
