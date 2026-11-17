@@ -657,7 +657,7 @@ test("reviewer list and immutable assignment history are restricted to tenant ow
   assert.equal(reviewerReads.length, 2);
   for (const read of reviewerReads) {
     assert.match(read.sql, /tenant_memberships m JOIN tenants t/);
-    assert.deepEqual(read.args, ["tenant-a", "operator@example.test"]);
+    assert.deepEqual(read.args, ["tenant-a", "tenant-a", "operator@example.test"]);
   }
   const viewer = new DB();
   const denied = await worker.fetch(await request({},
