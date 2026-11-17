@@ -15,10 +15,10 @@ class DB {
     const db = this;
     return { sql, args: [], bind(...args) { this.args = args; db.queryBindings.push({ sql, args }); return this; },
       async all() {
-        if (this.sql.includes("FROM tenant_identity_link_events WHERE request_id")) {
+        if (this.sql.includes("FROM tenant_identity_link_events")) {
           return { results: db.priorEvent && !db.revokeAfterOwnerCheck ? [db.priorEvent] : [] };
         }
-        if (this.sql.includes("FROM tenant_memberships m JOIN tenants")) {
+        if (this.sql.startsWith("SELECT m.subject FROM tenant_memberships m JOIN tenants")) {
           return { results: db.owner ? [{ subject: this.args[1] }] : [] };
         }
         if (this.sql.includes("FROM tenant_identity_link_requests r WHERE r.id")) {
@@ -115,7 +115,7 @@ test("globally unique idempotency-key collisions return a generic conflict witho
     "approve", "Reviewed independently", "key-used-in-another-tenant");
   assert.equal(result.status, 409);
   assert.equal(result.error, "identity_link_idempotency_conflict");
-  const eventReads = db.queries.filter(sql => sql.includes("FROM tenant_identity_link_events WHERE request_id"));
+  const eventReads = db.queries.filter(sql => sql.includes("FROM tenant_identity_link_events"));
   assert.equal(eventReads.length, 2);
   assert.ok(eventReads.every(sql => sql.includes("tenant_id = ?")));
   assert.ok(eventReads.every(sql => sql.includes("m.role = 'tenant_owner' AND m.status = 'active'")));
