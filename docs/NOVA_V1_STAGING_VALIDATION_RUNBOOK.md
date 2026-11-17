@@ -269,3 +269,74 @@ Core Worker configuration must supply the owner assertion verifier issuer/audien
 - [ ] Record observed results, request correlation IDs and redacted evidence; do not treat source inspection or CI as a substitute.
 
 The static audit found the source contracts aligned at the refs above. No deployed secrets, staging migrations, live requests, tenant provisioning, production configuration or customer-data operations were performed. Production remains blocked.
+
+
+## 13. Migration preflight and recovery sequence audit (2026-11-17)
+
+### Migration-order findings
+
+The reviewed OS chain is timestamp-ordered and must be applied in order:
+
+1. `20261116110000_nova_core_tenant_mapping.sql`
+2. `20261116120000_nova_core_provisioning_attempts.sql`
+3. `20261116130000_nova_core_tenant_mapping_receipts.sql`
+4. `20261116140000_nova_core_mapping_audit_privileges.sql`
+5. `20261116150000_nova_tenant_membership_admin.sql`
+6. `20261116160000_nova_tenant_invitations.sql`
+7. `20261116170000_nova_core_owner_assertion_issuance_guard.sql`
+8. `20261116180000_nova_core_mapping_owner_assertion_binding.sql`
+9. `20261116190000_nova_core_owner_authorization_consumption.sql`
+10. `20261116191000_nova_core_mapping_authorization_permit_binding.sql`
+
+Core migration `0034_nova_os_owner_authorization_permit.sql` follows Core migrations `0026`–`0033` in the Core migration ledger.
+
+The OS migration at timestamp `20261116180000` adds a NOT NULL owner-assertion reference to existing mapping events after backfilling from `nova_core_provisioning_attempts`. It intentionally aborts if any historical mapping event cannot be matched on tenant, actor and idempotency key. Therefore a successful clean-database CI migration is not sufficient evidence that a populated staging database can migrate.
+
+### Mandatory read-only OS preflight
+
+Run against a read-only snapshot of the target staging database before applying migration `20261116180000`. This query uses only tables/columns created by the preceding migrations:
+
+```sql
+SELECT
+  mapping.tenant_id,
+  mapping.actor_user_id,
+  mapping.idempotency_key,
+  mapping.receipt_jti
+FROM public.nova_core_tenant_mapping_events AS mapping
+LEFT JOIN public.nova_core_provisioning_attempts AS attempt
+  ON attempt.tenant_id = mapping.tenant_id
+ AND attempt.actor_user_id = mapping.actor_user_id
+ AND attempt.idempotency_key = mapping.idempotency_key
+WHERE attempt.id IS NULL;
+```
+
+Expected result: zero rows. Any row is a hard stop; do not fabricate owner attempts, delete audit history, or weaken the migration. Escalate for a separately reviewed legacy-data reconciliation plan.
+
+Also record counts before/after each migration for the tenant mapping, provisioning attempt/event, mapping receipt event and authorization ledger tables. Confirm no pre-existing mapping is silently reinterpreted as a newly consumed authorization. Migration `20261116191000` permits legacy mapping events to retain NULL permit/correlation fields as historical records, but the new mapping RPC requires the exact non-NULL permit and correlation tuple for new mappings.
+
+### Recommended staging sequence
+
+1. Take and verify a restorable staging backup; rehearse restoration separately.
+2. Freeze provisioning and tenant-owner/membership lifecycle writes for the migration window.
+3. Run the read-only compatibility query above and inspect the full migration ledger.
+4. Apply the OS migrations in exact timestamp order to a disposable clone first, then to staging only after explicit staging authorization.
+5. Apply Core migrations `0026`–`0034` in exact numeric order to a disposable clone first; verify the permit-binding triggers reject missing or malformed permit tuples.
+6. Provision and verify the OS HMAC key ring, owner-assertion signer/public JWK and permit signer/Core-pinned public JWK through approved secret management. Reconcile issuer, audience and key IDs before enabling requests.
+7. Deploy the OS private authorization endpoint and mapping Edge Function with the exact matching configuration; verify health/configuration without sending customer provisioning requests.
+8. Deploy the Core Worker with the matching HMAC client, owner assertion verifier and permit verifier. Keep provisioning disabled until both sides' smoke tests and reviewer sign-off are complete.
+9. Execute the approved staging E2E matrix and preserve redacted evidence. Re-enable provisioning only after explicit release approval.
+
+This is a proposed safe order for review, not an authorization to execute it. Confirm actual deployment tooling and compatibility/rollback behavior with the release owner before use.
+
+### Recovery semantics and stop conditions
+
+- **OS nonce reserved, owner assertion invalid or request malformed:** the nonce remains consumed. Retry only with a fresh timestamp, nonce and HMAC signature. Never delete the nonce to permit replay.
+- **OS authorization consumed, Core did not commit:** retry the exact original provisioning tuple. OS may accept the expired assertion only as an exact replay of the already-consumed authorization; a fresh first-use authorization still requires a valid assertion. Use a fresh HMAC nonce for every retry.
+- **Core committed, response was lost:** Core must resolve the exact existing durable provisioning request and return its prior receipt without creating another tenant, obtaining a new OS permit, or reactivating access.
+- **Core committed, OS mapping did not complete:** retry mapping with the same signed Core receipt and exact consumed permit tuple. The OS mapping transaction atomically writes the mapping event and tenant mapping. A changed tuple or different Core tenant is a conflict requiring incident review.
+- **Owner or tenant suspended after OS authorization consumption:** mapping may complete from the immutable consumed permit because authorization linearized at consumption. Mapping does not reactivate the tenant or grant site/resource access. Subsequent protected operations must still enforce current membership and grants.
+- **Migration or deployment partially completed:** stop new provisioning, preserve ledgers and logs, identify the last completed migration/deployment SHA, and use a reviewed forward-recovery or restore plan. Do not manually delete authorization, receipt, mapping or audit records; do not assume destructive down-migrations are safe.
+
+### Evidence status
+
+The source migrations were inspected at OS #61 head `2b6da562cdb1df354e04d6969ca2d54b646914e3` and Core #229 head `8063ad968f6af50874b733186385fc7493b2cbfd`. This review establishes source ordering and the legacy backfill precondition only. The target staging migration ledger, populated-data preflight, backup restore, live cross-repository recovery tests and staging approval remain outstanding. No staging or production database was queried or changed.
