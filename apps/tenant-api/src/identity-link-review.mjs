@@ -44,8 +44,8 @@ export async function listPendingIdentityLinkRequests(db, tenantId, actor, limit
   ).bind(tenantId, actor.subject));
   if (!owner) return { error: "not_found", status: 404 };
   const result = await db.prepare(
-    "SELECT r.id, r.supabase_issuer, r.supabase_subject, r.cloudflare_issuer, r.cloudflare_subject, r.created_at FROM tenant_identity_link_requests r WHERE r.status = 'pending' AND r.cloudflare_issuer = ? AND r.cloudflare_subject <> ? AND (r.tenant_id IS NULL OR r.tenant_id = ?) AND EXISTS (SELECT 1 FROM tenant_memberships requester WHERE requester.tenant_id = ? AND requester.subject = r.cloudflare_subject AND requester.status = 'active') ORDER BY r.created_at ASC, r.id ASC LIMIT ?"
-  ).bind(actor.issuer, actor.subject, tenantId, tenantId, limit).all();
+    "SELECT r.id, r.supabase_issuer, r.supabase_subject, r.cloudflare_issuer, r.cloudflare_subject, r.created_at FROM tenant_identity_link_requests r WHERE r.status = 'pending' AND r.cloudflare_issuer = ? AND r.cloudflare_subject <> ? AND (r.tenant_id IS NULL OR r.tenant_id = ?) AND EXISTS (SELECT 1 FROM tenant_memberships requester WHERE requester.tenant_id = ? AND requester.subject = r.cloudflare_subject AND requester.status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships owner JOIN tenants t ON t.id = owner.tenant_id AND t.status = 'active' WHERE owner.tenant_id = ? AND owner.subject = ? AND owner.role = 'tenant_owner' AND owner.status = 'active') ORDER BY r.created_at ASC, r.id ASC LIMIT ?"
+  ).bind(actor.issuer, actor.subject, tenantId, tenantId, tenantId, actor.subject, limit).all();
   if (!Array.isArray(result?.results)) throw new Error("identity_link_review_storage_invalid");
   return { data: result.results, status: 200 };
 }
@@ -67,8 +67,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
   if (!owner) return { error: "not_found", status: 404 };
 
   const priorEvent = await exactlyOne(db.prepare(
-    "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? AND tenant_id = ? LIMIT 2"
-  ).bind(idempotencyKey, tenantId));
+    "SELECT ev.link_request_id, ev.event_type, ev.tenant_id, ev.actor_cloudflare_issuer, ev.actor_cloudflare_subject, ev.reason, ev.created_at FROM tenant_identity_link_events ev WHERE ev.request_id = ? AND ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active') LIMIT 2"
+  ).bind(idempotencyKey, tenantId, actor.subject));
   const expectedEvent = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "revoked";
   if (priorEvent) {
     if (priorEvent.link_request_id === requestId && priorEvent.event_type === expectedEvent &&
@@ -106,8 +106,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
   } catch (error) {
     // A concurrent retry may have committed the same idempotency key first.
     const concurrentEvent = await exactlyOne(db.prepare(
-      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? AND tenant_id = ? LIMIT 2"
-    ).bind(idempotencyKey, tenantId));
+      "SELECT ev.link_request_id, ev.event_type, ev.tenant_id, ev.actor_cloudflare_issuer, ev.actor_cloudflare_subject, ev.reason, ev.created_at FROM tenant_identity_link_events ev WHERE ev.request_id = ? AND ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active') LIMIT 2"
+    ).bind(idempotencyKey, tenantId, actor.subject));
     if (concurrentEvent && concurrentEvent.link_request_id === requestId &&
         concurrentEvent.event_type === eventType && concurrentEvent.tenant_id === tenantId &&
         concurrentEvent.actor_cloudflare_issuer === actor.issuer &&
@@ -141,8 +141,8 @@ export async function decideIdentityLinkRequest(db, tenantId, requestId, actor,
     // decision has already committed. Re-read the idempotency key before
     // classifying the losing request as a conflict.
     const concurrentEvent = await exactlyOne(db.prepare(
-      "SELECT link_request_id, event_type, tenant_id, actor_cloudflare_issuer, actor_cloudflare_subject, reason, created_at FROM tenant_identity_link_events WHERE request_id = ? AND tenant_id = ? LIMIT 2"
-    ).bind(idempotencyKey, tenantId));
+      "SELECT ev.link_request_id, ev.event_type, ev.tenant_id, ev.actor_cloudflare_issuer, ev.actor_cloudflare_subject, ev.reason, ev.created_at FROM tenant_identity_link_events ev WHERE ev.request_id = ? AND ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active') LIMIT 2"
+    ).bind(idempotencyKey, tenantId, actor.subject));
     if (concurrentEvent && concurrentEvent.link_request_id === requestId &&
         concurrentEvent.event_type === eventType && concurrentEvent.tenant_id === tenantId &&
         concurrentEvent.actor_cloudflare_issuer === actor.issuer &&
@@ -171,8 +171,8 @@ export async function listApprovedIdentityLinkRequests(db, tenantId, actor, limi
   ).bind(tenantId, actor.subject));
   if (!owner) return { error: "not_found", status: 404 };
   const result = await db.prepare(
-    "SELECT r.id, r.supabase_issuer, r.supabase_subject, r.cloudflare_issuer, r.cloudflare_subject, r.created_at, r.decided_at, r.decided_by_cloudflare_subject, r.reason FROM tenant_identity_link_requests r WHERE r.tenant_id = ? AND r.status = 'approved' AND r.cloudflare_issuer = ? ORDER BY r.decided_at DESC, r.id DESC LIMIT ?"
-  ).bind(tenantId, actor.issuer, limit).all();
+    "SELECT r.id, r.supabase_issuer, r.supabase_subject, r.cloudflare_issuer, r.cloudflare_subject, r.created_at, r.decided_at, r.decided_by_cloudflare_subject, r.reason FROM tenant_identity_link_requests r WHERE r.tenant_id = ? AND r.status = 'approved' AND r.cloudflare_issuer = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = r.tenant_id AND m.subject = ? AND m.role = 'tenant_owner' AND m.status = 'active') ORDER BY r.decided_at DESC, r.id DESC LIMIT ?"
+  ).bind(tenantId, actor.issuer, actor.subject, limit).all();
   if (!Array.isArray(result?.results)) throw new Error("identity_link_review_storage_invalid");
   return { data: result.results, status: 200 };
 }

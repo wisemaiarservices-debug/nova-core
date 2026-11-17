@@ -2178,7 +2178,7 @@ test("identity-link pending queue is restricted to an active tenant owner and ex
   assert.equal((await response.json()).data[0].id, "link-request-1");
   const pendingQuery = db.calls.find(call => call.sql.includes("FROM tenant_identity_link_requests"));
   assert.deepEqual(pendingQuery.args, ["https://example.cloudflareaccess.com",
-    "operator@example.test", "tenant-a", "tenant-a", 50]);
+    "operator@example.test", "tenant-a", "tenant-a", "tenant-a", "operator@example.test", 50]);
   assert.equal(db.calls.some(call => call.args?.includes("tenant-b")), false);
 });
 
@@ -2806,7 +2806,7 @@ test("approved identity-link inventory requires an active tenant owner and exact
   const ownerQuery = db.calls.find(call => call.sql.includes("FROM tenant_memberships m JOIN tenants t"));
   assert.deepEqual(ownerQuery.args, ["tenant-a", "operator@example.test"]);
   const approvedQuery = db.calls.find(call => call.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'"));
-  assert.deepEqual(approvedQuery.args, ["tenant-a", "https://example.cloudflareaccess.com", 20]);
+  assert.deepEqual(approvedQuery.args, ["tenant-a", "https://example.cloudflareaccess.com", "operator@example.test", 20]);
   assert.match(approvedQuery.sql, /r\.cloudflare_issuer = \?/);
 });
 

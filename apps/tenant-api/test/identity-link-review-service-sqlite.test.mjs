@@ -179,7 +179,7 @@ test("pending identity-link queue binds an exact tenant scope for existing and u
   assert.equal(result.status, 200);
   const queue = calls.find(call => call.sql.includes("FROM tenant_identity_link_requests"));
   assert.ok(queue.sql.includes("(r.tenant_id IS NULL OR r.tenant_id = ?)"));
-  assert.deepEqual(queue.args, [owner.issuer, owner.subject, tenantId, tenantId, 50]);
+  assert.deepEqual(queue.args, [owner.issuer, owner.subject, tenantId, tenantId, tenantId, owner.subject, 50]);
 });
 
 test("real SQLite migrations enforce owner approval and revocation after requester deactivation", async t => {
