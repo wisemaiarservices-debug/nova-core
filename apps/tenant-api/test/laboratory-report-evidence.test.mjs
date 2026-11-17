@@ -17,7 +17,7 @@ const body = {
 };
 
 function database() {
-  const state = { evidence: null, events: [], batches: 0, statements: [] };
+  const state = { evidence: null, events: [], batches: 0, statements: [], readAuthorized: true };
   const db = {
     state,
     prepare(sql) {
@@ -31,7 +31,7 @@ function database() {
               byte_length: state.evidence.byte_length }] : [] };
           }
           if (sql.includes("FROM laboratory_report_evidence e")) {
-            return { results: state.evidence ? [state.evidence] : [] };
+            return { results: state.evidence && state.readAuthorized ? [state.evidence] : [] };
           }
           throw new Error("unexpected query: " + sql);
         },
@@ -86,12 +86,20 @@ test("same site and same bytes are idempotent and do not duplicate history", asy
   assert.equal(db.state.events.length, 1);
 });
 
-test("retrieves the persisted bytes only after recomputing and matching the stored digest", async () => {
+test("retrieves persisted bytes only inside the final active membership and site-grant query", async () => {
   const db = database();
   const created = await registerLaboratoryReportEvidence(db, "tenant-a", "owner@example.test", "request-1", body);
   const result = await readLaboratoryReportEvidence(db, "tenant-a", "reader@example.test", "site-a", created.data.id);
   assert.equal(result.evidence_ref, "lab-report:" + created.data.id);
   assert.equal(Buffer.from(result.document_base64, "base64").toString(), Buffer.from(bytes).toString());
+  const read = db.state.statements.find(statement => statement.sql.includes("FROM laboratory_report_evidence e"));
+  assert.ok(read);
+  assert.match(read.sql, /tenant_memberships m/);
+  assert.match(read.sql, /tenant_resource_grants g/);
+  assert.deepEqual(read.values, ["tenant-a", "site-a", created.data.id, "reader@example.test"]);
+  db.state.readAuthorized = false;
+  assert.equal(await readLaboratoryReportEvidence(db, "tenant-a", "reader@example.test", "site-a", created.data.id), null);
+  db.state.readAuthorized = true;
   db.state.evidence.document_bytes = new TextEncoder().encode("%PDF-tampered");
   await assert.rejects(() => readLaboratoryReportEvidence(db, "tenant-a", "reader@example.test", "site-a", created.data.id),
     /laboratory_report_persisted_digest_mismatch/);

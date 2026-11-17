@@ -31,11 +31,11 @@ const RESOURCE_GRANT_INSERT_SQL = {
   observation: "INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resource_id, action) SELECT ?, ?, ?, 'observation', ?, ? WHERE EXISTS (SELECT 1 FROM tenants WHERE id = ? AND status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships WHERE id = ? AND tenant_id = ? AND subject = ? AND status = 'active') AND EXISTS (SELECT 1 FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.id = ? AND o.tenant_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL)) AND EXISTS (SELECT 1 FROM tenant_memberships actor_m WHERE actor_m.tenant_id = ? AND actor_m.subject = ? AND actor_m.status = 'active' AND actor_m.role IN ('tenant_owner', 'tenant_admin')) ON CONFLICT(tenant_id, subject, resource_type, resource_id, action) DO NOTHING",
 };
 const RESOURCE_SQL = {
-  site: "SELECT id, tenant_id, name, description, latitude, longitude, timezone, status, metadata_json, created_at, updated_at FROM sites WHERE tenant_id = ? AND id = ? LIMIT 1",
-  asset: "SELECT id, tenant_id, site_id, name, asset_type, external_ref, status, metadata_json, created_at, updated_at FROM assets WHERE tenant_id = ? AND id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM sites s WHERE s.id = assets.site_id AND s.tenant_id = assets.tenant_id AND s.status = 'active') LIMIT 1",
-  source: "SELECT id, tenant_id, site_id, module, provider, source_type, display_name, verification_status, verification_method, license_reference, metadata_json, created_at, updated_at FROM sources WHERE tenant_id = ? AND id = ? AND verification_status = 'verified' AND (site_id IS NULL OR EXISTS (SELECT 1 FROM sites s WHERE s.id = sources.site_id AND s.tenant_id = sources.tenant_id AND s.status = 'active')) LIMIT 1",
-  observation: "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, ingested_at, verification_status, provenance_json, quality_flags_json, retention_until FROM observations WHERE tenant_id = ? AND id = ? AND EXISTS (SELECT 1 FROM sites s WHERE s.id = observations.site_id AND s.tenant_id = observations.tenant_id AND s.status = 'active') AND EXISTS (SELECT 1 FROM sources src WHERE src.id = observations.source_id AND src.tenant_id = observations.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = observations.site_id)) AND (asset_id IS NULL OR EXISTS (SELECT 1 FROM assets a WHERE a.id = observations.asset_id AND a.tenant_id = observations.tenant_id AND a.site_id = observations.site_id AND a.status = 'active')) LIMIT 1",
-  audit_event: "SELECT id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json FROM audit_events WHERE tenant_id = ? AND id = ? LIMIT 1",
+  site: "SELECT id, tenant_id, name, description, latitude, longitude, timezone, status, metadata_json, created_at, updated_at FROM sites WHERE tenant_id = ? AND id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = m.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = sites.id AND g.action = 'read' WHERE m.tenant_id = sites.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service')) LIMIT 1",
+  asset: "SELECT id, tenant_id, site_id, name, asset_type, external_ref, status, metadata_json, created_at, updated_at FROM assets WHERE tenant_id = ? AND id = ? AND status = 'active' AND EXISTS (SELECT 1 FROM sites s WHERE s.id = assets.site_id AND s.tenant_id = assets.tenant_id AND s.status = 'active') AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = m.tenant_id AND g.subject = m.subject AND g.resource_type = 'asset' AND g.resource_id = assets.id AND g.action = 'read' WHERE m.tenant_id = assets.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service')) LIMIT 1",
+  source: "SELECT id, tenant_id, site_id, module, provider, source_type, display_name, verification_status, verification_method, license_reference, metadata_json, created_at, updated_at FROM sources WHERE tenant_id = ? AND id = ? AND verification_status = 'verified' AND (site_id IS NULL OR EXISTS (SELECT 1 FROM sites s WHERE s.id = sources.site_id AND s.tenant_id = sources.tenant_id AND s.status = 'active')) AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = m.tenant_id AND g.subject = m.subject AND g.resource_type = 'source' AND g.resource_id = sources.id AND g.action = 'read' WHERE m.tenant_id = sources.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service')) LIMIT 1",
+  observation: "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, ingested_at, verification_status, provenance_json, quality_flags_json, retention_until FROM observations WHERE tenant_id = ? AND id = ? AND EXISTS (SELECT 1 FROM sites s WHERE s.id = observations.site_id AND s.tenant_id = observations.tenant_id AND s.status = 'active') AND EXISTS (SELECT 1 FROM sources src WHERE src.id = observations.source_id AND src.tenant_id = observations.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = observations.site_id)) AND (asset_id IS NULL OR EXISTS (SELECT 1 FROM assets a WHERE a.id = observations.asset_id AND a.tenant_id = observations.tenant_id AND a.site_id = observations.site_id AND a.status = 'active')) AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = m.tenant_id AND g.subject = m.subject AND g.resource_type = 'observation' AND g.resource_id = observations.id AND g.action = 'read' WHERE m.tenant_id = observations.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service')) LIMIT 1",
+  audit_event: "SELECT id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json FROM audit_events WHERE tenant_id = ? AND id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = m.tenant_id AND g.subject = m.subject AND g.resource_type = 'audit_event' AND g.resource_id = audit_events.id AND g.action = 'read' WHERE m.tenant_id = audit_events.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service')) LIMIT 1",
 };
 function validSubject(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 200 &&
@@ -82,14 +82,14 @@ async function consumeRequestId(db, requestId, issuedAt) {
   }
   return result.meta.changes === 1;
 }
-async function readSiteObservations(db, subject, tenant, siteId) {
+async function readSiteObservations(db, subject, tenant, siteId, accessIssuer, supabaseIdentity) {
   const authorized = await rows(db.prepare(
     "SELECT s.id FROM sites s JOIN tenant_memberships m ON m.tenant_id = s.tenant_id AND m.subject = ? AND m.status = 'active' JOIN tenants t ON t.id = s.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = s.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = s.id AND g.action = 'read' WHERE s.tenant_id = ? AND s.id = ? AND s.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service') LIMIT 1"
   ).bind(subject, tenant, siteId));
   if (authorized.length !== 1 || authorized[0].id !== siteId) return null;
   return await rows(db.prepare(
-    "SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric, o.value, o.unit, o.observed_at, o.ingested_at, o.verification_status, o.provenance_json, o.quality_flags_json, o.retention_until FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.tenant_id = ? AND o.site_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL) ORDER BY o.observed_at DESC, o.id DESC LIMIT 100"
-  ).bind(tenant, siteId));
+    "SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric, o.value, o.unit, o.observed_at, o.ingested_at, o.verification_status, o.provenance_json, o.quality_flags_json, o.retention_until FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.tenant_id = ? AND o.site_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL) AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = m.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = o.site_id AND g.action = 'read' WHERE m.tenant_id = o.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service')) AND EXISTS (SELECT 1 FROM tenant_identity_link_requests il WHERE il.tenant_id = o.tenant_id AND il.status = 'approved' AND il.supabase_issuer = ? AND il.supabase_subject = ? AND il.cloudflare_issuer = ? AND il.cloudflare_subject = ?) ORDER BY o.observed_at DESC, o.id DESC LIMIT 100"
+  ).bind(tenant, siteId, subject, supabaseIdentity.issuer, supabaseIdentity.subject, accessIssuer, subject));
 }
 async function readResource(db, subject, tenant, type, id) {
   const membership = await rows(db.prepare(
@@ -104,7 +104,7 @@ async function readResource(db, subject, tenant, type, id) {
   ).bind(tenant, subject, type, id));
   if (!grantRows.some(g => g.subject === subject && g.tenant_id === tenant &&
       g.resource_type === type && g.resource_id === id && g.action === "read")) return null;
-  const record = await rows(db.prepare(RESOURCE_SQL[type]).bind(tenant, id));
+  const record = await rows(db.prepare(RESOURCE_SQL[type]).bind(tenant, id, subject));
   if (record.length !== 1 || record[0].tenant_id !== tenant || record[0].id !== id) return null;
   return record[0];
 }
@@ -398,13 +398,14 @@ async function assessStoredCriteria(db, tenant, entryId, version, context, sampl
   }, status: 200 };
 }
 
-async function readCriteriaReviewers(db, tenant) {
+async function readCriteriaReviewers(db, tenant, subject) {
+  const reviewerAccess = "EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ? AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin'))";
   const reviewers = await rows(db.prepare(
-    "SELECT reviewer_subject, reviewer_role, jurisdiction, status, assigned_by_subject, assignment_evidence_ref, created_at FROM water_quality_criteria_reviewers WHERE tenant_id = ? ORDER BY jurisdiction, reviewer_role, reviewer_subject LIMIT 200"
-  ).bind(tenant));
+    "SELECT reviewer_subject, reviewer_role, jurisdiction, status, assigned_by_subject, assignment_evidence_ref, created_at FROM water_quality_criteria_reviewers WHERE tenant_id = ? AND " + reviewerAccess + " ORDER BY jurisdiction, reviewer_role, reviewer_subject LIMIT 200"
+  ).bind(tenant, tenant, subject));
   const events = await rows(db.prepare(
-    "SELECT reviewer_subject, reviewer_role, jurisdiction, event_type, actor_subject, evidence_ref, reason, request_id, occurred_at FROM water_quality_criteria_reviewer_events WHERE tenant_id = ? ORDER BY occurred_at DESC LIMIT 500"
-  ).bind(tenant));
+    "SELECT reviewer_subject, reviewer_role, jurisdiction, event_type, actor_subject, evidence_ref, reason, request_id, occurred_at FROM water_quality_criteria_reviewer_events WHERE tenant_id = ? AND " + reviewerAccess + " ORDER BY occurred_at DESC LIMIT 500"
+  ).bind(tenant, tenant, subject));
   return { reviewers, events };
 }
 
@@ -418,24 +419,36 @@ async function hasSiteReadGrant(db, tenant, subject, siteId) {
 }
 
 async function readCriteriaRegistry(db, tenant, entryId, version, subject) {
+  const visibility = `(
+    (EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active'
+      WHERE m.tenant_id = e.tenant_id AND m.subject = ? AND m.status = 'active'
+        AND m.role IN ('tenant_owner','tenant_admin','operator','analyst','viewer','service'))
+      AND (e.site_id IS NULL OR EXISTS (SELECT 1 FROM tenant_resource_grants g
+        WHERE g.tenant_id = e.tenant_id AND g.subject = ? AND g.resource_type = 'site'
+          AND g.resource_id = e.site_id AND g.action = 'read')))
+    OR EXISTS (SELECT 1 FROM water_quality_criteria_reviewers r
+      JOIN tenants rt ON rt.id = r.tenant_id AND rt.status = 'active'
+      WHERE r.tenant_id = e.tenant_id AND r.reviewer_subject = ?
+        AND r.jurisdiction = e.jurisdiction AND r.status = 'active')
+  )`;
   if (entryId === null) {
     const result = await rows(db.prepare(
-      "SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at, (SELECT ev.event_type FROM water_quality_criteria_events ev WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version ORDER BY ev.rowid DESC LIMIT 1) AS lifecycle_status FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND (e.site_id IS NULL OR EXISTS (SELECT 1 FROM tenant_resource_grants g WHERE g.tenant_id = e.tenant_id AND g.subject = ? AND g.resource_type = 'site' AND g.resource_id = e.site_id AND g.action = 'read') OR EXISTS (SELECT 1 FROM water_quality_criteria_reviewers r WHERE r.tenant_id = e.tenant_id AND r.reviewer_subject = ? AND r.jurisdiction = e.jurisdiction AND r.status = 'active')) ORDER BY e.jurisdiction, e.id, e.version LIMIT 100"
-    ).bind(tenant, subject, subject));
+      `SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at, (SELECT ev.event_type FROM water_quality_criteria_events ev WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version ORDER BY ev.rowid DESC LIMIT 1) AS lifecycle_status FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND ${visibility} ORDER BY e.jurisdiction, e.id, e.version LIMIT 100`
+    ).bind(tenant, subject, subject, subject));
     return result.map(row => ({ ...row, entry: JSON.parse(row.entry_json), entry_json: undefined }));
   }
   const result = await rows(db.prepare(
-    "SELECT id, site_id, jurisdiction, version, title, entry_json, source_document_sha256, source_evidence_ref, published_on, effective_from, effective_to, supersedes_entry_id, supersedes_entry_version, created_by_subject, created_at FROM water_quality_criteria_entries WHERE tenant_id = ? AND id = ? AND version = ? LIMIT 1"
-  ).bind(tenant, entryId, version));
+    `SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND e.id = ? AND e.version = ? AND ${visibility} LIMIT 1`
+  ).bind(tenant, entryId, version, subject, subject, subject));
   if (result.length !== 1) return null;
   const row = result[0];
   const [events, approvals] = await Promise.all([
     rows(db.prepare(
-      "SELECT event_type, actor_subject, reason, request_id, occurred_at FROM water_quality_criteria_events WHERE tenant_id = ? AND entry_id = ? AND entry_version = ? ORDER BY rowid ASC LIMIT 100"
-    ).bind(tenant, entryId, version)),
+      `SELECT ev.event_type, ev.actor_subject, ev.reason, ev.request_id, ev.occurred_at FROM water_quality_criteria_events ev JOIN water_quality_criteria_entries e ON e.tenant_id = ev.tenant_id AND e.id = ev.entry_id AND e.version = ev.entry_version WHERE ev.tenant_id = ? AND ev.entry_id = ? AND ev.entry_version = ? AND ${visibility} ORDER BY ev.rowid ASC LIMIT 100`
+    ).bind(tenant, entryId, version, subject, subject, subject)),
     rows(db.prepare(
-      "SELECT reviewer_subject, reviewer_role, decision, evidence_ref, reason, reviewed_at, request_id FROM water_quality_criteria_approvals WHERE tenant_id = ? AND entry_id = ? AND entry_version = ? ORDER BY reviewed_at, id LIMIT 20"
-    ).bind(tenant, entryId, version)),
+      `SELECT ap.reviewer_subject, ap.reviewer_role, ap.decision, ap.evidence_ref, ap.reason, ap.reviewed_at, ap.request_id FROM water_quality_criteria_approvals ap JOIN water_quality_criteria_entries e ON e.tenant_id = ap.tenant_id AND e.id = ap.entry_id AND e.version = ap.entry_version WHERE ap.tenant_id = ? AND ap.entry_id = ? AND ap.entry_version = ? AND ${visibility} ORDER BY ap.reviewed_at, ap.id LIMIT 20`
+    ).bind(tenant, entryId, version, subject, subject, subject)),
   ]);
   return { ...row, entry: JSON.parse(row.entry_json), entry_json: undefined,
     lifecycle: { status: events.at(-1)?.event_type ?? "unknown", events },
@@ -443,7 +456,6 @@ async function readCriteriaRegistry(db, tenant, entryId, version, subject) {
     legal_status: "not_verified", scientific_suitability: "not_assessed",
     operational_decision: "not_authorized" };
 }
-
 
 function configuredProvisioningSubjects(value) {
   if (typeof value !== "string" || value.length === 0 || value.length > 10000) return null;
@@ -1603,7 +1615,7 @@ export default {
         }
         if (reviewerList) {
           if (!["tenant_owner", "tenant_admin"].includes(membership[0].role)) return error("not_found", 404);
-          const data = await readCriteriaReviewers(env.DB, tenant);
+          const data = await readCriteriaReviewers(env.DB, tenant, subject);
           return json({ data, request_id: requestId });
         }
         if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
@@ -1658,8 +1670,8 @@ export default {
             : json({ data: created.data, request_id: requestId }, created.status);
         }
         const sites = await rows(env.DB.prepare(
-          "SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships m ON m.tenant_id = s.tenant_id AND m.subject = ? AND m.status = 'active' JOIN tenants t ON t.id = s.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = s.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = s.id AND g.action = 'read' WHERE s.tenant_id = ? AND s.status = 'active' ORDER BY s.name ASC, s.id ASC LIMIT 100"
-        ).bind(subject, tenant));
+          "SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships m ON m.tenant_id = s.tenant_id AND m.subject = ? AND m.status = 'active' JOIN tenants t ON t.id = s.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = s.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = s.id AND g.action = 'read' WHERE s.tenant_id = ? AND s.status = 'active' AND EXISTS (SELECT 1 FROM tenant_identity_link_requests il WHERE il.tenant_id = s.tenant_id AND il.status = 'approved' AND il.supabase_issuer = ? AND il.supabase_subject = ? AND il.cloudflare_issuer = ? AND il.cloudflare_subject = ?) ORDER BY s.name ASC, s.id ASC LIMIT 100"
+        ).bind(subject, tenant, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject, issuer, subject));
         return json({ data: sites, limit: 100, request_id: requestId });
       }
       if (siteObservationList) {
@@ -1668,7 +1680,7 @@ export default {
           "SELECT id FROM tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved' AND supabase_issuer = ? AND supabase_subject = ? AND cloudflare_issuer = ? AND cloudflare_subject = ? LIMIT 2"
         ).bind(tenant, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject, issuer, subject));
         if (linkedIdentity.length !== 1) return error("not_found", 404);
-        const observations = await readSiteObservations(env.DB, subject, tenant, siteObservationList[2]);
+        const observations = await readSiteObservations(env.DB, subject, tenant, siteObservationList[2], issuer, verifiedSupabaseIdentity);
         return observations === null ? error("not_found", 404)
           : json({ data: observations, limit: 100, request_id: requestId });
       }

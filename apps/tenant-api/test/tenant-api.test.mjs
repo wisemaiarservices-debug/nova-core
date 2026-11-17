@@ -7,7 +7,7 @@ import worker from "../src/index.mjs";
 const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
-    this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
+    this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set(); this.revokeIdentityLinkAfterCheck = false; this.revokeSiteGrantAfterAuthorization = false; this.revokeMembershipAfterAuthorization = false;
     this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.siteObservationRows = []; this.siteObservationAuthorizationRows = null; this.siteListRows = null; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
@@ -21,10 +21,44 @@ class DB {
       async all() {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
-        if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
+        if (sql.includes("FROM tenant_identity_link_requests r")) return { results: db.identityLinkRows ?? [] };
+        if (sql.startsWith("SELECT id FROM tenant_identity_link_requests")) {
+          const result = db.identityLinkRows ?? [];
+          if (db.revokeIdentityLinkAfterCheck) db.identityLinkRows = [];
+          return { results: result };
+        }
+        if (sql.includes("EXISTS (SELECT 1 FROM tenant_identity_link_requests") &&
+            !(db.identityLinkRows ?? []).length) return { results: [] };
         if (sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships")) return { results: db.siteListRows ?? [] };
-        if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) return { results: db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []) };
-        if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) return { results: db.siteObservationRows ?? [] };
+        if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) {
+          const result = db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []);
+          if (db.revokeSiteGrantAfterAuthorization) db.grant = false;
+          if (db.revokeMembershipAfterAuthorization) db.membership = false;
+          return { results: result };
+        }
+        if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) {
+          if (sql.includes("EXISTS (SELECT 1 FROM tenant_memberships") && (!db.membership || !db.grant)) return { results: [] };
+          return { results: db.siteObservationRows ?? [] };
+        }
+        if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql) &&
+            sql.includes("EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t")) {
+          if (!db.membership || !db.grant) return { results: [] };
+          return { results: db.resourceRows ?? (db.resource ? [{
+            id: args[1], tenant_id: args[0], name: "Test resource",
+          }] : []) };
+        }
+        if (sql.includes("FROM water_quality_criteria_events ev JOIN water_quality_criteria_entries e")) return { results: db.criteriaEventRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_approvals ap JOIN water_quality_criteria_entries e")) return { results: db.approvalRows ?? [] };
+        if (sql.startsWith("SELECT event_type FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
+        if (sql.startsWith("SELECT reviewer_subject, reviewer_role, decision, evidence_ref, reviewed_at FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id")) {
+          const reviewerRows = db.reviewerRows ?? [];
+          if (sql.includes("SELECT DISTINCT")) return { results: reviewerRows.slice(0, 1) };
+          if (sql.includes("r.reviewer_role = ?")) return { results: reviewerRows.filter(row =>
+            row.reviewer_role === args[2] && row.jurisdiction === args[3]) };
+          return { results: reviewerRows };
+        }
+        if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
           const rows = db.membershipRows ?? (db.membership ? [{
             subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
@@ -34,32 +68,32 @@ class DB {
             row.membership_status === "active" && row.tenant_status === "active" &&
             row.tenant_id === args[0] && row.subject === args[1]) };
         }
+        if (sql.includes("FROM water_quality_criteria_reviewers WHERE tenant_id")) {
+          const reviewerRows = db.reviewerRows ?? [];
+          return { results: sql.includes("SELECT DISTINCT") ? reviewerRows.slice(0, 1) : reviewerRows };
+        }
+        if (sql.includes("FROM water_quality_criteria_reviewer_events WHERE tenant_id")) return { results: db.reviewerEventRows ?? [] };
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
         }] : []) };
-        if (sql.includes("FROM tenant_resource_grants") && !sql.includes("FROM water_quality_criteria_entries")) {
+        if (sql.startsWith("SELECT subject, tenant_id, resource_type, resource_id, action FROM tenant_resource_grants")) {
           const siteGrantQuery = sql.includes("resource_type = 'site'");
-          return { results: db.grantRows ?? (db.grant ? [{
+          const result = db.grantRows ?? (db.grant ? [{
             subject: "operator@example.test", tenant_id: "tenant-a",
             resource_type: siteGrantQuery ? "site" : args[2],
             resource_id: siteGrantQuery ? args[2] : args[3], action: "read",
-          }] : []) };
+          }] : []);
+          if (db.revokeSiteGrantAfterAuthorization) db.grant = false;
+          if (db.revokeMembershipAfterAuthorization) db.membership = false;
+          return { results: result };
         }
-        if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };
+        if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?") ||
+            sql.includes("SELECT id, tenant_id FROM sites WHERE tenant_id = ? AND id = ?")) {
+          return { results: db.siteRows ?? [{ id: args[1], tenant_id: args[0] }] };
+        }
         if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
-        if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
-        if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
-        if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
-        if (sql.includes("FROM water_quality_criteria_reviewers")) {
-          const reviewerRows = db.reviewerRows ?? [];
-          return { results: sql.includes("SELECT DISTINCT") ? reviewerRows.slice(0, 1) : reviewerRows };
-        }
-        if (sql.includes("FROM water_quality_criteria_reviewer_events")) return { results: db.reviewerEventRows ?? [] };
-        if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) return { results: db.resourceRows ?? (db.resource ? [{
-          id: args[1], tenant_id: args[0], name: "Test resource",
-        }] : []) };
         throw new Error("unexpected SQL");
       },
       async run() {
@@ -121,8 +155,48 @@ test("authorizes exact tenant membership and resource grant before scoped read",
   const response = await worker.fetch(await request(), env(db));
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data.name, "Test resource");
-  assert.deepEqual(db.calls[3].args, ["tenant-a", "site-a"]);
+  assert.deepEqual(db.calls[3].args, ["tenant-a", "site-a", "operator@example.test"]);
+  assert.match(db.calls[3].sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+  assert.match(db.calls[3].sql, /g\.action = 'read'/);
 });
+test("resource detail query rechecks membership and exact grant after preliminary authorization", async () => {
+  for (const revoked of ["membership", "grant"]) {
+    const db = new DB();
+    if (revoked === "membership") db.revokeMembershipAfterAuthorization = true;
+    else db.revokeSiteGrantAfterAuthorization = true;
+    const response = await worker.fetch(await request(), env(db));
+    assert.equal(response.status, 404, revoked);
+    const finalRead = db.calls.find(call => /FROM sites WHERE tenant_id = \? AND id = \?/.test(call.sql));
+    assert.ok(finalRead, "final resource query must execute");
+    assert.match(finalRead.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+    assert.match(finalRead.sql, /g\.action = 'read'/);
+    assert.deepEqual(finalRead.args, ["tenant-a", "site-a", "operator@example.test"]);
+  }
+});
+
+test("all resource detail types bind their exact grant into the final protected query", async () => {
+  const cases = [
+    ["/internal/v1/tenants/tenant-a/sites/site-a", "site"],
+    ["/internal/v1/tenants/tenant-a/assets/asset-a", "asset"],
+    ["/internal/v1/tenants/tenant-a/sources/source-a", "source"],
+    ["/internal/v1/tenants/tenant-a/observations/observation-a", "observation"],
+    ["/internal/v1/tenants/tenant-a/audit-events/event-a", "audit_event"],
+  ];
+  for (const [path, resourceType] of cases) {
+    const db = new DB();
+    const response = await worker.fetch(await request({}, "https://private.internal" + path), env(db));
+    assert.equal(response.status, 200, path);
+    const finalRead = db.calls.find(call =>
+      /FROM (sites|assets|sources|observations|audit_events)/.test(call.sql) &&
+      call.sql.includes("EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t"));
+    assert.ok(finalRead, path);
+    assert.match(finalRead.sql, new RegExp("g\\.resource_type = '" + resourceType + "'"), path);
+    assert.match(finalRead.sql, /g\.resource_id = /, path);
+    assert.match(finalRead.sql, /g\.action = 'read'/, path);
+    assert.deepEqual(finalRead.args, [ "tenant-a", path.split("/").at(-1), "operator@example.test" ], path);
+  }
+});
+
 test("denies when exact resource grant is absent without reading resource", async () => {
   const db = new DB({ grant: false });
   const response = await worker.fetch(await request(), env(db));
@@ -302,7 +376,7 @@ test("maps every allowlisted route to its canonical resource grant and scoped SQ
       { headers: (await request({}, `https://private.internal/internal/v1/tenants/tenant-a/${route}/resource-1`)).headers }), env(db));
     assert.equal(response.status, 200, route);
     assert.equal(db.calls[2].args[2], expectedType, route);
-    assert.deepEqual(db.calls[3].args, ["tenant-a", "resource-1"], route);
+    assert.deepEqual(db.calls[3].args, ["tenant-a", "resource-1", "operator@example.test"], route);
   }
 });
 test("denies inactive tenant membership and unknown roles before grant lookup", async () => {
@@ -338,7 +412,7 @@ test("lists only the authenticated tenant's water-quality criteria entries", asy
   assert.equal(body.data[0].entry.criteria[0].parameter, "ec");
   assert.equal(body.data[0].entry_json, undefined);
   assert.deepEqual(db.calls[1].args, ["operator@example.test", "tenant-a"]);
-  assert.deepEqual(db.calls[2].args, ["tenant-a", "operator@example.test", "operator@example.test"]);
+  assert.deepEqual(db.calls[2].args, ["tenant-a", "operator@example.test", "operator@example.test", "operator@example.test"]);
 });
 
 test("reads one criteria version with tenant, entry and version selectors bound in SQL", async () => {
@@ -350,7 +424,20 @@ test("reads one criteria version with tenant, entry and version selectors bound 
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/1.0"), env(db));
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data.entry.id, "criteria-tn-1");
-  assert.deepEqual(db.calls[2].args, ["tenant-a", "criteria-tn-1", "1.0"]);
+  const criteriaRead = db.calls.find(call => call.sql.includes("FROM water_quality_criteria_entries e") && call.sql.includes("e.id = ?") && call.sql.includes("e.version = ?"));
+  assert.ok(criteriaRead, "criteria detail must use the scoped final SELECT");
+  assert.deepEqual(criteriaRead.args, ["tenant-a", "criteria-tn-1", "1.0",
+    "operator@example.test", "operator@example.test", "operator@example.test"]);
+  const eventRead = db.calls.find(call => call.sql.includes("FROM water_quality_criteria_events ev"));
+  const approvalRead = db.calls.find(call => call.sql.includes("FROM water_quality_criteria_approvals ap"));
+  assert.ok(eventRead && approvalRead, "criteria history and approvals must be read");
+  for (const secondary of [eventRead, approvalRead]) {
+    assert.match(secondary.sql, /JOIN water_quality_criteria_entries e/);
+    assert.match(secondary.sql, /tenant_memberships m/);
+    assert.match(secondary.sql, /water_quality_criteria_reviewers r/);
+    assert.deepEqual(secondary.args, ["tenant-a", "criteria-tn-1", "1.0",
+      "operator@example.test", "operator@example.test", "operator@example.test"]);
+  }
 });
 
 test("denies criteria registry reads for inactive, duplicate or non-reader tenant memberships", async () => {
@@ -399,7 +486,7 @@ test("criteria list binds the authenticated subject to both site-grant and revie
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria"), env(db));
   assert.equal(response.status, 200);
   const query = db.calls.find(call => call.sql.includes("FROM water_quality_criteria_entries"));
-  assert.deepEqual(query.args, ["tenant-a", "operator@example.test", "operator@example.test"]);
+  assert.deepEqual(query.args, ["tenant-a", "operator@example.test", "operator@example.test", "operator@example.test"]);
   assert.match(query.sql, /tenant_resource_grants g/);
   assert.match(query.sql, /g\.subject = \?/);
   assert.match(query.sql, /water_quality_criteria_reviewers r/);
@@ -411,7 +498,7 @@ test("does not return criteria belonging to another tenant or unknown versions",
   const db = new DB(); db.criteriaRows = [];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
   assert.equal(response.status, 404);
-  assert.deepEqual(db.calls[1].args, ["tenant-a", "criteria-tn-1", "9.9"]);
+  assert.deepEqual(db.calls[1].args, ["tenant-a", "criteria-tn-1", "9.9", "operator@example.test", "operator@example.test", "operator@example.test"]);
 });
 
 
@@ -564,6 +651,14 @@ test("reviewer list and immutable assignment history are restricted to tenant ow
   const body = await response.json();
   assert.equal(body.data.reviewers.length, 1);
   assert.equal(body.data.events[0].event_type, "assigned");
+  const reviewerReads = db.calls.filter(call =>
+    call.sql.includes("FROM water_quality_criteria_reviewers WHERE tenant_id") ||
+    call.sql.includes("FROM water_quality_criteria_reviewer_events WHERE tenant_id"));
+  assert.equal(reviewerReads.length, 2);
+  for (const read of reviewerReads) {
+    assert.match(read.sql, /tenant_memberships m JOIN tenants t/);
+    assert.deepEqual(read.args, ["tenant-a", "tenant-a", "operator@example.test"]);
+  }
   const viewer = new DB();
   const denied = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers"), env(viewer));
@@ -2710,11 +2805,33 @@ test("lists only active sites with exact tenant membership and site-read grant a
     assert.deepEqual(link.args, ["tenant-a", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
       "https://example.cloudflareaccess.com", "operator@example.test"]);
     const list = db.calls.find(call => call.sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships"));
-    assert.deepEqual(list.args, ["operator@example.test", "tenant-a"]);
+    assert.deepEqual(list.args, ["operator@example.test", "tenant-a", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
+      "https://example.cloudflareaccess.com", "operator@example.test"]);
+    assert.match(list.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
     assert.match(list.sql, /g\.resource_type = 'site'/);
     assert.match(list.sql, /g\.action = 'read'/);
     assert.match(list.sql, /s\.status = 'active'/);
     assert.match(list.sql, /LIMIT 100/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("site list rechecks the approved identity link in the protected data query", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    const db = new DB();
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    db.revokeIdentityLinkAfterCheck = true;
+    db.siteListRows = [{ id: "site-a", name: "North Farm", timezone: "Africa/Tunis" }];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites"), env(db));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).data, [],
+      "a link revoked after preliminary verification must not disclose sites");
+    const protectedRead = db.calls.find(call => call.sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships"));
+    assert.ok(protectedRead);
+    assert.match(protectedRead.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -2763,9 +2880,61 @@ test("lists bounded observations only after approved dual-identity and exact sit
     const authorization = db.calls.find(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships"));
     assert.deepEqual(authorization.args, ["operator@example.test", "tenant-a", "site-a"]);
     const read = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
-    assert.deepEqual(read.args, ["tenant-a", "site-a"]);
+    assert.deepEqual(read.args, ["tenant-a", "site-a", "operator@example.test", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
+      "https://example.cloudflareaccess.com", "operator@example.test"]);
+    assert.match(read.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+    assert.match(read.sql, /g\.resource_type = 'site'/);
+    assert.match(read.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
     assert.match(read.sql, /ORDER BY o\.observed_at DESC, o\.id DESC LIMIT 100/);
     assert.match(read.sql, /src\.verification_status = 'verified'/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("observation feed rechecks the approved identity link in the protected data query", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    const db = new DB();
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    db.revokeIdentityLinkAfterCheck = true;
+    db.siteObservationRows = [
+      { id: "obs-private", tenant_id: "tenant-a", site_id: "site-a", metric: "soil_moisture", value: 24, unit: "%" },
+    ];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).data, [],
+      "a link revoked after preliminary verification must not disclose observations");
+    const protectedRead = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
+    assert.ok(protectedRead);
+    assert.match(protectedRead.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("observation feed rechecks membership and site grant in the protected data query", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    for (const revoked of ["membership", "site grant"]) {
+      const db = new DB();
+      db.identityLinkRows = [{ id: "approved-link-1" }];
+      db.siteObservationRows = [
+        { id: "obs-private", tenant_id: "tenant-a", site_id: "site-a", metric: "soil_moisture", value: 24, unit: "%" },
+      ];
+      if (revoked === "membership") db.revokeMembershipAfterAuthorization = true;
+      else db.revokeSiteGrantAfterAuthorization = true;
+      const response = await worker.fetch(await request({
+        "x-nova-supabase-access-token": identitySupabaseToken(),
+      }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+      assert.equal(response.status, 200, revoked);
+      assert.deepEqual((await response.json()).data, [],
+        revoked + " revoked after preliminary authorization must not disclose observations");
+      const protectedRead = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
+      assert.ok(protectedRead);
+      assert.match(protectedRead.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+      assert.match(protectedRead.sql, /g\.action = 'read'/);
+    }
   } finally { globalThis.fetch = originalFetch; }
 });
 
