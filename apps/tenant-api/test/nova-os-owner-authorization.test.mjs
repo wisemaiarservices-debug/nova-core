@@ -246,3 +246,34 @@ test("Core client rejects malformed declared response lengths before reading", a
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("Core client normalizes response stream read failures", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull() {
+      throw new Error("upstream-secret-detail");
+    },
+  }), { status: 200 });
+  try {
+    const client = createNovaOsOwnerAuthorizationClient(config());
+    await assert.rejects(
+      () => client(input),
+      error => error.message === "nova_os_authorization_response_invalid" &&
+        !error.message.includes("upstream-secret-detail"),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Core client rejects invalid UTF-8 response bytes", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new Uint8Array([0xc3, 0x28]), { status: 200 });
+  try {
+    const client = createNovaOsOwnerAuthorizationClient(config());
+    await assert.rejects(() => client(input), /nova_os_authorization_response_invalid/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
