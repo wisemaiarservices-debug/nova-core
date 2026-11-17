@@ -416,8 +416,8 @@ No staging or production database was queried or changed during this audit.
 
 Core PR #233 is stacked on PR #232 (which is stacked on #231). It prevents a mapping from being newly verified when its underlying source or mapped resources are no longer eligible.
 
-- Exact PR #233 head: `0ff95b3e365928c37c65719bec8059598ffc5371`.
-- Exact-head CI [run 44199115481](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44199115481) passed all three jobs: API/security tests, tenant Worker tests including disposable D1 migrations and gateway/private Worker integration, and research raster tests.
+- Exact PR #233 head: `bb901fe9cc4ef67ded575b2b8d34873a4085df1a`.
+- Exact-head CI [run 44199420503](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44199420503) passed all three jobs: API/security tests, tenant Worker tests including disposable D1 migrations and gateway/private Worker integration, and research raster tests.
 - A mapping's `verify` decision now requires the exact source to remain verified in the same tenant; source scope must be global or the exact mapping site; tenant and site must remain active; and the mapped asset must remain active in that tenant/site.
 - If any condition fails, verification returns `sensor_source_mapping_source_not_active_or_verified` and writes no verification event. Reject/revoke decisions remain available to record governance changes.
 - Existing mapping events remain immutable. The check applies to new verification decisions only.
