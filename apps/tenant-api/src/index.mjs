@@ -82,14 +82,14 @@ async function consumeRequestId(db, requestId, issuedAt) {
   }
   return result.meta.changes === 1;
 }
-async function readSiteObservations(db, subject, tenant, siteId) {
+async function readSiteObservations(db, subject, tenant, siteId, accessIssuer, supabaseIdentity) {
   const authorized = await rows(db.prepare(
     "SELECT s.id FROM sites s JOIN tenant_memberships m ON m.tenant_id = s.tenant_id AND m.subject = ? AND m.status = 'active' JOIN tenants t ON t.id = s.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = s.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = s.id AND g.action = 'read' WHERE s.tenant_id = ? AND s.id = ? AND s.status = 'active' AND m.role IN ('tenant_owner', 'tenant_admin', 'operator', 'analyst', 'viewer', 'service') LIMIT 1"
   ).bind(subject, tenant, siteId));
   if (authorized.length !== 1 || authorized[0].id !== siteId) return null;
   return await rows(db.prepare(
-    "SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric, o.value, o.unit, o.observed_at, o.ingested_at, o.verification_status, o.provenance_json, o.quality_flags_json, o.retention_until FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.tenant_id = ? AND o.site_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL) ORDER BY o.observed_at DESC, o.id DESC LIMIT 100"
-  ).bind(tenant, siteId));
+    "SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric, o.value, o.unit, o.observed_at, o.ingested_at, o.verification_status, o.provenance_json, o.quality_flags_json, o.retention_until FROM observations o JOIN sites s ON s.id = o.site_id AND s.tenant_id = o.tenant_id AND s.status = 'active' JOIN sources src ON src.id = o.source_id AND src.tenant_id = o.tenant_id AND src.verification_status = 'verified' AND (src.site_id IS NULL OR src.site_id = o.site_id) LEFT JOIN assets a ON a.id = o.asset_id AND a.tenant_id = o.tenant_id AND a.site_id = o.site_id AND a.status = 'active' WHERE o.tenant_id = ? AND o.site_id = ? AND (o.asset_id IS NULL OR a.id IS NOT NULL) AND EXISTS (SELECT 1 FROM tenant_identity_link_requests il WHERE il.tenant_id = o.tenant_id AND il.status = 'approved' AND il.supabase_issuer = ? AND il.supabase_subject = ? AND il.cloudflare_issuer = ? AND il.cloudflare_subject = ?) ORDER BY o.observed_at DESC, o.id DESC LIMIT 100"
+  ).bind(tenant, siteId, supabaseIdentity.issuer, supabaseIdentity.subject, accessIssuer, subject));
 }
 async function readResource(db, subject, tenant, type, id) {
   const membership = await rows(db.prepare(
@@ -1658,8 +1658,8 @@ export default {
             : json({ data: created.data, request_id: requestId }, created.status);
         }
         const sites = await rows(env.DB.prepare(
-          "SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships m ON m.tenant_id = s.tenant_id AND m.subject = ? AND m.status = 'active' JOIN tenants t ON t.id = s.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = s.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = s.id AND g.action = 'read' WHERE s.tenant_id = ? AND s.status = 'active' ORDER BY s.name ASC, s.id ASC LIMIT 100"
-        ).bind(subject, tenant));
+          "SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships m ON m.tenant_id = s.tenant_id AND m.subject = ? AND m.status = 'active' JOIN tenants t ON t.id = s.tenant_id AND t.status = 'active' JOIN tenant_resource_grants g ON g.tenant_id = s.tenant_id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = s.id AND g.action = 'read' WHERE s.tenant_id = ? AND s.status = 'active' AND EXISTS (SELECT 1 FROM tenant_identity_link_requests il WHERE il.tenant_id = s.tenant_id AND il.status = 'approved' AND il.supabase_issuer = ? AND il.supabase_subject = ? AND il.cloudflare_issuer = ? AND il.cloudflare_subject = ?) ORDER BY s.name ASC, s.id ASC LIMIT 100"
+        ).bind(subject, tenant, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject, issuer, subject));
         return json({ data: sites, limit: 100, request_id: requestId });
       }
       if (siteObservationList) {
@@ -1668,7 +1668,7 @@ export default {
           "SELECT id FROM tenant_identity_link_requests WHERE tenant_id = ? AND status = 'approved' AND supabase_issuer = ? AND supabase_subject = ? AND cloudflare_issuer = ? AND cloudflare_subject = ? LIMIT 2"
         ).bind(tenant, verifiedSupabaseIdentity.issuer, verifiedSupabaseIdentity.subject, issuer, subject));
         if (linkedIdentity.length !== 1) return error("not_found", 404);
-        const observations = await readSiteObservations(env.DB, subject, tenant, siteObservationList[2]);
+        const observations = await readSiteObservations(env.DB, subject, tenant, siteObservationList[2], issuer, verifiedSupabaseIdentity);
         return observations === null ? error("not_found", 404)
           : json({ data: observations, limit: 100, request_id: requestId });
       }
