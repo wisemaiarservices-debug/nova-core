@@ -204,3 +204,29 @@ Core PR #228 (`fix/core-bound-owner-authorization-response`) is a draft child of
 - Focused tests cover oversized streaming and cancellation, oversized and malformed Content-Length rejection before body read, and acceptance at exactly 16 KiB.
 - This is disposable CI evidence only. PR #228 remains draft/unmerged and must be included in the coordinated Core review/integration SHA if selected for staging. Re-fetch its head/base and checks before any staging change.
 - No staging configuration, secret, migration, deployment or customer data operation is authorized by this follow-up.
+
+
+---
+
+## 11. Current coordinated candidate baseline (2026-11-17)
+
+This addendum supersedes earlier references in this runbook that name Core #227 as the consolidated Core staging candidate or #228 as a separate candidate layer. Historical source-PR details remain for traceability. Re-fetch exact refs and checks immediately before any authorized staging action.
+
+### NOVA Core consolidated candidate
+
+- [PR #229](https://github.com/wisemaiarservices-debug/nova-core/pull/229), branch `integration/core-provisioning-protected-reads-bounded-response-v1`, exact head `8063ad968f6af50874b733186385fc7493b2cbfd`.
+- It combines the Core provisioning/protected-read tree from #227 with the bounded streaming response reader and regression tests from #228.
+- It is based on protected-read PR #226 head `d37e678921c73fb231a5831336f0dee51cce1275`. Therefore #226 and its parent stack #223–#225 remain prerequisites; #229 does not remove that base dependency.
+- Exact-head Core CI [run 44190571076](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44190571076) completed successfully, all 3 jobs: API/security tests, research raster tests, and Tenant Worker/D1 integration with ordered migrations, query preparation, isolated fixtures and gateway/private Worker end-to-end.
+- #229 is draft/open/unmerged. #227 and #228 remain open/draft source PRs. Do not deploy an intermediate source branch instead of the reviewed consolidated SHA.
+
+### NOVA OS dependency chain
+
+- OS #57 head `110116d844ed73e46ee85d3508c4bac740cd6230`: migration run [43973754344](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43973754344) and administration run [43973754374](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43973754374) passed.
+- OS #60 head `17f6c9dc590693e53bd534849192b0daf71aa030`, based on #57: migration run [44078094385](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44078094385) and administration run [44078094194](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44078094194) passed.
+- OS #61 latest head `2b6da562cdb1df354e04d6969ca2d54b646914e3`, based on #60: runtime code head `dfbc6747fa5b418dc6665962ea94ac3917d4134c` passed migration [44169408597](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44169408597) and administration [44169408610](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44169408610); latest documentation head passed migration [44173340563](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44173340563) and administration [44173340728](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44173340728).
+- Preserve #57 → #60 → #61 as a strict stack. All remain draft/open/unmerged and must be reviewed together.
+
+### Gate status
+
+Automated source-branch CI is green for the current candidate heads described above. Independent security review, base-stack integration, deployed staging configuration/key custody, live cross-repository E2E, migration/rollback rehearsal, pilot/data-rights approval and explicit staging authorization are not complete. CI is not staging evidence. Production remains blocked; no secrets, migrations, deployments, tenant provisioning or customer-data access were performed.
