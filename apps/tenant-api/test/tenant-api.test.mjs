@@ -54,11 +54,14 @@ class DB {
         }] : []) };
         if (sql.includes("FROM tenant_resource_grants") && !sql.includes("FROM water_quality_criteria_entries")) {
           const siteGrantQuery = sql.includes("resource_type = 'site'");
-          return { results: db.grantRows ?? (db.grant ? [{
+          const result = db.grantRows ?? (db.grant ? [{
             subject: "operator@example.test", tenant_id: "tenant-a",
             resource_type: siteGrantQuery ? "site" : args[2],
             resource_id: siteGrantQuery ? args[2] : args[3], action: "read",
-          }] : []) };
+          }] : []);
+          if (db.revokeSiteGrantAfterAuthorization) db.grant = false;
+          if (db.revokeMembershipAfterAuthorization) db.membership = false;
+          return { results: result };
         }
         if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };
         if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
@@ -71,9 +74,13 @@ class DB {
           return { results: sql.includes("SELECT DISTINCT") ? reviewerRows.slice(0, 1) : reviewerRows };
         }
         if (sql.includes("FROM water_quality_criteria_reviewer_events")) return { results: db.reviewerEventRows ?? [] };
-        if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) return { results: db.resourceRows ?? (db.resource ? [{
-          id: args[1], tenant_id: args[0], name: "Test resource",
-        }] : []) };
+        if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) {
+          if (sql.includes("EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t") &&
+              (!db.membership || !db.grant)) return { results: [] };
+          return { results: db.resourceRows ?? (db.resource ? [{
+            id: args[1], tenant_id: args[0], name: "Test resource",
+          }] : []) };
+        }
         throw new Error("unexpected SQL");
       },
       async run() {
@@ -135,8 +142,25 @@ test("authorizes exact tenant membership and resource grant before scoped read",
   const response = await worker.fetch(await request(), env(db));
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data.name, "Test resource");
-  assert.deepEqual(db.calls[3].args, ["tenant-a", "site-a"]);
+  assert.deepEqual(db.calls[3].args, ["tenant-a", "site-a", "tenant-a", "operator@example.test"]);
+  assert.match(db.calls[3].sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+  assert.match(db.calls[3].sql, /g\.action = 'read'/);
 });
+test("resource detail query rechecks membership and exact grant after preliminary authorization", async () => {
+  for (const revoked of ["membership", "grant"]) {
+    const db = new DB();
+    if (revoked === "membership") db.revokeMembershipAfterAuthorization = true;
+    else db.revokeSiteGrantAfterAuthorization = true;
+    const response = await worker.fetch(await request(), env(db));
+    assert.equal(response.status, 404, revoked);
+    const finalRead = db.calls.find(call => /FROM sites WHERE tenant_id = \? AND id = \?/.test(call.sql));
+    assert.ok(finalRead, "final resource query must execute");
+    assert.match(finalRead.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+    assert.match(finalRead.sql, /g\.action = 'read'/);
+    assert.deepEqual(finalRead.args, ["tenant-a", "site-a", "tenant-a", "operator@example.test"]);
+  }
+});
+
 test("denies when exact resource grant is absent without reading resource", async () => {
   const db = new DB({ grant: false });
   const response = await worker.fetch(await request(), env(db));
