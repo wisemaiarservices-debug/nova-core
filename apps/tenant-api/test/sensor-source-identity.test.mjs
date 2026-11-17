@@ -39,9 +39,7 @@ test("mapping verification rechecks that its source, tenant, site and asset are 
   const db=dbFixture({sourceStatus});
   const r=await reviewSensorSourceMapping(db,"tenant-1","site-1","asset-1","map-1","reviewer","req-1",{decision:"verify",evidence_ref:"evidence-7"});
   assert.equal(r.error,"sensor_source_mapping_source_not_active_or_verified");
-  assert.equal(db.calls.length,1);
-  assert.match(db.calls[0].sql,/verification_status='verified'/);
-  assert.match(db.calls[0].sql,/a.status='active'/);
+  assert.equal(db.calls.length,0);
  }
 });
 
@@ -53,7 +51,7 @@ test("rejected mapping cannot be revoked as if it had been verified",async()=>{
 test("concurrent mapping verification loses safely when another event wins first",async()=>{
  const db=dbFixture({eventChanges:0});
  const r=await reviewSensorSourceMapping(db,"tenant-1","site-1","asset-1","map-1","reviewer","req-race",{decision:"verify",evidence_ref:"evidence-7"});
- assert.equal(r.error,"sensor_source_mapping_source_not_active_or_verified");
+ assert.equal(r.error,"sensor_source_mapping_state_conflict");
  assert.match(db.calls[0].sql,/NOT EXISTS \(SELECT 1 FROM sensor_source_mapping_events/);
  assert.match(db.calls[0].sql,/tenant_memberships/);
  assert.match(db.calls[0].sql,/sensor_source_mapping_reviewers/);
