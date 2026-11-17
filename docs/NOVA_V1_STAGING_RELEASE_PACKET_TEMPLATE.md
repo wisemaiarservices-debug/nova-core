@@ -49,6 +49,22 @@ For each item record configured / verified / owner / evidence link. Record names
 - [ ] Existing SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are scoped to this staging project; service-role key is not reused as the HMAC credential.
 - [ ] HMAC nonce and owner-consumption ledger migrations applied in documented order; RPC grants and forced RLS verified.
 
+### NOVA OS browser-facing functions
+
+Owner assertion issuer (nova-core-provisioning-owner-assertion):
+- [ ] NOVA_OS_ALLOWED_ORIGINS is an exact HTTPS origin allowlist; no wildcard.
+- [ ] NOVA_OS_PROVISIONING_AUTH_ISSUER and NOVA_OS_PROVISIONING_AUTH_AUDIENCE are staging-specific.
+- [ ] NOVA_OS_PROVISIONING_AUTH_KEY_ID and NOVA_OS_PROVISIONING_AUTH_PRIVATE_KEY are configured server-side; private key is a dedicated staging RS256 key.
+- [ ] SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY reference only the staging project.
+
+Core receipt mapping (nova-core-tenant-mapping):
+- [ ] NOVA_OS_ALLOWED_ORIGINS is an exact HTTPS origin allowlist; no wildcard.
+- [ ] NOVA_CORE_MAPPING_RECEIPT_ISSUER and NOVA_CORE_MAPPING_RECEIPT_AUDIENCE match the Core receipt signer.
+- [ ] NOVA_CORE_MAPPING_RECEIPT_JWK is public only and matches the Core receipt-signing key.
+- [ ] SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY reference only the staging project.
+
+The owner-assertion issuer's public key must match both Core's NOVA_OS_PROVISIONING_AUTH_JWK and the private authorization function's NOVA_OS_PROVISIONING_AUTH_JWK. The Core receipt-signing private key remains in Core secret storage; NOVA OS receives only its public JWK.
+
 ### NOVA Core staging
 - [ ] Dedicated staging Worker/account and D1 database verified; production resources excluded.
 - [ ] Core Worker deployed from the recorded PR #227 integration SHA.
@@ -56,7 +72,13 @@ For each item record configured / verified / owner / evidence link. Record names
 - [ ] NOVA_OS_OWNER_AUTH_KEYS matches OS key IDs/secrets; NOVA_OS_OWNER_AUTH_ACTIVE_KEY_ID selects an existing key ID.
 - [ ] NOVA_OS_OWNER_AUTHORIZATION_PERMIT_ISSUER and ..._AUDIENCE match OS values exactly.
 - [ ] NOVA_OS_OWNER_AUTHORIZATION_PERMIT_JWK contains only the pinned public JWK; kid matches the OS signer.
-- [ ] Existing Core owner-assertion verification and receipt-signing keys are staging-only and independently pinned.
+- [ ] SUPABASE_AUTH_ISSUER and SUPABASE_AUTH_AUDIENCE are the exact staging Supabase JWT issuer/audience.
+- [ ] NOVA_OS_PROVISIONING_AUTH_ISSUER, NOVA_OS_PROVISIONING_AUTH_AUDIENCE and NOVA_OS_PROVISIONING_AUTH_JWK verify the OS owner assertion.
+- [ ] NOVA_OS_MAPPING_RECEIPT_ISSUER, NOVA_OS_MAPPING_RECEIPT_AUDIENCE, NOVA_OS_MAPPING_RECEIPT_KEY_ID and NOVA_OS_MAPPING_RECEIPT_PRIVATE_KEY are configured; private key is staging-only in Core secret storage.
+- [ ] ACCESS_ISSUER and ACCESS_AUDIENCE match the staging Cloudflare Access application.
+- [ ] TENANT_PROVISIONING_SUBJECTS contains only approved staging subjects.
+- [ ] INTERNAL_AUTH_SECRET is configured server-side where required by the private Worker/gateway topology.
+- [ ] DB points to the staging D1 binding.
 - [ ] Cloudflare Access application, issuer/audience, allowed subjects and gateway origin are staging-only.
 - [ ] Core provisioning allowlist contains only the approved staging tenant/test identities.
 - [ ] Migration 0034_nova_os_owner_authorization_permit.sql and prerequisites applied to staging D1 in order.
