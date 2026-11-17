@@ -197,3 +197,20 @@ This follow-up changes the Core private authorization HTTP response handling onl
 ### Release interpretation
 
 These results establish source-branch automated validation only. They do not establish independent security approval, a live OS↔Core staging handshake, deployed secret/key custody, production readiness, or permission to stage. The full staging E2E matrix, independent security review, rollback/recovery rehearsal, pilot/data-rights approval and explicit staging authorization remain outstanding. No production release is authorized.
+
+
+## 10. Cross-repository authorization contract review
+
+Static source audit completed against Core #229 head `8063ad968f6af50874b733186385fc7493b2cbfd` and OS #57/#60/#61 heads `110116d844ed73e46ee85d3508c4bac740cd6230`, `17f6c9dc590693e53bd534849192b0daf71aa030`, and `2b6da562cdb1df354e04d6969ca2d54b646914e3`.
+
+The source-level HMAC path/canonical request, 120-second timestamp window, UUID nonce, independent pre-parse nonce reservation, owner assertion identity tuple, permit issuer/audience/key ID, public-key verification, deterministic request correlation ID and exact retry rules were found aligned. The OS consume RPC requires the exact nonce/timestamp pair to have been independently reserved and serializes authorization against tenant/owner lifecycle changes.
+
+**This is not a live staging handshake or independent security certification.** Before staging sign-off, reviewers must still reconcile the deployed HMAC key ring and active key ID, OS owner-assertion signer/public JWK, OS permit private key/Core pinned public JWK and matching `kid`, issuer and audience. Verify the actual database migration ledger and execute the live race/replay/recovery E2E matrix recorded in the runbook.
+
+- [ ] Redacted key-pair and issuer/audience reconciliation approved.
+- [ ] Actual OS and Core migration ledgers verified on disposable staging databases.
+- [ ] Live HMAC replay, malformed authenticated request, concurrent owner revocation/consume, exact expired retry and lost-response recovery tests passed.
+- [ ] Protected-read denial after membership, identity-link and grant revocation verified.
+- [ ] Independent security review and explicit staging authorization recorded.
+
+No secret values may be placed in this packet. Source inspection and CI do not authorize staging or production.
