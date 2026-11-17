@@ -1286,7 +1286,7 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
   });
 });
 
-test("tenant provisioning returns the existing result only for the same dual identity and NOVA OS tenant", async () => {
+test("tenant provisioning recovers committed mapping after suspension and allowlist removal", async () => {
   const digest = createHash("sha256").update(JSON.stringify([
     "nova-core-tenant-provisioning-v1",
     "https://example.cloudflareaccess.com", "operator@example.test",
@@ -1321,7 +1321,7 @@ test("tenant provisioning returns the existing result only for the same dual ide
         now - 400, now - 160,
       ),
     });
-    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", expiredRetryBody), provisioningEnv(db));
+    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", expiredRetryBody), { ...provisioningEnv(db), TENANT_PROVISIONING_SUBJECTS: "" });
     assert.equal(response.status, 200);
     const result = (await response.json()).data;
     assert.equal(result.tenant_id, "tenant-existing");
