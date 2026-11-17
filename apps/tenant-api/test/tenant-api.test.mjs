@@ -1307,8 +1307,8 @@ test("tenant provisioning returns the existing result only for the same dual ide
     nova_os_authorization_correlation_id: "nova-provision:" + digest,
     nova_os_authorization_permit_issued_at: now,
     nova_os_authorization_permit_expires_at: now + 120,
-    tenant_id: "tenant-existing", display_name: "Research tenant", status: "active",
-    membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
+    tenant_id: "tenant-existing", display_name: "Research tenant", status: "suspended",
+    membership_id: "membership-existing", role: "viewer", membership_status: "suspended",
   }]);
   await withProvisioningJwks(async () => {
     const beforeAuthorizationCalls = novaOsAuthorizationCallCount;
@@ -1327,6 +1327,9 @@ test("tenant provisioning returns the existing result only for the same dual ide
     assert.equal(result.tenant_id, "tenant-existing");
     assert.equal(result.created, false);
     assert.equal(result.mapping_receipt_id, "provisioning-request-existing");
+    assert.equal(result.tenant_status, "suspended");
+    assert.equal(result.membership_role, "viewer");
+    assert.equal(result.membership_status, "suspended");
     assert.equal(novaOsAuthorizationCallCount, beforeAuthorizationCalls,
       "committed retries must not consume a new NOVA OS permit");
     assert.equal(db.batchCalls.length, 0);
