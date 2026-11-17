@@ -1335,16 +1335,16 @@ export default {
             !["tenant_owner", "tenant_admin"].includes(memberships[0].role)) return error("not_found", 404);
         const events = await rows(env.DB.prepare(
           "SELECT id, tenant_id, membership_id, subject, actor_subject, event_type, previous_role, new_role, previous_status, new_status, reason, request_id, created_at FROM tenant_membership_events ev WHERE ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin')) ORDER BY created_at DESC, id DESC LIMIT 100"
-        ).bind(tenant, tenant, subject));
+        ).bind(tenant, subject));
         const invitationEvents = await rows(env.DB.prepare(
           "SELECT id, tenant_id, invitation_id, event_type, actor_subject, subject, reason, request_id, created_at FROM tenant_membership_invitation_events ev WHERE ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin')) ORDER BY created_at DESC, id DESC LIMIT 100"
-        ).bind(tenant, tenant, subject));
+        ).bind(tenant, subject));
         const siteGrantEvents = await rows(env.DB.prepare(
           "SELECT id, tenant_id, grant_id, subject, site_id, grant_action, event_type, actor_subject, reason, request_id, created_at FROM tenant_site_grant_events ev WHERE ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin')) ORDER BY created_at DESC, id DESC LIMIT 100"
-        ).bind(tenant, tenant, subject));
+        ).bind(tenant, subject));
         const resourceGrantEvents = await rows(env.DB.prepare(
           "SELECT id, tenant_id, grant_id, subject, resource_type, resource_id, grant_action, event_type, actor_subject, reason, request_id, created_at FROM tenant_resource_grant_events ev WHERE ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin')) ORDER BY created_at DESC, id DESC LIMIT 100"
-        ).bind(tenant, tenant, subject));
+        ).bind(tenant, subject));
         if (events.some(event => event.tenant_id !== tenant) ||
             invitationEvents.some(event => event.tenant_id !== tenant) ||
             siteGrantEvents.some(event => event.tenant_id !== tenant) ||
