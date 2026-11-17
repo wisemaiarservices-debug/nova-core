@@ -7,7 +7,7 @@ import worker from "../src/index.mjs";
 const now = Math.floor(Date.now() / 1000);
 class DB {
   constructor({ membership = true, grant = true, resource = true } = {}) {
-    this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set();
+    this.membership = membership; this.grant = grant; this.resource = resource; this.calls = []; this.nonces = new Set(); this.revokeIdentityLinkAfterCheck = false;
     this.membershipRows = null; this.identityLinkRows = null; this.identityLinkEventRows = null; this.grantRows = null; this.resourceRows = null; this.criteriaRows = null; this.criteriaEventRows = null; this.approvalRows = null; this.observationEvidenceRows = []; this.siteObservationRows = []; this.siteObservationAuthorizationRows = null; this.siteListRows = null; this.laboratoryEvidenceRows = []; this.siteRows = null; this.batchCalls = []; this.batchResult = null; this.batchError = null;
   }
   async batch(statements) {
@@ -21,7 +21,13 @@ class DB {
       async all() {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
-        if (sql.includes("FROM tenant_identity_link_requests")) return { results: db.identityLinkRows ?? [] };
+        if (sql.startsWith("SELECT id FROM tenant_identity_link_requests")) {
+          const result = db.identityLinkRows ?? [];
+          if (db.revokeIdentityLinkAfterCheck) db.identityLinkRows = [];
+          return { results: result };
+        }
+        if (sql.includes("EXISTS (SELECT 1 FROM tenant_identity_link_requests") &&
+            !(db.identityLinkRows ?? []).length) return { results: [] };
         if (sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships")) return { results: db.siteListRows ?? [] };
         if (sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships")) return { results: db.siteObservationAuthorizationRows ?? (db.membership && db.grant ? [{ id: args[2] }] : []) };
         if (sql.includes("SELECT o.id, o.tenant_id, o.site_id, o.asset_id, o.source_id, o.module, o.metric")) return { results: db.siteObservationRows ?? [] };
@@ -2710,11 +2716,33 @@ test("lists only active sites with exact tenant membership and site-read grant a
     assert.deepEqual(link.args, ["tenant-a", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
       "https://example.cloudflareaccess.com", "operator@example.test"]);
     const list = db.calls.find(call => call.sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships"));
-    assert.deepEqual(list.args, ["operator@example.test", "tenant-a"]);
+    assert.deepEqual(list.args, ["operator@example.test", "tenant-a", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
+      "https://example.cloudflareaccess.com", "operator@example.test"]);
+    assert.match(list.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
     assert.match(list.sql, /g\.resource_type = 'site'/);
     assert.match(list.sql, /g\.action = 'read'/);
     assert.match(list.sql, /s\.status = 'active'/);
     assert.match(list.sql, /LIMIT 100/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("site list rechecks the approved identity link in the protected data query", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    const db = new DB();
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    db.revokeIdentityLinkAfterCheck = true;
+    db.siteListRows = [{ id: "site-a", name: "North Farm", timezone: "Africa/Tunis" }];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites"), env(db));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).data, [],
+      "a link revoked after preliminary verification must not disclose sites");
+    const protectedRead = db.calls.find(call => call.sql.includes("SELECT s.id, s.name, s.timezone FROM sites s JOIN tenant_memberships"));
+    assert.ok(protectedRead);
+    assert.match(protectedRead.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -2763,9 +2791,33 @@ test("lists bounded observations only after approved dual-identity and exact sit
     const authorization = db.calls.find(call => call.sql.includes("SELECT s.id FROM sites s JOIN tenant_memberships"));
     assert.deepEqual(authorization.args, ["operator@example.test", "tenant-a", "site-a"]);
     const read = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
-    assert.deepEqual(read.args, ["tenant-a", "site-a"]);
+    assert.deepEqual(read.args, ["tenant-a", "site-a", IDENTITY_SUPABASE_ISSUER, "supabase-user-1",
+      "https://example.cloudflareaccess.com", "operator@example.test"]);
+    assert.match(read.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
     assert.match(read.sql, /ORDER BY o\.observed_at DESC, o\.id DESC LIMIT 100/);
     assert.match(read.sql, /src\.verification_status = 'verified'/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("observation feed rechecks the approved identity link in the protected data query", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [identityJwk] }), { status: 200 });
+  try {
+    const db = new DB();
+    db.identityLinkRows = [{ id: "approved-link-1" }];
+    db.revokeIdentityLinkAfterCheck = true;
+    db.siteObservationRows = [
+      { id: "obs-private", tenant_id: "tenant-a", site_id: "site-a", metric: "soil_moisture", value: 24, unit: "%" },
+    ];
+    const response = await worker.fetch(await request({
+      "x-nova-supabase-access-token": identitySupabaseToken(),
+    }, "https://private.internal/internal/v1/tenants/tenant-a/sites/site-a/observations"), env(db));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).data, [],
+      "a link revoked after preliminary verification must not disclose observations");
+    const protectedRead = db.calls.find(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id"));
+    assert.ok(protectedRead);
+    assert.match(protectedRead.sql, /EXISTS \(SELECT 1 FROM tenant_identity_link_requests il/);
   } finally { globalThis.fetch = originalFetch; }
 });
 
