@@ -168,3 +168,32 @@ Record whether Core PR #228 is included in the coordinated staging candidate.
 - [ ] PR #228 remains draft/unmerged until independent review and explicit staging approval.
 
 This follow-up changes the Core private authorization HTTP response handling only. It does not replace the cross-repository staging E2E matrix, key custody review, migration checks, or release approvals.
+
+
+---
+
+## 9. Current coordinated candidate superseding earlier inventory (2026-11-17)
+
+**Use this section as the current source-of-truth candidate inventory.** Sections 2 and 8 above preserve the earlier #227/#228 source-PR history; where they conflict with this addendum, this addendum supersedes them. Re-fetch every SHA and workflow immediately before any authorized staging activity.
+
+### Consolidated NOVA Core candidate
+
+- Review candidate: [NOVA Core PR #229](https://github.com/wisemaiarservices-debug/nova-core/pull/229)
+- Branch: `integration/core-provisioning-protected-reads-bounded-response-v1`
+- Exact head: `8063ad968f6af50874b733186385fc7493b2cbfd`
+- Base: PR #226 protected-read branch head `d37e678921c73fb231a5831336f0dee51cce1275`; #226 is a prerequisite in the stack and is not included in #229's base-relative diff.
+- Scope: integrated #227 provisioning + protected-read tree, plus #228's bounded streaming authorization-response reader and its regression tests. Fifteen files changed relative to #226.
+- Exact-head Core CI [run 44190571076](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44190571076) completed successfully, all three jobs: API/security tests; research raster tests; Tenant Worker tests including ordered disposable D1 migrations, SQL preparation, isolated fixtures, and gateway/private Worker Service Bindings + D1 end-to-end.
+- PR #229 is draft/open/unmerged. The source PRs #227 and #228 remain open/draft; they are historical source branches, not the consolidated staging SHA.
+- The base prerequisite #226 and its parent protected-read stack #223–#225 must be reviewed and integrated before #229 can be treated as a complete branch against the repository's mainline. Do not bypass the base dependency or merge/deploy this draft candidate.
+
+### Coordinated NOVA OS source branches
+
+- [OS PR #57](https://github.com/wisemaiarservices-debug/NovaOS/pull/57), head `110116d844ed73e46ee85d3508c4bac740cd6230`, based on protocol base `561fcfb1d05ae62c2b70c6d91a9267e58da242c2`. Migration [run 43973754344](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43973754344) and administration [run 43973754374](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43973754374) passed.
+- [OS PR #60](https://github.com/wisemaiarservices-debug/NovaOS/pull/60), head `17f6c9dc590693e53bd534849192b0daf71aa030`, based on #57 head. Migration [run 44078094385](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44078094385) and administration [run 44078094194](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44078094194) passed.
+- [OS PR #61](https://github.com/wisemaiarservices-debug/NovaOS/pull/61), latest head `2b6da562cdb1df354e04d6969ca2d54b646914e3`, based on #60 head. Runtime code head `dfbc6747fa5b418dc6665962ea94ac3917d4134c` passed migration [run 44169408597](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44169408597) and administration [run 44169408610](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44169408610). Latest documentation head passed migration [run 44173340563](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44173340563) and administration [run 44173340728](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44173340728).
+- Preserve the strict OS dependency chain #57 → #60 → #61. All three remain draft/open/unmerged. Review them as one coordinated protocol.
+
+### Release interpretation
+
+These results establish source-branch automated validation only. They do not establish independent security approval, a live OS↔Core staging handshake, deployed secret/key custody, production readiness, or permission to stage. The full staging E2E matrix, independent security review, rollback/recovery rehearsal, pilot/data-rights approval and explicit staging authorization remain outstanding. No production release is authorized.
