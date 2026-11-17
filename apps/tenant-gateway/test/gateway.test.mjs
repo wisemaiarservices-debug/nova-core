@@ -396,7 +396,8 @@ test("routes calibration, sensor identity and quality governance through signed 
     const payload = JSON.stringify({ evidence_ref: "review-record:1" });
     const response = await gateway.fetch(new Request("https://gateway.test" + publicPath, {
       method: "POST",
-      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid", cookie: "browser=session" },
+      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid", cookie: "browser=session",
+        ...(publicPath.endsWith("/measurement-quality-assessment") ? { "Idempotency-Key": "assessment-operation-legacy-test" } : {}) },
       body: payload,
     }), {
       ACCESS_ISSUER: "https://example.cloudflareaccess.com",
@@ -999,3 +1000,34 @@ test("allows idempotency-key in the exact-origin CORS preflight", async () => {
   }), env({ CORS_ALLOWED_ORIGINS: "https://operator.example.test" }));
   assert.equal(response.status, 204);
 })
+
+
+test("forwards stable assessment operation idempotency across fresh signed transport requests", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "assessment-reader", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const forwarded = [];
+  const testEnv = env({ TENANT_API: { fetch: async request => {
+    forwarded.push(request);
+    return new Response(JSON.stringify({ data: { status: "not_assessed" } }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  } } });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await gateway.fetch(new Request(
+      "https://gateway.test/api/v1/tenants/tenant-a/observations/observation-a/measurement-quality-assessment",
+      { method: "POST", headers: {
+        "Cf-Access-Jwt-Assertion": "valid-access-token",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "assessment-operation-001",
+      }, body: "{}" }), testEnv);
+    assert.equal(response.status, 200);
+  }
+  assert.equal(forwarded.length, 2);
+  assert.equal(forwarded[0].headers.get("x-nova-idempotency-key"), "assessment-operation-001");
+  assert.equal(forwarded[1].headers.get("x-nova-idempotency-key"), "assessment-operation-001");
+  assert.notEqual(forwarded[0].headers.get("x-nova-request-id"),
+    forwarded[1].headers.get("x-nova-request-id"));
+  assert.match(forwarded[0].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+  assert.match(forwarded[1].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+});
