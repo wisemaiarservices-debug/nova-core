@@ -257,13 +257,15 @@ A response lost after a site/asset commit is not a reason to create a replacemen
 **Stop condition:** Do not enable ingestion if migration `0035` is absent, its CI is incomplete, or the deployed Worker/database pairing has not passed the revocation-race test. The PR is a draft remediation candidate; this checklist does not authorize deployment.
 
 
+- Exact-head CI [run 44195702163](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44195702163) passed all three jobs: API/security tests; tenant Worker tests including disposable ordered D1 migrations, SQL preparation, fixtures and gateway/private Worker integration; and research raster tests. This is automated repository validation only, not staging E2E.
+
 ## 14. Measurement-quality assessment source lifecycle gate
 
-- [ ] Core PR #232 reviewed and exact-head CI passed; confirm its dependency PR #231 is also reviewed and exact-head CI passed.
+- [ ] Core PR #232 reviewed; exact-head CI passed at `0b6f6e64cd4382392a406ce9198cd603b5c50b15` (run `44195702163`, all three jobs successful). Confirm dependency PR #231 is also reviewed and exact-head CI passed.
 - [ ] Assessment rechecks the current source record at assessment time: exact tenant, module and site/global scope; source remains `verified`; tenant and site remain active.
 - [ ] Staging test verifies that a source revoked or disabled after observation verification cannot receive a new `passed` or `failed` quality assessment.
 - [ ] The rejected attempt is recorded as `not_assessed` with reason `source_not_active_or_verified`.
 - [ ] Historical immutable assessments remain retrievable and are clearly distinguished from newly performed assessments; exact idempotent replay does not create a new assessment.
 - [ ] The existing verified mapping, effective verified calibration, exact approved policy and independent-review requirements remain enforced.
 
-**Stop condition:** Do not enable new quality assessments until PR #232 exact-head CI and the staging source-revocation assessment test pass. This checklist does not authorize deployment or migration.
+**Stop condition:** PR #232 exact-head CI is now green, but do not enable new quality assessments until the staging source-revocation assessment test and all other release gates pass. This checklist does not authorize deployment or migration.
