@@ -51,7 +51,7 @@ class DB {
         if (sql.includes("FROM water_quality_criteria_approvals ap JOIN water_quality_criteria_entries e")) return { results: db.approvalRows ?? [] };
         if (sql.startsWith("SELECT event_type FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
         if (sql.startsWith("SELECT reviewer_subject, reviewer_role, decision, evidence_ref, reviewed_at FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
-        if (sql.includes("FROM water_quality_criteria_reviewers r JOIN tenants")) return { results: db.reviewerRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_reviewers r JOIN tenants t ON t.id = r.tenant_id")) return { results: db.reviewerRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
           const rows = db.membershipRows ?? (db.membership ? [{
