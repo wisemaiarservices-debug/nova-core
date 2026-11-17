@@ -255,3 +255,15 @@ A response lost after a site/asset commit is not a reason to create a replacemen
 - [ ] Unverified, rejected/unverified, revoked/disabled, wrong-module, wrong-tenant, wrong-site, inactive-site and inactive-tenant sources are rejected at insert time.
 
 **Stop condition:** Do not enable ingestion if migration `0035` is absent, its CI is incomplete, or the deployed Worker/database pairing has not passed the revocation-race test. The PR is a draft remediation candidate; this checklist does not authorize deployment.
+
+
+## 14. Measurement-quality assessment source lifecycle gate
+
+- [ ] Core PR #232 reviewed and exact-head CI passed; confirm its dependency PR #231 is also reviewed and exact-head CI passed.
+- [ ] Assessment rechecks the current source record at assessment time: exact tenant, module and site/global scope; source remains `verified`; tenant and site remain active.
+- [ ] Staging test verifies that a source revoked or disabled after observation verification cannot receive a new `passed` or `failed` quality assessment.
+- [ ] The rejected attempt is recorded as `not_assessed` with reason `source_not_active_or_verified`.
+- [ ] Historical immutable assessments remain retrievable and are clearly distinguished from newly performed assessments; exact idempotent replay does not create a new assessment.
+- [ ] The existing verified mapping, effective verified calibration, exact approved policy and independent-review requirements remain enforced.
+
+**Stop condition:** Do not enable new quality assessments until PR #232 exact-head CI and the staging source-revocation assessment test pass. This checklist does not authorize deployment or migration.
