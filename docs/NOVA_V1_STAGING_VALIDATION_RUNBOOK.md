@@ -77,6 +77,13 @@ Existing staging owner-assertion verification and Core mapping-receipt signing c
 - Deploy the Core Worker only after its endpoint, HMAC key ID/map, permit issuer/audience and public JWK are configured.
 - Do not enable any production route, production D1 binding, production Supabase function, or production custom domain as part of this runbook.
 
+## 1C. Static security-review observations (not staging evidence)
+
+- The OS authorization-consumption RPC and the tenant membership-administration RPC both lock the tenant row before the owner/membership row. This matches the intended serialization order for concurrent owner revocation and authorization consumption; staging must still execute the two-session race tests.
+- The OS HMAC nonce reservation is a separate RPC transaction invoked only after request-signature verification. The consume RPC requires the exact nonce/timestamp reservation to exist and be unexpired. The nonce table has forced RLS, direct table privileges are revoked, and the service role is granted RPC execution rather than direct table access.
+- The OS mapping RPC binds the mapping event to the exact consumed permit and request tuple. It does not reactivate the OS tenant or grant OS access. Core protected-read authorization remains a separate gate.
+- These observations are source-level review only. They do not prove deployed database ownership, secret custody, staging behavior, external penetration-test results, or production readiness.
+
 ## 6. Required end-to-end test matrix
 
 Use fresh disposable tenant identities for each case. Capture only request IDs, correlation IDs, commit SHAs, status codes, and redacted audit evidence.
@@ -85,17 +92,17 @@ Use fresh disposable tenant identities for each case. Capture only request IDs, 
 2. **Owner revoked before consumption:** endpoint denies; Core creates zero tenant, membership, grants, provisioning request, or audit rows.
 3. **Concurrent revocation wins:** the PostgreSQL two-session test proves consume fails if revocation obtains the tenant/member lock first.
 4. **Consumption wins:** the exact authorized attempt completes if consumption commits first; a later owner revocation does not create a duplicate or invalidate that already-consumed permit.
-5. **Suspended tenant:** new authorization consumption fails. If the tenant is suspended after consumption but before mapping, the exact consumed permit may complete identity mapping. Assert that the tenant remains suspended and no access is restored; mapping must never reactivate a tenant.
+5. **Suspended tenant:** new authorization consumption fails. If the tenant is suspended after consumption but before mapping, the exact consumed permit may complete identity mapping. Assert that the NOVA OS tenant remains suspended and mapping does not reactivate it. Separately confirm that Core protected reads remain blocked until the independent identity-link approval and Core membership/site-grant checks succeed; mapping itself grants neither.
 6. **Bad HMAC:** wrong key ID, signature, timestamp, path, body digest, or replayed nonce is rejected.
 7. **Bad permit:** wrong key, issuer, audience, expiry, tenant, actor, Supabase identity, Access identity, assertion JTI, idempotency key, digest, correlation ID, or permit JTI fails before Core writes.
 8. **Concurrent exact retry:** submit two identical requests concurrently. Both may receive separately signed permits with the same durable permit JTI and different token timestamps; Core must persist one tenant/provisioning row and resolve the losing request to that same result.
 9. **Changed retry:** same assertion/idempotency identity with changed request claims returns conflict and creates no second tenant.
 10. **Lost response after OS consume but before Core commit:** exact retry only; no altered request may reuse the consumed authorization.
 11. **Core committed but mapping receipt response lost, followed by owner/tenant suspension or provisioning-allowlist removal:** exact retry reissues a receipt with the original durable Core request and consumed permit identity. It must not require current owner/admin status or current allowlist membership, create a second tenant, issue a new OS permit, reactivate either tenant, or restore access. Confirm NOVA OS maps only the exact consumed tuple.
-11. **Lost response after Core commit:** Core resolves the existing durable request before a new OS exchange and returns the same Core tenant/receipt identity.
-12. **Mapping retry:** exact receipt/permit retry is idempotent; a changed tenant, actor, receipt, permit, or digest is rejected.
-13. **Isolation:** a different tenant, owner, Access subject, or Supabase subject cannot read or mutate another tenant's records.
-14. **Secrets hygiene:** scan staging logs, browser bundles, Worker output, function logs, CI artifacts and repository diff for credentials or private key material.
+12. **Lost response after Core commit:** Core resolves the existing durable request before a new OS exchange and returns the same Core tenant/receipt identity.
+13. **Mapping retry:** exact receipt/permit retry is idempotent; a changed tenant, actor, receipt, permit, or digest is rejected.
+14. **Isolation:** a different tenant, owner, Access subject, or Supabase subject cannot read or mutate another tenant's records.
+15. **Secrets hygiene:** scan staging logs, browser bundles, Worker output, function logs, CI artifacts and repository diff for credentials or private key material.
 
 ## 7. Acceptance evidence
 
