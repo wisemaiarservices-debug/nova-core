@@ -193,3 +193,14 @@ Before staging, require:
 6. Human-approved pilot site, data rights, privacy, and recovery procedure before any customer data is used.
 
 Until these gates pass, no production configuration, migrations, deployment, customer provisioning, or customer data access is authorized. This runbook records implementation and disposable-CI evidence only.
+
+
+## 10. Follow-up Core response-boundary hardening
+
+Core PR #228 (`fix/core-bound-owner-authorization-response`) is a draft child of the combined Core PR #227 integration branch. It changes the private NOVA OS authorization response reader to enforce a 16 KiB byte cap while streaming, reject malformed/oversized declared lengths before reading, cancel oversized streams, and decode UTF-8 strictly.
+
+- PR #228 exact head: `46ca757c110313270f7212dab91a933dbdb47e44`.
+- Exact-head Core CI [run 44189340065](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44189340065) passed all three jobs: API tests, tenant Worker/D1 integration (including ordered migrations, SQL preparation, isolated fixtures and gateway/private Worker Service Bindings E2E), and research raster tests.
+- Focused tests cover oversized streaming and cancellation, oversized and malformed Content-Length rejection before body read, and acceptance at exactly 16 KiB.
+- This is disposable CI evidence only. PR #228 remains draft/unmerged and must be included in the coordinated Core review/integration SHA if selected for staging. Re-fetch its head/base and checks before any staging change.
+- No staging configuration, secret, migration, deployment or customer data operation is authorized by this follow-up.
