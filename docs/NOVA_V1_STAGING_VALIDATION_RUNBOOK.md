@@ -230,3 +230,42 @@ This addendum supersedes earlier references in this runbook that name Core #227 
 ### Gate status
 
 Automated source-branch CI is green for the current candidate heads described above. Independent security review, base-stack integration, deployed staging configuration/key custody, live cross-repository E2E, migration/rollback rehearsal, pilot/data-rights approval and explicit staging authorization are not complete. CI is not staging evidence. Production remains blocked; no secrets, migrations, deployments, tenant provisioning or customer-data access were performed.
+
+
+## 12. Cross-repository static contract audit (2026-11-17)
+
+A source-level consistency audit was performed against the exact current candidate refs. This is static inspection only; it is not a live OS↔Core staging handshake or independent security certification.
+
+### Exact refs inspected
+
+- Core #229: `8063ad968f6af50874b733186385fc7493b2cbfd`.
+- OS #57: `110116d844ed73e46ee85d3508c4bac740cd6230`.
+- OS #60: `17f6c9dc590693e53bd534849192b0daf71aa030`.
+- OS #61: `2b6da562cdb1df354e04d6969ca2d54b646914e3` (includes later documentation commits; the nonce-before-parse runtime implementation is at `dfbc6747fa5b418dc6665962ea94ac3917d4134c`).
+
+### Contracts cross-checked
+
+- Core client and OS endpoint use POST to `/nova-core-owner-authorization`.
+- Both sides canonicalize the HMAC input as method, path, key ID, timestamp, nonce and SHA-256 body digest, newline-delimited. OS verifies the configured key-ring entry and enforces the 120-second timestamp window and UUID nonce.
+- OS `supabase/config.toml` disables Supabase JWT gateway verification for this private endpoint; the endpoint itself performs Core HMAC authentication. This does not make the endpoint public-authorized: requests still require the configured server HMAC.
+- OS reserves an authenticated nonce in a separate committed RPC before JSON parsing, payload validation, owner-assertion verification and durable consumption. The consumption RPC requires that exact nonce/timestamp reservation.
+- OS verifies the signed owner assertion against its configured issuer, audience and pinned public JWK, then binds tenant, Supabase issuer/subject, owner role/status and assertion JTI.
+- The OS permit signer emits RS256 with configured permit issuer, audience and key ID. Core pins the corresponding public JWK and checks the header key ID, signature, issuer/audience, Access identity, Supabase identity, OS tenant, assertion JTI, idempotency key, request digest, correlation ID and bounded permit lifetime.
+- Both sides use the deterministic correlation value `nova-provision:<request_sha256>`. OS persistence binds the exact owner attempt and consumed authorization; Core persists the permit identity with its durable provisioning request.
+- Exact retry behavior is deliberately distinct from first use: expired owner assertions are only eligible for exact replay of an already-consumed authorization, never first consumption. New first-use consumption rechecks active tenant and owner under database locks.
+- Core's response reader enforces a 16 KiB streamed response limit and strict UTF-8 decoding.
+
+### Environment/key inventory to reconcile before staging
+
+Core Worker configuration must supply the owner assertion verifier issuer/audience/JWK, the private OS authorization endpoint URL, the Core HMAC key ring and active key ID, and the permit issuer/audience/pinned public JWK. The OS Edge Function must supply the matching Core HMAC key ring, OS owner assertion issuer/audience/JWK, and permit issuer/audience/key ID/private signing key. The public permit JWK's `kid` must equal the OS signing key ID; the OS owner assertion JWK must correspond to the OS assertion signer. Values must be reconciled through a redacted, reviewer-approved inventory; no secret values belong in this document or Git.
+
+### Remaining staging checks
+
+- [ ] Verify the deployed OS owner-assertion signing key and public JWK match the Core-pinned owner assertion JWK.
+- [ ] Verify the OS permit private key and Core-pinned permit public JWK are a matching pair with identical `kid`, issuer and audience.
+- [ ] Verify the Core HMAC active key ID exists in the OS HMAC key ring and both sides use the same secret value, without exposing it in logs or review artifacts.
+- [ ] Verify the actual migration ledger and order on a disposable staging clone, including OS tenant mapping, owner-attempt issuance, mapping receipt, owner authorization consumption, authorization-permit binding and nonce reservation.
+- [ ] Execute live first-use, duplicate nonce, invalid signed payload, concurrent owner revoke/consume, exact expired replay, lost Core response, Core-commit/mapping-recovery and post-revocation protected-read scenarios.
+- [ ] Record observed results, request correlation IDs and redacted evidence; do not treat source inspection or CI as a substitute.
+
+The static audit found the source contracts aligned at the refs above. No deployed secrets, staging migrations, live requests, tenant provisioning, production configuration or customer-data operations were performed. Production remains blocked.
