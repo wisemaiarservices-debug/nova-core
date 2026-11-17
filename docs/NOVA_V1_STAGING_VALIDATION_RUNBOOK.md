@@ -403,10 +403,10 @@ A second-order lifecycle gap remained after ingestion: measurement-quality asses
 
 Core PR #232 adds a live source check before creating a new assessment. It requires the exact source to remain verified, match the observation's tenant and module, be explicitly global or scoped to the observation site, and belong to an active tenant and active site. Otherwise the assessment is recorded as `not_assessed` with reason `source_not_active_or_verified`. Historical observations and already-created immutable assessment records are not rewritten; exact idempotent replay returns the original result rather than creating a new assessment.
 
-Regression coverage includes revoked, disabled and unverified sources, wrong module and wrong site. PR #232 is stacked on PR #231 and exact-head CI is pending.
+Regression coverage includes revoked, disabled and unverified sources, wrong module and wrong site. PR #232 is stacked on PR #231. Exact-head CI passed at `0b6f6e64cd4382392a406ce9198cd603b5c50b15`: [run 44195702163](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44195702163), all three jobs successful (API/security, tenant Worker with disposable D1 migrations and gateway/private Worker integration, and research raster tests). This is repository CI evidence only, not staging E2E.
 
 ### Release gate
 
-Treat PR #232 as a required dependency before enabling new measurement-quality assessments in staging. Validate exact-head CI, then exercise revocation after observation verification but before a new assessment. Confirm no new `passed` or `failed` assessment is created after source revocation. Historical assessment retrieval and exact idempotent replay must remain auditable and must not be represented as a newly performed assessment.
+Treat PR #232 as a required dependency before enabling new measurement-quality assessments in staging. Exact-head CI is green; still exercise revocation after observation verification but before a new assessment. Confirm no new `passed` or `failed` assessment is created after source revocation. Historical assessment retrieval and exact idempotent replay must remain auditable and must not be represented as a newly performed assessment.
 
 No staging or production database was queried or changed during this audit.
