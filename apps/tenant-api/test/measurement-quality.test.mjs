@@ -69,7 +69,7 @@ test("assessment retry for the same observation returns the immutable prior resu
 });
 test("concurrent duplicate assessment insert replays the winning immutable row",async()=>{
  const prior={id:"assessment-winner",tenant_id:"tenant-1",observation_id:"obs-1",status:"passed",reason_code:"within_approved_policy_bounds",mapping_id:"map-1",calibration_id:"cal-1",policy_id:"policy-1",method_version:"1.0.0"};
- const db=dbFixture({assessmentInsertChanges:0,racedAssessment:prior});
+ const db=dbFixture({assessmentGateChanges:0,racedAssessment:prior});
  const r=await assessMeasurementQuality(db,"tenant-1","obs-1","req-race-replay");
  assert.equal(r.status,200);assert.equal(r.data.id,"assessment-winner");
  const write=db.calls.find(x=>x.sql.includes("INSERT INTO measurement_quality_assessments"));
