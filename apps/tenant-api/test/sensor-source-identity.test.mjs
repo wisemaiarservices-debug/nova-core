@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { registerSensorSourceMapping, reviewSensorSourceMapping, resolveVerifiedSensorSourceMapping } from "../src/sensor-source-identity.mjs";
 globalThis.crypto ??= webcrypto;
-function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[],sourceStatus="verified"}={}){
+function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[],sourceStatus="verified",eventChanges=1}={}){
  const calls=[];
  return {calls,prepare(sql){return {sql,values:[],bind(...v){this.values=v;return this;},async all(){
   if(sql.includes("FROM assets"))return {results:[{id:"asset-1"}]};
@@ -14,7 +14,7 @@ function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[],sour
   if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:matches};
   if(sql.includes("FROM sensor_source_mapping_events"))return {results:history};
   throw Error(sql);
- },async run(){calls.push({sql,values:this.values});const blocked=sql.includes("INSERT INTO sensor_source_mapping_events")&&sql.includes("SELECT")&&sourceStatus!=="verified";return {meta:{changes:blocked?0:1}};}};},async batch(stmts){calls.push(...stmts.map(x=>({sql:x.sql,values:x.values})));return stmts.map(()=>({meta:{changes:1}}));}};
+ },async run(){calls.push({sql,values:this.values});const blocked=sql.includes("INSERT INTO sensor_source_mapping_events")&&sql.includes("SELECT")&&(sourceStatus!=="verified"||eventChanges!==1);return {meta:{changes:blocked?0:1}};}};},async batch(stmts){calls.push(...stmts.map(x=>({sql:x.sql,values:x.values})));return stmts.map(()=>({meta:{changes:1}}));}};
 }
 const mapping={id:"map-1",source_id:"source-1",sensor_id:"sensor-7",parameter:"air_temperature",unit:"degC",effective_from:"2026-01-01T00:00:00.000Z",mapping_method:"commissioning inspection",evidence_ref:"evidence-7"};
 test("mapping registration requires exact explicit identity fields and writes immutable record plus audit",async()=>{
@@ -49,7 +49,22 @@ test("rejected mapping cannot be revoked as if it had been verified",async()=>{
  const r=await reviewSensorSourceMapping(dbFixture({history:[{event_type:"rejected"}]}),"tenant-1","site-1","asset-1","map-1","reviewer","req-1",{decision:"revoke",evidence_ref:"evidence-7",reason:"withdraw"});
  assert.equal(r.error,"sensor_source_mapping_state_conflict");
 });
-test("resolver requires one exact verified mapping and returns its declared sensor identity",async()=>{
+
+test("concurrent mapping verification loses safely when another event wins first",async()=>{
+ const db=dbFixture({eventChanges:0});
+ const r=await reviewSensorSourceMapping(db,"tenant-1","site-1","asset-1","map-1","reviewer","req-race",{decision:"verify",evidence_ref:"evidence-7"});
+ assert.equal(r.error,"sensor_source_mapping_source_not_active_or_verified");
+ assert.match(db.calls[0].sql,/NOT EXISTS \(SELECT 1 FROM sensor_source_mapping_events/);
+ assert.match(db.calls[0].sql,/tenant_memberships/);
+ assert.match(db.calls[0].sql,/sensor_source_mapping_reviewers/);
+});
+test("concurrent mapping revocation loses safely unless verified remains the latest event",async()=>{
+ const db=dbFixture({history:[{event_type:"verified"}],eventChanges:0});
+ const r=await reviewSensorSourceMapping(db,"tenant-1","site-1","asset-1","map-1","reviewer","req-race",{decision:"revoke",evidence_ref:"evidence-7",reason:"withdrawn"});
+ assert.equal(r.error,"sensor_source_mapping_state_conflict");
+ assert.match(db.calls[0].sql,/ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1/);
+});
+\ntest("resolver requires one exact verified mapping and returns its declared sensor identity",async()=>{
  const db=dbFixture({matches:[{id:"map-1",sensor_id:"sensor-7",parameter:"air_temperature",unit:"degC",effective_from:"2026-01-01T00:00:00.000Z",effective_to:null}]});
  const result=await resolveVerifiedSensorSourceMapping(db,"tenant-1",{site_id:"site-1",asset_id:"asset-1",source_id:"source-1",metric:"air_temperature",unit:"degC",observed_at:"2026-02-01T00:00:00.000Z"});
  assert.equal(result.sensor_id,"sensor-7");
