@@ -947,10 +947,9 @@ async function createTenantForProvisioning(
         !Number.isInteger(prior.nova_os_authorization_permit_expires_at)) {
       return { error: "tenant_provisioning_conflict", status: 409 };
     }
-    if (prior.role !== "tenant_owner" || prior.membership_status !== "active" ||
-        prior.status !== "active") {
-      return { error: "tenant_provisioning_conflict", status: 409 };
-    }
+    // A durable Core commit may outlive a later owner/tenant suspension.
+    // Recovering the exact mapping receipt must not require active membership:
+    // NOVA OS verifies the consumed permit and does not reactivate access.
     return { data: {
       tenant_id: prior.tenant_id,
       display_name: prior.display_name,
@@ -1072,9 +1071,9 @@ async function createTenantForProvisioning(
       row.nova_os_authorization_permit_expires_at - row.nova_os_authorization_permit_issued_at > 120) {
     return { error: "tenant_provisioning_conflict", status: 409 };
   }
-  if (row.role !== "tenant_owner" || row.membership_status !== "active" || row.status !== "active") {
-    return { error: "tenant_provisioning_conflict", status: 409 };
-  }
+  // The winning concurrent commit may be suspended before this retry
+  // resolves it. Return the exact durable identity so the mapping receipt can
+  // be reissued; this path does not create grants or reactivate either system.
   return { data: { tenant_id: row.tenant_id, display_name: row.display_name,
     tenant_status: row.status, membership_id: row.membership_id, membership_role: row.role,
     membership_status: row.membership_status,
