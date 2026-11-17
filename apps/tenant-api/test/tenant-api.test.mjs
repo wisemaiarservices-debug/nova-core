@@ -146,7 +146,7 @@ test("authorizes exact tenant membership and resource grant before scoped read",
   const response = await worker.fetch(await request(), env(db));
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data.name, "Test resource");
-  assert.deepEqual(db.calls[3].args, ["tenant-a", "site-a", "tenant-a", "operator@example.test"]);
+  assert.deepEqual(db.calls[3].args, ["tenant-a", "site-a", "operator@example.test"]);
   assert.match(db.calls[3].sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
   assert.match(db.calls[3].sql, /g\.action = 'read'/);
 });
@@ -161,7 +161,7 @@ test("resource detail query rechecks membership and exact grant after preliminar
     assert.ok(finalRead, "final resource query must execute");
     assert.match(finalRead.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
     assert.match(finalRead.sql, /g\.action = 'read'/);
-    assert.deepEqual(finalRead.args, ["tenant-a", "site-a", "tenant-a", "operator@example.test"]);
+    assert.deepEqual(finalRead.args, ["tenant-a", "site-a", "operator@example.test"]);
   }
 });
 
@@ -184,7 +184,7 @@ test("all resource detail types bind their exact grant into the final protected 
     assert.match(finalRead.sql, new RegExp("g\\.resource_type = '" + resourceType + "'"), path);
     assert.match(finalRead.sql, /g\.resource_id = /, path);
     assert.match(finalRead.sql, /g\.action = 'read'/, path);
-    assert.deepEqual(finalRead.args, [ "tenant-a", path.split("/").at(-1), "tenant-a", "operator@example.test" ], path);
+    assert.deepEqual(finalRead.args, [ "tenant-a", path.split("/").at(-1), "operator@example.test" ], path);
   }
 });
 
