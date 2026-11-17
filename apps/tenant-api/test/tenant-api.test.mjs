@@ -39,6 +39,14 @@ class DB {
           if (sql.includes("EXISTS (SELECT 1 FROM tenant_memberships") && (!db.membership || !db.grant)) return { results: [] };
           return { results: db.siteObservationRows ?? [] };
         }
+        if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql) &&
+            sql.includes("EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t")) {
+          if (!db.membership || !db.grant) return { results: [] };
+          return { results: db.resourceRows ?? (db.resource ? [{
+            id: args[1], tenant_id: args[0], name: "Test resource",
+          }] : []) };
+        }
+        if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
           const rows = db.membershipRows ?? (db.membership ? [{
             subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
@@ -66,7 +74,6 @@ class DB {
         if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };
         if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
-        if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_reviewers")) {
@@ -74,13 +81,6 @@ class DB {
           return { results: sql.includes("SELECT DISTINCT") ? reviewerRows.slice(0, 1) : reviewerRows };
         }
         if (sql.includes("FROM water_quality_criteria_reviewer_events")) return { results: db.reviewerEventRows ?? [] };
-        if (/FROM (sites|assets|sources|observations|audit_events)/.test(sql)) {
-          if (sql.includes("EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t") &&
-              (!db.membership || !db.grant)) return { results: [] };
-          return { results: db.resourceRows ?? (db.resource ? [{
-            id: args[1], tenant_id: args[0], name: "Test resource",
-          }] : []) };
-        }
         throw new Error("unexpected SQL");
       },
       async run() {
