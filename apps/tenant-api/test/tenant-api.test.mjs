@@ -642,6 +642,14 @@ test("reviewer list and immutable assignment history are restricted to tenant ow
   const body = await response.json();
   assert.equal(body.data.reviewers.length, 1);
   assert.equal(body.data.events[0].event_type, "assigned");
+  const reviewerReads = db.calls.filter(call =>
+    call.sql.includes("FROM water_quality_criteria_reviewers WHERE tenant_id") ||
+    call.sql.includes("FROM water_quality_criteria_reviewer_events WHERE tenant_id"));
+  assert.equal(reviewerReads.length, 2);
+  for (const read of reviewerReads) {
+    assert.match(read.sql, /tenant_memberships m JOIN tenants t/);
+    assert.deepEqual(read.args, ["tenant-a", "tenant-a", "operator@example.test"]);
+  }
   const viewer = new DB();
   const denied = await worker.fetch(await request({},
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/reviewers"), env(viewer));
