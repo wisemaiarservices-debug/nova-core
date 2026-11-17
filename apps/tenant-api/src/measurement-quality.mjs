@@ -49,26 +49,40 @@ async function exactlyOne(db,sql,values,errorCode){
  if(!Array.isArray(result?.results))throw new Error("measurement_quality_lookup_invalid");
  return result.results.length===1?result.results[0]:null;
 }
+async function assessmentReplay(db,tenant,observationId,requestId){
+ const prior=await db.prepare("SELECT id,tenant_id,observation_id,status,reason_code,mapping_id,calibration_id,policy_id,method_version FROM measurement_quality_assessments WHERE tenant_id=? AND request_id=? LIMIT 1").bind(tenant,requestId).all();
+ if(!Array.isArray(prior?.results))throw new Error("measurement_quality_idempotency_lookup_invalid");
+ if(prior.results.length!==1)return null;
+ if(prior.results[0].observation_id!==observationId)return {error:"measurement_quality_idempotency_conflict",status:409};
+ return {data:prior.results[0],status:200};
+}
 async function assessmentResult(db,tenant,observation,requestId,status,reason,mapping=null,calibration=null,policy=null){
  const id=crypto.randomUUID();
  const values=[id,tenant,observation.site_id,observation.id,mapping?.id??null,calibration?.id??null,policy?.id??null,status,reason,Number.isFinite(observation.value)?observation.value:null,observation.unit??null,"1.0.0",requestId];
  let result;
  if(status==="passed"||status==="failed"){
   const gateSql="INSERT INTO measurement_quality_assessments(id,tenant_id,site_id,observation_id,mapping_id,calibration_id,policy_id,status,reason_code,observed_value,unit,method_version,request_id) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM observations o JOIN tenants t ON t.id=o.tenant_id AND t.status='active' JOIN sites st ON st.id=o.site_id AND st.tenant_id=o.tenant_id AND st.status='active' JOIN assets a ON a.tenant_id=o.tenant_id AND a.site_id=o.site_id AND a.id=? AND a.status='active' JOIN sources s ON s.id=o.source_id AND s.tenant_id=o.tenant_id AND s.module=o.module AND s.verification_status='verified' AND (s.site_id IS NULL OR s.site_id=o.site_id) WHERE o.tenant_id=? AND o.id=? AND o.site_id=? AND o.source_id=? AND o.module=? AND o.metric=? AND o.unit=? AND o.observed_at=? AND o.value IS ? AND o.provenance_json IS ? AND o.verification_status='verified') AND EXISTS (SELECT 1 FROM sensor_source_identity_mappings m JOIN sensor_source_mapping_events e ON e.mapping_id=m.id AND e.tenant_id=m.tenant_id WHERE m.tenant_id=? AND m.site_id=? AND m.asset_id=? AND m.id=? AND m.source_id=? AND m.sensor_id=? AND m.parameter=? AND m.unit=? AND m.effective_from<=? AND (m.effective_to IS NULL OR m.effective_to>?) AND e.id=(SELECT e2.id FROM sensor_source_mapping_events e2 WHERE e2.tenant_id=m.tenant_id AND e2.mapping_id=m.id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1) AND e.event_type='verified') AND EXISTS (SELECT 1 FROM sensor_calibrations c JOIN sensor_calibration_verification_events e ON e.calibration_id=c.id AND e.tenant_id=c.tenant_id WHERE c.tenant_id=? AND c.site_id=? AND c.asset_id=? AND c.id=? AND c.sensor_id=? AND c.parameter=? AND c.unit=? AND c.calibrated_at<=? AND c.valid_until>=? AND e.id=(SELECT e2.id FROM sensor_calibration_verification_events e2 WHERE e2.tenant_id=c.tenant_id AND e2.calibration_id=c.id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1) AND e.event_type='verified') AND EXISTS (SELECT 1 FROM measurement_quality_policies p JOIN measurement_quality_policy_events e ON e.policy_id=p.id AND e.tenant_id=p.tenant_id WHERE p.tenant_id=? AND p.site_id=? AND p.asset_id=? AND p.id=? AND p.sensor_id=? AND p.parameter=? AND p.unit=? AND p.effective_from<=? AND (p.effective_to IS NULL OR p.effective_to>?) AND p.minimum_value IS ? AND p.maximum_value IS ? AND p.version=? AND e.id=(SELECT e2.id FROM measurement_quality_policy_events e2 WHERE e2.tenant_id=p.tenant_id AND e2.policy_id=p.id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1) AND e.event_type='verified')";
-  result=await db.prepare(gateSql).bind(...values,mapping.asset_id,tenant,observation.id,observation.site_id,observation.source_id,observation.module,observation.metric,observation.unit,observation.observed_at,observation.value,observation.provenance_json??"{}",tenant,observation.site_id,mapping.asset_id,mapping.id,observation.source_id,mapping.sensor_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at,tenant,observation.site_id,mapping.asset_id,calibration.id,mapping.sensor_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at,tenant,observation.site_id,mapping.asset_id,policy.id,mapping.sensor_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at,policy.minimum_value,policy.maximum_value,policy.version).run();
-  if(result?.meta?.changes!==1)return assessmentResult(db,tenant,observation,requestId,"not_assessed","governance_state_changed_before_assessment",mapping,calibration,policy);
+  result=await db.prepare(gateSql+" ON CONFLICT(tenant_id,request_id) DO NOTHING").bind(...values,mapping.asset_id,tenant,observation.id,observation.site_id,observation.source_id,observation.module,observation.metric,observation.unit,observation.observed_at,observation.value,observation.provenance_json??"{}",tenant,observation.site_id,mapping.asset_id,mapping.id,observation.source_id,mapping.sensor_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at,tenant,observation.site_id,mapping.asset_id,calibration.id,mapping.sensor_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at,tenant,observation.site_id,mapping.asset_id,policy.id,mapping.sensor_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at,policy.minimum_value,policy.maximum_value,policy.version).run();
+  if(result?.meta?.changes!==1){
+   const replay=await assessmentReplay(db,tenant,observation.id,requestId);
+   if(replay)return replay;
+   return assessmentResult(db,tenant,observation,requestId,"not_assessed","governance_state_changed_before_assessment",mapping,calibration,policy);
+  }
  }else{
-  result=await db.prepare("INSERT INTO measurement_quality_assessments(id,tenant_id,site_id,observation_id,mapping_id,calibration_id,policy_id,status,reason_code,observed_value,unit,method_version,request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(...values).run();
+  result=await db.prepare("INSERT INTO measurement_quality_assessments(id,tenant_id,site_id,observation_id,mapping_id,calibration_id,policy_id,status,reason_code,observed_value,unit,method_version,request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id,request_id) DO NOTHING").bind(...values).run();
  }
- if(result?.meta?.changes!==1)throw new Error("measurement_quality_assessment_write_failed");
+ if(result?.meta?.changes!==1){
+  const replay=await assessmentReplay(db,tenant,observation.id,requestId);
+  if(replay)return replay;
+  throw new Error("measurement_quality_assessment_write_failed");
+ }
  return {data:{id,tenant_id:tenant,observation_id:observation.id,status,reason_code:reason,mapping_id:mapping?.id??null,calibration_id:calibration?.id??null,policy_id:policy?.id??null,method_version:"1.0.0"},status:201};
 }
 
 export async function assessMeasurementQuality(db,tenant,observationId,requestId){
  if(!validId(observationId)||!validText(requestId,80))return {error:"measurement_quality_assessment_request_invalid",status:400};
- const prior=await db.prepare("SELECT id,tenant_id,observation_id,status,reason_code,mapping_id,calibration_id,policy_id,method_version FROM measurement_quality_assessments WHERE tenant_id=? AND request_id=? LIMIT 1").bind(tenant,requestId).all();
- if(!Array.isArray(prior?.results))throw new Error("measurement_quality_idempotency_lookup_invalid");
- if(prior.results.length===1)return {data:prior.results[0],status:200};
+ const replay=await assessmentReplay(db,tenant,observationId,requestId);
+ if(replay)return replay;
  const observation=await exactlyOne(db,"SELECT id,tenant_id,site_id,source_id,module,metric,value,unit,observed_at,verification_status,provenance_json FROM observations WHERE tenant_id=? AND id=? LIMIT 2",[tenant,observationId]);
  if(!observation)return {error:"observation_not_found",status:404};
  if(observation.verification_status!=="verified")return assessmentResult(db,tenant,observation,requestId,"not_assessed","observation_not_verified");
