@@ -1719,9 +1719,10 @@ test("site grant API rejects unsupported tenant-level manage-members permission"
 
 class TenantLifecycleDB {
   constructor({ role = "tenant_owner", membershipStatus = "active", status = "active",
-    batchResult = null, events = [] } = {}) {
+    batchResult = null, events = [], revokeBeforeAuditRead = false } = {}) {
     this.role = role; this.membershipStatus = membershipStatus; this.status = status;
-    this.batchResult = batchResult; this.events = events; this.batchCalls = []; this.calls = [];
+    this.batchResult = batchResult; this.events = events; this.revokeBeforeAuditRead = revokeBeforeAuditRead;
+    this.batchCalls = []; this.calls = [];
     this.nonces = new Set();
   }
   prepare(sql) {
@@ -1735,7 +1736,9 @@ class TenantLifecycleDB {
         if (sql.includes("FROM tenants t JOIN tenant_memberships")) return { results: [{
           id: args[0], status: db.status, role: db.role, membership_status: db.membershipStatus,
         }] };
-        if (sql.includes("FROM tenant_lifecycle_events")) return { results: db.events };
+        if (sql.includes("FROM tenant_lifecycle_events")) {
+          return { results: db.revokeBeforeAuditRead ? [] : db.events };
+        }
         if (sql.includes("FROM tenant_memberships m WHERE")) return { results: [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: db.role,
           membership_status: db.membershipStatus,
@@ -1823,13 +1826,31 @@ test("tenant lifecycle rejects caller-supplied actor and invalid actions", async
   }
 });
 
-test("tenant lifecycle audit history is available to active tenant administrators", async () => {
+test("tenant lifecycle audit history is available to active tenant administrators, including archived tenants", async () => {
   const db = new TenantLifecycleDB({ role: "tenant_admin", status: "archived",
     events: [{ id: "event-1", tenant_id: "tenant-a", event_type: "archived" }] });
   const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-lifecycle-events-001" },
     "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-events", "GET"), env(db));
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data[0].event_type, "archived");
+  const query = db.calls.find(call => call.sql.includes("FROM tenant_lifecycle_events"));
+  assert.deepEqual(query.args, ["tenant-a", "operator@example.test"]);
+  assert.match(query.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m/);
+  assert.match(query.sql, /m.status = 'active' AND m.role IN \('tenant_owner','tenant_admin'\)/);
+  assert.doesNotMatch(query.sql, /JOIN tenants|tenant_status = 'active'/);
+});
+
+test("tenant lifecycle audit final read returns no history after owner/admin authority is revoked", async () => {
+  const db = new TenantLifecycleDB({ role: "tenant_admin", status: "active",
+    events: [{ id: "event-1", tenant_id: "tenant-a", event_type: "suspended" }],
+    revokeBeforeAuditRead: true });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "tenant-lifecycle-events-revoked-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/lifecycle-events", "GET"), env(db));
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).data, []);
+  const query = db.calls.find(call => call.sql.includes("FROM tenant_lifecycle_events"));
+  assert.deepEqual(query.args, ["tenant-a", "operator@example.test"]);
+  assert.match(query.sql, /m.status = 'active'/);
 });
 
 class OwnershipTransferDB {
