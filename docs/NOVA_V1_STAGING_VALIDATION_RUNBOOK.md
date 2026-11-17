@@ -471,3 +471,12 @@ Exact-head CI for PR #236 head `10659aebd639e8f66dfc327927d8a8e5293471f8`, run [
 - Confirm tenant isolation: identical request keys in different tenants do not share or expose results.
 
 **Stop condition:** PR #236 remains draft and unmerged. Require independent review and real staging D1 concurrency tests before treating assessment idempotency as release-ready. CI is not live concurrency evidence and does not authorize deployment or production activation.
+
+
+## 19. Consolidated governed ingestion and assessment candidate
+
+Draft integration PR #237 consolidates the source-governance and assessment changes from #231–#236 on top of integration base #229. The consolidated branch head is `b433caaa156bfe3bd2c1a511bdced7ccd1bf2aaf`; its only commit above the #236 runtime-tested head `10659aebd639e8f66dfc327927d8a8e5293471f8` adds `docs/NOVA_V1_GOVERNED_INGESTION_ASSESSMENT_INTEGRATION.md`. No runtime source changed in that docs-only commit. No new workflow run was reported for the docs-only commit; the unchanged runtime tree passed #236 exact-head CI [44202004431](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44202004431), 3/3 jobs.
+
+The consolidated PR is a review surface, not a merge. Its included runtime controls and staging checklist are described in the integration note. All constituent PRs remain draft/unmerged. Independent review, true staging D1 concurrency/revocation tests, migration rehearsal, exact secret/key reconciliation and explicit release approval remain mandatory.
+
+**Stop condition:** Do not treat PR #237 as independently CI-validated at its docs-only head; cite the #236 runtime head and CI only for the unchanged runtime files. No staging/production changes.
