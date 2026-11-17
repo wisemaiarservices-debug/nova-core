@@ -41,7 +41,7 @@ class ObservationVerifiedSourceGuardTests(unittest.TestCase):
         )
 
     def test_unverified_source_is_rejected_at_insert(self):
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified source"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified matching source"):
             self.insert_observation()
 
     def test_verified_matching_source_is_accepted(self):
@@ -53,29 +53,29 @@ class ObservationVerifiedSourceGuardTests(unittest.TestCase):
         self.db.execute("UPDATE sources SET verification_status='verified' WHERE id='source-a'")
         # Models a revocation committing after the Worker's ownership lookup but before its insert.
         self.db.execute("UPDATE sources SET verification_status='disabled' WHERE id='source-a'")
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified source"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified matching source"):
             self.insert_observation()
 
     def test_global_source_still_requires_verified_status_and_matching_module(self):
         self.insert_observation(source_id="source-global", module="neogrid")
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified source"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified matching source"):
             self.insert_observation("obs-b", source_id="source-global", module="neoagro")
 
     def test_source_must_match_tenant_and_site(self):
         self.db.execute("UPDATE sources SET verification_status='verified' WHERE id='source-a'")
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified source"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified matching source"):
             self.insert_observation(tenant_id="tenant-other")
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified source"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified matching source"):
             self.insert_observation("obs-b", site_id="site-other")
 
     def test_site_and_tenant_must_be_active(self):
         self.db.execute("UPDATE sources SET verification_status='verified' WHERE id='source-a'")
         self.db.execute("UPDATE sites SET status='inactive' WHERE id='site-a'")
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified source"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified matching source"):
             self.insert_observation()
         self.db.execute("UPDATE sites SET status='active' WHERE id='site-a'")
         self.db.execute("UPDATE tenants SET status='suspended' WHERE id='tenant-a'")
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified source"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "verified matching source"):
             self.insert_observation()
 
 
