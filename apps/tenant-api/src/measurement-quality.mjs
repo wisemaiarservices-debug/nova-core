@@ -59,7 +59,7 @@ export async function assessMeasurementQuality(db,tenant,observationId,requestId
  const prior=await db.prepare("SELECT id,tenant_id,observation_id,status,reason_code,mapping_id,calibration_id,policy_id,method_version FROM measurement_quality_assessments WHERE tenant_id=? AND request_id=? LIMIT 1").bind(tenant,requestId).all();
  if(!Array.isArray(prior?.results))throw new Error("measurement_quality_idempotency_lookup_invalid");
  if(prior.results.length===1)return {data:prior.results[0],status:200};
- const observation=await exactlyOne(db,"SELECT id,tenant_id,site_id,source_id,metric,value,unit,observed_at,verification_status,provenance_json FROM observations WHERE tenant_id=? AND id=? LIMIT 2",[tenant,observationId]);
+ const observation=await exactlyOne(db,"SELECT id,tenant_id,site_id,source_id,module,metric,value,unit,observed_at,verification_status,provenance_json FROM observations WHERE tenant_id=? AND id=? LIMIT 2",[tenant,observationId]);
  if(!observation)return {error:"observation_not_found",status:404};
  if(observation.verification_status!=="verified")return assessmentResult(db,tenant,observation,requestId,"not_assessed","observation_not_verified");
  if(!Number.isFinite(observation.value)||!validText(observation.source_id,160)||!validText(observation.metric,120)||!validText(observation.unit,48)||!validTime(observation.observed_at))
@@ -68,6 +68,8 @@ export async function assessMeasurementQuality(db,tenant,observationId,requestId
  try{provenance=JSON.parse(observation.provenance_json??"{}");}catch{return assessmentResult(db,tenant,observation,requestId,"not_assessed","observation_provenance_invalid");}
  if(["synthetic","demo","modelled","modeled"].includes(provenance.provenance_class))
   return assessmentResult(db,tenant,observation,requestId,"not_assessed","non_field_evidence");
+ const source=await exactlyOne(db,"SELECT s.id FROM sources s JOIN tenants t ON t.id=s.tenant_id AND t.status='active' JOIN sites st ON st.id=? AND st.tenant_id=s.tenant_id AND st.status='active' WHERE s.id=? AND s.tenant_id=? AND s.module=? AND s.verification_status='verified' AND (s.site_id IS NULL OR s.site_id=?) LIMIT 2",[observation.site_id,observation.source_id,tenant,observation.module,observation.site_id]);
+ if(!source)return assessmentResult(db,tenant,observation,requestId,"not_assessed","source_not_active_or_verified");
  const mapRows=await db.prepare("SELECT m.id,m.asset_id,m.sensor_id,m.parameter,m.unit FROM sensor_source_identity_mappings m JOIN sensor_source_mapping_events e ON e.mapping_id=m.id AND e.tenant_id=m.tenant_id WHERE m.tenant_id=? AND m.site_id=? AND m.source_id=? AND m.parameter=? AND m.unit=? AND m.effective_from<=? AND (m.effective_to IS NULL OR m.effective_to>?) AND e.id=(SELECT e2.id FROM sensor_source_mapping_events e2 WHERE e2.tenant_id=m.tenant_id AND e2.mapping_id=m.id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1) AND e.event_type='verified' ORDER BY m.effective_from DESC LIMIT 2")
  .bind(tenant,observation.site_id,observation.source_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at).all();
  if(!Array.isArray(mapRows?.results))throw new Error("measurement_quality_mapping_lookup_invalid");
