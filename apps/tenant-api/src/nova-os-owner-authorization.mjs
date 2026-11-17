@@ -89,6 +89,8 @@ async function readBoundedResponse(response) {
       }
       chunks.push(value);
     }
+  } catch {
+    throw new Error("nova_os_authorization_response_invalid");
   } finally {
     reader.releaseLock();
   }
