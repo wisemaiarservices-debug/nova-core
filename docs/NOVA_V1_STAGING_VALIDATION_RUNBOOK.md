@@ -340,3 +340,35 @@ This is a proposed safe order for review, not an authorization to execute it. Co
 ### Evidence status
 
 The source migrations were inspected at OS #61 head `2b6da562cdb1df354e04d6969ca2d54b646914e3` and Core #229 head `8063ad968f6af50874b733186385fc7493b2cbfd`. This review establishes source ordering and the legacy backfill precondition only. The target staging migration ledger, populated-data preflight, backup restore, live cross-repository recovery tests and staging approval remain outstanding. No staging or production database was queried or changed.
+
+
+## 14. First-site and asset onboarding transaction/retry audit (2026-11-17)
+
+### Source-level findings
+
+Reviewed Core #229 source at `8063ad968f6af50874b733186385fc7493b2cbfd`:
+
+- `apps/tenant-api/src/site-creation.mjs` creates a site, the exact owner's initial site-read grant, grant event, site-created event and immutable idempotency record in one D1 batch. The final idempotency row is guarded by the existence of the site event and matching read grant.
+- `apps/tenant-api/src/asset-registration.mjs` creates an `unconfigured` asset, exact owner's initial asset-read grant, grant event, asset-created event and immutable idempotency record in one D1 batch. Composite tenant/site/asset scope is enforced by the migration constraints.
+- Both operations look up the actor/tenant-scoped idempotency key before writing. An exact request digest returns the original resource; a changed digest conflicts. If a batch reports failure, the code checks for a committed idempotency record before deciding whether to return a replay or propagate the failure.
+- The route layer requires the currently active tenant owner, active tenant and approved exact dual-identity link before first-site creation. Asset creation additionally requires the exact active site read grant. These checks also run before the idempotent helper is reached; replay is therefore not an authorization bypass.
+- Site/asset events and creation-request records are append-only. Their migration triggers reject incomplete audit/grant/resource combinations.
+
+### Recovery implications
+
+D1 batch atomicity plus the final request-record guards prevents a partially committed site/asset setup from being reported as successful. A lost response can be recovered with the same idempotency key and body digest while the caller still satisfies the route's current authorization checks.
+
+If the owner is suspended, the tenant is inactive, the dual-identity link is no longer approved, or (for assets) the site read grant is absent, the route denies the request before replay lookup. Do not bypass those checks to recover a response. First resolve the current authorization through the governed membership/identity/grant lifecycle, then retry the exact original request. Existing committed site/asset records and append-only events remain intact; do not delete them or create a replacement merely because the response was lost.
+
+### Regression coverage inspected
+
+- `site-creation.test.mjs`: atomic site/grant/audit/idempotency write, exact replay, digest conflict, malformed input, exact approved dual-identity pair, failed-batch handling.
+- `asset-registration.test.mjs`: atomic unconfigured asset/grant/audit write, exact replay, digest/scope conflict, exact approved dual-identity pair, failed-batch handling.
+- `site-creation-route.test.mjs`: linked active owner requirement, non-owner denial, unapproved identity denial, caller-supplied tenant/site field rejection.
+- `asset-registration-route.test.mjs`: linked active owner and exact site grant requirement, denial of admin/unlinked/missing-grant cases.
+
+These tests are included in the combined Core candidate's previously recorded exact runtime CI run `44190571076` (all three jobs passed). This source review does not establish live staging recovery behavior or verify a populated staging database.
+
+### Release gate
+
+Before enabling first-site or asset onboarding in staging, exercise (1) exact retry after a successful commit with response deliberately dropped, (2) changed-body retry under the same idempotency key, (3) induced batch failure before commit, and (4) owner suspension/identity-link revocation before retry. Verify the first and only first case returns the original resource when authorization remains active; all authorization failures remain denied. Capture redacted results and retain the original request key/digest securely for incident recovery.
