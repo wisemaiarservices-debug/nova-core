@@ -14,7 +14,7 @@ function dbFixture({owner="admin",reviewer="reviewer",history=[],matches=[],sour
   if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:matches};
   if(sql.includes("FROM sensor_source_mapping_events"))return {results:history};
   throw Error(sql);
- },async run(){calls.push({sql,values:this.values});return {meta:{changes:1}};}};},async batch(stmts){calls.push(...stmts.map(x=>({sql:x.sql,values:x.values})));return stmts.map(()=>({meta:{changes:1}}));}};
+ },async run(){calls.push({sql,values:this.values});const blocked=sql.includes("INSERT INTO sensor_source_mapping_events")&&sql.includes("SELECT")&&sourceStatus!=="verified";return {meta:{changes:blocked?0:1}};}};},async batch(stmts){calls.push(...stmts.map(x=>({sql:x.sql,values:x.values})));return stmts.map(()=>({meta:{changes:1}}));}};
 }
 const mapping={id:"map-1",source_id:"source-1",sensor_id:"sensor-7",parameter:"air_temperature",unit:"degC",effective_from:"2026-01-01T00:00:00.000Z",mapping_method:"commissioning inspection",evidence_ref:"evidence-7"};
 test("mapping registration requires exact explicit identity fields and writes immutable record plus audit",async()=>{
@@ -39,7 +39,9 @@ test("mapping verification rechecks that its source, tenant, site and asset are 
   const db=dbFixture({sourceStatus});
   const r=await reviewSensorSourceMapping(db,"tenant-1","site-1","asset-1","map-1","reviewer","req-1",{decision:"verify",evidence_ref:"evidence-7"});
   assert.equal(r.error,"sensor_source_mapping_source_not_active_or_verified");
-  assert.equal(db.calls.length,0);
+  assert.equal(db.calls.length,1);
+  assert.match(db.calls[0].sql,/verification_status='verified'/);
+  assert.match(db.calls[0].sql,/a.status='active'/);
  }
 });
 
