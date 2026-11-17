@@ -47,8 +47,8 @@ class DB {
             id: args[1], tenant_id: args[0], name: "Test resource",
           }] : []) };
         }
-        if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
-        if (sql.includes("FROM water_quality_criteria_approvals")) return { results: db.approvalRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_events ev JOIN water_quality_criteria_entries e")) return { results: db.criteriaEventRows ?? [] };
+        if (sql.includes("FROM water_quality_criteria_approvals ap JOIN water_quality_criteria_entries e")) return { results: db.approvalRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_entries")) return { results: db.criteriaRows ?? [] };
         if (sql.includes("FROM tenant_memberships m JOIN tenants t") && sql.includes("m.role = 'tenant_owner'")) {
           const rows = db.membershipRows ?? (db.membership ? [{
@@ -59,6 +59,11 @@ class DB {
             row.membership_status === "active" && row.tenant_status === "active" &&
             row.tenant_id === args[0] && row.subject === args[1]) };
         }
+        if (sql.includes("FROM water_quality_criteria_reviewers WHERE tenant_id")) {
+          const reviewerRows = db.reviewerRows ?? [];
+          return { results: sql.includes("SELECT DISTINCT") ? reviewerRows.slice(0, 1) : reviewerRows };
+        }
+        if (sql.includes("FROM water_quality_criteria_reviewer_events WHERE tenant_id")) return { results: db.reviewerEventRows ?? [] };
         if (sql.includes("FROM tenant_memberships")) return { results: db.membershipRows ?? (db.membership ? [{
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
@@ -80,11 +85,6 @@ class DB {
         }
         if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
-        if (sql.includes("FROM water_quality_criteria_reviewers")) {
-          const reviewerRows = db.reviewerRows ?? [];
-          return { results: sql.includes("SELECT DISTINCT") ? reviewerRows.slice(0, 1) : reviewerRows };
-        }
-        if (sql.includes("FROM water_quality_criteria_reviewer_events")) return { results: db.reviewerEventRows ?? [] };
         throw new Error("unexpected SQL");
       },
       async run() {
