@@ -1835,8 +1835,8 @@ test("tenant lifecycle audit history is available to active tenant administrator
   assert.equal((await response.json()).data[0].event_type, "archived");
   const query = db.calls.find(call => call.sql.includes("FROM tenant_lifecycle_events"));
   assert.deepEqual(query.args, ["tenant-a", "operator@example.test"]);
-  assert.match(query.sql, /EXISTS \\(SELECT 1 FROM tenant_memberships m/);
-  assert.match(query.sql, /m.status = 'active' AND m.role IN \\('tenant_owner','tenant_admin'\\)/);
+  assert.match(query.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m/);
+  assert.match(query.sql, /m.status = 'active' AND m.role IN \('tenant_owner','tenant_admin'\)/);
   assert.doesNotMatch(query.sql, /JOIN tenants|tenant_status = 'active'/);
 });
 
