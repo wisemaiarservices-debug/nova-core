@@ -65,6 +65,8 @@ test("assessment write rechecks the latest mapping, calibration and policy event
  const write=db.calls.find(x=>x.sql.includes("INSERT INTO measurement_quality_assessments")&&x.sql.includes("SELECT"));
  assert.ok(write);
  assert.match(write.sql,/JOIN sources s/);
+ assert.match(write.sql,/o.value IS \?/);
+ assert.match(write.sql,/o.provenance_json IS \?/);
  assert.match(write.sql,/JOIN sensor_source_mapping_events/);
  assert.match(write.sql,/JOIN sensor_calibration_verification_events/);
  assert.match(write.sql,/JOIN measurement_quality_policy_events/);
