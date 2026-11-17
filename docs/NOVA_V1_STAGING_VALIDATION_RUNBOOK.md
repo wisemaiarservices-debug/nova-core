@@ -452,3 +452,22 @@ If a revocation or scope change commits before the assessment write, the conditi
 Staging tests must race assessment creation against source disable/revocation, mapping revocation, calibration revocation/expiry, policy revocation/effective-window changes, and tenant/site/asset deactivation. Confirm a valid assessment only commits if every exact gate still holds at write time. Confirm blocked attempts create `not_assessed` and preserve all historical records.
 
 **Stop condition:** PRs #231–#235 require independent review and coordinated staging lifecycle/race E2E. CI is not staging evidence and does not authorize deployment, migration, or production activation.
+
+
+## 18. Assessment idempotency and concurrent replay gate
+
+Core PR #236 is stacked on PR #235 and binds an assessment request key to its original observation. A request key already used for a different observation returns `409 measurement_quality_idempotency_conflict`; it must not return the other observation's assessment. Same-observation retries return the original immutable assessment.
+
+Both passed/failed conditional assessment writes and non-assessable assessment writes use the existing unique `(tenant_id, request_id)` constraint with `ON CONFLICT DO NOTHING`. A losing concurrent insert reloads the winning row and returns it only when the observation matches; a different observation conflicts. No schema migration was added.
+
+Exact-head CI for PR #236 head `10659aebd639e8f66dfc327927d8a8e5293471f8`, run [44202004431](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44202004431), passed all three jobs: API/security, tenant Worker with ordered disposable D1 migrations and gateway/private Worker integration, and research raster. Regression tests cover same-observation replay, cross-observation key reuse and a simulated concurrent insert collision. The concurrency collision test is a controlled test fixture; it is not a live concurrent D1 race.
+
+### Staging evidence required
+- Reuse one tenant request key for a different observation; confirm 409 and no unrelated assessment disclosure.
+- Retry the same request key for the same observation; confirm the original immutable assessment is returned.
+- Submit truly simultaneous same-key/same-observation requests against staging D1; confirm exactly one assessment row exists and both callers receive the same winner.
+- Submit same-key/different-observation requests concurrently; confirm one binding wins and the other conflicts without returning the winner's assessment.
+- Repeat for passed/failed and not_assessed outcomes, including governance revocation between initial lookup and final insert.
+- Confirm tenant isolation: identical request keys in different tenants do not share or expose results.
+
+**Stop condition:** PR #236 remains draft and unmerged. Require independent review and real staging D1 concurrency tests before treating assessment idempotency as release-ready. CI is not live concurrency evidence and does not authorize deployment or production activation.
