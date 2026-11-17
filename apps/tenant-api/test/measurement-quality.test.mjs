@@ -9,7 +9,7 @@ function dbFixture({observation={id:"obs-1",site_id:"site-1",source_id:"source-1
   if(sql.includes("FROM assets"))return {results:[{id:"asset-1"}]};
   if(sql.includes("FROM measurement_quality_assessments WHERE"))return {results:[]};
   if(sql.includes("FROM observations WHERE"))return {results:observation?[observation]:[]};
-  if(sql.includes("FROM sources s JOIN tenants"))return {results:source?[source]:[]};
+  if(sql.includes("FROM sources s JOIN tenants"))return {results:source&&source.id===this.values[1]&&source.module===this.values[3]&&source.verification_status==="verified"&&(source.site_id===null||source.site_id===this.values[4])?[source]:[]};
   if(sql.includes("FROM sensor_source_identity_mappings m JOIN"))return {results:mapping};
   if(sql.includes("FROM sensor_calibrations c JOIN"))return {results:calibration};
   if(sql.includes("FROM measurement_quality_policies p JOIN"))return {results:policy};
