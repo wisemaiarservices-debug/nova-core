@@ -384,10 +384,29 @@ The ingestion Worker checks the source's `verification_status='verified'` during
 
 Core PR #231 adds migration `0035_observation_ingestion_requires_verified_source.sql`. Its `BEFORE INSERT` trigger rechecks active tenant, active site, exact tenant/source/module scope, verified source status and either exact site scope or an explicitly global source. This makes the database insert the final lifecycle authorization boundary; the Worker's early check remains useful for request rejection and clear error handling.
 
-Regression tests cover unverified and disabled sources, verified source acceptance, revocation between early lookup and insert, explicitly global source behavior, module/tenant/site mismatch and inactive tenant/site. The SQL trigger was independently exercised against SQLite with the expected reject/accept behavior. Full GitHub CI for PR #231 is not yet reported as started or passed.
+Regression tests cover unverified and disabled sources, verified source acceptance, revocation between early lookup and insert, explicitly global source behavior, module/tenant/site mismatch and inactive tenant/site. The SQL trigger was independently exercised against SQLite with the expected reject/accept behavior. Exact-head CI for PR #231 head `360905166e888ce005175b279175b4e28e6747f1` passed all three jobs in run `44193036471` (tenant Worker/D1 integration, API/security tests and research raster tests). This validates the tested branch state, not a staging deployment or migration application.
 
 ### Release gate
 
 Treat PR #231 as a required dependency before enabling observation ingestion in staging. Apply migration `0035` only after the complete Core migration chain is validated on a disposable clone and the normal staging migration approval is recorded. Verify the actual Worker deployment is bound to the database containing the trigger. Do not claim the race is closed in any environment until the migration has been applied and the deployed Worker/database combination has passed the staging revocation-race test.
 
 No staging or production database was queried or changed during this source audit.
+
+
+## 16. Measurement-quality assessment source lifecycle recheck (2026-11-17)
+
+### Finding
+
+A second-order lifecycle gap remained after ingestion: measurement-quality assessment required a verified observation, exact verified sensor/source mapping, effective verified calibration and exact verified policy, but did not recheck the source's current lifecycle status. A previously verified observation could therefore receive a new assessment after its source had subsequently been disabled or revoked.
+
+### Remediation candidate
+
+Core PR #232 adds a live source check before creating a new assessment. It requires the exact source to remain verified, match the observation's tenant and module, be explicitly global or scoped to the observation site, and belong to an active tenant and active site. Otherwise the assessment is recorded as `not_assessed` with reason `source_not_active_or_verified`. Historical observations and already-created immutable assessment records are not rewritten; exact idempotent replay returns the original result rather than creating a new assessment.
+
+Regression coverage includes revoked, disabled and unverified sources, wrong module and wrong site. PR #232 is stacked on PR #231 and exact-head CI is pending.
+
+### Release gate
+
+Treat PR #232 as a required dependency before enabling new measurement-quality assessments in staging. Validate exact-head CI, then exercise revocation after observation verification but before a new assessment. Confirm no new `passed` or `failed` assessment is created after source revocation. Historical assessment retrieval and exact idempotent replay must remain auditable and must not be represented as a newly performed assessment.
+
+No staging or production database was queried or changed during this audit.
