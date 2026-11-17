@@ -418,24 +418,36 @@ async function hasSiteReadGrant(db, tenant, subject, siteId) {
 }
 
 async function readCriteriaRegistry(db, tenant, entryId, version, subject) {
+  const visibility = `(
+    (EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active'
+      WHERE m.tenant_id = e.tenant_id AND m.subject = ? AND m.status = 'active'
+        AND m.role IN ('tenant_owner','tenant_admin','operator','analyst','viewer','service'))
+      AND (e.site_id IS NULL OR EXISTS (SELECT 1 FROM tenant_resource_grants g
+        WHERE g.tenant_id = e.tenant_id AND g.subject = ? AND g.resource_type = 'site'
+          AND g.resource_id = e.site_id AND g.action = 'read')))
+    OR EXISTS (SELECT 1 FROM water_quality_criteria_reviewers r
+      JOIN tenants rt ON rt.id = r.tenant_id AND rt.status = 'active'
+      WHERE r.tenant_id = e.tenant_id AND r.reviewer_subject = ?
+        AND r.jurisdiction = e.jurisdiction AND r.status = 'active')
+  )`;
   if (entryId === null) {
     const result = await rows(db.prepare(
-      "SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at, (SELECT ev.event_type FROM water_quality_criteria_events ev WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version ORDER BY ev.rowid DESC LIMIT 1) AS lifecycle_status FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = e.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin','operator','analyst','viewer','service')) AND (e.site_id IS NULL OR EXISTS (SELECT 1 FROM tenant_resource_grants g WHERE g.tenant_id = e.tenant_id AND g.subject = ? AND g.resource_type = 'site' AND g.resource_id = e.site_id AND g.action = 'read') OR EXISTS (SELECT 1 FROM water_quality_criteria_reviewers r WHERE r.tenant_id = e.tenant_id AND r.reviewer_subject = ? AND r.jurisdiction = e.jurisdiction AND r.status = 'active')) ORDER BY e.jurisdiction, e.id, e.version LIMIT 100"
+      `SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at, (SELECT ev.event_type FROM water_quality_criteria_events ev WHERE ev.tenant_id = e.tenant_id AND ev.entry_id = e.id AND ev.entry_version = e.version ORDER BY ev.rowid DESC LIMIT 1) AS lifecycle_status FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND ${visibility} ORDER BY e.jurisdiction, e.id, e.version LIMIT 100`
     ).bind(tenant, subject, subject, subject));
     return result.map(row => ({ ...row, entry: JSON.parse(row.entry_json), entry_json: undefined }));
   }
   const result = await rows(db.prepare(
-    "SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND e.id = ? AND e.version = ? AND EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id AND t.status = 'active' WHERE m.tenant_id = e.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin','operator','analyst','viewer','service')) AND (e.site_id IS NULL OR EXISTS (SELECT 1 FROM tenant_resource_grants g WHERE g.tenant_id = e.tenant_id AND g.subject = ? AND g.resource_type = 'site' AND g.resource_id = e.site_id AND g.action = 'read') OR EXISTS (SELECT 1 FROM water_quality_criteria_reviewers r WHERE r.tenant_id = e.tenant_id AND r.reviewer_subject = ? AND r.jurisdiction = e.jurisdiction AND r.status = 'active')) LIMIT 1"
+    `SELECT e.id, e.site_id, e.jurisdiction, e.version, e.title, e.entry_json, e.source_document_sha256, e.source_evidence_ref, e.published_on, e.effective_from, e.effective_to, e.supersedes_entry_id, e.supersedes_entry_version, e.created_by_subject, e.created_at FROM water_quality_criteria_entries e WHERE e.tenant_id = ? AND e.id = ? AND e.version = ? AND ${visibility} LIMIT 1`
   ).bind(tenant, entryId, version, subject, subject, subject));
   if (result.length !== 1) return null;
   const row = result[0];
   const [events, approvals] = await Promise.all([
     rows(db.prepare(
-      "SELECT event_type, actor_subject, reason, request_id, occurred_at FROM water_quality_criteria_events WHERE tenant_id = ? AND entry_id = ? AND entry_version = ? ORDER BY rowid ASC LIMIT 100"
-    ).bind(tenant, entryId, version)),
+      `SELECT ev.event_type, ev.actor_subject, ev.reason, ev.request_id, ev.occurred_at FROM water_quality_criteria_events ev JOIN water_quality_criteria_entries e ON e.tenant_id = ev.tenant_id AND e.id = ev.entry_id AND e.version = ev.entry_version WHERE ev.tenant_id = ? AND ev.entry_id = ? AND ev.entry_version = ? AND ${visibility} ORDER BY ev.rowid ASC LIMIT 100`
+    ).bind(tenant, entryId, version, subject, subject, subject)),
     rows(db.prepare(
-      "SELECT reviewer_subject, reviewer_role, decision, evidence_ref, reason, reviewed_at, request_id FROM water_quality_criteria_approvals WHERE tenant_id = ? AND entry_id = ? AND entry_version = ? ORDER BY reviewed_at, id LIMIT 20"
-    ).bind(tenant, entryId, version)),
+      `SELECT ap.reviewer_subject, ap.reviewer_role, ap.decision, ap.evidence_ref, ap.reason, ap.reviewed_at, ap.request_id FROM water_quality_criteria_approvals ap JOIN water_quality_criteria_entries e ON e.tenant_id = ap.tenant_id AND e.id = ap.entry_id AND e.version = ap.entry_version WHERE ap.tenant_id = ? AND ap.entry_id = ? AND ap.entry_version = ? AND ${visibility} ORDER BY ap.reviewed_at, ap.id LIMIT 20`
+    ).bind(tenant, entryId, version, subject, subject, subject)),
   ]);
   return { ...row, entry: JSON.parse(row.entry_json), entry_json: undefined,
     lifecycle: { status: events.at(-1)?.event_type ?? "unknown", events },
@@ -443,7 +455,6 @@ async function readCriteriaRegistry(db, tenant, entryId, version, subject) {
     legal_status: "not_verified", scientific_suitability: "not_assessed",
     operational_decision: "not_authorized" };
 }
-
 
 function configuredProvisioningSubjects(value) {
   if (typeof value !== "string" || value.length === 0 || value.length > 10000) return null;
