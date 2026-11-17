@@ -73,7 +73,7 @@ test("concurrent duplicate assessment insert replays the winning immutable row",
  const r=await assessMeasurementQuality(db,"tenant-1","obs-1","req-race-replay");
  assert.equal(r.status,200);assert.equal(r.data.id,"assessment-winner");
  const write=db.calls.find(x=>x.sql.includes("INSERT INTO measurement_quality_assessments"));
- assert.match(write.sql,/ON CONFLICT\\(tenant_id,request_id\\) DO NOTHING/);
+ assert.ok(write.sql.includes("ON CONFLICT(tenant_id,request_id) DO NOTHING"));
 });
 
 test("verified observation with exact mapping, current verified calibration and approved policy passes",async()=>{
