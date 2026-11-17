@@ -269,3 +269,18 @@ A response lost after a site/asset commit is not a reason to create a replacemen
 - [ ] The existing verified mapping, effective verified calibration, exact approved policy and independent-review requirements remain enforced.
 
 **Stop condition:** PR #232 exact-head CI is now green, but do not enable new quality assessments until the staging source-revocation assessment test and all other release gates pass. This checklist does not authorize deployment or migration.
+
+
+## 9. Sensor-to-source mapping approval lifecycle
+
+Core PR #233 is a draft child of PR #232, following PR #231. Exact-head CI passed at `0ff95b3e365928c37c65719bec8059598ffc5371`, run [44199115481](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44199115481), with all three jobs successful (API/security, tenant Worker/D1 integration, research raster).
+
+The mapping verification path now checks that the exact source remains verified in the same tenant, is global or scoped to the exact mapping site, and that the tenant, site and mapped asset remain active. Invalid lifecycle or scope produces `sensor_source_mapping_source_not_active_or_verified` without a verification event. Reject/revoke actions remain available; immutable history is not rewritten.
+
+- [ ] Review PR #233 together with dependencies #231 and #232.
+- [ ] Verify exact-site and global-source happy paths in staging.
+- [ ] Verify unverified/revoked/disabled source and inactive or mismatched tenant/site/asset cases fail without a verification event.
+- [ ] Verify reviewer membership, assignment and site-grant controls remain enforced.
+- [ ] Verify mapping revocation blocks subsequent quality assessment while historical assessments remain immutable.
+
+**Release gate:** mapping approval remains disabled until independent review and staging lifecycle E2E pass. Automated CI does not authorize staging or production.
