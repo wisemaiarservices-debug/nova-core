@@ -104,7 +104,7 @@ async function readResource(db, subject, tenant, type, id) {
   ).bind(tenant, subject, type, id));
   if (!grantRows.some(g => g.subject === subject && g.tenant_id === tenant &&
       g.resource_type === type && g.resource_id === id && g.action === "read")) return null;
-  const record = await rows(db.prepare(RESOURCE_SQL[type]).bind(tenant, id, tenant, subject));
+  const record = await rows(db.prepare(RESOURCE_SQL[type]).bind(tenant, id, subject));
   if (record.length !== 1 || record[0].tenant_id !== tenant || record[0].id !== id) return null;
   return record[0];
 }
