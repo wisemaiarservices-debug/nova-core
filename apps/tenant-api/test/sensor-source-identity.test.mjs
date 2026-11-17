@@ -42,7 +42,8 @@ test("mapping verification rechecks that its source, tenant, site and asset are 
   assert.equal(db.calls.length,0);
  }
 });
-\ntest("rejected mapping cannot be revoked as if it had been verified",async()=>{
+
+test("rejected mapping cannot be revoked as if it had been verified",async()=>{
  const r=await reviewSensorSourceMapping(dbFixture({history:[{event_type:"rejected"}]}),"tenant-1","site-1","asset-1","map-1","reviewer","req-1",{decision:"revoke",evidence_ref:"evidence-7",reason:"withdraw"});
  assert.equal(r.error,"sensor_source_mapping_state_conflict");
 });
