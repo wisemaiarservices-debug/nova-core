@@ -1269,8 +1269,8 @@ export default {
             owners[0].membership_status !== "active" ||
             !["tenant_owner", "tenant_admin"].includes(owners[0].role)) return error("not_found", 404);
         const events = await rows(env.DB.prepare(
-          "SELECT id, tenant_id, actor_subject, event_type, previous_status, new_status, reason, request_id, created_at FROM tenant_lifecycle_events WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 100"
-        ).bind(tenant));
+          "SELECT ev.id, ev.tenant_id, ev.actor_subject, ev.event_type, ev.previous_status, ev.new_status, ev.reason, ev.request_id, ev.created_at FROM tenant_lifecycle_events ev WHERE ev.tenant_id = ? AND EXISTS (SELECT 1 FROM tenant_memberships m WHERE m.tenant_id = ev.tenant_id AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin')) ORDER BY ev.created_at DESC, ev.id DESC LIMIT 100"
+        ).bind(tenant, subject));
         if (events.some(event => event.tenant_id !== tenant)) return error("not_found", 404);
         return json({ data: events, request_id: requestId });
       }
