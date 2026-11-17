@@ -64,7 +64,8 @@ test("concurrent mapping revocation loses safely unless verified remains the lat
  assert.equal(r.error,"sensor_source_mapping_state_conflict");
  assert.match(db.calls[0].sql,/ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1/);
 });
-\ntest("resolver requires one exact verified mapping and returns its declared sensor identity",async()=>{
+
+test("resolver requires one exact verified mapping and returns its declared sensor identity",async()=>{
  const db=dbFixture({matches:[{id:"map-1",sensor_id:"sensor-7",parameter:"air_temperature",unit:"degC",effective_from:"2026-01-01T00:00:00.000Z",effective_to:null}]});
  const result=await resolveVerifiedSensorSourceMapping(db,"tenant-1",{site_id:"site-1",asset_id:"asset-1",source_id:"source-1",metric:"air_temperature",unit:"degC",observed_at:"2026-02-01T00:00:00.000Z"});
  assert.equal(result.sensor_id,"sensor-7");
