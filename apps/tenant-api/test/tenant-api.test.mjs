@@ -52,7 +52,7 @@ class DB {
           subject: "operator@example.test", tenant_id: "tenant-a", role: "viewer",
           membership_status: "active", tenant_status: "active",
         }] : []) };
-        if (sql.includes("FROM tenant_resource_grants") && !sql.includes("FROM water_quality_criteria_entries")) {
+        if (sql.startsWith("SELECT subject, tenant_id, resource_type, resource_id, action FROM tenant_resource_grants")) {
           const siteGrantQuery = sql.includes("resource_type = 'site'");
           const result = db.grantRows ?? (db.grant ? [{
             subject: "operator@example.test", tenant_id: "tenant-a",
