@@ -367,7 +367,7 @@ test("maps every allowlisted route to its canonical resource grant and scoped SQ
       { headers: (await request({}, `https://private.internal/internal/v1/tenants/tenant-a/${route}/resource-1`)).headers }), env(db));
     assert.equal(response.status, 200, route);
     assert.equal(db.calls[2].args[2], expectedType, route);
-    assert.deepEqual(db.calls[3].args, ["tenant-a", "resource-1", "tenant-a", "operator@example.test"], route);
+    assert.deepEqual(db.calls[3].args, ["tenant-a", "resource-1", "operator@example.test"], route);
   }
 });
 test("denies inactive tenant membership and unknown roles before grant lookup", async () => {
