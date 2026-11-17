@@ -32,9 +32,13 @@ export async function reviewSensorSourceMapping(db,tenant,siteId,assetId,mapping
  const allowed={verify:"registered_unverified",reject:"registered_unverified",revoke:"verified"};
  if(current!==allowed[body.decision])return {error:"sensor_source_mapping_state_conflict",status:409};
  const type={verify:"verified",reject:"rejected",revoke:"revoked"}[body.decision];
- const result=await db.prepare("INSERT INTO sensor_source_mapping_events(id,tenant_id,site_id,asset_id,source_id,mapping_id,reviewer_subject,event_type,evidence_ref,reason,request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
- .bind(crypto.randomUUID(),tenant,siteId,assetId,found.results[0].source_id,mappingId,reviewer,type,body.evidence_ref,body.reason??null,requestId).run();
- if(result?.meta?.changes!==1) return {error:"sensor_source_mapping_state_conflict",status:409};
+ const eventValues=[crypto.randomUUID(),tenant,siteId,assetId,found.results[0].source_id,mappingId,reviewer,type,body.evidence_ref,body.reason??null,requestId];
+ const insert=body.decision==="verify"
+  ?db.prepare("INSERT INTO sensor_source_mapping_events(id,tenant_id,site_id,asset_id,source_id,mapping_id,reviewer_subject,event_type,evidence_ref,reason,request_id) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM sources s JOIN tenants t ON t.id=s.tenant_id AND t.status='active' JOIN sites st ON st.id=? AND st.tenant_id=s.tenant_id AND st.status='active' JOIN assets a ON a.id=? AND a.tenant_id=s.tenant_id AND a.site_id=st.id AND a.status='active' WHERE s.id=? AND s.tenant_id=? AND s.verification_status='verified' AND (s.site_id IS NULL OR s.site_id=?)) AND EXISTS (SELECT 1 FROM tenant_memberships tm JOIN tenants t2 ON t2.id=tm.tenant_id AND t2.status='active' WHERE tm.tenant_id=? AND tm.subject=? AND tm.status='active') AND EXISTS (SELECT 1 FROM sensor_source_mapping_reviewers r WHERE r.tenant_id=? AND r.site_id=? AND r.reviewer_subject=? AND r.status='active') AND EXISTS (SELECT 1 FROM sensor_source_identity_mappings m WHERE m.tenant_id=? AND m.site_id=? AND m.asset_id=? AND m.id=? AND m.source_id=? AND m.registered_by_subject<>?)")
+   .bind(...eventValues,siteId,assetId,found.results[0].source_id,tenant,siteId,tenant,reviewer,tenant,siteId,reviewer,tenant,siteId,assetId,mappingId,found.results[0].source_id,reviewer)
+  :db.prepare("INSERT INTO sensor_source_mapping_events(id,tenant_id,site_id,asset_id,source_id,mapping_id,reviewer_subject,event_type,evidence_ref,reason,request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(...eventValues);
+ const result=await insert.run();
+ if(result?.meta?.changes!==1)return {error:body.decision==="verify"?"sensor_source_mapping_source_not_active_or_verified":"sensor_source_mapping_state_conflict",status:409};
  return {data:{mapping_id:mappingId,status:type,reviewer_subject:reviewer},status:201};
 }
 export async function resolveVerifiedSensorSourceMapping(db,tenant,observation){
