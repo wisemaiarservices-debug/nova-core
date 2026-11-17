@@ -396,7 +396,8 @@ test("routes calibration, sensor identity and quality governance through signed 
     const payload = JSON.stringify({ evidence_ref: "review-record:1" });
     const response = await gateway.fetch(new Request("https://gateway.test" + publicPath, {
       method: "POST",
-      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid", cookie: "browser=session" },
+      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid", cookie: "browser=session",
+        ...(publicPath.endsWith("/measurement-quality-assessment") ? { "Idempotency-Key": "assessment-operation-legacy-test" } : {}) },
       body: payload,
     }), {
       ACCESS_ISSUER: "https://example.cloudflareaccess.com",
