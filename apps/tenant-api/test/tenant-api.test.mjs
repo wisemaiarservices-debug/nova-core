@@ -1358,8 +1358,8 @@ test("tenant provisioning accepts concurrent exact retries whose replay permits 
     nova_os_authorization_correlation_id: "nova-provision:" + digest,
     nova_os_authorization_permit_issued_at: now - 5,
     nova_os_authorization_permit_expires_at: now + 115,
-    tenant_id: "tenant-race-winner", display_name: "Research tenant", status: "active",
-    membership_id: "membership-race-winner", role: "tenant_owner", membership_status: "active",
+    tenant_id: "tenant-race-winner", display_name: "Research tenant", status: "suspended",
+    membership_id: "membership-race-winner", role: "viewer", membership_status: "suspended",
   };
   const db = new ProvisioningDB(
     Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })),
@@ -1376,6 +1376,9 @@ test("tenant provisioning accepts concurrent exact retries whose replay permits 
     assert.equal(result.tenant_id, "tenant-race-winner");
     assert.equal(result.created, false);
     assert.equal(result.mapping_receipt_id, "provisioning-request-race");
+    assert.equal(result.tenant_status, "suspended");
+    assert.equal(result.membership_role, "viewer");
+    assert.equal(result.membership_status, "suspended");
     assert.equal(novaOsAuthorizationCallCount > 0, true);
     assert.equal(db.batchCalls.length, 1);
   });
