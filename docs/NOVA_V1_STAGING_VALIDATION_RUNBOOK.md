@@ -139,6 +139,10 @@ The runtime pull requests are based on prerequisite protocol branches. Preserve 
 - Do not merge these branches directly to production as part of staging preparation.
 
 
+## 9A. Staging release packet template
+
+Use [NOVA_V1_STAGING_RELEASE_PACKET_TEMPLATE.md](./NOVA_V1_STAGING_RELEASE_PACKET_TEMPLATE.md) as the controlled evidence record when an authorized staging window is approved. It captures exact source SHAs, migration inventory, redacted configuration/key fingerprints, independent reviewers, E2E evidence, database privilege checks, stop conditions, rollback/recovery and sign-offs. It is a blank template; no operator, staging project, secret, pilot site or approval is pre-populated.
+
 ## 9. Combined Core provisioning and protected-read integration candidate
 
 The protected-read and one-time owner-provisioning code has now been combined in draft Core PR [#227](https://github.com/wisemaiarservices-debug/nova-core/pull/227):
@@ -150,7 +154,7 @@ The protected-read and one-time owner-provisioning code has now been combined in
 - The resulting tree contains the complete provisioning migration/client/tests and the full protected-read code/tests from #223–#226. Source PRs remain open/draft and unchanged.
 - Exact combined-code-head Core CI [run 44171368921](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44171368921) passed all three jobs. After the runbook/documentation update, exact current PR-head CI [run 44172052028](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44172052028) also passed all three jobs: API tests, ordered disposable D1 migrations, SQL preparation, isolated fixtures, gateway/private Worker integration, and research raster tests.
 
-The combined Core source candidate is therefore validated by its own exact-head CI. This does **not** constitute deployed cross-repository staging E2E or production readiness.
+The combined Core source candidate's code was validated by exact-head CI at `8c1aa2637c804c32830ffa78e3925abb21073d68` (run 44172052028). Subsequent changes to this integration branch are documentation-only: runbook refresh commit `b3324c3a772d271fc6030902f0d339d427acf961` and release-packet template commit `314ff46b8ef34a6afb45860f29e3cf0dfdfc60d2`. No runtime source or migration changed in those commits. This does **not** constitute deployed cross-repository staging E2E or production readiness.
 
 Before staging, require:
 1. Coordinated OS PRs #57 + #60 + #61 and Core PR #227 to be reviewed and integrated using exact recorded SHAs.
