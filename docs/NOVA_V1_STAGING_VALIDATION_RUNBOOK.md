@@ -430,3 +430,13 @@ Staging evidence required before activation:
 - [ ] Mapping revocation after prior verification remains append-only and blocks subsequent quality assessments through the latest-event resolver.
 
 **Stop condition:** Do not enable mapping approval until PRs #231, #232 and #233 are reviewed together, their exact-head CI remains green, and the staging lifecycle cases above pass. CI is not staging E2E and this runbook does not authorize deployment or migration.
+
+## 16. Atomic governance event transition gate
+
+Core PR #234 is stacked on #233 and closes a concurrent-review race across sensor/source mappings, sensor calibrations and measurement-quality policies. Exact-head CI at `9bf7212115e647987769d72466098771ec96eda5`, [run 44200928478](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44200928478), passed all three jobs: API/security tests, tenant Worker tests (including disposable ordered D1 migrations and gateway/private Worker integration), and research raster tests.
+
+Each final event INSERT now checks the latest event state at write time. Verify/reject require no prior event; revoke requires the latest event to remain verified. The same write rechecks active tenant membership, active reviewer assignment, exact record scope and submitter/reviewer independence. Mapping verification additionally checks the live verified source and active tenant/site/asset; calibration verification rechecks the exact registered certificate evidence.
+
+A losing concurrent transition writes no event and returns a conflict. This is repository CI validation, not staging E2E. Before activation, staging must exercise two simultaneous verification requests, verify-vs-revoke races, duplicate revocations, reviewer assignment revocation during review, and tenant membership deactivation during review for each record type. Confirm exactly one valid transition wins, all losing attempts write no event, and latest-event resolvers block subsequent assessments after revocation. Historical assessments remain immutable.
+
+**Stop condition:** PRs #231–#234 require independent review and coordinated staging lifecycle E2E. CI does not authorize deployment, migrations, or production activation.
