@@ -8,7 +8,7 @@ import { listPendingIdentityLinkRequests, listApprovedIdentityLinkRequests, deci
 const actor = { issuer: "https://team.cloudflareaccess.com", subject: "owner-1" };
 class DB {
   constructor(request = { id: "link-1", status: "pending", tenant_id: null }, owner = true) {
-    this.request = request; this.owner = owner; this.approvedRows = []; this.batchCalls = []; this.priorEvent = null; this.batchError = null; this.queries = []; this.queryBindings = [];
+    this.request = request; this.owner = owner; this.approvedRows = []; this.batchCalls = []; this.priorEvent = null; this.batchError = null; this.revokeAfterOwnerCheck = false; this.queries = []; this.queryBindings = [];
   }
   prepare(sql) {
     this.queries.push(sql);
@@ -16,7 +16,7 @@ class DB {
     return { sql, args: [], bind(...args) { this.args = args; db.queryBindings.push({ sql, args }); return this; },
       async all() {
         if (this.sql.includes("FROM tenant_identity_link_events WHERE request_id")) {
-          return { results: db.priorEvent ? [db.priorEvent] : [] };
+          return { results: db.priorEvent && !db.revokeAfterOwnerCheck ? [db.priorEvent] : [] };
         }
         if (this.sql.includes("FROM tenant_memberships m JOIN tenants")) {
           return { results: db.owner ? [{ subject: this.args[1] }] : [] };
@@ -24,8 +24,8 @@ class DB {
         if (this.sql.includes("FROM tenant_identity_link_requests r WHERE r.id")) {
           return { results: db.request ? [db.request] : [] };
         }
-        if (this.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'")) return { results: db.approvedRows };
-        if (this.sql.includes("WHERE status = 'pending' ORDER BY")) return { results: [] };
+        if (this.sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'")) return { results: db.revokeAfterOwnerCheck ? [] : db.approvedRows };
+        if (this.sql.includes("r.status = 'pending'")) return { results: [] };
         return { results: [] };
       }
     };
@@ -40,8 +40,12 @@ class DB {
 test("pending requests are visible only to active tenant owners", async () => {
   const denied = await listPendingIdentityLinkRequests(new DB(undefined, false), "tenant-1", actor);
   assert.equal(denied.status, 404);
-  const allowed = await listPendingIdentityLinkRequests(new DB(), "tenant-1", actor);
+  const allowedDb = new DB();
+  const allowed = await listPendingIdentityLinkRequests(allowedDb, "tenant-1", actor);
   assert.equal(allowed.status, 200);
+  const query = allowedDb.queries.find(sql => sql.includes("r.status = 'pending'"));
+  assert.match(query, /EXISTS \\(SELECT 1 FROM tenant_memberships owner JOIN tenants t/);
+  assert.match(query, /owner.subject = \? AND owner.role = 'tenant_owner' AND owner.status = 'active'/);
 });
 test("approval records owner event and guarded update atomically", async () => {
   const db = new DB();
@@ -207,12 +211,15 @@ test("approved identity-link inventory enforces bounded page size and stable ten
   const inventoryQuery = db.queryBindings[1];
   assert.deepEqual(inventoryQuery.args, ["tenant-1", actor.issuer, actor.subject, 100]);
   assert.match(inventoryQuery.sql, /WHERE r\.tenant_id = \? AND r\.status = 'approved' AND r\.cloudflare_issuer = \?/);
+  assert.match(inventoryQuery.sql, /EXISTS \\(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+  assert.match(inventoryQuery.sql, /m\.subject = \? AND m\.role = 'tenant_owner' AND m\.status = 'active'/);
   assert.match(inventoryQuery.sql, /ORDER BY r\.decided_at DESC, r\.id DESC LIMIT \?/);
 });
 
 
-test("identity-link decision replay read is bound to current owner authority", async () => {
-  const db = new DB({ id: "link-1", status: "approved", tenant_id: "tenant-1" }, false);
+test("identity-link decision replay does not disclose a prior event after owner authority is revoked", async () => {
+  const db = new DB({ id: "link-1", status: "approved", tenant_id: "tenant-1" });
+  db.revokeAfterOwnerCheck = true;
   db.priorEvent = {
     link_request_id: "link-1", event_type: "approved", tenant_id: "tenant-1",
     actor_cloudflare_issuer: actor.issuer, actor_cloudflare_subject: actor.subject,
@@ -220,6 +227,10 @@ test("identity-link decision replay read is bound to current owner authority", a
   };
   const result = await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
     "approve", "Reviewed independently", "decision-1");
-  assert.equal(result.status, 404);
+  assert.equal(result.status, 409);
+  assert.equal(result.error, "identity_link_request_conflict");
   assert.equal(db.batchCalls.length, 0);
+  const eventRead = db.queryBindings.find(query => query.sql.includes("FROM tenant_identity_link_events"));
+  assert.deepEqual(eventRead.args, ["decision-1", "tenant-1", actor.subject]);
+  assert.match(eventRead.sql, /m.role = 'tenant_owner' AND m.status = 'active'/);
 });
