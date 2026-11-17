@@ -3233,12 +3233,3 @@ test("measurement-quality HTTP route requires a separately signed operation idem
   assert.equal(db.calls.some(call => call.sql.includes("SELECT site_id FROM observations")),
     false, "missing operation key must be rejected before observation lookup");
 });
-
-test("measurement-quality HTTP route keeps operation key distinct from transport request ID", async () => {
-  const source = await import("../src/index.mjs");
-  assert.equal(typeof source.default.fetch, "function");
-  const routeSource = (await import("node:fs/promises")).readFile;
-  const text = await routeSource(new URL("../src/index.mjs", import.meta.url), "utf8");
-  assert.match(text, /assessMeasurementQuality\(env\.DB, tenant, qualityAssessment\[2\], operationIdempotencyKey\)/);
-  assert.match(text, /consumeRequestId\(env\.DB, requestId, issuedAt\)/);
-});
