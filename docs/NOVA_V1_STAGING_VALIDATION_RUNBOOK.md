@@ -39,6 +39,24 @@ Provision through the staging Supabase secret manager. Confirm `supabase/config.
 
 Existing Supabase platform configuration is also required by the function: `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Keep the service-role key inside Supabase's server-side secret store; it is used only for the narrow server-side RPC call and must never be reused as the Core-to-OS HMAC credential.
 
+### NOVA OS owner-assertion issuance and mapping functions
+
+The browser-facing owner-assertion issuer and mapping function have separate configuration from the private Core-to-OS authorization endpoint. Verify each exact function name and staging config before deployment.
+
+Owner assertion issuer (nova-core-provisioning-owner-assertion):
+- NOVA_OS_ALLOWED_ORIGINS — exact HTTPS browser-origin allowlist; no wildcard.
+- NOVA_OS_PROVISIONING_AUTH_ISSUER and NOVA_OS_PROVISIONING_AUTH_AUDIENCE.
+- NOVA_OS_PROVISIONING_AUTH_KEY_ID and NOVA_OS_PROVISIONING_AUTH_PRIVATE_KEY — dedicated OS staging RS256 signing key; private key stays in OS secret storage.
+- SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY — staging project only.
+
+Core receipt mapping (nova-core-tenant-mapping):
+- NOVA_OS_ALLOWED_ORIGINS — exact HTTPS browser-origin allowlist; no wildcard.
+- NOVA_CORE_MAPPING_RECEIPT_ISSUER and NOVA_CORE_MAPPING_RECEIPT_AUDIENCE.
+- NOVA_CORE_MAPPING_RECEIPT_JWK — public JWK matching the Core receipt-signing key.
+- SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY — staging project only.
+
+The Core provisioning owner-assertion verification JWK and the private authorization endpoint's NOVA_OS_PROVISIONING_AUTH_JWK must match the public key corresponding to the OS assertion issuer's signing key. The Core receipt signer private key must never be copied to NOVA OS; only its public JWK is configured there.
+
 ### NOVA Core Worker
 
 Provision through the staging Worker secret/configuration mechanism:
@@ -50,7 +68,17 @@ Provision through the staging Worker secret/configuration mechanism:
 - `NOVA_OS_OWNER_AUTHORIZATION_PERMIT_AUDIENCE`
 - `NOVA_OS_OWNER_AUTHORIZATION_PERMIT_JWK` — public JWK only, matching the OS permit signing key and key ID.
 
-Existing staging owner-assertion verification and Core mapping-receipt signing configuration must also be present and independently pinned. Do not copy private keys into public JWK settings, browser variables, build-time client bundles, logs, repository files, or CI artifacts.
+Additional required Core Worker configuration:
+- SUPABASE_AUTH_ISSUER and SUPABASE_AUTH_AUDIENCE — exact staging Supabase JWT issuer and audience.
+- NOVA_OS_PROVISIONING_AUTH_ISSUER, NOVA_OS_PROVISIONING_AUTH_AUDIENCE and NOVA_OS_PROVISIONING_AUTH_JWK — verify the OS owner assertion; the JWK is public and must match the OS issuer key.
+- NOVA_OS_MAPPING_RECEIPT_ISSUER, NOVA_OS_MAPPING_RECEIPT_AUDIENCE and NOVA_OS_MAPPING_RECEIPT_KEY_ID.
+- NOVA_OS_MAPPING_RECEIPT_PRIVATE_KEY — Core's dedicated staging PKCS#8 receipt-signing key, server-side only; NOVA OS receives only its public JWK.
+- ACCESS_ISSUER and ACCESS_AUDIENCE — exact Cloudflare Access identity contract.
+- TENANT_PROVISIONING_SUBJECTS — staging-only allowlist of permitted provisioning subjects.
+- INTERNAL_AUTH_SECRET — server-side private Worker/gateway authentication secret where required by the deployment topology.
+- DB — staging D1 binding, not production.
+
+Do not copy private keys into public JWK settings, browser variables, build-time client bundles, logs, repository files, or CI artifacts.
 
 ## 3. HMAC server-identity setup and rotation
 
