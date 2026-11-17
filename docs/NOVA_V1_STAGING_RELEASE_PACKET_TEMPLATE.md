@@ -295,3 +295,17 @@ Core PR #234 at exact head `9bf7212115e647987769d72466098771ec96eda5` passed [CI
 - [ ] Confirm revocation blocks subsequent assessments and does not rewrite historical assessment records.
 
 CI is not staging evidence. No production enablement until independent review and staging E2E pass.
+
+## 11. Atomic assessment-time governance gate
+
+Core PR #235 at exact head `1161afaf3e8a37a989b483015ece44d32a63b0b1` passed [CI run 44201209835](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44201209835) with all three jobs successful (API/security, tenant Worker/D1 integration, research raster).
+
+For passed/failed assessments, the final database write rechecks exact observation verification, active tenant/site/asset, live source, latest verified mapping, latest valid calibration, and latest effective quality policy including bounds/version. If governance changes before the write, the system records `not_assessed` with `governance_state_changed_before_assessment`, not a stale pass/fail. Historical assessments are never rewritten.
+
+- [ ] Review PR #235 with dependencies #231–#234.
+- [ ] Stage assessment-vs-source-revocation and source-disable races.
+- [ ] Stage assessment-vs-mapping-revocation, calibration-revocation/expiry, and policy-revocation/effective-window races.
+- [ ] Stage tenant/site/asset deactivation during assessment.
+- [ ] Confirm blocked attempts are durable `not_assessed` results and historical assessment records remain immutable.
+
+CI does not replace staging E2E. Production activation remains gated.
