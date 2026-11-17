@@ -102,7 +102,8 @@ Use fresh disposable tenant identities for each case. Capture only request IDs, 
 12. **Lost response after Core commit:** Core resolves the existing durable request before a new OS exchange and returns the same Core tenant/receipt identity.
 13. **Mapping retry:** exact receipt/permit retry is idempotent; a changed tenant, actor, receipt, permit, or digest is rejected.
 14. **Isolation:** a different tenant, owner, Access subject, or Supabase subject cannot read or mutate another tenant's records.
-15. **Secrets hygiene:** scan staging logs, browser bundles, Worker output, function logs, CI artifacts and repository diff for credentials or private key material.
+15. **Database privilege boundary:** using browser roles and the service role directly, verify there is no direct SELECT/INSERT/UPDATE/DELETE/TRUNCATE access to owner-consumption, nonce, or authorization-event ledgers; only the narrowly scoped RPCs can perform their intended operations. Verify UPDATE/DELETE against immutable consumption and authorization-event rows fail, and verify the mapping event's append-only protections and exact-tenant uniqueness from its defining migration. Record role-level SQL results without exposing secrets.
+16. **Secrets hygiene:** scan staging logs, browser bundles, Worker output, function logs, CI artifacts and repository diff for credentials or private key material.
 
 ## 7. Acceptance evidence
 
