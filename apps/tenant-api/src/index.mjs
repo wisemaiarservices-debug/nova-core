@@ -897,7 +897,6 @@ async function createTenantForProvisioning(
   db, subject, body, requestId, allowlist, supabaseIdentity,
   novaOsOwnerAssertion, accessIssuer, authorizationConfig,
 ) {
-  if (!allowlist || !allowlist.has(subject)) return { error: "not_found", status: 404 };
   if (!supabaseIdentity || typeof supabaseIdentity.issuer !== "string" ||
       typeof supabaseIdentity.subject !== "string" || !novaOsOwnerAssertion ||
       novaOsOwnerAssertion.supabaseIssuer !== supabaseIdentity.issuer ||
@@ -962,6 +961,11 @@ async function createTenantForProvisioning(
       created: false,
     }, status: 200 };
   }
+
+  // The allowlist authorizes new tenant creation, not recovery of an
+  // already-committed provisioning receipt. A removed allowlist entry must
+  // not strand an exact, previously authorized mapping operation.
+  if (!allowlist || !allowlist.has(subject)) return { error: "not_found", status: 404 };
 
   // Expiry for a first consume versus an exact already-consumed replay is
   // decided atomically by NOVA OS. Core verifies the signature and bindings,
