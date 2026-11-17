@@ -445,7 +445,7 @@ A losing concurrent transition writes no event and returns a conflict. This is r
 
 Core PR #235 is stacked on #234 and closes a time-of-check/time-of-use gap between resolving current governance evidence and writing a new measurement-quality assessment. For `passed` and `failed` results, the final assessment INSERT now rechecks the exact verified observation, active tenant/site/asset, live verified source, latest verified mapping, latest valid verified calibration, and latest effective verified policy including its assessed bounds/version.
 
-Exact-head CI at `1161afaf3e8a37a989b483015ece44d32a63b0b1`, [run 44201209835](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44201209835), passed all three jobs: API/security, tenant Worker (ordered disposable D1 migrations and gateway/private Worker integration), and research raster tests.
+Exact-head CI at `eb519ab020fcd9eb05bf6e74df37b0845ded7603`, [run 44201439932](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44201439932), passed all three jobs: API/security, tenant Worker (ordered disposable D1 migrations and gateway/private Worker integration), and research raster tests.
 
 If a revocation or scope change commits before the assessment write, the conditional INSERT writes no passed/failed result; the workflow records a durable `not_assessed` result with reason `governance_state_changed_before_assessment`. A revocation committed after the assessment write does not rewrite that historical assessment.
 
