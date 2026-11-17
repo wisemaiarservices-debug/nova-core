@@ -6,3 +6,6 @@ preview_urls = false
 
 # No routes or custom domains. Only the gateway Service Binding may invoke this Worker.
 # DB and ACCESS_* bindings are intentionally absent until approved D1 and Access setup.
+# NOVA_OS_OWNER_AUTHORIZATION_URL and the NOVA_OS_OWNER_AUTH_* variables are
+# required for new dual-identity tenant provisioning. HMAC key-ring secrets and
+# the pinned permit JWK are supplied only through Worker environment settings.
