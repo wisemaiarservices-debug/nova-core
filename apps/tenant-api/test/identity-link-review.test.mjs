@@ -85,6 +85,9 @@ test("repeated identical owner decision returns the original outcome without ano
   assert.equal(result.data.status, "approved");
   assert.equal(result.data.decided_at, "2026-11-14T12:00:00.000Z");
   assert.equal(db.batchCalls.length, 0);
+  const eventRead = db.queryBindings.find(query => query.sql.includes("FROM tenant_identity_link_events"));
+  assert.deepEqual(eventRead.args, ["decision-1", "tenant-1", actor.subject]);
+  assert.match(eventRead.sql, /m.role = 'tenant_owner' AND m.status = 'active'/);
 });
 
 test("idempotency key reuse with different decision content is rejected", async () => {
@@ -111,6 +114,7 @@ test("globally unique idempotency-key collisions return a generic conflict witho
   const eventReads = db.queries.filter(sql => sql.includes("FROM tenant_identity_link_events WHERE request_id"));
   assert.equal(eventReads.length, 2);
   assert.ok(eventReads.every(sql => sql.includes("tenant_id = ?")));
+  assert.ok(eventReads.every(sql => sql.includes("m.role = 'tenant_owner' AND m.status = 'active'")));
 });
 
 test("database failures are not disguised as idempotency conflicts", async () => {
@@ -183,6 +187,8 @@ test("approved identity-link inventory is limited to active tenant owners and th
   assert.deepEqual(result.data, db.approvedRows);
   const query = db.queries.find(sql => sql.includes("WHERE r.tenant_id = ? AND r.status = 'approved'"));
   assert.match(query, /r\.cloudflare_issuer = \?/);
+  assert.match(query, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+  assert.match(query, /m\.role = 'tenant_owner' AND m\.status = 'active'/);
   assert.match(query, /ORDER BY r\.decided_at DESC/);
 });
 
@@ -199,7 +205,21 @@ test("approved identity-link inventory enforces bounded page size and stable ten
   const ownerQuery = db.queryBindings[0];
   assert.deepEqual(ownerQuery.args, ["tenant-1", actor.subject]);
   const inventoryQuery = db.queryBindings[1];
-  assert.deepEqual(inventoryQuery.args, ["tenant-1", actor.issuer, 100]);
+  assert.deepEqual(inventoryQuery.args, ["tenant-1", actor.issuer, actor.subject, 100]);
   assert.match(inventoryQuery.sql, /WHERE r\.tenant_id = \? AND r\.status = 'approved' AND r\.cloudflare_issuer = \?/);
   assert.match(inventoryQuery.sql, /ORDER BY r\.decided_at DESC, r\.id DESC LIMIT \?/);
+});
+
+
+test("identity-link decision replay read is bound to current owner authority", async () => {
+  const db = new DB({ id: "link-1", status: "approved", tenant_id: "tenant-1" }, false);
+  db.priorEvent = {
+    link_request_id: "link-1", event_type: "approved", tenant_id: "tenant-1",
+    actor_cloudflare_issuer: actor.issuer, actor_cloudflare_subject: actor.subject,
+    reason: "Reviewed independently", created_at: "2026-11-14T12:00:00.000Z",
+  };
+  const result = await decideIdentityLinkRequest(db, "tenant-1", "link-1", actor,
+    "approve", "Reviewed independently", "decision-1");
+  assert.equal(result.status, 404);
+  assert.equal(db.batchCalls.length, 0);
 });
