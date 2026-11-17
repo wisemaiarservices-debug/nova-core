@@ -171,3 +171,109 @@ test("permit verifier rejects expired, future-issued and overlong permits", asyn
     /nova_os_authorization_permit_invalid/);
   }
 });
+
+
+test("Core client rejects oversized OS responses while streaming the body", async () => {
+  const originalFetch = globalThis.fetch;
+  let cancelled = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(controller) {
+      controller.enqueue(new Uint8Array(20_000));
+    },
+    cancel() { cancelled = true; },
+  }), { status: 200 });
+  try {
+    const client = createNovaOsOwnerAuthorizationClient(config());
+    await assert.rejects(() => client(input), /nova_os_authorization_response_invalid/);
+    assert.equal(cancelled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Core client rejects an oversized declared OS response before reading it", async () => {
+  const originalFetch = globalThis.fetch;
+  let read = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(controller) {
+      read = true;
+      controller.enqueue(new Uint8Array(1));
+    },
+    cancel() {},
+  }, { highWaterMark: 0 }), {
+    status: 200,
+    headers: { "content-length": "20000" },
+  });
+  try {
+    const client = createNovaOsOwnerAuthorizationClient(config());
+    await assert.rejects(() => client(input), /nova_os_authorization_response_invalid/);
+    assert.equal(read, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Core client accepts a response exactly at the 16 KiB byte limit", async () => {
+  const originalFetch = globalThis.fetch;
+  const exactLimitJson = "{}" + " ".repeat(16_384 - 2);
+  globalThis.fetch = async () => new Response(exactLimitJson, { status: 200 });
+  try {
+    const client = createNovaOsOwnerAuthorizationClient(config());
+    await assert.rejects(() => client(input), /nova_os_authorization_permit_invalid/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Core client rejects malformed declared response lengths before reading", async () => {
+  const originalFetch = globalThis.fetch;
+  let read = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(controller) {
+      read = true;
+      controller.enqueue(new Uint8Array(1));
+    },
+    cancel() {},
+  }, { highWaterMark: 0 }), {
+    status: 200,
+    headers: { "content-length": "16 KiB" },
+  });
+  try {
+    const client = createNovaOsOwnerAuthorizationClient(config());
+    await assert.rejects(() => client(input), /nova_os_authorization_response_invalid/);
+    assert.equal(read, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Core client normalizes response stream read failures", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull() {
+      throw new Error("upstream-secret-detail");
+    },
+  }), { status: 200 });
+  try {
+    const client = createNovaOsOwnerAuthorizationClient(config());
+    await assert.rejects(
+      () => client(input),
+      error => error.message === "nova_os_authorization_response_invalid" &&
+        !error.message.includes("upstream-secret-detail"),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Core client rejects invalid UTF-8 response bytes", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new Uint8Array([0xc3, 0x28]), { status: 200 });
+  try {
+    const client = createNovaOsOwnerAuthorizationClient(config());
+    await assert.rejects(() => client(input), /nova_os_authorization_response_invalid/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

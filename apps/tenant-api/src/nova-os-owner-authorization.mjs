@@ -67,6 +67,46 @@ function configuredPublicJwk(value, kid) {
   return jwk;
 }
 
+async function readBoundedResponse(response) {
+  const declaredLength = response.headers.get("content-length");
+  if (declaredLength !== null &&
+      (!/^\d+$/.test(declaredLength) || Number(declaredLength) > MAX_RESPONSE_BYTES)) {
+    try { await response.body?.cancel(); } catch {}
+    throw new Error("nova_os_authorization_response_invalid");
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) {
+        try { await reader.cancel(); } catch {}
+        throw new Error("nova_os_authorization_response_invalid");
+      }
+      chunks.push(value);
+    }
+  } catch {
+    throw new Error("nova_os_authorization_response_invalid");
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("nova_os_authorization_response_invalid");
+  }
+}
+
 export async function verifyNovaOsOwnerAuthorizationPermit(token, config, expected,
   nowSeconds = Math.floor(Date.now() / 1000)) {
   if (!httpsIdentifier(config?.issuer) || !opaque(config?.audience, 256) ||
@@ -212,8 +252,7 @@ export function createNovaOsOwnerAuthorizationClient(config) {
     } catch {
       throw new Error("nova_os_authorization_unavailable");
     }
-    const text = await response.text();
-    if (text.length > MAX_RESPONSE_BYTES) throw new Error("nova_os_authorization_response_invalid");
+    const text = await readBoundedResponse(response);
     let payload;
     try { payload = JSON.parse(text); }
     catch { throw new Error("nova_os_authorization_response_invalid"); }
