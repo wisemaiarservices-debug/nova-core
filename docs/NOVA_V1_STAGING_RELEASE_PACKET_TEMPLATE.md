@@ -284,3 +284,14 @@ The final mapping-event INSERT atomically rechecks that the exact source remains
 - [ ] Verify mapping revocation blocks subsequent quality assessment while historical assessments remain immutable.
 
 **Release gate:** mapping approval remains disabled until independent review and staging lifecycle E2E pass. Automated CI does not authorize staging or production.
+
+## 10. Atomic governance event transitions
+
+Core PR #234 at exact head `9bf7212115e647987769d72466098771ec96eda5` passed [CI run 44200928478](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44200928478) with all three jobs successful (API/security, tenant Worker/D1 integration, research raster). The PR makes mapping, calibration and quality-policy review event inserts conditional on the latest event state and rechecks reviewer assignment and active tenant membership at write time. Concurrent losers write no event.
+
+- [ ] Review PR #234 with dependencies #231–#233.
+- [ ] Stage simultaneous verify/verify, verify/revoke, revoke/revoke, and reviewer/membership revocation races for mapping, calibration and policy.
+- [ ] Confirm exactly one valid transition commits and losing calls return conflict without appending events.
+- [ ] Confirm revocation blocks subsequent assessments and does not rewrite historical assessment records.
+
+CI is not staging evidence. No production enablement until independent review and staging E2E pass.
