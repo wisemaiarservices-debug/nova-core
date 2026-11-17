@@ -243,3 +243,15 @@ No secret values may be placed in this packet. Source inspection and CI do not a
 - [ ] Batch failure is verified not to leave or report a partial resource; append-only audit records are not deleted to repair retries.
 
 A response lost after a site/asset commit is not a reason to create a replacement. If current authorization no longer permits replay, resolve authorization through the governed lifecycle first, then retry the exact original request. The source tests were reviewed at Core candidate #229; staging E2E evidence remains required.
+
+
+## 13. Observation ingestion source lifecycle gate
+
+- [ ] Core PR #231 reviewed and its exact-head CI passed.
+- [ ] Core migration `0035_observation_ingestion_requires_verified_source.sql` applied in exact order on a disposable clone and staging only with approval.
+- [ ] Ingestion Worker deployment is confirmed to use the database containing migration `0035`.
+- [ ] Staging race test confirms that revocation committed after the Worker's preliminary source lookup but before observation insert causes the database insert to fail.
+- [ ] Verified site-scoped source and explicitly global verified source remain accepted only for their exact module/tenant scope.
+- [ ] Unverified, rejected/unverified, revoked/disabled, wrong-module, wrong-tenant, wrong-site, inactive-site and inactive-tenant sources are rejected at insert time.
+
+**Stop condition:** Do not enable ingestion if migration `0035` is absent, its CI is incomplete, or the deployed Worker/database pairing has not passed the revocation-race test. The PR is a draft remediation candidate; this checklist does not authorize deployment.
