@@ -440,3 +440,15 @@ Each final event INSERT now checks the latest event state at write time. Verify/
 A losing concurrent transition writes no event and returns a conflict. This is repository CI validation, not staging E2E. Before activation, staging must exercise two simultaneous verification requests, verify-vs-revoke races, duplicate revocations, reviewer assignment revocation during review, and tenant membership deactivation during review for each record type. Confirm exactly one valid transition wins, all losing attempts write no event, and latest-event resolvers block subsequent assessments after revocation. Historical assessments remain immutable.
 
 **Stop condition:** PRs #231–#234 require independent review and coordinated staging lifecycle E2E. CI does not authorize deployment, migrations, or production activation.
+
+## 17. Atomic assessment-time governance gate
+
+Core PR #235 is stacked on #234 and closes a time-of-check/time-of-use gap between resolving current governance evidence and writing a new measurement-quality assessment. For `passed` and `failed` results, the final assessment INSERT now rechecks the exact verified observation, active tenant/site/asset, live verified source, latest verified mapping, latest valid verified calibration, and latest effective verified policy including its assessed bounds/version.
+
+Exact-head CI at `1161afaf3e8a37a989b483015ece44d32a63b0b1`, [run 44201209835](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44201209835), passed all three jobs: API/security, tenant Worker (ordered disposable D1 migrations and gateway/private Worker integration), and research raster tests.
+
+If a revocation or scope change commits before the assessment write, the conditional INSERT writes no passed/failed result; the workflow records a durable `not_assessed` result with reason `governance_state_changed_before_assessment`. A revocation committed after the assessment write does not rewrite that historical assessment.
+
+Staging tests must race assessment creation against source disable/revocation, mapping revocation, calibration revocation/expiry, policy revocation/effective-window changes, and tenant/site/asset deactivation. Confirm a valid assessment only commits if every exact gate still holds at write time. Confirm blocked attempts create `not_assessed` and preserve all historical records.
+
+**Stop condition:** PRs #231–#235 require independent review and coordinated staging lifecycle/race E2E. CI is not staging evidence and does not authorize deployment, migration, or production activation.
