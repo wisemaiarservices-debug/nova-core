@@ -21,6 +21,7 @@ class DB {
       async all() {
         db.calls.push({ sql, args });
         if (sql.includes("FROM tenant_identity_link_events")) return { results: db.identityLinkEventRows ?? [] };
+        if (sql.includes("FROM tenant_identity_link_requests r")) return { results: db.identityLinkRows ?? [] };
         if (sql.startsWith("SELECT id FROM tenant_identity_link_requests")) {
           const result = db.identityLinkRows ?? [];
           if (db.revokeIdentityLinkAfterCheck) db.identityLinkRows = [];
@@ -71,7 +72,10 @@ class DB {
           if (db.revokeMembershipAfterAuthorization) db.membership = false;
           return { results: result };
         }
-        if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?")) return { results: db.siteRows ?? [{ id: args[1] }] };
+        if (sql.includes("SELECT id FROM sites WHERE tenant_id = ? AND id = ?") ||
+            sql.includes("SELECT id, tenant_id FROM sites WHERE tenant_id = ? AND id = ?")) {
+          return { results: db.siteRows ?? [{ id: args[1], tenant_id: args[0] }] };
+        }
         if (sql.includes("FROM laboratory_report_evidence e")) return { results: db.laboratoryEvidenceRows };
         if (sql.includes("FROM observations WHERE id = ? AND tenant_id = ? AND site_id = ?")) return { results: db.observationEvidenceRows };
         if (sql.includes("FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
@@ -363,7 +367,7 @@ test("maps every allowlisted route to its canonical resource grant and scoped SQ
       { headers: (await request({}, `https://private.internal/internal/v1/tenants/tenant-a/${route}/resource-1`)).headers }), env(db));
     assert.equal(response.status, 200, route);
     assert.equal(db.calls[2].args[2], expectedType, route);
-    assert.deepEqual(db.calls[3].args, ["tenant-a", "resource-1"], route);
+    assert.deepEqual(db.calls[3].args, ["tenant-a", "resource-1", "tenant-a", "operator@example.test"], route);
   }
 });
 test("denies inactive tenant membership and unknown roles before grant lookup", async () => {
@@ -399,7 +403,7 @@ test("lists only the authenticated tenant's water-quality criteria entries", asy
   assert.equal(body.data[0].entry.criteria[0].parameter, "ec");
   assert.equal(body.data[0].entry_json, undefined);
   assert.deepEqual(db.calls[1].args, ["operator@example.test", "tenant-a"]);
-  assert.deepEqual(db.calls[2].args, ["tenant-a", "operator@example.test", "operator@example.test"]);
+  assert.deepEqual(db.calls[2].args, ["tenant-a", "operator@example.test", "operator@example.test", "operator@example.test"]);
 });
 
 test("reads one criteria version with tenant, entry and version selectors bound in SQL", async () => {
@@ -411,7 +415,7 @@ test("reads one criteria version with tenant, entry and version selectors bound 
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/1.0"), env(db));
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data.entry.id, "criteria-tn-1");
-  assert.deepEqual(db.calls[2].args, ["tenant-a", "criteria-tn-1", "1.0"]);
+  assert.deepEqual(db.calls[2].args, ["tenant-a", "criteria-tn-1", "1.0", "operator@example.test", "operator@example.test", "operator@example.test"]);
 });
 
 test("denies criteria registry reads for inactive, duplicate or non-reader tenant memberships", async () => {
@@ -460,7 +464,7 @@ test("criteria list binds the authenticated subject to both site-grant and revie
     "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria"), env(db));
   assert.equal(response.status, 200);
   const query = db.calls.find(call => call.sql.includes("FROM water_quality_criteria_entries"));
-  assert.deepEqual(query.args, ["tenant-a", "operator@example.test", "operator@example.test"]);
+  assert.deepEqual(query.args, ["tenant-a", "operator@example.test", "operator@example.test", "operator@example.test"]);
   assert.match(query.sql, /tenant_resource_grants g/);
   assert.match(query.sql, /g\.subject = \?/);
   assert.match(query.sql, /water_quality_criteria_reviewers r/);
@@ -472,7 +476,7 @@ test("does not return criteria belonging to another tenant or unknown versions",
   const db = new DB(); db.criteriaRows = [];
   const response = await worker.fetch(await request({}, "https://private.internal/internal/v1/tenants/tenant-a/water-quality-criteria/criteria-tn-1/9.9"), env(db));
   assert.equal(response.status, 404);
-  assert.deepEqual(db.calls[1].args, ["tenant-a", "criteria-tn-1", "9.9"]);
+  assert.deepEqual(db.calls[1].args, ["tenant-a", "criteria-tn-1", "9.9", "operator@example.test", "operator@example.test", "operator@example.test"]);
 });
 
 
