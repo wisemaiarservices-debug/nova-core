@@ -13,16 +13,14 @@
 
 ## 1A. Cross-repository code-validation baseline
 
-The following records the current integrated PR #60 branch baseline; staging operators must re-fetch each PR head and its checks immediately before staging and record the exact deployed SHA. These links are historical CI evidence, not deployment approval:
+The following exact heads and checks were re-fetched on 2026-11-17. They are repository CI evidence only, not staging deployment or end-to-end evidence. Re-fetch every head and required check immediately before staging; any changed head requires a fresh coordinated review and CI.
 
-- NOVA OS PR #60 integrated head at runbook update: `17f6c9dc590693e53bd534849192b0daf71aa030`, based on PR #57 exact head `110116d844ed73e46ee85d3508c4bac740cd6230`. This head includes the mapping correction previously isolated in PR #59; re-fetch and validate the latest exact head before staging.
-- [NOVA OS tenant migration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43974436761) — passed on that head.
-- [NOVA OS tenant administration validation](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43974436766) — passed on that head.
-- NOVA OS PR #57 supplies the authorization-consumption endpoint and ledger; PR #60 integrates the required permit-bound mapping behavior and independent HMAC nonce reservation. NOVA Core PR #222 supplies the matching Core caller/verifier and durable provisioning integration.
-- NOVA Core PR #221 exact protocol head: `285d53d0bbc5e40f64f8eadcccdc025050024af2`; CI [NOVA Core CI](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43948195993) passed.
-- NOVA Core PR #222 exact runtime head: `1c8026ab2279fec3e28ea25f9d4b344794709ae3`, based on PR #221 head above; exact-head CI [NOVA Core CI](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43974847218) passed all three jobs (API tests, tenant Worker/D1 integration, research raster tests).
-- Before staging, independently verify the four coordinated PRs' current head SHAs, base relationships, required checks, and migration order. If any head changes after review, rerun and reassess the full coordinated validation.
-
+- NOVA OS PR #57 authorization implementation: head `110116d844ed73e46ee85d3508c4bac740cd6230`, based on protocol branch base `561fcfb1d05ae62c2b70c6d91a9267e58da242c2`. Tenant migration validation [run 43973754344](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43973754344) and tenant administration validation [run 43973754374](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/43973754374) passed.
+- NOVA OS PR #60 integrated nonce-reservation and consumed-permit mapping: head `17f6c9dc590693e53bd534849192b0daf71aa030`, based on PR #57 head above. Tenant migration validation [run 44078094385](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44078094385) and tenant administration validation [run 44078094194](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44078094194) passed.
+- NOVA Core protocol PR #221: head `285d53d0bbc5e40f64f8eadcccdc025050024af2`; CI [run 43948195993](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43948195993) passed.
+- NOVA Core runtime PR #222: head `cf1eb6c89c9dff7e22a9c3af453abb4be3c41d93`, based on PR #221 head above. Exact-head CI [run 44079421020](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44079421020) passed all three jobs (API tests, tenant Worker/D1 integration, research raster tests).
+- OS PR #56 and runtime PR #57 are sibling review branches, not a strict base/head dependency. Review their protocol contracts together. OS PR #60 depends on the exact #57 head above. Core PR #222 depends on the exact #221 head above.
+- The coordinated runtime review set is OS #57 + OS #60 + Core #222, with protocol specifications #56 and #221 reviewed alongside them. PR #59 is closed/superseded and must not be staged separately. Re-fetch all exact heads, base relationships, migration order, and checks immediately before staging.
 ## 2. Configuration inventory (names only; never put values in this file)
 
 ### NOVA OS Supabase Edge Function: `nova-core-owner-authorization`
