@@ -38,7 +38,7 @@ export async function reviewSensorSourceMapping(db,tenant,siteId,assetId,mapping
    .bind(...eventValues,siteId,assetId,found.results[0].source_id,tenant,siteId,tenant,reviewer,tenant,siteId,reviewer,tenant,siteId,assetId,mappingId,found.results[0].source_id,reviewer)
   :db.prepare("INSERT INTO sensor_source_mapping_events(id,tenant_id,site_id,asset_id,source_id,mapping_id,reviewer_subject,event_type,evidence_ref,reason,request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(...eventValues);
  const result=await insert.run();
- if(result?.meta?.changes!==1) return {error:"sensor_source_mapping_state_conflict",status:409};
+ if(result?.meta?.changes!==1)return {error:body.decision==="verify"?"sensor_source_mapping_source_not_active_or_verified":"sensor_source_mapping_state_conflict",status:409};
  return {data:{mapping_id:mappingId,status:type,reviewer_subject:reviewer},status:201};
 }
 export async function resolveVerifiedSensorSourceMapping(db,tenant,observation){
