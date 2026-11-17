@@ -35,8 +35,11 @@ export async function reviewMeasurementQualityPolicy(db,tenant,siteId,assetId,po
  const from={verify:"registered_unverified",reject:"registered_unverified",revoke:"verified"}[body.decision];
  if(current!==from)return {error:"measurement_quality_policy_state_conflict",status:409};
  const type={verify:"verified",reject:"rejected",revoke:"revoked"}[body.decision];
- const result=await db.prepare("INSERT INTO measurement_quality_policy_events(id,tenant_id,site_id,asset_id,policy_id,reviewer_subject,event_type,evidence_ref,reason,request_id) VALUES(?,?,?,?,?,?,?,?,?,?)")
- .bind(crypto.randomUUID(),tenant,siteId,assetId,policyId,reviewer,type,body.evidence_ref,body.reason??null,requestId).run();
+ const stateGuard=body.decision==="revoke"
+  ?"EXISTS (SELECT 1 FROM measurement_quality_policy_events e WHERE e.tenant_id=? AND e.site_id=? AND e.policy_id=? AND e.event_type='verified' AND e.id=(SELECT e2.id FROM measurement_quality_policy_events e2 WHERE e2.tenant_id=e.tenant_id AND e2.site_id=e.site_id AND e2.policy_id=e.policy_id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1))"
+  :"NOT EXISTS (SELECT 1 FROM measurement_quality_policy_events e WHERE e.tenant_id=? AND e.site_id=? AND e.policy_id=?)";
+ const result=await db.prepare("INSERT INTO measurement_quality_policy_events(id,tenant_id,site_id,asset_id,policy_id,reviewer_subject,event_type,evidence_ref,reason,request_id) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM tenant_memberships tm JOIN tenants t ON t.id=tm.tenant_id AND t.status='active' WHERE tm.tenant_id=? AND tm.subject=? AND tm.status='active') AND EXISTS (SELECT 1 FROM observation_reviewers r WHERE r.tenant_id=? AND r.site_id=? AND r.reviewer_subject=? AND r.reviewer_role='measurement_reviewer' AND r.status='active') AND EXISTS (SELECT 1 FROM measurement_quality_policies p WHERE p.tenant_id=? AND p.site_id=? AND p.asset_id=? AND p.id=? AND p.registered_by_subject<>?) AND "+stateGuard)
+ .bind(crypto.randomUUID(),tenant,siteId,assetId,policyId,reviewer,type,body.evidence_ref,body.reason??null,requestId,tenant,reviewer,tenant,siteId,reviewer,tenant,siteId,assetId,policyId,reviewer,tenant,siteId,policyId).run();
  if(result?.meta?.changes!==1)return {error:"measurement_quality_policy_state_conflict",status:409};
  return {data:{policy_id:policyId,status:type,reviewer_subject:reviewer},status:201};
 }
