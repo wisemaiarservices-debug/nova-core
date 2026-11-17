@@ -231,3 +231,15 @@ No secret values may be placed in this packet. Source inspection and CI do not a
 - [ ] Forward-recovery versus restore decision and accountable release owner documented.
 
 **Stop condition:** Any orphaned legacy mapping event, unexpected migration ledger, failed restore, permit/JWK mismatch, or ambiguous partially committed provisioning state blocks staging progression pending written review. This checklist does not authorize a staging migration or deployment.
+
+
+## 12. First-site and asset onboarding recovery checks
+
+- [ ] Confirm first-site creation is atomic across site, owner read grant, grant event, site event and immutable idempotency record.
+- [ ] Confirm asset registration is atomic across unconfigured asset, owner read grant, grant event, asset event and immutable idempotency record.
+- [ ] Exact retry with the original key and body digest returns the original resource; changed-body reuse conflicts.
+- [ ] Lost-response retry is tested only while active-owner, active-tenant, approved dual-identity and applicable site-grant checks remain satisfied.
+- [ ] Owner suspension, tenant deactivation, identity-link revocation and missing site grant remain denied before replay lookup; no recovery bypass is introduced.
+- [ ] Batch failure is verified not to leave or report a partial resource; append-only audit records are not deleted to repair retries.
+
+A response lost after a site/asset commit is not a reason to create a replacement. If current authorization no longer permits replay, resolve authorization through the governed lifecycle first, then retry the exact original request. The source tests were reviewed at Core candidate #229; staging E2E evidence remains required.
