@@ -1310,9 +1310,10 @@ test("tenant provisioning rejects idempotency key reuse across another Supabase 
 
 
 class MembershipEventsDB {
-  constructor(role = "tenant_owner", eventRows = []) {
+  constructor(role = "tenant_owner", eventRows = [], { revokeBeforeAuditRead = false } = {}) {
     this.role = role;
     this.eventRows = eventRows;
+    this.revokeBeforeAuditRead = revokeBeforeAuditRead;
     this.nonces = new Set();
     this.calls = [];
   }
@@ -1332,10 +1333,10 @@ class MembershipEventsDB {
         if (sql.includes("FROM tenant_memberships")) return { results: [{
           subject: "operator@example.test", tenant_id: args[1], role: db.role, membership_status: "active",
         }] };
-        if (sql.includes("FROM tenant_membership_events")) return { results: db.eventRows };
-        if (sql.includes("FROM tenant_membership_invitation_events")) return { results: [] };
-        if (sql.includes("FROM tenant_site_grant_events")) return { results: [] };
-        if (sql.includes("FROM tenant_resource_grant_events")) return { results: [] };
+        if (sql.includes("FROM tenant_membership_events")) return { results: db.revokeBeforeAuditRead ? [] : db.eventRows };
+        if (sql.includes("FROM tenant_membership_invitation_events")) return { results: db.revokeBeforeAuditRead ? [] : [] };
+        if (sql.includes("FROM tenant_site_grant_events")) return { results: db.revokeBeforeAuditRead ? [] : [] };
+        if (sql.includes("FROM tenant_resource_grant_events")) return { results: db.revokeBeforeAuditRead ? [] : [] };
         throw new Error("unexpected audit read SQL");
       },
     }; } };
@@ -1357,9 +1358,26 @@ test("tenant owners and admins read only their tenant's bounded membership audit
     assert.equal(audit[0].event_type, "membership_created");
     assert.equal(audit[0].tenant_id, "tenant-a");
     const query = db.calls.find(call => call.sql.includes("FROM tenant_membership_events"));
-    assert.deepEqual(query.args, ["tenant-a"]);
+    assert.deepEqual(query.args, ["tenant-a", "tenant-a", "operator@example.test"]);
+    assert.match(query.sql, /EXISTS \(SELECT 1 FROM tenant_memberships m JOIN tenants t/);
+    assert.match(query.sql, /m\.status = 'active' AND m\.role IN \('tenant_owner','tenant_admin'\)/);
     assert.match(query.sql, /ORDER BY created_at DESC, id DESC LIMIT 100/);
   }
+});
+
+test("membership audit reads return no history if owner/admin authority is revoked after the route check", async () => {
+  const event = { id: "event-1", tenant_id: "tenant-a", membership_id: "membership-a",
+    subject: "owner-sub", actor_subject: "operator@example.test", event_type: "created",
+    previous_role: null, new_role: "tenant_owner", previous_status: null, new_status: "active",
+    reason: "Initial owner", request_id: "request-event-1", created_at: "2026-11-14T10:00:00Z" };
+  const db = new MembershipEventsDB("tenant_owner", [event], { revokeBeforeAuditRead: true });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-events"), env(db));
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).data, []);
+  const query = db.calls.find(call => call.sql.includes("FROM tenant_membership_events"));
+  assert.deepEqual(query.args, ["tenant-a", "tenant-a", "operator@example.test"]);
+  assert.match(query.sql, /m\.status = 'active'/);
 });
 
 test("non-admin tenant members cannot read membership audit history", async () => {
