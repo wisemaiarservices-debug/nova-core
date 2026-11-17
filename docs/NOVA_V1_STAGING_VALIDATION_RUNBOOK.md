@@ -137,3 +137,23 @@ The runtime pull requests are based on prerequisite protocol branches. Preserve 
 - The two repositories can be integrated independently into isolated staging branches, but staging deployment must wait until both repository review sets are complete and their exact deployed SHAs are recorded.
 - Keep protocol and runtime changes reviewable as separate units. A successful child CI run does not replace review of its parent contract or prove the combined deployment.
 - Do not merge these branches directly to production as part of staging preparation.
+
+
+## 9. Core protected-read authorization integration dependency
+
+The owner-provisioning flow above is not a substitute for the protected-read authorization stack. Before any real tenant/site data is exposed, the Core protected-read branch stack must also be integrated and validated:
+
+- PR #223 `fix/core-site-reads-recheck-identity-link`, head `6791f6f97325fbe055779b46abec669a0940ea0b`, based on first-site integrated PR #219 head `3bfebdea056f9966ef47dcd609c764443534c38b`.
+- PR #224 `fix/core-membership-audit-final-read-authorization`, head `ac7e42c162da98731cc2b0bd07817e60613232a0`, based on #223 head above.
+- PR #225 `fix/core-lifecycle-audit-final-read-authorization`, head `5d1d8cea2081c12ed2a7df8caa507502e424133c`, based on #224 head above.
+- PR #226 `fix/core-identity-link-inventory-final-read-authorization`, head `d37e678921c73fb231a5831336f0dee51cce1275`, based on #225 head above. Exact-head Core CI [run 44167821201](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44167821201) passed API tests, tenant Worker/D1 integration (ordered disposable migrations, SQL preparation and gateway/private Worker integration), and research raster tests.
+
+This #223–#226 chain is a separate branch stack from provisioning PR #222. The two stacks have diverged and overlap in `apps/tenant-api/src/index.mjs` and `apps/tenant-api/test/tenant-api.test.mjs`; #222's authorization-provisioning changes and #223's protected-read changes must be combined into one integration candidate and validated together. Separate green CI runs do not prove the combined candidate. Do not merge, retarget, cherry-pick, or manually overwrite these branches without a reviewed three-way integration plan and exact-head CI.
+
+Before staging, require:
+1. A single Core integration branch containing the complete #222 provisioning protocol plus #223–#226 protected-read hardening.
+2. Full exact-head Core CI, including ordered D1 migrations, SQL preparation, tenant Worker tests, gateway/private Worker integration, API/security tests and research raster tests.
+3. Regression evidence that identity-link approval, active membership, tenant status and exact site/resource grants are rechecked in the final protected SELECTs, including audit history and identity-link idempotency replay reads.
+4. Coordinated OS #57 + #60 + #61 and Core integration exact SHAs; deployed cross-repository staging E2E remains mandatory.
+
+Until that integration candidate exists and passes, protected-read readiness and staging authorization remain blocked. This section records source/CI review only; it does not authorize branch merging, staging configuration, migrations, deployment, or customer data access.
