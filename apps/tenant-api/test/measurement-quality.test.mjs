@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { registerMeasurementQualityPolicy, reviewMeasurementQualityPolicy, assessMeasurementQuality } from "../src/measurement-quality.mjs";
 globalThis.crypto ??= webcrypto;
-function dbFixture({observation={id:"obs-1",site_id:"site-1",source_id:"source-1",module:"neoagro",metric:"temperature",value:22,unit:"degC",observed_at:"2026-06-01T10:00:00Z",verification_status:"verified",provenance_json:"{}"},source={id:"source-1",site_id:"site-1",module:"neoagro",verification_status:"verified"},mapping=[{id:"map-1",asset_id:"asset-1",sensor_id:"sensor-1",parameter:"temperature",unit:"degC"}],calibration=[{id:"cal-1",calibrated_at:"2026-01-01T00:00:00Z",valid_until:"2026-12-01T00:00:00Z",uncertainty:null}],policy=[{id:"policy-1",minimum_value:0,maximum_value:40,version:"v1"}]}={}){
+function dbFixture({observation={id:"obs-1",site_id:"site-1",source_id:"source-1",module:"neoagro",metric:"temperature",value:22,unit:"degC",observed_at:"2026-06-01T10:00:00Z",verification_status:"verified",provenance_json:"{}"},source={id:"source-1",site_id:"site-1",module:"neoagro",verification_status:"verified"},mapping=[{id:"map-1",asset_id:"asset-1",sensor_id:"sensor-1",parameter:"temperature",unit:"degC"}],calibration=[{id:"cal-1",calibrated_at:"2026-01-01T00:00:00Z",valid_until:"2026-12-01T00:00:00Z",uncertainty:null}],policy=[{id:"policy-1",minimum_value:0,maximum_value:40,version:"v1"}],policyHistory=[],eventWriteChanges=1}={}){
  const calls=[];
  return {calls,prepare(sql){return {sql,values:[],bind(...v){this.values=v;return this;},async all(){
   if(sql.includes("FROM assets"))return {results:[{id:"asset-1"}]};
@@ -15,9 +15,9 @@ function dbFixture({observation={id:"obs-1",site_id:"site-1",source_id:"source-1
   if(sql.includes("FROM measurement_quality_policies p JOIN"))return {results:policy};
   if(sql.includes("FROM measurement_quality_policies WHERE"))return {results:[{id:"policy-1",registered_by_subject:"author"}]};
   if(sql.includes("FROM observation_reviewers"))return {results:[{reviewer_subject:"reviewer"}]};
-  if(sql.includes("FROM measurement_quality_policy_events"))return {results:[]};
+  if(sql.includes("FROM measurement_quality_policy_events"))return {results:policyHistory};
   throw Error("unhandled query: "+sql);
- },async run(){calls.push({sql,values:this.values});return {meta:{changes:1}};}};}};
+ },async run(){calls.push({sql,values:this.values});return {meta:{changes:sql.includes("INSERT INTO measurement_quality_policy_events")?eventWriteChanges:1}};}};}};
 }
 const policyBody={id:"policy-1",sensor_id:"sensor-1",parameter:"temperature",unit:"degC",version:"v1",minimum_value:0,maximum_value:40,effective_from:"2026-01-01T00:00:00Z",method:"approved operating envelope",evidence_ref:"spec-1"};
 test("policy registration accepts explicit scoped bounds and remains unverified",async()=>{
@@ -34,7 +34,24 @@ test("policy submitter cannot approve own policy",async()=>{
  const r=await reviewMeasurementQualityPolicy(dbFixture(),"tenant-1","site-1","asset-1","policy-1","author","req-1",{decision:"verify",evidence_ref:"spec-1"});
  assert.equal(r.error,"policy_submitter_cannot_review");
 });
-test("verified observation with exact mapping, current verified calibration and approved policy passes",async()=>{
+
+test("concurrent policy verification loses safely at the event insert",async()=>{
+ const db=dbFixture({eventWriteChanges:0});
+ const r=await reviewMeasurementQualityPolicy(db,"tenant-1","site-1","asset-1","policy-1","reviewer","req-race",{decision:"verify",evidence_ref:"spec-1"});
+ assert.equal(r.error,"measurement_quality_policy_state_conflict");
+ const write=db.calls.find(x=>x.sql.includes("INSERT INTO measurement_quality_policy_events"));
+ assert.match(write.sql,/NOT EXISTS \(SELECT 1 FROM measurement_quality_policy_events/);
+ assert.match(write.sql,/tenant_memberships/);
+ assert.match(write.sql,/observation_reviewers/);
+});
+test("concurrent policy revocation requires verified to remain the latest event",async()=>{
+ const db=dbFixture({policyHistory:[{event_type:"verified"}],eventWriteChanges:0});
+ const r=await reviewMeasurementQualityPolicy(db,"tenant-1","site-1","asset-1","policy-1","reviewer","req-race",{decision:"revoke",evidence_ref:"spec-1",reason:"withdrawn"});
+ assert.equal(r.error,"measurement_quality_policy_state_conflict");
+ const write=db.calls.find(x=>x.sql.includes("INSERT INTO measurement_quality_policy_events"));
+ assert.match(write.sql,/ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1/);
+});
+\ntest("verified observation with exact mapping, current verified calibration and approved policy passes",async()=>{
  const r=await assessMeasurementQuality(dbFixture(),"tenant-1","obs-1","req-1");
  assert.equal(r.status,201);assert.equal(r.data.status,"passed");assert.equal(r.data.reason_code,"within_approved_policy_bounds");
 });
