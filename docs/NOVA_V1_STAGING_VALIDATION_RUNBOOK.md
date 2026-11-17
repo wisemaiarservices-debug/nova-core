@@ -1,11 +1,11 @@
 # NOVA V1 owner-authorization staging validation runbook
 
-**Status:** staging-only execution plan. This document does not authorize production configuration, customer onboarding, migration, or deployment. The coordinated runtime changes remain draft in NOVA OS PR #57, integrated authorization/mapping PR #60, follow-up nonce-ordering PR #61, and NOVA Core PR #222. PR #60 integrates independent HMAC nonce reservation and consumed-permit mapping; PR #61 moves reservation earlier so every validly HMAC-authenticated request consumes its nonce before JSON parsing or owner-assertion validation. Do not stage the earlier standalone mapping branch (#59) or PR #61 independently of #60.
+**Status:** staging-only execution plan. This document does not authorize production configuration, customer onboarding, migration, or deployment. The coordinated runtime review set remains draft in NOVA OS PR #57, integrated authorization/mapping PR #60, follow-up nonce-ordering PR #61, and combined NOVA Core integration PR #227. Core PR #227 combines provisioning PR #222 with protected-read PRs #223–#226. PR #61 is stacked on #60 and must not be staged independently; PR #59 is closed/superseded.
 
 ## 1. Preconditions
 
 - Use isolated staging projects/accounts and disposable tenant data only.
-- Confirm NOVA OS PRs #57, #60 and #61 and NOVA Core PR #222 are reviewed and integrated to coordinated staging branches; verify migration/workflow checks pass at the exact deployed commits. Do not stage the #57 owner-authorization endpoint without #60's independent nonce-reservation and consumed-permit mapping protections plus #61's pre-parse nonce reservation.
+- Confirm NOVA OS PRs #57, #60 and #61 and combined Core PR #227 are reviewed and integrated to coordinated staging branches; verify migration/workflow checks pass at the exact deployed commits. Do not stage the #57 owner-authorization endpoint without #60's independent nonce-reservation and consumed-permit mapping protections plus #61's pre-parse nonce reservation.
 - Confirm a named staging operator, independent reviewer, rollback owner, and incident contact.
 - Record the exact OS and Core commit SHAs, migration versions, worker/function versions, deployment timestamps, and test run IDs.
 - Verify the staging Cloudflare Access application, Supabase project, NOVA OS Edge Functions, and NOVA Core Worker are distinct from production.
@@ -19,9 +19,9 @@ The following exact heads and checks were re-fetched on 2026-11-17. They are rep
 - NOVA OS PR #60 integrated nonce-reservation and consumed-permit mapping: head `17f6c9dc590693e53bd534849192b0daf71aa030`, based on PR #57 head above. Tenant migration validation [run 44078094385](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44078094385) and tenant administration validation [run 44078094194](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44078094194) passed.
 - NOVA OS PR #61 pre-parse authenticated-nonce reservation: head `dfbc6747fa5b418dc6665962ea94ac3917d4134c`, based on PR #60 head above. Tenant migration validation [run 44169408597](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44169408597) and tenant administration validation [run 44169408610](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44169408610) passed. The endpoint reserves a nonce after valid HMAC verification and bounded body read, before JSON parsing, payload validation, owner-assertion verification or durable authorization consumption. Invalid authenticated payloads/assertions therefore require a fresh HMAC nonce/timestamp/signature on retry.
 - NOVA Core protocol PR #221: head `285d53d0bbc5e40f64f8eadcccdc025050024af2`; CI [run 43948195993](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/43948195993) passed.
-- NOVA Core runtime PR #222: head `dd145a30466cc3f66f73129e2d8840ddf64e4e26`, based on PR #221 head above. Exact-head CI [run 44081361343](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44081361343) passed all three jobs (API tests, tenant Worker/D1 integration, research raster tests). This head also includes the latest database privilege-boundary acceptance test added to this runbook.
+- NOVA Core provisioning source PR #222: exact current head `010d88799afed10eb1133f47120cfcd17d58b36d`, based on protocol PR #221 head above. Exact-head CI [run 44170266058](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44170266058) passed all three jobs (API tests, tenant Worker/D1 integration, research raster tests). The combined integration candidate is PR #227 below.
 - OS PR #56 and runtime PR #57 are sibling review branches, not a strict base/head dependency. Review their protocol contracts together. OS PR #60 depends on the exact #57 head above. Core PR #222 depends on the exact #221 head above.
-- The coordinated runtime review set is OS #57 + OS #60 + OS #61 + Core #222, with protocol specifications #56 and #221 reviewed alongside them. PR #61 is stacked on #60 and must not be staged independently; PR #59 is closed/superseded and must not be staged separately. Re-fetch all exact heads, base relationships, migration order, and checks immediately before staging.
+- The coordinated runtime review set is OS #57 + OS #60 + OS #61 + Core #227, with protocol specifications #56 and #221 reviewed alongside them. Core #227 is the combined candidate based on the #223–#226 protected-read stack and includes provisioning source PR #222. PR #61 is stacked on #60 and must not be staged independently; PR #59 is closed/superseded. Re-fetch all exact heads, base relationships, migration order, and checks immediately before staging.
 ## 2. Configuration inventory (names only; never put values in this file)
 
 ### NOVA OS Supabase Edge Function: `nova-core-owner-authorization`
@@ -139,21 +139,25 @@ The runtime pull requests are based on prerequisite protocol branches. Preserve 
 - Do not merge these branches directly to production as part of staging preparation.
 
 
-## 9. Core protected-read authorization integration dependency
+## 9. Combined Core provisioning and protected-read integration candidate
 
-The owner-provisioning flow above is not a substitute for the protected-read authorization stack. Before any real tenant/site data is exposed, the Core protected-read branch stack must also be integrated and validated:
+The protected-read and one-time owner-provisioning code has now been combined in draft Core PR [#227](https://github.com/wisemaiarservices-debug/nova-core/pull/227):
 
-- PR #223 `fix/core-site-reads-recheck-identity-link`, head `6791f6f97325fbe055779b46abec669a0940ea0b`, based on first-site integrated PR #219 head `3bfebdea056f9966ef47dcd609c764443534c38b`.
-- PR #224 `fix/core-membership-audit-final-read-authorization`, head `ac7e42c162da98731cc2b0bd07817e60613232a0`, based on #223 head above.
-- PR #225 `fix/core-lifecycle-audit-final-read-authorization`, head `5d1d8cea2081c12ed2a7df8caa507502e424133c`, based on #224 head above.
-- PR #226 `fix/core-identity-link-inventory-final-read-authorization`, head `d37e678921c73fb231a5831336f0dee51cce1275`, based on #225 head above. Exact-head Core CI [run 44167821201](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44167821201) passed API tests, tenant Worker/D1 integration (ordered disposable migrations, SQL preparation and gateway/private Worker integration), and research raster tests.
+- Base: protected-read PR #226 exact head `d37e678921c73fb231a5831336f0dee51cce1275`, which includes the #223 → #224 → #225 → #226 stack.
+- Provisioning source: PR #222 exact head `010d88799afed10eb1133f47120cfcd17d58b36d`.
+- Combined integration head: `1ebd32b3d00eba608b8407d44848b12ae067c73a`.
+- Three shared files were merged from common ancestor `6cc1b3962b2d432a2876fdf5a440f9da5ac05cc8` with no conflicting hunks: `apps/api/tests/test_tenant_api_sql_contract.py`, `apps/tenant-api/src/index.mjs`, and `apps/tenant-api/test/tenant-api.test.mjs`.
+- The resulting tree contains the complete provisioning migration/client/tests and the full protected-read code/tests from #223–#226. Source PRs remain open/draft and unchanged.
+- Exact combined-head Core CI [run 44171368921](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44171368921) passed all three jobs: API tests, ordered disposable D1 migrations and SQL preparation, isolated fixtures and gateway/private Worker integration, and research raster tests.
 
-This #223–#226 chain is a separate branch stack from provisioning PR #222. The two stacks have diverged and overlap in `apps/tenant-api/src/index.mjs` and `apps/tenant-api/test/tenant-api.test.mjs`; #222's authorization-provisioning changes and #223's protected-read changes must be combined into one integration candidate and validated together. Separate green CI runs do not prove the combined candidate. Do not merge, retarget, cherry-pick, or manually overwrite these branches without a reviewed three-way integration plan and exact-head CI.
+The combined Core source candidate is therefore validated by its own exact-head CI. This does **not** constitute deployed cross-repository staging E2E or production readiness.
 
 Before staging, require:
-1. A single Core integration branch containing the complete #222 provisioning protocol plus #223–#226 protected-read hardening.
-2. Full exact-head Core CI, including ordered D1 migrations, SQL preparation, tenant Worker tests, gateway/private Worker integration, API/security tests and research raster tests.
-3. Regression evidence that identity-link approval, active membership, tenant status and exact site/resource grants are rechecked in the final protected SELECTs, including audit history and identity-link idempotency replay reads.
-4. Coordinated OS #57 + #60 + #61 and Core integration exact SHAs; deployed cross-repository staging E2E remains mandatory.
+1. Coordinated OS PRs #57 + #60 + #61 and Core PR #227 to be reviewed and integrated using exact recorded SHAs.
+2. Approved staging secrets/configuration: dedicated Core-to-OS HMAC key ring, OS permit signing key, pinned Core public JWK, exact issuer/audience and endpoint URLs, Cloudflare Access configuration and Core provisioning allowlist.
+3. Ordered OS and Core migrations applied only to disposable/staging databases after backup/rollback review.
+4. Cross-repository staging E2E covering first consume, pre-consume owner revocation, concurrent consume/revoke race, malformed authenticated request nonce replay, expired exact retry, lost Core response recovery, mapping after post-consume suspension, and protected reads after identity-link/membership/grant revocation.
+5. Independent verification that no browser role or general service-role path can read/write authorization ledgers, private keys or mapping records outside the narrow RPC boundaries.
+6. Human-approved pilot site, data rights, privacy, and recovery procedure before any customer data is used.
 
-Until that integration candidate exists and passes, protected-read readiness and staging authorization remain blocked. This section records source/CI review only; it does not authorize branch merging, staging configuration, migrations, deployment, or customer data access.
+Until these gates pass, no production configuration, migrations, deployment, customer provisioning, or customer data access is authorized. This runbook records implementation and disposable-CI evidence only.
