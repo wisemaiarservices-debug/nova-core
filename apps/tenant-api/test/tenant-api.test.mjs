@@ -933,9 +933,11 @@ retrievable report\
 
 
 class ProvisioningDB {
-  constructor(batchResult, existingRows = []) {
+  constructor(batchResult, existingRows = [], concurrentRows = null) {
     this.batchResult = batchResult;
     this.existingRows = existingRows;
+    this.concurrentRows = concurrentRows;
+    this.afterBatch = false;
     this.batchCalls = [];
     this.nonces = new Set();
   }
@@ -952,14 +954,16 @@ class ProvisioningDB {
       },
       async all() {
         if (sql.includes("FROM tenant_provisioning_requests")) {
+          const rows = db.afterBatch && db.concurrentRows !== null
+            ? db.concurrentRows : db.existingRows;
           if (sql.includes("WHERE nova_os_tenant_id = ?")) {
-            return { results: db.existingRows.filter(row => row.nova_os_tenant_id === args[0]) };
+            return { results: rows.filter(row => row.nova_os_tenant_id === args[0]) };
           }
           if (sql.includes("WHERE r.actor_subject = ? AND r.idempotency_key = ?")) {
-            return { results: db.existingRows.filter(row => row.actor_subject === args[0] &&
+            return { results: rows.filter(row => row.actor_subject === args[0] &&
               row.idempotency_key === args[1]) };
           }
-          return { results: db.existingRows };
+          return { results: rows };
         }
         throw new Error("unexpected provisioning read");
       },
@@ -967,6 +971,7 @@ class ProvisioningDB {
   }
   async batch(statements) {
     this.batchCalls.push(statements);
+    this.afterBatch = true;
     return this.batchResult;
   }
 }
@@ -976,12 +981,22 @@ const provisioningJwk = {
   kid: "provisioning-test-key", alg: "RS256", use: "sig", key_ops: ["verify"],
 };
 const novaOsOwnerKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const novaOsPermitKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const coreReceiptKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const novaOsOwnerJwk = {
   ...novaOsOwnerKeyPair.publicKey.export({ format: "jwk" }),
   kid: "nova-os-owner-test-key", alg: "RS256", use: "sig", key_ops: ["verify"],
 };
-function novaOsOwnerAssertion(subject = "supabase-owner", tenantId = "22222222-2222-4222-8222-222222222222", jti = "aaaaaaaa-0000-4000-8000-000000000001") {
+const novaOsPermitKeyId = "nova-os-permit-test-key";
+const novaOsPermitJwk = {
+  ...novaOsPermitKeyPair.publicKey.export({ format: "jwk" }),
+  kid: novaOsPermitKeyId, alg: "RS256", use: "sig", key_ops: ["verify"],
+};
+const coreToOsKeyId = "core-os-test-key";
+const coreToOsSecret = "test-only-Core-to-OS-shared-secret-with-32-bytes";
+const novaOsAuthorizationUrl = "https://project.example.test/functions/v1/nova-core-owner-authorization";
+let novaOsAuthorizationCallCount = 0;
+function novaOsOwnerAssertion(subject = "11111111-1111-4111-8111-111111111111", tenantId = "22222222-2222-4222-8222-222222222222", jti = "aaaaaaaa-0000-4000-8000-000000000001", issuedAt = now - 10, expiresAt = now + 120) {
   const b64 = value => Buffer.from(value).toString("base64url");
   const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: novaOsOwnerJwk.kid }));
   const claims = b64(JSON.stringify({
@@ -991,12 +1006,12 @@ function novaOsOwnerAssertion(subject = "supabase-owner", tenantId = "22222222-2
     supabase_issuer: "https://project.example.test/auth/v1",
     nova_os_tenant_id: tenantId,
     role: "owner", membership_status: "active", tenant_status: "active",
-    iat: now - 10, exp: now + 120, jti,
+    iat: issuedAt, exp: expiresAt, jti,
   }));
   const input = header + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), novaOsOwnerKeyPair.privateKey).toString("base64url");
 }
-function provisioningSupabaseToken(subject = "supabase-owner") {
+function provisioningSupabaseToken(subject = "11111111-1111-4111-8111-111111111111") {
   const b64 = value => Buffer.from(value).toString("base64url");
   const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: provisioningJwk.kid }));
   const claims = b64(JSON.stringify({
@@ -1008,11 +1023,59 @@ function provisioningSupabaseToken(subject = "supabase-owner") {
 }
 async function withProvisioningJwks(callback) {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async url => {
-    assert.equal(String(url), "https://project.example.test/auth/v1/.well-known/jwks.json");
-    return new Response(JSON.stringify({ keys: [provisioningJwk] }), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url) === "https://project.example.test/auth/v1/.well-known/jwks.json") {
+      return new Response(JSON.stringify({ keys: [provisioningJwk] }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (String(url) === novaOsAuthorizationUrl) {
+      novaOsAuthorizationCallCount += 1;
+      assert.equal(init.method, "POST");
+      assert.equal(init.redirect, "error");
+      const headers = new Headers(init.headers);
+      const bodyText = init.body;
+      const bodyDigest = createHash("sha256").update(bodyText).digest("hex");
+      const canonical = ["POST", "/nova-core-owner-authorization", coreToOsKeyId,
+        headers.get("x-nova-core-timestamp"), headers.get("x-nova-core-nonce"), bodyDigest].join("\n");
+      assert.equal(headers.get("x-nova-core-key-id"), coreToOsKeyId);
+      assert.equal(headers.get("x-nova-core-signature"),
+        createHmac("sha256", coreToOsSecret).update(canonical).digest("hex"));
+      const body = JSON.parse(bodyText);
+      assert.equal(body.display_name, "Research tenant");
+      const ownerAssertionClaims = JSON.parse(Buffer.from(body.owner_assertion.split(".")[1], "base64url").toString("utf8"));
+      const permitHeader = Buffer.from(JSON.stringify({
+        alg: "RS256", typ: "JWT", kid: novaOsPermitKeyId,
+      })).toString("base64url");
+      const permitClaims = {
+        iss: "https://nova-os.example.test/authorization",
+        aud: "nova-core-owner-authorization",
+        sub: body.access_subject,
+        access_issuer: body.access_issuer,
+        access_subject: body.access_subject,
+        supabase_issuer: body.supabase_issuer,
+        supabase_subject: body.supabase_subject,
+        nova_os_tenant_id: body.tenant_id,
+        owner_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
+        idempotency_key: body.idempotency_key,
+        request_sha256: body.request_sha256,
+        core_correlation_id: body.core_correlation_id,
+        jti: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        iat: now,
+        exp: now + 120,
+      };
+      const permitPayload = Buffer.from(JSON.stringify(permitClaims)).toString("base64url");
+      const permitInput = permitHeader + "." + permitPayload;
+      const permitToken = permitInput + "." +
+        sign("RSA-SHA256", Buffer.from(permitInput), novaOsPermitKeyPair.privateKey).toString("base64url");
+      return new Response(JSON.stringify({ data: {
+        authorization_permit: permitToken,
+        permit_jti: permitClaims.jti,
+        expires_at: permitClaims.exp,
+        replayed: ownerAssertionClaims.exp <= now,
+      } }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("unexpected provisioning fetch " + String(url));
   };
   try { return await callback(); } finally { globalThis.fetch = originalFetch; }
 }
@@ -1030,6 +1093,12 @@ const provisioningEnv = db => ({
   NOVA_OS_PROVISIONING_AUTH_ISSUER: "https://nova-os.example.test/tenant-provisioning",
   NOVA_OS_PROVISIONING_AUTH_AUDIENCE: "nova-core-tenant-provisioning",
   NOVA_OS_PROVISIONING_AUTH_JWK: JSON.stringify(novaOsOwnerJwk),
+  NOVA_OS_OWNER_AUTHORIZATION_URL: novaOsAuthorizationUrl,
+  NOVA_OS_OWNER_AUTH_KEYS: JSON.stringify({ [coreToOsKeyId]: coreToOsSecret }),
+  NOVA_OS_OWNER_AUTH_ACTIVE_KEY_ID: coreToOsKeyId,
+  NOVA_OS_OWNER_AUTHORIZATION_PERMIT_ISSUER: "https://nova-os.example.test/authorization",
+  NOVA_OS_OWNER_AUTHORIZATION_PERMIT_AUDIENCE: "nova-core-owner-authorization",
+  NOVA_OS_OWNER_AUTHORIZATION_PERMIT_JWK: JSON.stringify(novaOsPermitJwk),
   NOVA_OS_MAPPING_RECEIPT_ISSUER: "https://nova-core.example.test/provisioning",
   NOVA_OS_MAPPING_RECEIPT_AUDIENCE: "https://nova-os.example.test/mapping",
   NOVA_OS_MAPPING_RECEIPT_KEY_ID: "core-receipt-test-key",
@@ -1071,6 +1140,19 @@ test("tenant provisioning rejects missing or invalid NOVA OS owner proof before 
   });
 });
 
+test("tenant provisioning fails closed when the one-time NOVA OS authorization client is not configured", async () => {
+  const db = new ProvisioningDB([]);
+  await withProvisioningJwks(async () => {
+    const incomplete = { ...provisioningEnv(db) };
+    delete incomplete.NOVA_OS_OWNER_AUTH_KEYS;
+    const response = await worker.fetch(
+      await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody), incomplete);
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "nova_os_authorization_not_configured");
+    assert.equal(db.batchCalls.length, 0);
+  });
+});
+
 test("tenant provisioning fails closed when the NOVA OS owner assertion verifier is not configured", async () => {
   const db = new ProvisioningDB([]);
   await withProvisioningJwks(async () => {
@@ -1088,7 +1170,7 @@ test("tenant provisioning rejects owner assertions for another NOVA OS tenant", 
   const db = new ProvisioningDB([]);
   const body = JSON.stringify({
     ...JSON.parse(provisioningBody),
-    nova_os_owner_assertion: novaOsOwnerAssertion("supabase-owner", "33333333-3333-4333-8333-333333333333", "bbbbbbbb-0000-4000-8000-000000000002"),
+    nova_os_owner_assertion: novaOsOwnerAssertion("11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333", "bbbbbbbb-0000-4000-8000-000000000002"),
   });
   await withProvisioningJwks(async () => {
     const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", body), provisioningEnv(db));
@@ -1105,7 +1187,7 @@ test("tenant provisioning rejects receipt-incompatible tenant identifiers before
   const body = JSON.stringify({
     ...JSON.parse(provisioningBody),
     nova_os_tenant_id: invalidTenantId,
-    nova_os_owner_assertion: novaOsOwnerAssertion("supabase-owner", invalidTenantId),
+    nova_os_owner_assertion: novaOsOwnerAssertion("11111111-1111-4111-8111-111111111111", invalidTenantId),
   });
   await withProvisioningJwks(async () => {
     const response = await worker.fetch(
@@ -1126,7 +1208,9 @@ test("tenant provisioning requires an exact configured Access subject allowlist"
     assert.equal(denied.status, 404);
     assert.equal(db.batchCalls.length, 0);
     const missing = await worker.fetch(await request({ ...provisioningHeaders(), "x-nova-request-id": "provision-no-allowlist" },
-      provisioningPath, "POST", provisioningBody), env(db));
+      provisioningPath, "POST", provisioningBody), {
+        ...provisioningEnv(db), TENANT_PROVISIONING_SUBJECTS: undefined,
+      });
     assert.equal(missing.status, 404);
     assert.equal(db.batchCalls.length, 0);
   });
@@ -1166,8 +1250,15 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     assert.equal(decodedClaims.core_tenant_id, result.tenant_id);
     assert.equal(decodedClaims.nova_os_tenant_id, "22222222-2222-4222-8222-222222222222");
     assert.equal(decodedClaims.access_subject, "operator@example.test");
-    assert.equal(decodedClaims.supabase_subject, "supabase-owner");
+    assert.equal(decodedClaims.supabase_subject, "11111111-1111-4111-8111-111111111111");
     assert.equal(decodedClaims.owner_assertion_jti, "aaaaaaaa-0000-4000-8000-000000000001");
+    assert.equal(decodedClaims.authorization_permit_jti, "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+    assert.equal(decodedClaims.authorization_correlation_id, "nova-provision:" + createHash("sha256").update(JSON.stringify([
+      "nova-core-tenant-provisioning-v1", "https://example.cloudflareaccess.com", "operator@example.test",
+      "https://project.example.test/auth/v1", "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001",
+      "bootstrap-001", "Research tenant",
+    ])).digest("hex"));
     assert.equal(decodedClaims.jti, "request-123");
     assert.equal(await webcrypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
@@ -1184,35 +1275,139 @@ test("tenant provisioning atomically binds the Core tenant to both verified iden
     assert.match(sql, /'tenant_owner', 'active'/);
     assert.match(sql, /INSERT INTO tenant_membership_events/);
     assert.match(sql, /INSERT INTO tenant_provisioning_requests/);
+    assert.match(sql, /nova_os_authorization_permit_jti/);
+    assert.match(sql, /nova_os_authorization_correlation_id/);
     const record = db.batchCalls[0].at(-1);
     assert.ok(record.args.includes("https://project.example.test/auth/v1"));
-    assert.ok(record.args.includes("supabase-owner"));
+    assert.ok(record.args.includes("11111111-1111-4111-8111-111111111111"));
     assert.ok(record.args.includes("22222222-2222-4222-8222-222222222222"));
     assert.ok(record.args.includes("aaaaaaaa-0000-4000-8000-000000000001"));
+    assert.ok(record.args.includes("dddddddd-dddd-4ddd-8ddd-dddddddddddd"));
+    assert.ok(record.args.includes("https://example.cloudflareaccess.com"));
     assert.ok(db.batchCalls[0].every(statement => !statement.args.includes("attacker-subject")));
   });
 });
 
-test("tenant provisioning returns the existing result only for the same dual identity and NOVA OS tenant", async () => {
+test("tenant provisioning recovers committed mapping after suspension and allowlist removal", async () => {
   const digest = createHash("sha256").update(JSON.stringify([
-    "operator@example.test", "https://project.example.test/auth/v1",
-    "supabase-owner", "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001", "Research tenant",
+    "nova-core-tenant-provisioning-v1",
+    "https://example.cloudflareaccess.com", "operator@example.test",
+    "https://project.example.test/auth/v1", "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001",
+    "bootstrap-001", "Research tenant",
   ])).digest("hex");
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
     actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: digest, supabase_issuer: "https://project.example.test/auth/v1",
-    supabase_subject: "supabase-owner", nova_os_tenant_id: "22222222-2222-4222-8222-222222222222", nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
+    supabase_subject: "11111111-1111-4111-8111-111111111111", nova_os_tenant_id: "22222222-2222-4222-8222-222222222222", nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
     id: "provisioning-request-existing",
-    tenant_id: "tenant-existing", display_name: "Research tenant", status: "active",
-    membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
+    access_issuer: "https://example.cloudflareaccess.com",
+    nova_os_authorization_permit_jti: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    nova_os_authorization_permit_issuer: "https://nova-os.example.test/authorization",
+    nova_os_authorization_permit_audience: "nova-core-owner-authorization",
+    nova_os_authorization_permit_key_id: "nova-os-permit-test-key",
+    nova_os_authorization_correlation_id: "nova-provision:" + digest,
+    nova_os_authorization_permit_issued_at: now,
+    nova_os_authorization_permit_expires_at: now + 120,
+    tenant_id: "tenant-existing", display_name: "Research tenant", status: "suspended",
+    membership_id: "membership-existing", role: "viewer", membership_status: "suspended",
   }]);
   await withProvisioningJwks(async () => {
-    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody), provisioningEnv(db));
+    const beforeAuthorizationCalls = novaOsAuthorizationCallCount;
+    const expiredRetryBody = JSON.stringify({
+      ...JSON.parse(provisioningBody),
+      nova_os_owner_assertion: novaOsOwnerAssertion(
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "aaaaaaaa-0000-4000-8000-000000000001",
+        now - 400, now - 160,
+      ),
+    });
+    const response = await worker.fetch(await request(provisioningHeaders(), provisioningPath, "POST", expiredRetryBody), { ...provisioningEnv(db), TENANT_PROVISIONING_SUBJECTS: "" });
     assert.equal(response.status, 200);
     const result = (await response.json()).data;
     assert.equal(result.tenant_id, "tenant-existing");
     assert.equal(result.created, false);
     assert.equal(result.mapping_receipt_id, "provisioning-request-existing");
+    assert.equal(result.tenant_status, "suspended");
+    assert.equal(result.membership_role, "viewer");
+    assert.equal(result.membership_status, "suspended");
+    assert.equal(novaOsAuthorizationCallCount, beforeAuthorizationCalls,
+      "committed retries must not consume a new NOVA OS permit");
+    assert.equal(db.batchCalls.length, 0);
+  });
+});
+
+test("tenant provisioning accepts concurrent exact retries whose replay permits have different token timestamps", async () => {
+  const digest = createHash("sha256").update(JSON.stringify([
+    "nova-core-tenant-provisioning-v1",
+    "https://example.cloudflareaccess.com", "operator@example.test",
+    "https://project.example.test/auth/v1", "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222", "aaaaaaaa-0000-4000-8000-000000000001",
+    "bootstrap-001", "Research tenant",
+  ])).digest("hex");
+  const committed = {
+    actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
+    request_sha256: digest, supabase_issuer: "https://project.example.test/auth/v1",
+    supabase_subject: "11111111-1111-4111-8111-111111111111",
+    nova_os_tenant_id: "22222222-2222-4222-8222-222222222222",
+    nova_os_assertion_jti: "aaaaaaaa-0000-4000-8000-000000000001",
+    id: "provisioning-request-race", access_issuer: "https://example.cloudflareaccess.com",
+    nova_os_authorization_permit_jti: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    nova_os_authorization_permit_issuer: "https://nova-os.example.test/authorization",
+    nova_os_authorization_permit_audience: "nova-core-owner-authorization",
+    nova_os_authorization_permit_key_id: "nova-os-permit-test-key",
+    nova_os_authorization_correlation_id: "nova-provision:" + digest,
+    nova_os_authorization_permit_issued_at: now - 5,
+    nova_os_authorization_permit_expires_at: now + 115,
+    tenant_id: "tenant-race-winner", display_name: "Research tenant", status: "suspended",
+    membership_id: "membership-race-winner", role: "viewer", membership_status: "suspended",
+  };
+  const db = new ProvisioningDB(
+    Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })),
+    [],
+    [committed],
+  );
+  await withProvisioningJwks(async () => {
+    const response = await worker.fetch(
+      await request(provisioningHeaders(), provisioningPath, "POST", provisioningBody),
+      provisioningEnv(db),
+    );
+    assert.equal(response.status, 200);
+    const result = (await response.json()).data;
+    assert.equal(result.tenant_id, "tenant-race-winner");
+    assert.equal(result.created, false);
+    assert.equal(result.mapping_receipt_id, "provisioning-request-race");
+    assert.equal(result.tenant_status, "suspended");
+    assert.equal(result.membership_role, "viewer");
+    assert.equal(result.membership_status, "suspended");
+    assert.equal(novaOsAuthorizationCallCount > 0, true);
+    assert.equal(db.batchCalls.length, 1);
+  });
+});
+
+test("tenant provisioning delegates expired uncommitted retry to NOVA OS exact-consumption ledger", async () => {
+  const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 1 } })));
+  const expiredBody = JSON.stringify({
+    ...JSON.parse(provisioningBody),
+    nova_os_owner_assertion: novaOsOwnerAssertion(
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "aaaaaaaa-0000-4000-8000-000000000001",
+      now - 400, now - 100,
+    ),
+  });
+  await withProvisioningJwks(async () => {
+    const response = await worker.fetch(
+      await request(provisioningHeaders(), provisioningPath, "POST", expiredBody),
+      provisioningEnv(db),
+    );
+    assert.equal(response.status, 201);
+    const result = (await response.json()).data;
+    assert.equal(result.created, true);
+    assert.equal(result.tenant_status, "active");
+    assert.equal(novaOsAuthorizationCallCount > 0, true);
+    assert.equal(db.batchCalls.length, 1);
   });
 });
 
@@ -1220,7 +1415,7 @@ test("tenant provisioning rejects idempotency key reuse across another Supabase 
   const db = new ProvisioningDB(Array.from({ length: 10 }, () => ({ meta: { changes: 0 } })), [{
     actor_subject: "operator@example.test", idempotency_key: "bootstrap-001",
     request_sha256: "0".repeat(64), supabase_issuer: "https://project.example.test/auth/v1",
-    supabase_subject: "another-user", nova_os_tenant_id: "33333333-3333-4333-8333-333333333333", nova_os_assertion_jti: "cccccccc-0000-4000-8000-000000000003",
+    supabase_subject: "22222222-2222-4222-8222-222222222222", nova_os_tenant_id: "33333333-3333-4333-8333-333333333333", nova_os_assertion_jti: "cccccccc-0000-4000-8000-000000000003",
     tenant_id: "tenant-existing", display_name: "Other name", status: "active",
     membership_id: "membership-existing", role: "tenant_owner", membership_status: "active",
   }]);

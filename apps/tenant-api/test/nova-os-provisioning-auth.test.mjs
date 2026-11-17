@@ -47,6 +47,7 @@ test("verifies a short-lived owner assertion and returns the exact identity/tena
   assert.equal(result.supabaseSubject, claims.sub);
   assert.equal(result.novaOsTenantId, claims.nova_os_tenant_id);
   assert.equal(result.jti, claims.jti);
+  assert.equal(result.expiresAt, claims.exp);
   assert.equal(Object.isFrozen(result), true);
 });
 
@@ -68,4 +69,18 @@ test("rejects cross-user, cross-tenant, expired and token-directed-key assertion
   await assert.rejects(() => verifyNovaOsOwnerAssertion(tokenFor(claims, {
     alg: "RS256", typ: "JWT", kid, jku: "https://attacker.example/jwks",
   }), config, expected, now), /invalid_nova_os_owner_assertion/);
+});
+
+
+test("allows an expired but correctly signed owner assertion only when checking a committed retry", async () => {
+  const expiredClaims = { ...claims, iat: now - 400, exp: now - 160 };
+  await assert.rejects(() => verifyNovaOsOwnerAssertion(
+    tokenFor(expiredClaims), config, expected, now,
+  ), /invalid_nova_os_owner_assertion/);
+  const result = await verifyNovaOsOwnerAssertion(
+    tokenFor(expiredClaims), config, expected, now,
+    { allowExpiredForCommittedRetry: true },
+  );
+  assert.equal(result.jti, claims.jti);
+  assert.equal(result.expiresAt, expiredClaims.exp);
 });
