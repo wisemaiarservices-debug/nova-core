@@ -105,8 +105,8 @@ export async function registerLaboratoryReportEvidence(db, tenantId, subject, re
 export async function readLaboratoryReportEvidence(db, tenantId, subject, siteId, evidenceId) {
   if (!validId(siteId) || !validId(evidenceId)) return null;
   const result = await db.prepare(
-    "SELECT e.id, e.tenant_id, e.site_id, e.evidence_type, e.file_name, e.media_type, e.byte_length, e.sha256, e.document_bytes, e.laboratory_name, e.report_number, e.sample_reference, e.issued_at, e.verification_status, e.uploaded_by_subject, e.created_at FROM laboratory_report_evidence e WHERE e.tenant_id = ? AND e.site_id = ? AND e.id = ? LIMIT 2"
-  ).bind(tenantId, siteId, evidenceId).all();
+    "SELECT e.id, e.tenant_id, e.site_id, e.evidence_type, e.file_name, e.media_type, e.byte_length, e.sha256, e.document_bytes, e.laboratory_name, e.report_number, e.sample_reference, e.issued_at, e.verification_status, e.uploaded_by_subject, e.created_at FROM laboratory_report_evidence e WHERE e.tenant_id = ? AND e.site_id = ? AND e.id = ? AND EXISTS (SELECT 1 FROM tenants t JOIN tenant_memberships m ON m.tenant_id = t.id JOIN tenant_resource_grants g ON g.tenant_id = t.id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = e.site_id AND g.action = 'read' WHERE t.id = e.tenant_id AND t.status = 'active' AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin','operator','analyst','viewer','service')) LIMIT 2"
+  ).bind(tenantId, siteId, evidenceId, subject).all();
   if (!Array.isArray(result?.results) || result.results.length !== 1) return null;
   const row = result.results[0];
   const bytes = row.document_bytes instanceof Uint8Array
