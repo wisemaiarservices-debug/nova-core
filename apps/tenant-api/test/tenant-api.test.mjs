@@ -161,6 +161,29 @@ test("resource detail query rechecks membership and exact grant after preliminar
   }
 });
 
+test("all resource detail types bind their exact grant into the final protected query", async () => {
+  const cases = [
+    ["/internal/v1/tenants/tenant-a/sites/site-a", "site"],
+    ["/internal/v1/tenants/tenant-a/assets/asset-a", "asset"],
+    ["/internal/v1/tenants/tenant-a/sources/source-a", "source"],
+    ["/internal/v1/tenants/tenant-a/observations/observation-a", "observation"],
+    ["/internal/v1/tenants/tenant-a/audit-events/event-a", "audit_event"],
+  ];
+  for (const [path, resourceType] of cases) {
+    const db = new DB();
+    const response = await worker.fetch(await request({}, "https://private.internal" + path), env(db));
+    assert.equal(response.status, 200, path);
+    const finalRead = db.calls.find(call =>
+      /FROM (sites|assets|sources|observations|audit_events)/.test(call.sql) &&
+      call.sql.includes("EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t"));
+    assert.ok(finalRead, path);
+    assert.match(finalRead.sql, new RegExp("g\\.resource_type = '" + resourceType + "'"), path);
+    assert.match(finalRead.sql, /g\.resource_id = /, path);
+    assert.match(finalRead.sql, /g\.action = 'read'/, path);
+    assert.deepEqual(finalRead.args, [ "tenant-a", path.split("/").at(-1), "tenant-a", "operator@example.test" ], path);
+  }
+});
+
 test("denies when exact resource grant is absent without reading resource", async () => {
   const db = new DB({ grant: false });
   const response = await worker.fetch(await request(), env(db));
