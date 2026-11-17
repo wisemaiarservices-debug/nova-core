@@ -214,3 +214,20 @@ The source-level HMAC path/canonical request, 120-second timestamp window, UUID 
 - [ ] Independent security review and explicit staging authorization recorded.
 
 No secret values may be placed in this packet. Source inspection and CI do not authorize staging or production.
+
+
+## 11. Migration compatibility and recovery sign-off
+
+**OS migration compatibility preflight:** Before applying `20261116180000_nova_core_mapping_owner_assertion_binding.sql`, run the read-only orphan check documented in section 13 of `NOVA_V1_STAGING_VALIDATION_RUNBOOK.md`. It must return zero rows. This migration backfills existing mapping events from owner-provisioning attempts and aborts if any event cannot be matched by tenant, actor and idempotency key. Do not weaken the migration or fabricate/delete audit records to make it pass.
+
+- [ ] Restorable staging backup created and restoration independently verified.
+- [ ] Provisioning and owner/membership lifecycle writes frozen for the migration window.
+- [ ] Full OS migration ledger captured; migrations 20261116110000 through 20261116191000 applied in exact timestamp order on a disposable clone.
+- [ ] Core migration ledger captured; migrations 0026 through 0034 applied in exact numeric order on a disposable clone.
+- [ ] Existing mapping-event backfill preflight returned zero orphan rows; output retained as reviewed evidence.
+- [ ] Historical mapping rows with no permit tuple remain historical only; all new mapping writes require exact consumed permit/correlation binding.
+- [ ] Recovery rehearsed for consumed OS permit/Core commit failure, lost Core response, Core commit/OS mapping failure, and owner suspension after consumption.
+- [ ] No manual deletion or mutation of append-only authorization, mapping, receipt or audit ledgers used during recovery.
+- [ ] Forward-recovery versus restore decision and accountable release owner documented.
+
+**Stop condition:** Any orphaned legacy mapping event, unexpected migration ledger, failed restore, permit/JWK mismatch, or ambiguous partially committed provisioning state blocks staging progression pending written review. This checklist does not authorize a staging migration or deployment.
