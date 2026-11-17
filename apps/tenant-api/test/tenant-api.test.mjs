@@ -1208,7 +1208,9 @@ test("tenant provisioning requires an exact configured Access subject allowlist"
     assert.equal(denied.status, 404);
     assert.equal(db.batchCalls.length, 0);
     const missing = await worker.fetch(await request({ ...provisioningHeaders(), "x-nova-request-id": "provision-no-allowlist" },
-      provisioningPath, "POST", provisioningBody), env(db));
+      provisioningPath, "POST", provisioningBody), {
+        ...provisioningEnv(db), TENANT_PROVISIONING_SUBJECTS: undefined,
+      });
     assert.equal(missing.status, 404);
     assert.equal(db.batchCalls.length, 0);
   });
