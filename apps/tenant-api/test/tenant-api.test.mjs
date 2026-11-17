@@ -3218,3 +3218,27 @@ test("does not read observations when Supabase and Access identities are not own
     assert.equal(db.calls.some(call => call.sql.includes("SELECT o.id, o.tenant_id, o.site_id")), false);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("measurement-quality HTTP route requires a separately signed operation idempotency key", async () => {
+  const db = new DB();
+  const response = await worker.fetch(await request({
+    "x-nova-idempotency-key": null,
+  }, "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/measurement-quality-assessment",
+  "POST", "{}"), env(db));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "idempotency_key_required");
+  assert.equal(db.nonces.has("request-123"), true,
+    "the one-time transport nonce remains consumed even when the operation key is missing");
+  assert.equal(db.calls.some(call => call.sql.includes("SELECT site_id FROM observations")),
+    false, "missing operation key must be rejected before observation lookup");
+});
+
+test("measurement-quality HTTP route keeps operation key distinct from transport request ID", async () => {
+  const source = await import("../src/index.mjs");
+  assert.equal(typeof source.default.fetch, "function");
+  const routeSource = (await import("node:fs/promises")).readFile;
+  const text = await routeSource(new URL("../src/index.mjs", import.meta.url), "utf8");
+  assert.match(text, /assessMeasurementQuality\(env\.DB, tenant, qualityAssessment\[2\], operationIdempotencyKey\)/);
+  assert.match(text, /consumeRequestId\(env\.DB, requestId, issuedAt\)/);
+});
