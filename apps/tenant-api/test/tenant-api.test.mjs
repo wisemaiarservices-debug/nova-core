@@ -419,6 +419,16 @@ test("reads one criteria version with tenant, entry and version selectors bound 
   assert.ok(criteriaRead, "criteria detail must use the scoped final SELECT");
   assert.deepEqual(criteriaRead.args, ["tenant-a", "criteria-tn-1", "1.0",
     "operator@example.test", "operator@example.test", "operator@example.test"]);
+  const eventRead = db.calls.find(call => call.sql.includes("FROM water_quality_criteria_events ev"));
+  const approvalRead = db.calls.find(call => call.sql.includes("FROM water_quality_criteria_approvals ap"));
+  assert.ok(eventRead && approvalRead, "criteria history and approvals must be read");
+  for (const secondary of [eventRead, approvalRead]) {
+    assert.match(secondary.sql, /JOIN water_quality_criteria_entries e/);
+    assert.match(secondary.sql, /tenant_memberships m/);
+    assert.match(secondary.sql, /water_quality_criteria_reviewers r/);
+    assert.deepEqual(secondary.args, ["tenant-a", "criteria-tn-1", "1.0",
+      "operator@example.test", "operator@example.test", "operator@example.test"]);
+  }
 });
 
 test("denies criteria registry reads for inactive, duplicate or non-reader tenant memberships", async () => {
