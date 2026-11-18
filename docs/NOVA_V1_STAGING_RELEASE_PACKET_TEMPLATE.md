@@ -409,3 +409,14 @@ PR #239 and all constituent changes remain draft/unmerged. CI is not deployed st
 - [ ] Independent security review and operator sign-off recorded.
 
 The CI fixture intentionally uses an unverified observation and validates `not_assessed`; it does not establish scientific correctness or a passed assessment. No staging/production deployment, tenant provisioning, customer data operation or paid service is included in these PRs.
+
+## 18. Legacy direct assessment writer retirement (Core PR #254)
+
+- [ ] Review Core PR [#254](https://github.com/wisemaiarservices-debug/nova-core/pull/254), which returns `410 assessment_operation_required` from the legacy direct assessment POST after signed identity, active membership and exact site-read-grant checks.
+- [ ] Verify exact-head CI [44323728348](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44323728348) passed all three jobs for `6bd6543af4c511970b0dd111af9eef9e8ffdbda5`, including the gateway/private Worker/D1 legacy-route rejection and continued operation-ledger workflow.
+- [ ] Merge only with Core #251–#253 and NOVA OS #62 after independent review.
+- [ ] In staging, verify the old route returns 410 and creates no assessment row.
+- [ ] Verify all browser assessment writes use reserve/recover, claim and complete; terminal reads recover the original immutable result.
+- [ ] Preserve historical assessment reads and audit history.
+
+PR #254 remains draft/unmerged. CI proves the candidate code path only; no staging/production action has been initiated.
