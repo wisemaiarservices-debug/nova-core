@@ -432,3 +432,12 @@ PR #254 remains draft/unmerged. CI proves the candidate code path only; no stagi
 - [ ] Capture staging deployment IDs, migration versions, request IDs and operator sign-off.
 
 The CI observation is intentionally unverified; it validates concurrency and durable `not_assessed` handling, not scientific correctness. PR #255 remains draft/unmerged.
+
+## 20. Assessment-operation authorization revocation (Core PR #256)
+
+- [x] Local D1 integration creates an operation for an invited member with an exact site read grant, revokes the grant, and verifies subsequent operation read and claim return 404.
+- [x] Exact-head CI [44325916622](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44325916622) passed all three jobs for `189764f113dfe4e4ba0283508bd5759f95e00ccb`.
+- [ ] Repeat against staging D1/Worker and test membership suspension/revocation plus site-grant revocation during in-flight completion.
+- [ ] Confirm audit records and no result leakage after authorization revocation.
+
+Local CI confirms the candidate route behavior only; PR #256 remains draft/unmerged.
