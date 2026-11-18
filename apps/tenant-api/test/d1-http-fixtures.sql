@@ -190,12 +190,6 @@ VALUES
 ('policy-http-revocation','tenant-http-a','site-http-a','asset-http-grant','sensor-http-revocation',
  'ec','dS/m','ci-v1',0,2,'2026-01-01T00:00:00Z',NULL,
  'CI deterministic comparison','fixture:policy-http-revocation','ci-human-subject');
-INSERT INTO measurement_quality_policy_events
-(id,tenant_id,site_id,asset_id,policy_id,reviewer_subject,event_type,evidence_ref,reason,request_id)
-VALUES
-('policy-http-revocation-verified','tenant-http-a','site-http-a','asset-http-grant',
- 'policy-http-revocation','ci-measurement-reviewer','verified',
- 'fixture:policy-http-revocation-verification',NULL,'ci-policy-http-revocation-verified');
 
 INSERT INTO observations
 (id,site_id,tenant_id,asset_id,source_id,module,metric,value,unit,observed_at,idempotency_key,
