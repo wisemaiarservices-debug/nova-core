@@ -1118,6 +1118,8 @@ try {
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "lease_renewed").length, 1);
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "not_assessed").length, 1);
 
+  // This integrated run inherits the preceding source, calibration, policy,
+  // and sensor/source-mapping revocation scenarios from the base branch.
   // Site lifecycle must be governed through the public gateway and must not
   // erase or strand an assessment operation that was already claimed.
   const siteLifecycleActionPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/lifecycle-actions";
