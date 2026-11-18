@@ -460,3 +460,14 @@ PR #257 remains draft/unmerged; local CI is not staging approval.
 - [ ] Confirm recovery after legitimate membership reactivation follows the approved operation state/lease rules.
 
 Local CI is not staging approval; PR #258 remains draft/unmerged.
+
+## 23. Tenant lifecycle recheck at assessment completion (Core PR #259)
+
+- [x] Local D1 HTTP test: member claims operation, current tenant owner suspends tenant, completion is denied, owner reactivates tenant for later scenarios.
+- [x] Exact-head CI [44334952958](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44334952958) passed all three jobs for `e79d14a060608a0277e42593a75a317668220b1f`.
+- [ ] Repeat in staging for tenant suspension and archival while operations are reserved and while leases are active.
+- [ ] Verify no assessment row or terminal event is written after tenant authorization denial.
+- [ ] Verify reactivation does not revive an expired lease or bypass normal claim/recovery rules.
+- [ ] Verify lifecycle event history remains consistent and tenant-isolated.
+
+Local CI is not staging approval; PR #259 remains draft/unmerged.
