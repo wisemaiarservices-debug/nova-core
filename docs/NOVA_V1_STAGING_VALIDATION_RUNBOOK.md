@@ -663,7 +663,7 @@ The site lifecycle candidate adds migrations 0040_site_lifecycle_governance.sql 
 - [ ] Confirm no migration-number collision or edited historical migration exists in the release commit.
 - [ ] Take and verify the approved database backup/snapshot under the organization's D1 recovery procedure.
 - [ ] Rehearse the full ordered migration sequence on a disposable clone, including all existing operation-ledger triggers and the 0040/0041 test suites.
-- [ ] Confirm migration 0040 creates both append-only lifecycle ledgers and all six lifecycle triggers; confirm 0041 replaces only the assessment-operation binding guard.
+- [ ] Confirm migration 0040 creates both append-only lifecycle ledgers and the full set of lifecycle authorization, application, status-transition and append-only triggers; confirm 0041 replaces only the assessment-operation binding guard.
 - [ ] Verify the migration ledger records 0040 then 0041, and run direct status-update rejection plus governed transition tests.
 
 ### Controlled rollout order
