@@ -809,8 +809,8 @@ Do not infer that a previous commit's success validates a later head. Independen
 
 NOVA OS PR #64 is now the single browser integration candidate for Core assessment-operation recovery plus the site-lifecycle workspace. The earlier standalone OS PR #62 was closed without merge as superseded by #64; its operation API contract, strict response validators and command-transport pattern were incorporated into #64.
 
-- OS #64 latest exact head: `8dfbdd87fa9daa7beae5dc1343242b651789e621`
-- Latest exact CI: [run 44401030581](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44401030581) passed tenant-client/workflow tests, TypeScript and production build. It also validates the on-screen site-lifecycle reload warning.
+- OS #64 latest exact head: `21b43f1f7c38e29bf92414fbc1d02a620f4b8893`
+- Latest exact CI: [run 44401357217](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44401357217) passed 65 tests, TypeScript and production build. It includes the on-screen site-lifecycle reload warning and distinct assessment lease-conflict messaging.
 - Core #266 exact head: `e157555927f85a30a04366c4317a32b00b0fa42c`
 - Core exact CI: [run 44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437) passed API/security, tenant Worker/D1 integration and research raster.
 
