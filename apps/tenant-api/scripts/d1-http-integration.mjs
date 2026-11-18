@@ -1170,6 +1170,18 @@ try {
   assert.equal(siteHistoryInactive.body.data.current_status, "inactive");
   assert.equal(siteHistoryInactive.body.data.events[0].event_type, "deactivated");
 
+  // Simulate a browser reload after the lifecycle change: reserve the exact
+  // same actor/tenant/observation operation again. Core must return the
+  // existing server-owned operation without creating a new one, even though
+  // the site is now inactive.
+  const inactiveSiteReloadRecovery = await operationRequest(
+    "/api/v1/tenants/tenant-http-a/observations/obs-http-grant/measurement-assessment-operations",
+    "ci-human-subject");
+  assert.equal(inactiveSiteReloadRecovery.response.status, 200,
+    JSON.stringify(inactiveSiteReloadRecovery.body));
+  assert.equal(inactiveSiteReloadRecovery.body.data.operation_id,
+    inactiveSiteOperationReserve.body.data.operation_id);
+
   // The opposite race order is immutable too: an assessment committed before
   // deactivation remains the same historical result afterward.
   const immutableAssessmentAfterSiteChange = await operationRequest(operationReadPath,
