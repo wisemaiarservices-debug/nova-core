@@ -615,3 +615,38 @@ The local gateway → private Worker → disposable D1 integration seeds an appe
 Exact-head CI [44347311546](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44347311546) passed all three jobs for `5dc2875a3d7b8e0bcd4cf5de5985a6134729fd7b`, including ordered disposable D1 and full gateway/private Worker HTTP integration.
 
 Staging must repeat revocation after reservation and after lease claim; confirm no passed/failed assessment is written, the source event is append-only, and subsequent ingestion/resolution fails closed. This is lifecycle integrity evidence, not scientific validation or source accreditation.
+
+
+## 31. Calibration and quality-policy revocation during active assessment (Core PR #261)
+
+Core PR [#261](https://github.com/wisemaiarservices-debug/nova-core/pull/261) extends the real gateway → private Worker → disposable D1 flow. Independently reviewed calibration revocation and approved quality-policy revocation while assessment operations are active must force durable `not_assessed` outcomes with the exact reasons `verified_calibration_missing_or_expired` and `approved_quality_policy_missing` respectively. The scenarios use explicit successor operations and do not rewrite historical assessments.
+
+Exact-head CI [44351221152](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44351221152) passed all three jobs for `2b755394331f5774df528ec43b897351fa20620f`.
+
+Staging must repeat each revocation through the independent reviewer workflow, verify append-only event history, and confirm no passed/failed assessment can be committed after revocation. This is governance-state enforcement, not proof of calibration validity or policy scientific correctness.
+
+## 32. Expired assessment lease recovery and stale-worker fencing (Core PR #262)
+
+Core PR [#262](https://github.com/wisemaiarservices-debug/nova-core/pull/262) exercises lease expiry through the actual HTTP workflow. A second claim after natural expiry advances the lease version and changes the lease request token; completion using the stale fence returns 409. The recovered worker can finish only under the current fence. The short lease override is restricted to explicit local CI configuration; production defaults remain bounded to five minutes.
+
+Exact-head CI [44384405921](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44384405921) passed all three jobs for `737fe472558ed15c29349e69f27cf3c8a2cd3801`.
+
+Staging must verify natural expiry, single-winner recovery, stale completion rejection, and no lease extension or recovery after membership, tenant or site authorization is revoked. Never shorten production lease configuration for test convenience.
+
+## 33. Sensor/source-mapping revocation during active assessment (Core PR #265)
+
+Core PR [#265](https://github.com/wisemaiarservices-debug/nova-core/pull/265) adds a gateway → private Worker → disposable D1 test that revokes a previously verified sensor/source mapping through its independent reviewer route while a successor assessment operation is leased. Completion must persist `not_assessed` with `verified_sensor_mapping_missing`. The test also corrected route argument ordering so the exact site, asset and mapping identifiers reach the service layer.
+
+Exact-head CI [44384936706](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44384936706) passed all three jobs for `97dd69e1823be2012038d57bf7e5f3237f2b6741`.
+
+Staging must repeat mapping revocation after reservation and after lease claim, verify exact tenant/site/asset/sensor scope, and confirm historical mapping and assessment events remain immutable.
+
+## 34. Governed site lifecycle and assessment interlock (Core PR #266)
+
+Core PR [#266](https://github.com/wisemaiarservices-debug/nova-core/pull/266) adds migration 0040 for a separate append-only site lifecycle event ledger and one-to-one event-consumption ledger. Only active ↔ inactive transitions are supported; archived and unconfigured states remain non-transitionable. The database requires an active tenant, active owner/admin membership, exact site read grant and current status; direct site-status updates without a fresh governed event are rejected.
+
+Migration 0041 allows an operation already reserved/claimed before deactivation to finish only as `not_assessed` with fixed reason `site_inactive_at_completion`. Passed/failed assessment inserts still require an active site. Assessment completion and site deactivation are tested in both orderings, and an expired lease can be recovered under the current fence only to reach the forced not-assessed result.
+
+The combined candidate stacks on #265 and therefore includes source, calibration, policy, mapping and lease-recovery revocation scenarios. Exact combined-head CI [44391344844](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44391344844) passed all three jobs for `b3aefd9bee13e7d4b4d2e3635bd4a01f7401d2a2`, including ordered disposable D1 migrations and full gateway/private Worker HTTP integration.
+
+Staging must repeat both race orders (deactivation first and assessment commit first), unauthorized role/membership/grant cases, replay and changed-intent conflicts, direct SQL bypass rejection, and explicit reactivation. Verify reactivation does not restore assets, sources, grants, calibrations, mappings or policies. No staging/production migration or deployment has been performed; PR #266 remains draft/unmerged.
