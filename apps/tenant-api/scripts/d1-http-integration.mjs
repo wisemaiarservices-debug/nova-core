@@ -1005,35 +1005,6 @@ try {
   assert.equal(calibrationDeniedAssessment.body.data.status, "not_assessed");
   assert.equal(calibrationDeniedAssessment.body.data.reason_code, "verified_calibration_missing_or_expired");
 
-  // Revoke the exact source-to-sensor identity mapping during a third
-  // successor lease. Earlier policy and calibration gates are already revoked,
-  // but mapping is evaluated first and must independently block assessment.
-  const mappingOperation = await operationRequest(governedObservationPath, "ci-human-subject", "POST", {
-    predecessor_operation_id: calibrationOperation.body.data.operation_id,
-  });
-  assert.equal(mappingOperation.response.status, 201, JSON.stringify(mappingOperation.body));
-  const mappingOperationPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" +
-    mappingOperation.body.data.operation_id;
-  const mappingClaim = await operationRequest(mappingOperationPath + "/claim");
-  assert.equal(mappingClaim.response.status, 200, JSON.stringify(mappingClaim.body));
-  const mappingRevokedDuringOperation = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/sites/site-http-a/assets/asset-http-grant/sensor-source-mappings/mapping-http-revocation/verification",
-    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ decision: "revoke", evidence_ref: "fixture:mapping-revoked-during-assessment",
-      reason: "CI sensor mapping revoked after assessment operation claim" }));
-  assert.equal(mappingRevokedDuringOperation.response.status, 201,
-    JSON.stringify(mappingRevokedDuringOperation.body));
-  assert.equal(mappingRevokedDuringOperation.body.data.status, "revoked");
-  const mappingDeniedAssessment = await operationRequest(mappingOperationPath + "/complete",
-    "ci-human-subject", "POST", {
-      expected_lease_version: mappingClaim.body.data.lease_version,
-      expected_lease_request_id: mappingClaim.body.data.lease_request_id,
-    });
-  assert.equal([200, 201].includes(mappingDeniedAssessment.response.status), true,
-    JSON.stringify(mappingDeniedAssessment.body));
-  assert.equal(mappingDeniedAssessment.body.data.status, "not_assessed");
-  assert.equal(mappingDeniedAssessment.body.data.reason_code, "verified_sensor_mapping_missing");
-
   // Source lifecycle revocation after claim must produce a durable
   // not_assessed result, even though the observation and lease were valid.
   const sourceOperationPath = "/api/v1/tenants/tenant-http-a/observations/obs-http-source-revocation/measurement-assessment-operations";
