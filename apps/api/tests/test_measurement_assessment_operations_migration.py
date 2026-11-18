@@ -333,7 +333,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         self.assertEqual(events, [
             (None, "reserved", "reserved", "request-reserved"),
             ("reserved", "running", "claimed", "request-claimed"),
-            ("running", "completed", "completed", "request-completed"),
+            ("running", "completed", "completed", "terminal-request"),
         ])
 
     def test_terminal_transition_without_request_id_or_exact_assessment_is_rejected(self):
