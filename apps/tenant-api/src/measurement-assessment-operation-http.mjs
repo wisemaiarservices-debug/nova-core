@@ -108,7 +108,7 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
     } else if (action === "claim") {
       if (!onlyKeys(body, [])) return error("invalid_request_body", 400);
       result = await claimMeasurementAssessmentOperation(env.DB, tenant, subject,
-        operation, requestId, now, iso(Date.now() + 300000));
+        operation, requestId, now, iso(Date.parse(now) + 300000));
     } else if (action === "renew") {
       if (!onlyKeys(body, ["expected_lease_version", "expected_lease_request_id", "expected_lease_expires_at"]) ||
           !Number.isSafeInteger(body.expected_lease_version) || body.expected_lease_version < 1 ||
@@ -120,7 +120,7 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
       }
       result = await renewMeasurementAssessmentOperationLease(env.DB, tenant, subject, operation,
         body.expected_lease_version, body.expected_lease_request_id, body.expected_lease_expires_at,
-        requestId, now, iso(Date.now() + 300000));
+        requestId, now, iso(Date.parse(now) + 300000));
     } else if (action === "complete") {
       if (!onlyKeys(body, ["expected_lease_version", "expected_lease_request_id"]) ||
           !Number.isSafeInteger(body.expected_lease_version) || body.expected_lease_version < 1 ||
