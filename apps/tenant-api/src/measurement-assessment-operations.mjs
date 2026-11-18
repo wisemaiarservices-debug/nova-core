@@ -158,7 +158,7 @@ export async function claimMeasurementAssessmentOperation(db,tenant,actorSubject
  const results=await db.batch([
   db.prepare(update).bind(leaseExpiresAt,requestId,now,operationId,tenant,operation.site_id,operation.observation_id,
     actorSubject,...stateValues,tenant,actorSubject,operation.site_id,tenant,tenant,actorSubject,operation.site_id),
-  db.prepare(event).bind(eventId,operationId,fromState,eventType,requestId,operationId,tenant,actorSubject,
+  db.prepare(event).bind(eventId,fromState,eventType,requestId,operationId,tenant,actorSubject,
     requestId,leaseExpiresAt,operationId,requestId)
  ]);
  if(!Array.isArray(results)||results.length!==2||!Number.isInteger(results[0]?.meta?.changes)||!Number.isInteger(results[1]?.meta?.changes))
