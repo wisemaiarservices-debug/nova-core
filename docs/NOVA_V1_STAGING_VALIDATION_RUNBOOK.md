@@ -581,3 +581,11 @@ Core PR [#256](https://github.com/wisemaiarservices-debug/nova-core/pull/256) ad
 Exact-head CI [44325916622](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44325916622) passed all three jobs for `189764f113dfe4e4ba0283508bd5759f95e00ccb`, including ordered D1 migrations and full HTTP integration.
 
 This confirms access is re-evaluated and an operation ID is not a bearer credential. Repeat the same revocation test in staging, including membership suspension/revocation and grant changes during an in-flight completion. PR #256 remains draft/unmerged.
+
+## 27. Authorization revocation at assessment completion boundary (Core PR #257)
+
+Core PR [#257](https://github.com/wisemaiarservices-debug/nova-core/pull/257) adds a real gateway → private Worker → disposable D1 scenario: an invited member reserves and claims an operation while authorized; the owner revokes the exact site read grant before completion; the completion request is denied with 404 and cannot insert an assessment.
+
+Exact-head CI [44326401282](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44326401282) passed all three jobs for `fd9dca89f55b0030fef90b9621256730c5818df1`, including ordered migrations and full Worker HTTP integration.
+
+This validates the final write boundary in local CI. Staging must repeat the case and additionally test membership suspension/revocation, tenant/site deactivation and source/mapping/calibration/policy revocation between claim and completion. PR #257 remains draft/unmerged.
