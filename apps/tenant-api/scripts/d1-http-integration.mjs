@@ -800,11 +800,24 @@ try {
   const crossActorClaim = await operationRequest(operationReadPath + "/claim", "ci-measurement-reviewer");
   assert.equal(crossActorClaim.response.status, 404);
 
-  const claimedOperation = await operationRequest(operationReadPath + "/claim");
+  let claimedOperation = await operationRequest(operationReadPath + "/claim");
   assert.equal(claimedOperation.response.status, 200, JSON.stringify(claimedOperation.body));
   assert.equal(claimedOperation.body.data.state, "running");
   assert.equal(claimedOperation.body.data.lease_version, 1);
   assert.equal(typeof claimedOperation.body.data.lease_request_id, "string");
+  // Expire the just-claimed operation in the disposable local D1 database,
+  // then recover it. The stale lease must be fenced out before completion.
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  const recoveredLease = await operationRequest(operationReadPath + "/claim");
+  assert.equal(recoveredLease.response.status, 200, JSON.stringify(recoveredLease.body));
+  assert.equal(recoveredLease.body.data.lease_version, claimedOperation.body.data.lease_version + 1);
+  assert.notEqual(recoveredLease.body.data.lease_request_id, claimedOperation.body.data.lease_request_id);
+  const staleWorkerCompletion = await operationRequest(operationReadPath + "/complete", "ci-human-subject", "POST", {
+    expected_lease_version: claimedOperation.body.data.lease_version,
+    expected_lease_request_id: claimedOperation.body.data.lease_request_id,
+  });
+  assert.equal(staleWorkerCompletion.response.status, 409, JSON.stringify(staleWorkerCompletion.body));
+  claimedOperation = recoveredLease;
 
   const renewedOperation = await operationRequest(operationReadPath + "/renew", "ci-human-subject", "POST", {
     expected_lease_version: claimedOperation.body.data.lease_version,
@@ -812,7 +825,7 @@ try {
     expected_lease_expires_at: claimedOperation.body.data.lease_expires_at,
   });
   assert.equal(renewedOperation.response.status, 200, JSON.stringify(renewedOperation.body));
-  assert.equal(renewedOperation.body.data.lease_version, 2);
+  assert.equal(renewedOperation.body.data.lease_version, claimedOperation.body.data.lease_version + 1);
   assert.notEqual(renewedOperation.body.data.lease_request_id,
     claimedOperation.body.data.lease_request_id);
 
