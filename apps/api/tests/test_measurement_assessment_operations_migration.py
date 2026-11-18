@@ -13,7 +13,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         self.db.executescript("""
           CREATE TABLE tenants (id TEXT PRIMARY KEY, status TEXT NOT NULL);
           CREATE TABLE sites (
-            id TEXT NOT NULL, tenant_id TEXT NOT NULL,
+            id TEXT NOT NULL, tenant_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
             PRIMARY KEY(id, tenant_id), UNIQUE(id, tenant_id)
           );
           CREATE TABLE tenant_memberships (
