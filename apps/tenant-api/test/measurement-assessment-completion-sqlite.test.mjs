@@ -155,7 +155,7 @@ test("real SQLite/D1-adapter completion persists a passed result and terminal au
  assert.equal(operation.lease_request_id,null);
  assert.equal(operation.terminal_request_id,"terminal-transport");
  const event=sqlite.prepare("SELECT from_state,to_state,event_type,request_id FROM measurement_assessment_operation_events WHERE operation_id=? ORDER BY rowid DESC LIMIT 1").get(operationId);
- assert.deepEqual(event,{from_state:"running",to_state:"completed",event_type:"completed",request_id:"terminal-transport"});
+ assert.deepEqual({...event},{from_state:"running",to_state:"completed",event_type:"completed",request_id:"terminal-transport"});
 });
 
 test("live source revocation between claim and completion yields a durable not_assessed result",async t=>{
