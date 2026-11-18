@@ -405,12 +405,12 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
     def test_bound_assessment_rejects_stale_lease_or_revoked_membership(self):
         self.reserve()
         self.claim_for_insert_terminalization()
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact active actor, scope and lease"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact actor, scope, lease and active-site"):
             self.insert_bound_assessment(lease_version=2)
         self.db.execute(
             "UPDATE tenant_memberships SET status='suspended' WHERE tenant_id='tenant-a' AND subject='actor-a'"
         )
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact active actor, scope and lease"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact actor, scope, lease and active-site"):
             self.insert_bound_assessment(terminal_request="terminal-request-2")
         self.assertEqual(self.db.execute(
             "SELECT state FROM measurement_assessment_operations WHERE operation_id='op-a'"
@@ -439,7 +439,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
 
     def test_legacy_insert_cannot_bypass_an_existing_operation(self):
         self.reserve()
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact active actor, scope and lease"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact actor, scope, lease and active-site"):
             self.db.execute(
                 """INSERT INTO measurement_quality_assessments
                    (id,tenant_id,site_id,observation_id,status,request_id)
