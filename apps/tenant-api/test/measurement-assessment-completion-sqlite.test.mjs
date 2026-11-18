@@ -119,10 +119,10 @@ function fixture(t){
  sqlite.prepare("INSERT INTO sensor_source_identity_mappings VALUES ('mapping-1',?,?,?,?,?,'temperature','degC','2026-01-01T00:00:00.000Z',NULL)")
   .run(tenant,site,"source-1","asset-1","sensor-1");
  sqlite.prepare("INSERT INTO sensor_source_mapping_events VALUES ('map-event-1',?,'mapping-1','verified','2026-01-01T00:00:00.000Z')").run(tenant);
- sqlite.prepare("INSERT INTO sensor_calibrations VALUES ('calibration-1',?,?,?,?,?,'temperature','degC','2026-01-01T00:00:00.000Z','2026-12-01T00:00:00.000Z',NULL)")
+ sqlite.prepare("INSERT INTO sensor_calibrations VALUES ('calibration-1',?,?,?,?,'temperature','degC','2026-01-01T00:00:00.000Z','2026-12-01T00:00:00.000Z',NULL)")
   .run(tenant,site,"asset-1","sensor-1");
  sqlite.prepare("INSERT INTO sensor_calibration_verification_events VALUES ('cal-event-1',?,'calibration-1','verified','2026-01-01T00:00:00.000Z')").run(tenant);
- sqlite.prepare("INSERT INTO measurement_quality_policies VALUES ('policy-1',?,?,?,?,?,'temperature','degC',0,40,'policy-v1','2026-01-01T00:00:00.000Z',NULL)")
+ sqlite.prepare("INSERT INTO measurement_quality_policies VALUES ('policy-1',?,?,?,?,'temperature','degC',0,40,'policy-v1','2026-01-01T00:00:00.000Z',NULL)")
   .run(tenant,site,"asset-1","sensor-1");
  sqlite.prepare("INSERT INTO measurement_quality_policy_events VALUES ('policy-event-1',?,'policy-1','verified','2026-01-01T00:00:00.000Z')").run(tenant);
  return {sqlite,db:d1Adapter(sqlite)};
