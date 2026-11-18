@@ -896,8 +896,8 @@ try {
   assert.equal(revokedGrantOperation.response.status, 201, JSON.stringify(revokedGrantOperation.body));
   const revokedGrantOperationId = revokedGrantOperation.body.data.operation_id;
   const revokedGrantPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + revokedGrantOperationId;
-  // Reuse this invited actor's already-reserved operation after restoring
-  // exact site access, then suspend membership after claim and before write.
+  // Reuse this invited actor's already-reserved operation while the exact
+  // site grant is active, then suspend membership after claim and before write.
   const invitedMembershipId = invitationAccepted.body.data.membership_id;
   assert.match(invitedMembershipId, /^[0-9a-f-]{36}$/i);
   const membershipOperationRoute = revokedGrantPath;
