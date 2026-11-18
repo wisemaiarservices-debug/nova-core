@@ -61,7 +61,7 @@ test("independent reviewer can verify a registered source",async()=>{
  assert.equal(r.status,201);assert.equal(r.data.status,"verified");
 });
 test("source lifecycle review accepts the event insert when D1 also counts trigger side effects",async()=>{
- const db=fixture({eventChanges:2});
+ const db=fixture({eventChanges:2,history:[{event_type:"verified"}]});
  const r=await reviewTenantSource(db,"tenant-a","site-a","source-a","reviewer-sub","review-a",{
   decision:"revoke",evidence_ref:"evidence/revoke-1",reason:"source withdrawn",
  });
