@@ -512,3 +512,19 @@ Core PR #238 separates the one-time internal transport replay nonce from the dur
 
 
 Latest OS PR #13 documentation-inclusive head `45a70194a98ffdb39821f14b573ef98a93d3e994` passed [NOVA OS CI run 44207888914](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44207888914): tenant resource validation, TypeScript and production build. This supersedes the earlier OS head/run recorded above. The browser retry key remains in component memory only; page-reload recovery is not implemented. This remains repository CI evidence, not live staging validation.
+
+
+## 21. Consolidated governed ingestion and assessment HTTP candidate
+
+Core draft PR [#239](https://github.com/wisemaiarservices-debug/nova-core/pull/239) consolidates the governed ingestion and assessment runtime chain (#231–#236) together with the HTTP operation-idempotency change (#238), on top of integration base #229. Exact documentation-inclusive head: `3fbc2d75bf904f49548db7793b88776ce01ac3f3`. Its own NOVA Core CI [run 44293452819](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44293452819) passed all three jobs: API/security tests, research raster tests, and Tenant Worker integration including ordered disposable D1 migrations, query preparation, fixture seeding and gateway/private Worker integration.
+
+This is consolidated repository CI only. PR #239 remains draft/open/unmerged. The CI result does not prove live staging Access configuration, deployed Worker/D1 pairing, real concurrent D1 races, lost-response replay, key custody, independent security approval or production readiness.
+
+- [ ] Independently review the full #239 diff and its stacked base/dependency chain.
+- [ ] Execute the staging source-revocation, governance-transition, assessment-write and true concurrent idempotency tests.
+- [ ] Exercise lost-response recovery through the deployed Access gateway and private Worker with stable operation key and fresh transport nonce.
+- [ ] Reconcile deployed HMAC keys, issuer/audience values, owner assertion signer and permit JWK/key IDs across OS and Core.
+- [ ] Rehearse the complete migration sequence on a disposable staging clone and verify the actual staging migration ledger.
+- [ ] Record explicit independent security review and staging release authorization.
+
+**Stop condition:** Do not merge, migrate, configure secrets, deploy or activate ingestion/assessment routes solely because PR #239 CI passed. All staging and release gates remain mandatory.
