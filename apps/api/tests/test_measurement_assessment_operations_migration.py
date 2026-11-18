@@ -76,7 +76,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         self.db.execute(
             """UPDATE measurement_assessment_operations
                SET state='completed', assessment_id=?, completed_at='2026-11-18T12:00:00Z',
-                   updated_at='2026-11-18T12:00:00Z'
+                   lease_expires_at=NULL, updated_at='2026-11-18T12:00:00Z'
                WHERE operation_id=?""",
             ("assessment-" + operation_id, operation_id),
         )
