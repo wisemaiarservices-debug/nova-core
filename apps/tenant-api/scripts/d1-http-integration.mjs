@@ -133,7 +133,6 @@ try {
   assert.equal(siteGrantCreated.response.status, 201, JSON.stringify(siteGrantCreated.body));
   assert.equal(siteGrantCreated.body.data.status, "active");
   assert.equal(siteGrantCreated.body.data.resource_type, "site");
-
   const adminPrivilegedGrant = await siteGrant("ci-http-admin", {
     action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
     grant_action: "delete", reason: "Admin must not grant destructive access",
@@ -897,6 +896,32 @@ try {
   assert.equal(revokedGrantOperation.response.status, 201, JSON.stringify(revokedGrantOperation.body));
   const revokedGrantOperationId = revokedGrantOperation.body.data.operation_id;
   const revokedGrantPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + revokedGrantOperationId;
+  // Reuse this invited actor's already-reserved operation while the exact
+  // site grant is active, then suspend membership after claim and before write.
+  // The same operation is subsequently checked for site-grant revocation.
+  const invitedMembershipId = invitationAccepted.body.data.membership_id;
+  assert.match(invitedMembershipId, /^[0-9a-f-]{36}$/i);
+  const membershipOperationRoute = revokedGrantPath;
+  const membershipClaim = await operationRequest(membershipOperationRoute + "/claim", "ci-invited-human");
+  assert.equal(membershipClaim.response.status, 200, JSON.stringify(membershipClaim.body));
+  const membershipSuspended = await membershipAction("ci-human-subject", {
+    membership_id: invitedMembershipId, action: "suspend",
+    reason: "CI suspend member after assessment operation claim",
+  });
+  assert.equal(membershipSuspended.response.status, 200, JSON.stringify(membershipSuspended.body));
+  assert.equal(membershipSuspended.body.data.status, "inactive");
+  const membershipDeniedCompletion = await operationRequest(membershipOperationRoute + "/complete", "ci-invited-human", "POST", {
+    expected_lease_version: membershipClaim.body.data.lease_version,
+    expected_lease_request_id: membershipClaim.body.data.lease_request_id,
+  });
+  assert.equal(membershipDeniedCompletion.response.status, 404, JSON.stringify(membershipDeniedCompletion.body));
+  const membershipReactivated = await membershipAction("ci-human-subject", {
+    membership_id: invitedMembershipId, action: "reactivate",
+    reason: "CI restore member after assessment authorization test",
+  });
+  assert.equal(membershipReactivated.response.status, 200, JSON.stringify(membershipReactivated.body));
+  assert.equal(membershipReactivated.body.data.status, "active");
+
   const grantRevocation = await siteGrant("ci-human-subject", {
     action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
     grant_action: "read", reason: "CI revoke assessment operation access",
@@ -906,6 +931,8 @@ try {
   assert.equal(revokedGrantRead.response.status, 404);
   const revokedGrantClaim = await operationRequest(revokedGrantPath + "/claim", "ci-invited-human");
   assert.equal(revokedGrantClaim.response.status, 404);
+
+
 
   // Revoke site authorization after a lease is acquired but before completion.
   // The completion boundary must re-check authorization and must not insert
