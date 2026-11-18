@@ -1137,6 +1137,14 @@ try {
     "POST", JSON.stringify({ action: "deactivate", reason: "Viewer cannot change site lifecycle" }));
   assert.equal(deniedSiteLifecycle.response.status, 404);
 
+  const immutableAssessmentBeforeSiteChange = await operationRequest(operationReadPath,
+    "ci-human-subject", "GET");
+  assert.equal(immutableAssessmentBeforeSiteChange.response.status, 200,
+    JSON.stringify(immutableAssessmentBeforeSiteChange.body));
+  assert.equal(immutableAssessmentBeforeSiteChange.body.data.state, "not_assessed");
+  const immutableAssessmentId = immutableAssessmentBeforeSiteChange.body.data.assessment.id;
+  const immutableAssessmentReason = immutableAssessmentBeforeSiteChange.body.data.assessment.reason_code;
+
   const siteDeactivated = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
     { "content-type": "application/json", "Idempotency-Key": "site-lifecycle-deactivate-1" },
     "POST", JSON.stringify({ action: "deactivate", reason: "CI active operation deactivation race" }));
@@ -1159,6 +1167,16 @@ try {
   assert.equal(siteHistoryInactive.response.status, 200, JSON.stringify(siteHistoryInactive.body));
   assert.equal(siteHistoryInactive.body.data.current_status, "inactive");
   assert.equal(siteHistoryInactive.body.data.events[0].event_type, "deactivated");
+
+  // The opposite race order is immutable too: an assessment committed before
+  // deactivation remains the same historical result afterward.
+  const immutableAssessmentAfterSiteChange = await operationRequest(operationReadPath,
+    "ci-human-subject", "GET");
+  assert.equal(immutableAssessmentAfterSiteChange.response.status, 200,
+    JSON.stringify(immutableAssessmentAfterSiteChange.body));
+  assert.equal(immutableAssessmentAfterSiteChange.body.data.state, "not_assessed");
+  assert.equal(immutableAssessmentAfterSiteChange.body.data.assessment.id, immutableAssessmentId);
+  assert.equal(immutableAssessmentAfterSiteChange.body.data.assessment.reason_code, immutableAssessmentReason);
 
   const inactiveSiteCompletion = await operationRequest(inactiveSiteOperationPath + "/complete",
     "ci-human-subject", "POST", {
