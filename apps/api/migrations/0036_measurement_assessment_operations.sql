@@ -131,10 +131,10 @@ END;
 CREATE TRIGGER measurement_assessment_operation_event_guard
 BEFORE INSERT ON measurement_assessment_operation_events
 WHEN (NEW.event_type='reserved' AND (NEW.from_state IS NOT NULL OR NEW.to_state<>'reserved'))
- OR (NEW.event_type='claimed' AND (NEW.from_state<>'reserved' OR NEW.to_state<>'running'))
- OR (NEW.event_type IN ('lease_renewed','lease_recovered') AND (NEW.from_state<>'running' OR NEW.to_state<>'running'))
+ OR (NEW.event_type='claimed' AND (NEW.from_state IS NOT 'reserved' OR NEW.to_state<>'running'))
+ OR (NEW.event_type IN ('lease_renewed','lease_recovered') AND (NEW.from_state IS NOT 'running' OR NEW.to_state<>'running'))
  OR (NEW.event_type='completed' AND (NEW.from_state<>'running' OR NEW.to_state<>'completed'))
- OR (NEW.event_type='not_assessed' AND (NEW.from_state NOT IN ('reserved','running') OR NEW.to_state<>'not_assessed'))
+ OR (NEW.event_type='not_assessed' AND ((NEW.from_state IS NULL OR NEW.from_state NOT IN ('reserved','running')) OR NEW.to_state<>'not_assessed'))
  OR (NEW.event_type='failed' AND (NEW.from_state NOT IN ('reserved','running') OR NEW.to_state<>'failed'))
  OR NOT EXISTS (
  SELECT 1 FROM measurement_assessment_operations operation
