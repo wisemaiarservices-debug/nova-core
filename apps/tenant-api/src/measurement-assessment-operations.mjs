@@ -98,10 +98,25 @@ export async function reserveMeasurementAssessmentOperation(db,tenant,siteId,obs
  return {error:"assessment_operation_not_available",status:404};
 }
 
+const OPERATION_HISTORY_SELECT=`SELECT operation.operation_id,operation.tenant_id,operation.site_id,operation.observation_id,
+ operation.actor_subject,operation.request_digest,operation.state,operation.assessment_id,
+ operation.predecessor_operation_id,operation.lease_version,operation.lease_expires_at,operation.lease_request_id,
+ operation.attempt_count,operation.created_at,operation.updated_at,operation.completed_at
+ FROM measurement_assessment_operations operation
+ JOIN tenant_memberships membership ON membership.tenant_id=operation.tenant_id
+  AND membership.subject=operation.actor_subject AND membership.status='active'
+ JOIN tenants tenant ON tenant.id=operation.tenant_id AND tenant.status='active'
+ JOIN sites site ON site.id=operation.site_id AND site.tenant_id=operation.tenant_id
+  AND site.status IN ('active','inactive')
+ JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=operation.tenant_id
+  AND grant_read.subject=operation.actor_subject AND grant_read.resource_type='site'
+  AND grant_read.resource_id=operation.site_id AND grant_read.action='read'
+ WHERE operation.tenant_id=? AND operation.actor_subject=? AND operation.operation_id=? LIMIT 2`;
+
 export async function readMeasurementAssessmentOperation(db,tenant,actorSubject,operationId){
  if(!validId(tenant)||!validText(actorSubject,200)||!validId(operationId))
   return {error:"assessment_operation_request_invalid",status:400};
- const found=await rows(db.prepare(OPERATION_SELECT).bind(tenant,actorSubject,operationId));
+ const found=await rows(db.prepare(OPERATION_HISTORY_SELECT).bind(tenant,actorSubject,operationId));
  if(found.length!==1)return {error:"assessment_operation_not_found",status:404};
  const events=await rows(db.prepare(
   "SELECT event_id,from_state,to_state,event_type,request_id,occurred_at FROM measurement_assessment_operation_events WHERE tenant_id=? AND operation_id=? AND actor_subject=? ORDER BY occurred_at,event_id"
