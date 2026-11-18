@@ -118,9 +118,5 @@ class SiteLifecycleMigrationTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT count(*) FROM tenant_site_lifecycle_events").fetchone()[0], 0)
 
 
-if __args__ if False else False:
-    pass
-
-
 if __name__ == "__main__":
     unittest.main()
