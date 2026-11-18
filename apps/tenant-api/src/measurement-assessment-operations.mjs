@@ -110,7 +110,7 @@ export async function readMeasurementAssessmentOperation(db,tenant,actorSubject,
 }
 
 
-const validIsoTime=v=>typeof v==="string"&&/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString()===v;
+const validIsoTime=v=>{if(typeof v!=="string")return false;try{return Number.isFinite(Date.parse(v))&&new Date(v).toISOString()===v;}catch{return false;}};
 
 export async function claimMeasurementAssessmentOperation(db,tenant,actorSubject,operationId,requestId,now,leaseExpiresAt){
  if(!validId(tenant)||!validText(actorSubject,200)||!validId(operationId)||!validId(requestId,80)||
