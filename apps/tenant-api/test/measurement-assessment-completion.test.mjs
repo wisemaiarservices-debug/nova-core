@@ -25,7 +25,7 @@ const saved={id:"assessment-1",tenant_id:"tenant-1",site_id:"site-1",
  method_version:"1.0.0",request_id:"operation-1"};
 
 function fixture({currentOperation=operation,sourcePresent=true,insertChanges=1,existingAssessment=null}={}){
- const calls={all:[],run:[]};
+ const calls={all:[],run:[]};let inserted=false;
  const db={
   calls,
   prepare(sql){
@@ -41,13 +41,13 @@ function fixture({currentOperation=operation,sourcePresent=true,insertChanges=1,
      if(sql.includes("FROM sensor_calibrations c JOIN"))return {results:[calibration]};
      if(sql.includes("FROM measurement_quality_policies p JOIN"))return {results:[policy]};
      if(sql.includes("FROM measurement_quality_assessments")&&sql.includes("operation_actor_subject=?"))
-      return {results:existingAssessment?[existingAssessment]:[]};
+      return {results:existingAssessment?[existingAssessment]:(inserted?[saved]:[])};
      throw new Error("unhandled query: "+sql);
     },
     async run(){
      calls.run.push({sql,values:this.values});
      if(sql.includes("WITH operation_context AS")&&sql.includes("INSERT INTO measurement_quality_assessments"))
-      return {meta:{changes:insertChanges}};
+      inserted=insertChanges===1;return {meta:{changes:insertChanges}};
      throw new Error("unhandled write: "+sql);
     }
    };
