@@ -121,3 +121,80 @@ VALUES
 ('obs-http-grant', 'site-http-a', 'tenant-http-a', 'asset-http-grant', 'source-http-grant',
  'neoagro', 'soil_moisture', 0.24, 'm3/m3', '2026-11-13T10:00:00Z',
  'ci-resource-grant-observation', 'unverified', '{}', '[]');
+
+
+-- Complete, synthetic governance chain for lifecycle revocation during an active
+-- assessment operation. These rows are CI-only and are not scientific evidence.
+INSERT INTO laboratory_report_evidence
+(id,tenant_id,site_id,evidence_type,file_name,media_type,byte_length,sha256,document_bytes,
+ laboratory_name,report_number,sample_reference,issued_at,uploaded_by_subject)
+VALUES
+('lab-http-calibration','tenant-http-a','site-http-a','laboratory_report','ci-calibration.pdf',
+ 'application/pdf',1,'6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d',X'00',
+ 'CI fixture laboratory','CI-CAL-001','sensor-http-revocation','2026-01-02T00:00:00Z','ci-human-subject');
+INSERT INTO laboratory_report_evidence_events
+(id,evidence_id,tenant_id,site_id,event_type,actor_subject,request_id)
+VALUES
+('lab-http-calibration-registered','lab-http-calibration','tenant-http-a','site-http-a',
+ 'registered','ci-human-subject','ci-lab-calibration-registration');
+
+INSERT INTO sensor_source_mapping_reviewers
+(tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref)
+VALUES
+('tenant-http-a','site-http-a','ci-measurement-reviewer','active','ci-human-subject',
+ 'fixture:mapping-reviewer-appointment');
+INSERT INTO sensor_source_identity_mappings
+(id,tenant_id,site_id,asset_id,source_id,sensor_id,parameter,unit,effective_from,effective_to,
+ mapping_method,evidence_ref,registered_by_subject)
+VALUES
+('mapping-http-revocation','tenant-http-a','site-http-a','asset-http-grant','source-http-a',
+ 'sensor-http-revocation','ec','dS/m','2026-01-01T00:00:00Z',NULL,
+ 'CI exact identity fixture','fixture:mapping-http-revocation','ci-human-subject');
+INSERT INTO sensor_source_mapping_events
+(id,tenant_id,site_id,asset_id,source_id,mapping_id,reviewer_subject,event_type,evidence_ref,reason,request_id)
+VALUES
+('mapping-http-revocation-verified','tenant-http-a','site-http-a','asset-http-grant','source-http-a',
+ 'mapping-http-revocation','ci-measurement-reviewer','verified',
+ 'fixture:mapping-http-revocation-verification',NULL,'ci-mapping-http-revocation-verified');
+
+INSERT INTO sensor_calibration_reviewers
+(tenant_id,site_id,reviewer_subject,reviewer_role,status,assigned_by_subject,assignment_evidence_ref)
+VALUES
+('tenant-http-a','site-http-a','ci-measurement-reviewer','calibration_reviewer','active',
+ 'ci-human-subject','fixture:calibration-reviewer-appointment');
+INSERT INTO sensor_calibrations
+(id,tenant_id,site_id,asset_id,sensor_id,parameter,unit,calibration_method,calibrated_at,valid_until,
+ laboratory_name,certificate_evidence_id,reference_value,as_found_value,as_left_value,uncertainty,
+ notes,registered_by_subject)
+VALUES
+('cal-http-revocation','tenant-http-a','site-http-a','asset-http-grant','sensor-http-revocation',
+ 'ec','dS/m','CI reference method','2026-01-01T00:00:00Z','2027-01-01T00:00:00Z',
+ 'CI fixture laboratory','lab-http-calibration',1.5,1.6,1.5,0.01,
+ 'Synthetic CI fixture only','ci-human-subject');
+INSERT INTO sensor_calibration_events
+(id,calibration_id,tenant_id,site_id,event_type,actor_subject,request_id)
+VALUES
+('cal-http-revocation-registered','cal-http-revocation','tenant-http-a','site-http-a',
+ 'registered','ci-human-subject','ci-calibration-http-registration');
+INSERT INTO sensor_calibration_verification_events
+(id,tenant_id,site_id,asset_id,calibration_id,reviewer_subject,reviewer_role,event_type,evidence_ref,reason,request_id)
+VALUES
+('cal-http-revocation-verified','tenant-http-a','site-http-a','asset-http-grant',
+ 'cal-http-revocation','ci-measurement-reviewer','calibration_reviewer','verified',
+ 'lab-http-calibration',NULL,'ci-calibration-http-verified');
+
+INSERT INTO measurement_quality_policies
+(id,tenant_id,site_id,asset_id,sensor_id,parameter,unit,version,minimum_value,maximum_value,
+ effective_from,effective_to,method,evidence_ref,registered_by_subject)
+VALUES
+('policy-http-revocation','tenant-http-a','site-http-a','asset-http-grant','sensor-http-revocation',
+ 'ec','dS/m','ci-v1',0,2,'2026-01-01T00:00:00Z',NULL,
+ 'CI deterministic comparison','fixture:policy-http-revocation','ci-human-subject');
+
+INSERT INTO observations
+(id,site_id,tenant_id,asset_id,source_id,module,metric,value,unit,observed_at,idempotency_key,
+ verification_status,provenance_json,quality_flags_json)
+VALUES
+('obs-http-governance-revocation','site-http-a','tenant-http-a','asset-http-grant','source-http-a',
+ 'neoagro','ec',1.5,'dS/m','2026-05-10T10:00:00Z','ci-governance-revocation-observation',
+ 'verified','{"provider":"CI fixture provider","acquisition_method":"manual"}','[]');

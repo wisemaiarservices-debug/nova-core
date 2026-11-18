@@ -382,6 +382,14 @@ try {
     JSON.stringify(observationReviewerAssigned.body));
   assert.equal(observationReviewerAssigned.body.data.reviewer_role, "measurement_reviewer");
 
+  const policyInitiallyVerified = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a/assets/asset-http-grant/measurement-quality-policies/policy-http-revocation/verification",
+    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "verify", evidence_ref: "fixture:policy-http-revocation-verification" }));
+  assert.equal(policyInitiallyVerified.response.status, 201,
+    JSON.stringify(policyInitiallyVerified.body));
+  assert.equal(policyInitiallyVerified.body.data.status, "verified");
+
   const selfAssignment = await throughGateway(
     "/api/v1/tenants/tenant-http-a/observations/reviewers/assign",
     accessToken(), { "content-type": "application/json" }, "POST",
@@ -941,6 +949,61 @@ try {
   assert.equal(tenantReactivatedDuringOperation.response.status, 200, JSON.stringify(tenantReactivatedDuringOperation.body));
   assert.equal(tenantReactivatedDuringOperation.body.data.status, "active");
 
+
+  // Revoke a verified quality policy while an assessment lease is active.
+  // The calibration and mapping remain verified, isolating the policy gate.
+  const governedObservationPath = "/api/v1/tenants/tenant-http-a/observations/obs-http-governance-revocation/measurement-assessment-operations";
+  const policyOperation = await operationRequest(governedObservationPath);
+  assert.equal(policyOperation.response.status, 201, JSON.stringify(policyOperation.body));
+  const policyOperationPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" +
+    policyOperation.body.data.operation_id;
+  const policyClaim = await operationRequest(policyOperationPath + "/claim");
+  assert.equal(policyClaim.response.status, 200, JSON.stringify(policyClaim.body));
+  const policyRevokedDuringOperation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a/assets/asset-http-grant/measurement-quality-policies/policy-http-revocation/verification",
+    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "revoke", evidence_ref: "fixture:policy-revoked-during-assessment",
+      reason: "CI policy revoked after assessment operation claim" }));
+  assert.equal(policyRevokedDuringOperation.response.status, 201,
+    JSON.stringify(policyRevokedDuringOperation.body));
+  assert.equal(policyRevokedDuringOperation.body.data.status, "revoked");
+  const policyDeniedAssessment = await operationRequest(policyOperationPath + "/complete",
+    "ci-human-subject", "POST", {
+      expected_lease_version: policyClaim.body.data.lease_version,
+      expected_lease_request_id: policyClaim.body.data.lease_request_id,
+    });
+  assert.equal([200, 201].includes(policyDeniedAssessment.response.status), true,
+    JSON.stringify(policyDeniedAssessment.body));
+  assert.equal(policyDeniedAssessment.body.data.status, "not_assessed");
+  assert.equal(policyDeniedAssessment.body.data.reason_code, "approved_quality_policy_missing");
+
+  // Continue the same observation's explicit successor chain. With the policy
+  // already revoked, calibration remains the next independent evidence gate.
+  const calibrationOperation = await operationRequest(governedObservationPath, "ci-human-subject", "POST", {
+    predecessor_operation_id: policyOperation.body.data.operation_id,
+  });
+  assert.equal(calibrationOperation.response.status, 201, JSON.stringify(calibrationOperation.body));
+  const calibrationOperationPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" +
+    calibrationOperation.body.data.operation_id;
+  const calibrationClaim = await operationRequest(calibrationOperationPath + "/claim");
+  assert.equal(calibrationClaim.response.status, 200, JSON.stringify(calibrationClaim.body));
+  const calibrationRevokedDuringOperation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a/assets/asset-http-grant/calibrations/cal-http-revocation/verification",
+    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "revoke", evidence_ref: "fixture:calibration-revoked-during-assessment",
+      reason: "CI calibration revoked after assessment operation claim" }));
+  assert.equal(calibrationRevokedDuringOperation.response.status, 201,
+    JSON.stringify(calibrationRevokedDuringOperation.body));
+  assert.equal(calibrationRevokedDuringOperation.body.data.verification_status, "revoked");
+  const calibrationDeniedAssessment = await operationRequest(calibrationOperationPath + "/complete",
+    "ci-human-subject", "POST", {
+      expected_lease_version: calibrationClaim.body.data.lease_version,
+      expected_lease_request_id: calibrationClaim.body.data.lease_request_id,
+    });
+  assert.equal([200, 201].includes(calibrationDeniedAssessment.response.status), true,
+    JSON.stringify(calibrationDeniedAssessment.body));
+  assert.equal(calibrationDeniedAssessment.body.data.status, "not_assessed");
+  assert.equal(calibrationDeniedAssessment.body.data.reason_code, "verified_calibration_missing_or_expired");
 
   // Source lifecycle revocation after claim must produce a durable
   // not_assessed result, even though the observation and lease were valid.
