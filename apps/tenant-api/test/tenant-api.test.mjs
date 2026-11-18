@@ -47,6 +47,7 @@ class DB {
             id: args[1], tenant_id: args[0], name: "Test resource",
           }] : []) };
         }
+        if (sql.includes("SELECT site_id FROM observations WHERE tenant_id=? AND id=?")) return { results: [{ site_id: "site-a" }] };
         if (sql.includes("FROM water_quality_criteria_events ev JOIN water_quality_criteria_entries e")) return { results: db.criteriaEventRows ?? [] };
         if (sql.includes("FROM water_quality_criteria_approvals ap JOIN water_quality_criteria_entries e")) return { results: db.approvalRows ?? [] };
         if (sql.startsWith("SELECT event_type FROM water_quality_criteria_events")) return { results: db.criteriaEventRows ?? [] };
@@ -3220,16 +3221,24 @@ test("does not read observations when Supabase and Access identities are not own
 });
 
 
-test("measurement-quality HTTP route requires a separately signed operation idempotency key", async () => {
+test("legacy measurement-quality HTTP writer is retired after active site authorization", async () => {
   const db = new DB();
-  const response = await worker.fetch(await request({
-    "x-nova-idempotency-key": null,
-  }, "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/measurement-quality-assessment",
-  "POST", "{}"), env(db));
-  assert.equal(response.status, 400);
-  assert.equal((await response.json()).error, "idempotency_key_required");
-  assert.equal(db.nonces.has("request-123"), true,
-    "the one-time transport nonce remains consumed even when the operation key is missing");
-  assert.equal(db.calls.some(call => call.sql.includes("SELECT site_id FROM observations")),
-    false, "missing operation key must be rejected before observation lookup");
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/measurement-quality-assessment",
+    "POST", "{}"), env(db));
+  assert.equal(response.status, 410);
+  assert.equal((await response.json()).error, "assessment_operation_required");
+  assert.equal(db.nonces.has("request-123"), true, "the one-time transport nonce is still consumed");
+  assert.equal(db.calls.some(call => call.sql.includes("SELECT site_id FROM observations")), true);
+  assert.equal(db.calls.some(call => call.sql.includes("INSERT INTO measurement_quality_assessments")), false,
+    "the legacy route must never insert a new assessment");
+});
+
+test("legacy measurement-quality writer remains hidden without the exact site read grant", async () => {
+  const db = new DB({ grant: false });
+  const response = await worker.fetch(await request({},
+    "https://private.internal/internal/v1/tenants/tenant-a/observations/observation-a/measurement-quality-assessment",
+    "POST", "{}"), env(db));
+  assert.equal(response.status, 404);
+  assert.equal(db.calls.some(call => call.sql.includes("SELECT site_id FROM observations")), true);
 });
