@@ -62,7 +62,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
     def complete(self, operation_id="op-a", actor="actor-a", observation="obs-a"):
         self.db.execute(
             """UPDATE measurement_assessment_operations
-               SET state='running', lease_version=1, attempt_count=1
+               SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z'
                WHERE operation_id=?""",
             (operation_id,),
         )
@@ -114,7 +114,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
     def test_state_transition_and_event_ledger(self):
         self.reserve()
         self.db.execute(
-            "UPDATE measurement_assessment_operations SET state='running', lease_version=1, attempt_count=1 WHERE operation_id='op-a'"
+            "UPDATE measurement_assessment_operations SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z' WHERE operation_id='op-a'"
         )
         self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "transition is invalid"):
@@ -145,7 +145,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         )
         self.db.execute(
             """UPDATE measurement_assessment_operations
-               SET state='running', lease_version=1, attempt_count=1
+               SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z'
                WHERE operation_id='op-a'"""
         )
         self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
@@ -177,6 +177,32 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         self.reserve()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "event does not match"):
             self.event("op-a", "actor-b", "obs-a", "reserved", "running", "claimed")
+
+
+    def test_running_operation_requires_bounded_lease_and_terminal_clears_it(self):
+        self.reserve()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "UPDATE measurement_assessment_operations SET state='running' WHERE operation_id='op-a'"
+            )
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1,
+                   lease_expires_at='2026-11-18T12:01:00Z'
+               WHERE operation_id='op-a'"""
+        )
+        self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                """UPDATE measurement_assessment_operations
+                   SET state='failed', lease_expires_at='2026-11-18T12:01:00Z'
+                   WHERE operation_id='op-a'"""
+            )
+
+    def test_event_type_must_match_transition(self):
+        self.reserve()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "event does not match"):
+            self.event("op-a", "actor-a", "obs-a", None, "reserved", "claimed")
 
     def test_operation_digest_must_be_lowercase_sha256_hex(self):
         with self.assertRaises(sqlite3.IntegrityError):
