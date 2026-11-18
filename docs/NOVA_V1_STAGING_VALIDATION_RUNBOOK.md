@@ -547,3 +547,18 @@ These are draft PRs and CI evidence only. They do not prove a deployed Worker, s
 6. Capture exact migration versions, Worker deployment IDs, configuration fingerprints (never secret values), test request IDs, outcomes and reviewer sign-off in the release packet.
 
 No staging or production action is authorized by these PRs. Do not provision tenants, enable ingestion, write customer data, or enable production UI routes based solely on CI success.
+
+## 24. Legacy assessment write bypass closure (Core PR #254)
+
+Core PR [#254](https://github.com/wisemaiarservices-debug/nova-core/pull/254) retires the direct `POST /measurement-quality-assessment` writer. After signed gateway-envelope verification, active tenant membership and exact observation site-read-grant authorization, the private Worker returns `410 assessment_operation_required`. The gateway no longer requires or forwards a legacy browser `Idempotency-Key` for this route. The assessment evaluator remains available behind the operation-ledger completion service.
+
+Exact-head CI run [44323728348](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44323728348) passed all three jobs for code head `6bd6543af4c511970b0dd111af9eef9e8ffdbda5`: API/security, ordered disposable D1 plus gateway/private Worker integration, and research raster. The integration confirms the legacy path returns 410 and the new operation workflow still works.
+
+PR #254 remains draft/unmerged. Before activation:
+- [ ] Review and merge #254 together with Core #251–#253 and NOVA OS #62.
+- [ ] In staging, verify the retired route returns 410 only after the expected authenticated tenant/site authorization path.
+- [ ] Verify no assessment row is created through the retired route.
+- [ ] Verify the OS uses only reserve/claim/complete/read operation endpoints.
+- [ ] Preserve historical assessment reads and audit history.
+
+This closes the code-level bypass in the candidate branch, not the live deployment gate. No production activation is authorized.
