@@ -10,10 +10,12 @@ CREATE UNIQUE INDEX idx_measurement_assessment_operations_terminal_request
 
 CREATE TRIGGER measurement_assessment_operations_terminal_guard
 BEFORE UPDATE ON measurement_assessment_operations
-WHEN (NEW.state IN ('completed','not_assessed') AND OLD.state='running'
+WHEN (NEW.state IN ('completed','not_assessed')
       AND (NEW.terminal_request_id IS NULL OR length(trim(NEW.terminal_request_id))=0))
  OR (NEW.state NOT IN ('completed','not_assessed') AND NEW.terminal_request_id IS NOT NULL)
  OR (OLD.state IN ('completed','not_assessed') AND NEW.terminal_request_id IS NOT OLD.terminal_request_id)
+ OR (NEW.state='completed' AND OLD.state<>'running')
+ OR (NEW.state='not_assessed' AND OLD.state NOT IN ('reserved','running'))
  OR (NEW.state='completed' AND NOT EXISTS (
       SELECT 1 FROM measurement_quality_assessments assessment
       WHERE assessment.id=NEW.assessment_id AND assessment.tenant_id=NEW.tenant_id
@@ -32,14 +34,14 @@ END;
 
 CREATE TRIGGER measurement_assessment_operations_terminal_event
 AFTER UPDATE OF state ON measurement_assessment_operations
-WHEN OLD.state='running' AND NEW.state IN ('completed','not_assessed')
+WHEN OLD.state IN ('reserved','running') AND NEW.state IN ('completed','not_assessed')
 BEGIN
  INSERT INTO measurement_assessment_operation_events
   (event_id,operation_id,tenant_id,site_id,observation_id,actor_subject,
    from_state,to_state,event_type,request_id)
  VALUES (
   lower(hex(randomblob(16))),NEW.operation_id,NEW.tenant_id,NEW.site_id,
-  NEW.observation_id,NEW.actor_subject,'running',NEW.state,
+  NEW.observation_id,NEW.actor_subject,OLD.state,NEW.state,
   CASE NEW.state WHEN 'completed' THEN 'completed' ELSE 'not_assessed' END,
   NEW.terminal_request_id
  );
