@@ -336,3 +336,20 @@ Draft PR [#237](https://github.com/wisemaiarservices-debug/nova-core/pull/237) c
 - [ ] Complete the real staging race/replay, migration rehearsal, independent review and configuration/key reconciliation gates before activation.
 
 PR #237 remains draft/unmerged. No deployment or migration is authorized.
+
+
+## 14. HTTP assessment operation idempotency and transport replay
+
+Core PR #238 exact head `1b5266660fd675d6b873d9ebc5d37444c9a2ea58` passed [CI run 44203727812](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44203727812), all three jobs including gateway/private Worker and disposable D1 integration. It separates the single-use `x-nova-request-id` transport nonce from the stable assessment operation `Idempotency-Key`. The gateway validates and forwards the operation key as `x-nova-idempotency-key` and includes it in the internal HMAC envelope. Every retry must use a fresh transport nonce and the same operation key.
+
+NOVA OS PR #13 exact head `f6bc39e246390fc78e0c49a5b52d673e6583b455` passed [CI run 44204929877](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44204929877), including tenant resource validation, TypeScript and production build. The browser keeps the operation key in component memory for retries of the same tenant/observation until validated success or target change. A full page reload loses the in-memory retry key; reload-surviving recovery is not implemented.
+
+- [ ] Review Core PR #238 and NOVA OS PR #13 together.
+- [ ] Confirm gateway CORS preflight allows `Idempotency-Key` only for exact configured origins.
+- [ ] Simulate a committed assessment with a lost gateway response; retry using the same operation key and a fresh transport nonce; confirm original result replay and one durable row.
+- [ ] Verify same-key/different-observation returns 409 without disclosing the other result.
+- [ ] Verify transport nonce reuse is rejected and each retry has a distinct nonce.
+- [ ] Exercise browser timeout/cancellation/retry and confirm key retention for same target.
+- [ ] Repeat with real staging Access, private Worker and D1 configuration.
+
+**Release gate:** both PRs remain draft/unmerged. Repository CI is not deployed staging evidence. Require coordinated lost-response E2E, independent security review, and staging verification before production activation. No production changes are authorized by this packet.
