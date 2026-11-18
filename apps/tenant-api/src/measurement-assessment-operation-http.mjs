@@ -85,7 +85,7 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
         (Object.hasOwn(body, "predecessor_operation_id") &&
           !validId(body.predecessor_operation_id))) return error("invalid_request_body", 400);
     const observed = await readRows(env.DB.prepare(
-      "SELECT observation.site_id FROM observations observation JOIN sites site ON site.id=observation.site_id AND site.tenant_id=observation.tenant_id AND site.status='active' JOIN tenants tenant_row ON tenant_row.id=observation.tenant_id AND tenant_row.status='active' WHERE observation.tenant_id=? AND observation.id=? LIMIT 2"
+      "SELECT observation.site_id FROM observations observation JOIN sites site ON site.id=observation.site_id AND site.tenant_id=observation.tenant_id AND site.status IN ('active','inactive') JOIN tenants tenant_row ON tenant_row.id=observation.tenant_id AND tenant_row.status='active' WHERE observation.tenant_id=? AND observation.id=? LIMIT 2"
     ).bind(tenant, observation));
     if (observed.length !== 1 || !await authorizeSite(env.DB, tenant, subject, observed[0].site_id)) {
       return error("not_found", 404);
