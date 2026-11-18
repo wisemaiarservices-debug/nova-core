@@ -1118,6 +1118,75 @@ try {
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "lease_renewed").length, 1);
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "not_assessed").length, 1);
 
+  // Site lifecycle must be governed through the public gateway and must not
+  // erase or strand an assessment operation that was already claimed.
+  const siteLifecycleActionPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/lifecycle-actions";
+  const siteLifecycleEventsPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/lifecycle-events";
+  const inactiveSiteOperationReserve = await operationRequest(
+    "/api/v1/tenants/tenant-http-a/observations/obs-http-grant/measurement-assessment-operations",
+    "ci-human-subject");
+  assert.equal(inactiveSiteOperationReserve.response.status, 201,
+    JSON.stringify(inactiveSiteOperationReserve.body));
+  const inactiveSiteOperationPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" +
+    inactiveSiteOperationReserve.body.data.operation_id;
+  const inactiveSiteClaim = await operationRequest(inactiveSiteOperationPath + "/claim", "ci-human-subject");
+  assert.equal(inactiveSiteClaim.response.status, 200, JSON.stringify(inactiveSiteClaim.body));
+
+  const deniedSiteLifecycle = await throughGateway(siteLifecycleActionPath, accessToken("ci-invited-human"),
+    { "content-type": "application/json", "Idempotency-Key": "site-lifecycle-denied" },
+    "POST", JSON.stringify({ action: "deactivate", reason: "Viewer cannot change site lifecycle" }));
+  assert.equal(deniedSiteLifecycle.response.status, 404);
+
+  const siteDeactivated = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-lifecycle-deactivate-1" },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI active operation deactivation race" }));
+  assert.equal(siteDeactivated.response.status, 201, JSON.stringify(siteDeactivated.body));
+  assert.equal(siteDeactivated.body.data.previous_status, "active");
+  assert.equal(siteDeactivated.body.data.new_status, "inactive");
+
+  const siteDeactivateReplay = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-lifecycle-deactivate-1" },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI active operation deactivation race" }));
+  assert.equal(siteDeactivateReplay.response.status, 200, JSON.stringify(siteDeactivateReplay.body));
+  assert.equal(siteDeactivateReplay.body.data.id, siteDeactivated.body.data.id);
+
+  const siteLifecycleConflict = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-lifecycle-deactivate-1" },
+    "POST", JSON.stringify({ action: "deactivate", reason: "Changed intent must conflict" }));
+  assert.equal(siteLifecycleConflict.response.status, 409);
+
+  const siteHistoryInactive = await throughGateway(siteLifecycleEventsPath, accessToken("ci-human-subject"));
+  assert.equal(siteHistoryInactive.response.status, 200, JSON.stringify(siteHistoryInactive.body));
+  assert.equal(siteHistoryInactive.body.data.current_status, "inactive");
+  assert.equal(siteHistoryInactive.body.data.events[0].event_type, "deactivated");
+
+  const inactiveSiteCompletion = await operationRequest(inactiveSiteOperationPath + "/complete",
+    "ci-human-subject", "POST", {
+      expected_lease_version: inactiveSiteClaim.body.data.lease_version,
+      expected_lease_request_id: inactiveSiteClaim.body.data.lease_request_id,
+    });
+  assert.equal([200, 201].includes(inactiveSiteCompletion.response.status), true,
+    JSON.stringify(inactiveSiteCompletion.body));
+  assert.equal(inactiveSiteCompletion.body.data.status, "not_assessed");
+  assert.equal(inactiveSiteCompletion.body.data.reason_code, "site_inactive_at_completion");
+
+  const inactiveOperationRead = await operationRequest(inactiveSiteOperationPath, "ci-human-subject", "GET");
+  assert.equal(inactiveOperationRead.response.status, 200, JSON.stringify(inactiveOperationRead.body));
+  assert.equal(inactiveOperationRead.body.data.state, "not_assessed");
+
+  const siteReactivated = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-lifecycle-reactivate-1" },
+    "POST", JSON.stringify({ action: "reactivate", reason: "CI explicit site reactivation" }));
+  assert.equal(siteReactivated.response.status, 201, JSON.stringify(siteReactivated.body));
+  assert.equal(siteReactivated.body.data.previous_status, "inactive");
+  assert.equal(siteReactivated.body.data.new_status, "active");
+
+  const siteHistoryReactivated = await throughGateway(siteLifecycleEventsPath, accessToken("ci-human-subject"));
+  assert.equal(siteHistoryReactivated.response.status, 200, JSON.stringify(siteHistoryReactivated.body));
+  assert.equal(siteHistoryReactivated.body.data.current_status, "active");
+  assert.equal(siteHistoryReactivated.body.data.events.length, 2);
+  assert.equal(siteHistoryReactivated.body.data.events.some(event => event.event_type === "deactivated"), true);
+  assert.equal(siteHistoryReactivated.body.data.events.some(event => event.event_type === "reactivated"), true);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
