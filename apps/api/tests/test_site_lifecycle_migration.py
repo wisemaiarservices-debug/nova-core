@@ -108,7 +108,7 @@ class SiteLifecycleMigrationTests(unittest.TestCase):
     def test_replay_and_idempotency_collision_are_rejected(self):
         self.event("deactivate-1", "site-active", "owner", "deactivated", "active", "inactive", "same-key")
         with self.assertRaises(sqlite3.IntegrityError):
-            self.event("deactivate-2", "site-inactive", "owner", "reactivated", "inactive", "active", "same-key")
+            self.event("deactivate-2", "site-active", "owner", "reactivated", "inactive", "active", "same-key")
 
     def test_event_and_status_change_roll_back_together(self):
         self.db.execute("CREATE TRIGGER force_application_failure BEFORE INSERT ON tenant_site_lifecycle_applications BEGIN SELECT RAISE(ABORT,'forced application failure'); END")
