@@ -57,7 +57,7 @@ export async function changeTenantSiteLifecycle(db,{tenant,site,actorSubject,ide
    "INSERT INTO tenant_site_lifecycle_events(id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,reason,idempotency_key,request_digest,request_id,occurred_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
   ).bind(crypto.randomUUID(),tenant,site,actorSubject,eventType,previous,next,body.reason,
     idempotencyKey,requestDigest,requestId,now).run();
-  if(result?.meta?.changes!==1){
+  if(!Number.isSafeInteger(result?.meta?.changes)||result.meta.changes<1){
    const raced=await replay();
    return raced??{error:"site_lifecycle_state_conflict",status:409};
   }
