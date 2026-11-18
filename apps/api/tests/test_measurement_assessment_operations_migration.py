@@ -71,25 +71,9 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         )
 
     def complete(self, operation_id="op-a", actor="actor-a", observation="obs-a"):
-        self.db.execute(
-            """UPDATE measurement_assessment_operations
-               SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed'
-               WHERE operation_id=?""",
-            (operation_id,),
-        )
-        self.event(operation_id, actor, observation, "reserved", "running", "claimed")
-        self.db.execute(
-            """INSERT INTO measurement_quality_assessments
-               (id, tenant_id, site_id, observation_id, status, request_id)
-               VALUES (?, 'tenant-a', 'site-a', ?, 'passed', ?)""",
-            ("assessment-" + operation_id, observation, operation_id),
-        )
-        self.db.execute(
-            """UPDATE measurement_assessment_operations
-               SET state='completed', assessment_id=?, completed_at='2026-11-18T12:00:00Z',
-                   lease_expires_at=NULL, lease_request_id=NULL, terminal_request_id='request-completed', updated_at='2026-11-18T12:00:00Z'
-               WHERE operation_id=?""",
-            ("assessment-" + operation_id, operation_id),
+        self.claim_for_insert_terminalization(operation_id, actor, observation)
+        self.insert_bound_assessment(
+            status="passed", operation_id=operation_id, actor=actor, observation=observation
         )
 
     def test_reservation_and_append_only_initial_event(self):
