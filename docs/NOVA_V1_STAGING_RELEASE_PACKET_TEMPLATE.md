@@ -553,32 +553,38 @@ All local CI evidence is pre-staging validation only. Core PR #266 and NOVA OS P
 Production release remains separately gated. This packet does not authorize production migration, deployment, tenant/site provisioning or customer-data operations.
 
 
-## 30. Cross-repository review handoff — candidate #266 (2026-11-18)
+## 30. Cross-repository review handoff — consolidated candidates (2026-11-18)
 
-**Review source:** Core PR #266 head `d815829ad47f8aac1dc31ba2588b2ce52a216d53`; NOVA OS PR #63 head `1bc6c16e7956dc227e7a5a6400f75e2118e5dd92`. Both are draft and unmerged.
+**Core candidate:** PR #266, head `e157555927f85a30a04366c4317a32b00b0fa42c`, stacked on #265 and containing #239/#229 ancestry. Core #266 exact-head CI [44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437) passed all three jobs.
 
-- [ ] Independent reviewer confirms Core ancestry #266 → #265 → #262 → #261 → #260 and verifies #266 includes #239 head `127b54608f315a8f5f64af04b1dd313d0bf51d7c` and #229 head `8063ad968f6af50874b733186385fc7493b2cbfd`.
-- [ ] Review ordered Core migrations 0035–0041, including source ingestion guard, assessment operation ledger/lease/terminalization, site lifecycle ledger and inactive-site completion interlock.
-- [ ] Verify exact Core #266 CI [44396662209](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44396662209) and OS #63 CI [44395675006](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44395675006) against the exact SHAs above.
-- [ ] Verify the gateway/private Worker assessment-operation and site-lifecycle route dispatch, authorization and HMAC binding.
-- [ ] **Open browser integration gate:** OS MeasurementEvidence still uses a component-memory idempotency key. Confirm OS uses server-backed Core operation IDs and reserve/read/claim/renew/complete endpoints before accepting page-reload or second-device recovery. OS site-lifecycle idempotency also remains memory-only.
-- [ ] Execute independent local D1/Worker concurrency, revocation, lease recovery, replay, cross-tenant and site-deactivation race tests.
-- [ ] Complete secret/key custody, Access, D1 migration, monitoring, retention/data-rights and rollback/forward-recovery review.
-- [ ] Record named independent reviewer and written decision. CI success or implementation-author review is not independent sign-off.
+**NOVA OS candidate:** PR #64, head `21b43f1f7c38e29bf92414fbc1d02a620f4b8893`, stacked on OS #63 and 56 commits ahead of OS #13 with zero commits behind. OS exact-head CI [44401357217](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44401357217) passed 65 tests, TypeScript and production build.
 
-**Decision:** PENDING INDEPENDENT REVIEW. This checklist does not authorize staging, production deployment, migrations, tenant/site provisioning or customer-data operations.
+**Reviewer handoff:** Core documentation PR #267 contains the exact implementation surfaces, ancestry, adversarial review checklist and evidence limitations. It is documentation-only. Its exact head `8eda207252251bdd24f19fb5d12ceee37053bb17` passed [CI 44415107568](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44415107568), all three jobs.
 
-## 31. NOVA OS assessment-operation recovery integration gate
+- [ ] Independent reviewer confirms exact Core/OS SHAs, ancestry and all migration files 0035–0041.
+- [ ] Review identity/tenant isolation, exact route allowlists, HMAC envelope, idempotency, actor-bound operation recovery and lease fencing.
+- [ ] Review source, mapping, calibration, policy and site lifecycle revocation behavior at final database write boundaries.
+- [ ] Independently rerun disposable D1/Worker integration and adversarial concurrency tests.
+- [ ] Verify legacy assessment writer is disabled with HTTP 410 `assessment_operation_required` and no alternate assessment writer bypasses the operation ledger.
+- [ ] Verify OS browser workflow against Core APIs, including reload, second-device, lost responses and explicit successors.
+- [ ] Keep site lifecycle action reload recovery separate: it remains component-memory-only; operator must reload exact site status/history after an uncertain action.
+- [ ] Complete secret/key custody, Access, D1 binding, monitoring, retention/data-rights, backup and forward-recovery review.
+- [ ] Record exact reviewed SHAs, test commands, findings, remediation commits, reviewer identity and written pass/fail decision.
 
-- [ ] Review NOVA OS PR #64, current handoff head `ec720716426d9092d6387f8a984e9c1402bdef05`, against Core PR #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c`.
-- [ ] Confirm exact-head CI for OS #64 after the state-machine tests and final fix; the earlier code head `dfc8039e948661fe567b8eea4123b01341d305a3` passed run 44398946075 but does not validate later commits.
-- [ ] Verify reload recovery by repeating the same server-side reservation; verify lost reserve/claim/complete responses and explicit successor replay.
-- [ ] Verify that no operation ID, bearer token or credential is stored in browser storage.
-- [ ] Verify site-deactivation recovery returns the original operation and allows only the governed inactive-site `not_assessed` outcome.
-- [ ] Keep site lifecycle action recovery separate; its page-reload idempotency remains unresolved.
-- [ ] Obtain independent reviewer sign-off for Core/OS cross-repository behavior.
+**Decision:** PENDING INDEPENDENT REVIEW. CI success and implementation-author review are not independent sign-off. This packet does not authorize staging, production deployment, migrations, tenant/site provisioning or customer-data operations.
 
-**Decision remains PENDING.** This checklist is not staging or production authorization.
+
+## 31. Assessment-operation browser integration and recovery gate
+
+- [x] OS #64 uses Core's server-backed operation IDs and reserve/read/claim/renew/complete workflow; it does not rely on a browser-generated assessment idempotency key as the durable operation identity.
+- [x] OS client tests cover reservation, claim, completion, terminal replay after reload, expired-lease recovery, stale-completion conflict and authorization denial without fallback.
+- [ ] Independent reviewer verifies exact browser/API route matching, actor-bound recovery and second-device behavior.
+- [ ] In isolated staging, simulate lost reserve, claim and completion responses; reload and recover the same operation; confirm stale lease completion is rejected.
+- [ ] Verify explicit successor behavior and that no successor is silently created after an uncertain operation.
+- [ ] Confirm site deactivation during an active operation yields only `not_assessed` / `site_inactive_at_completion`.
+- [ ] Keep Site Lifecycle mutation recovery separate: after a full reload, inspect current site status and append-only event history before another action.
+
+**Decision remains PENDING.** No staging or production authorization is implied.
 
 
 ## 32. Latest OS #64 exact-head CI gate
