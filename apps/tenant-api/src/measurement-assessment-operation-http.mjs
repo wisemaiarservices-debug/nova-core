@@ -107,8 +107,13 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
       result = await readMeasurementAssessmentOperation(env.DB, tenant, subject, operation);
     } else if (action === "claim") {
       if (!onlyKeys(body, [])) return error("invalid_request_body", 400);
+      const configuredLeaseMs = env.CI_TEST_CONFIGURATION_WRITES === "true" &&
+        /^\d+$/.test(env.CI_TEST_ASSESSMENT_LEASE_MS ?? "")
+        ? Number(env.CI_TEST_ASSESSMENT_LEASE_MS) : 300000;
+      const leaseMs = Number.isSafeInteger(configuredLeaseMs) && configuredLeaseMs >= 100 &&
+        configuredLeaseMs <= 300000 ? configuredLeaseMs : 300000;
       result = await claimMeasurementAssessmentOperation(env.DB, tenant, subject,
-        operation, requestId, now, iso(Date.parse(now) + 300000));
+        operation, requestId, now, iso(Date.parse(now) + leaseMs));
     } else if (action === "renew") {
       if (!onlyKeys(body, ["expected_lease_version", "expected_lease_request_id", "expected_lease_expires_at"]) ||
           !Number.isSafeInteger(body.expected_lease_version) || body.expected_lease_version < 1 ||
