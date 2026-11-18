@@ -123,6 +123,7 @@ SELECT ?,ctx.tenant_id,ctx.site_id,ctx.observation_id,
  ctx.value,ctx.unit,'1.0.0',ctx.operation_id,ctx.actor_subject,
  ctx.lease_version,ctx.lease_request_id,?,?
 FROM operation_context ctx CROSS JOIN evidence_gate gate
+WHERE 1=1
 ON CONFLICT(tenant_id,request_id) DO NOTHING`;
 
 export async function completeMeasurementAssessmentOperation(db,{
