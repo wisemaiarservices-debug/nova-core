@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHash, createHmac, createPrivateKey, randomUUID, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -23,15 +23,6 @@ function accessToken(subject = "ci-human-subject") {
   const input = head + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
 }
-function expireLocalOperationLease(operationId) {
-  const sql = "UPDATE measurement_assessment_operations SET lease_expires_at='2000-01-01T00:00:00.000Z' WHERE operation_id='" +
-    operationId.replace(/'/g, "''") + "' AND state='running'";
-  const result = spawnSync("npx", ["--yes", "wrangler@4.13.2", "d1", "execute",
-    "nova-core-tenant-api-contract-test", "--local", "--persist-to", "./.wrangler-d1-test",
-    "--command", sql, "--config", "wrangler.d1-test.toml"], { encoding: "utf8" });
-  if (result.status !== 0) throw new Error("Could not expire local CI lease: " + (result.stderr || result.stdout));
-}
-
 async function throughGateway(path, token = accessToken(), extraHeaders = {}, method = "GET", body = undefined) {
   const response = await fetch(base + path, {
     method, headers: { "Cf-Access-Jwt-Assertion": token, ...extraHeaders },
@@ -816,7 +807,7 @@ try {
   assert.equal(typeof claimedOperation.body.data.lease_request_id, "string");
   // Expire the just-claimed operation in the disposable local D1 database,
   // then recover it. The stale lease must be fenced out before completion.
-  expireLocalOperationLease(operationId);
+  await new Promise(resolve => setTimeout(resolve, 1100));
   const recoveredLease = await operationRequest(operationReadPath + "/claim");
   assert.equal(recoveredLease.response.status, 200, JSON.stringify(recoveredLease.body));
   assert.equal(recoveredLease.body.data.lease_version, claimedOperation.body.data.lease_version + 1);
@@ -834,7 +825,7 @@ try {
     expected_lease_expires_at: claimedOperation.body.data.lease_expires_at,
   });
   assert.equal(renewedOperation.response.status, 200, JSON.stringify(renewedOperation.body));
-  assert.equal(renewedOperation.body.data.lease_version, 2);
+  assert.equal(renewedOperation.body.data.lease_version, claimedOperation.body.data.lease_version + 1);
   assert.notEqual(renewedOperation.body.data.lease_request_id,
     claimedOperation.body.data.lease_request_id);
 
