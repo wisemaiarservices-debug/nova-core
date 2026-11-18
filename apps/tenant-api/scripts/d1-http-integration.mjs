@@ -138,7 +138,7 @@ try {
   // identifier; no tenant/member lookup is inferred from a caller-provided ID.
   const invitedMembershipId = invitationAccepted.body.data.membership_id;
   assert.match(invitedMembershipId, /^[0-9a-f-]{36}$/i);
-  const membershipOperationPath = "/api/v1/tenants/tenant-http-a/observations/obs-http-grant/measurement-assessment-operations";
+  const membershipOperationPath = "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/measurement-assessment-operations";
   const membershipOperation = await operationRequest(membershipOperationPath, "ci-invited-human");
   assert.equal(membershipOperation.response.status, 201, JSON.stringify(membershipOperation.body));
   const membershipOperationId = membershipOperation.body.data.operation_id;
