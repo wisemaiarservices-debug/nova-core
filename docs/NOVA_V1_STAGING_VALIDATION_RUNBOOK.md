@@ -650,3 +650,43 @@ Migration 0041 allows an operation already reserved/claimed before deactivation 
 The combined candidate stacks on #265 and therefore includes source, calibration, policy, mapping and lease-recovery revocation scenarios. Exact combined-head CI [44391344844](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44391344844) passed all three jobs for `b3aefd9bee13e7d4b4d2e3635bd4a01f7401d2a2`, including ordered disposable D1 migrations and full gateway/private Worker HTTP integration.
 
 Staging must repeat both race orders (deactivation first and assessment commit first), unauthorized role/membership/grant cases, replay and changed-intent conflicts, direct SQL bypass rejection, and explicit reactivation. Verify reactivation does not restore assets, sources, grants, calibrations, mappings or policies. No staging/production migration or deployment has been performed; PR #266 remains draft/unmerged.
+
+
+## 35. Site lifecycle migration order, rollout and rollback boundary (Core PR #266)
+
+The site lifecycle candidate adds migrations 0040_site_lifecycle_governance.sql and 0041_assessment_inactive_site_interlock.sql after the operation-ledger and assessment-terminalization migrations through 0039_measurement_assessment_insert_terminalizes_operation.sql. Apply the complete ordered migration set to a disposable staging clone first; do not cherry-pick 0040/0041 into a database that has not applied their exact prerequisites.
+
+### Pre-migration checks
+
+- [ ] Confirm the deployed schema ledger is contiguous through 0039 and matches the reviewed candidate; capture the migration ledger and schema fingerprint.
+- [ ] Confirm the measurement_quality_assessment_operation_binding_guard created by 0039 exists before 0041 replaces it.
+- [ ] Confirm no migration-number collision or edited historical migration exists in the release commit.
+- [ ] Take and verify the approved database backup/snapshot under the organization's D1 recovery procedure.
+- [ ] Rehearse the full ordered migration sequence on a disposable clone, including all existing operation-ledger triggers and the 0040/0041 test suites.
+- [ ] Confirm migration 0040 creates both append-only lifecycle ledgers and all six lifecycle triggers; confirm 0041 replaces only the assessment-operation binding guard.
+- [ ] Verify the migration ledger records 0040 then 0041, and run direct status-update rejection plus governed transition tests.
+
+### Controlled rollout order
+
+1. Apply the complete ordered migrations, including 0040 and 0041, to the approved staging database.
+2. Deploy the matching private tenant Worker and gateway code from the reviewed Core candidate. Verify Service Bindings, signed internal request envelope, Access issuer/audience, HMAC secret configuration, exact route allowlists and CORS origins without exposing secret values.
+3. Run authenticated read-only site detail/history checks and the full lifecycle/assessment race suite. Do not enable operator mutation controls until all checks pass.
+4. Enable the matching NOVA OS workspace only after the gateway and private Worker contract is verified. Keep tenant and site selection explicit; do not preselect or provision a pilot.
+5. Capture migration versions, Worker deployment IDs, non-secret configuration fingerprints, test request IDs/outcomes and independent security/release sign-off.
+
+### Rollback and recovery
+
+Migrations 0040 and 0041 are intentionally forward-compatible schema changes with append-only audit data; this candidate does not provide a safe automatic down migration.
+
+- Before any lifecycle event is written, if the new routes/UI have not been used, the application deployment may be rolled back under the normal release procedure while leaving the additive 0040 tables/triggers and 0041 guard in place. Do not drop the lifecycle ledgers or manually reverse the migration.
+- Once any deactivation/reactivation event exists, do not roll back to application code that lacks the site-lifecycle event routes or inactive-site assessment completion behavior. Such a rollback can strand an operation that must finish as not_assessed after site deactivation.
+- Never drop or rewrite append-only lifecycle events/applications, and never restore a site's status with direct SQL. Use the governed reactivation action when policy authorizes it.
+- Do not revert 0041 to the earlier active-only assessment guard after lifecycle mutations begin: that would prevent an already-running operation on an inactive site from reaching its required durable not_assessed terminal result.
+- If a defect is found after lifecycle mutations begin, disable new operator mutation entry points if necessary, preserve the matching Core completion/read/history runtime, retain all audit records, and deploy a reviewed forward fix. Keep the OS mutation UI disabled until the fix is verified.
+- Database restore from backup is a separate disaster-recovery action requiring the database owner's explicit approval and a documented data-loss assessment; it is not a routine application rollback and must not be used to erase lifecycle history.
+
+### Release stop conditions
+
+- [ ] No merge or staging deployment without independent security review and explicit staging authorization.
+- [ ] No production migration/deployment is authorized by this runbook or by passing CI.
+- [ ] If the exact deployed migration ledger, Worker version, key configuration or audit history cannot be verified, stop and do not enable site lifecycle actions.
