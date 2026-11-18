@@ -6,7 +6,7 @@ PRAGMA foreign_keys = ON;
 
 -- SQLite requires an exact unique parent key for the composite assessment FK.
 CREATE UNIQUE INDEX idx_measurement_quality_assessments_operation_scope
- ON measurement_quality_assessments(id, tenant_id, site_id, observation_id);
+ ON measurement_quality_assessments(id, tenant_id, site_id, observation_id, request_id);
 
 CREATE TABLE measurement_assessment_operations (
  operation_id TEXT PRIMARY KEY CHECK(length(trim(operation_id)) BETWEEN 1 AND 160),
@@ -28,8 +28,8 @@ CREATE TABLE measurement_assessment_operations (
  UNIQUE(assessment_id),
  FOREIGN KEY(observation_id, tenant_id, site_id)
   REFERENCES observations(id, tenant_id, site_id) ON DELETE RESTRICT,
- FOREIGN KEY(assessment_id, tenant_id, site_id, observation_id)
-  REFERENCES measurement_quality_assessments(id, tenant_id, site_id, observation_id) ON DELETE RESTRICT,
+ FOREIGN KEY(assessment_id, tenant_id, site_id, observation_id, operation_id)
+  REFERENCES measurement_quality_assessments(id, tenant_id, site_id, observation_id, request_id) ON DELETE RESTRICT,
  FOREIGN KEY(predecessor_operation_id, tenant_id, site_id, observation_id)
   REFERENCES measurement_assessment_operations(operation_id, tenant_id, site_id, observation_id) ON DELETE RESTRICT,
  CHECK(
