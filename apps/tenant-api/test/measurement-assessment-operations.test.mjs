@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { reserveMeasurementAssessmentOperation, readMeasurementAssessmentOperation, claimMeasurementAssessmentOperation } from "../src/measurement-assessment-operations.mjs";
+import { reserveMeasurementAssessmentOperation, readMeasurementAssessmentOperation, claimMeasurementAssessmentOperation, renewMeasurementAssessmentOperationLease } from "../src/measurement-assessment-operations.mjs";
 globalThis.crypto ??= webcrypto;
 
 function fakeDb({prior=[],active=[],events=[],batchResults=[{meta:{changes:1}},{meta:{changes:1}}]}={}){
@@ -136,6 +136,69 @@ test("claim rejects invalid or excessive lease windows before storage writes",as
   assert.equal(result.status,400);
  }
  assert.equal(db.batches.length,0);
+});
+
+
+test("lease renewal atomically advances the fence and appends a matching event",async()=>{
+ const running={...op,state:"running",lease_version:2,attempt_count:2,
+  lease_expires_at:"2026-11-18T12:02:00.000Z",lease_request_id:"old-transport"};
+ const db=fakeDb({prior:[running]});
+ const result=await renewMeasurementAssessmentOperationLease(db,"tenant-1","access-subject-1",op.operation_id,
+  2,"old-transport","2026-11-18T12:02:00.000Z","renew-transport",
+  "2026-11-18T12:00:00.000Z","2026-11-18T12:04:00.000Z");
+ assert.equal(result.status,200);
+ assert.equal(result.data.lease_version,3);
+ assert.equal(result.data.lease_request_id,"renew-transport");
+ assert.equal(result.data.lease_expires_at,"2026-11-18T12:04:00.000Z");
+ assert.equal(db.batches.length,1);
+ assert.equal(db.batches[0].length,2);
+ assert.match(db.batches[0][0].sql,/lease_version=\? AND lease_request_id=\? AND lease_expires_at=\?/);
+ assert.match(db.batches[0][0].sql,/tenant_resource_grants/);
+ assert.match(db.batches[0][1].sql,/'running','running','lease_renewed'/);
+ assert.equal(db.batches[0][1].values[5],3);
+});
+
+test("lease renewal refuses stale version, stale token, expired lease and non-running operation",async()=>{
+ const cases=[
+  {...op,state:"running",lease_version:2,lease_expires_at:"2026-11-18T12:02:00.000Z",lease_request_id:"old-transport"},
+  {...op,state:"running",lease_version:3,lease_expires_at:"2026-11-18T12:02:00.000Z",lease_request_id:"newer-transport"},
+  {...op,state:"running",lease_version:2,lease_expires_at:"2026-11-18T11:59:00.000Z",lease_request_id:"old-transport"},
+  {...op,state:"completed",lease_version:2,lease_expires_at:null,lease_request_id:null}
+ ];
+ for(const current of cases){
+  const db=fakeDb({prior:[current]});
+  const result=await renewMeasurementAssessmentOperationLease(db,"tenant-1","access-subject-1",op.operation_id,
+   2,"old-transport","2026-11-18T12:02:00.000Z","renew-transport",
+   "2026-11-18T12:00:00.000Z","2026-11-18T12:04:00.000Z");
+  assert.equal(result.status,409);
+  assert.equal(db.batches.length,0);
+ }
+});
+
+test("lease renewal requires a strictly later expiry and a fresh request id",async()=>{
+ const running={...op,state:"running",lease_version:2,lease_expires_at:"2026-11-18T12:02:00.000Z",lease_request_id:"old-transport"};
+ const db=fakeDb({prior:[running]});
+ for(const [requestId,expiry] of [
+  ["old-transport","2026-11-18T12:04:00.000Z"],
+  ["renew-transport","2026-11-18T12:02:00.000Z"],
+  ["renew-transport","2026-11-18T12:06:00.000Z"]
+ ]){
+  const result=await renewMeasurementAssessmentOperationLease(db,"tenant-1","access-subject-1",op.operation_id,
+   2,"old-transport","2026-11-18T12:02:00.000Z",requestId,
+   "2026-11-18T12:00:00.000Z",expiry);
+  assert.equal(result.status,requestId==="old-transport"?400:409);
+ }
+ assert.equal(db.batches.length,0);
+});
+
+test("a losing lease renewal update returns conflict without a successful event",async()=>{
+ const running={...op,state:"running",lease_version:2,lease_expires_at:"2026-11-18T12:02:00.000Z",lease_request_id:"old-transport"};
+ const db=fakeDb({prior:[running],batchResults:[{meta:{changes:0}},{meta:{changes:0}}]});
+ const result=await renewMeasurementAssessmentOperationLease(db,"tenant-1","access-subject-1",op.operation_id,
+  2,"old-transport","2026-11-18T12:02:00.000Z","renew-transport",
+  "2026-11-18T12:00:00.000Z","2026-11-18T12:04:00.000Z");
+ assert.equal(result.status,409);
+ assert.equal(db.batches.length,1);
 });
 
 test("operation read hides another actor's operation",async()=>{
