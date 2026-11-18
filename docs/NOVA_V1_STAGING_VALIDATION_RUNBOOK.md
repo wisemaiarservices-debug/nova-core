@@ -528,3 +528,15 @@ This is consolidated repository CI only. PR #239 remains draft/open/unmerged. Th
 - [ ] Record explicit independent security review and staging release authorization.
 
 **Stop condition:** Do not merge, migrate, configure secrets, deploy or activate ingestion/assessment routes solely because PR #239 CI passed. All staging and release gates remain mandatory.
+
+
+## 22. Observation insert-time source revocation guard — Core PR #239
+
+Core PR [#239](https://github.com/wisemaiarservices-debug/nova-core/pull/239) includes migration `0035_observation_ingestion_requires_verified_source.sql`. Its `BEFORE INSERT` trigger rejects observations unless the exact source remains `verified`, belongs to the same tenant and module, is global or scoped to the exact site, and both tenant and site remain active. This database write-boundary check supplements the Worker pre-insert lookup and is intended to close the source-revocation gap between lookup and persistence.
+
+- Latest consolidated PR #239 head at this update: `9596844d540e30d97d563e726630b0a637046f17`.
+- Exact-head Core CI [run 44293947333](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44293947333) passed API/security, ordered disposable D1 migration/query/fixture and gateway/private Worker integration, and research raster jobs.
+- Migration tests cover unverified/disabled source rejection, exact tenant/site/module scope, global-source behavior, and inactive tenant/site rejection. The revocation sequence is modeled sequentially in SQLite tests; real concurrent staging validation remains required.
+- Add migration `0035` after the previously ordered Core migrations in the staging rehearsal. Do not apply it to production or any live database from this runbook.
+
+This is repository CI evidence only. It does not prove a deployed Worker/D1 race, authorize ingestion activation, or change the no-production-release boundary.
