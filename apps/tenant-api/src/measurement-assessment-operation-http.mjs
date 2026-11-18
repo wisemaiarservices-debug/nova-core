@@ -11,7 +11,7 @@ const ROOT = /^\/internal\/v1\/tenants\/([^/]+)\/(?:observations\/([^/]+)\/measu
 
 const validId = value => typeof value === "string" && value.length > 0 &&
   value.length <= 160 && value.trim() === value &&
-  /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+  /^[A-Za-z0-9][A-Za-z0-9._:\\-]*$/.test(value);
 const onlyKeys = (value, allowed) => value !== null && typeof value === "object" &&
   !Array.isArray(value) && Object.keys(value).every(key => allowed.includes(key));
 const iso = value => new Date(value).toISOString();
