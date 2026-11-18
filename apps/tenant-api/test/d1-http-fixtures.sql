@@ -183,11 +183,6 @@ VALUES
  'cal-http-revocation','ci-measurement-reviewer','calibration_reviewer','verified',
  'lab-http-calibration',NULL,'ci-calibration-http-verified');
 
-INSERT INTO observation_reviewers
-(tenant_id,site_id,reviewer_subject,reviewer_role,status,assigned_by_subject,assignment_evidence_ref)
-VALUES
-('tenant-http-a','site-http-a','ci-measurement-reviewer','measurement_reviewer','active',
- 'ci-human-subject','fixture:measurement-reviewer-appointment');
 INSERT INTO measurement_quality_policies
 (id,tenant_id,site_id,asset_id,sensor_id,parameter,unit,version,minimum_value,maximum_value,
  effective_from,effective_to,method,evidence_ref,registered_by_subject)
