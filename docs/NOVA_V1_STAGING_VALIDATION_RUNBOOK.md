@@ -740,8 +740,8 @@ The current Core lifecycle candidate is [PR #266](https://github.com/wisemaiarse
 
 Verified ancestry:
 - #266 is stacked on #265; #265 is stacked on #262; #262 is stacked on #261; #261 is stacked on #260.
-- #266 is 148 commits ahead of, and has zero commits behind, the governed ingestion/assessment integration branch #239 head `127b54608f315a8f5f64af04b1dd313d0bf51d7c`.
-- #266 is 191 commits ahead of, and has zero commits behind, Core integration base #229 head `8063ad968f6af50874b733186385fc7493b2cbfd`.
+- #266 is 161 commits ahead of, and has zero commits behind, the governed ingestion/assessment integration branch #239 head `127b54608f315a8f5f64af04b1dd313d0bf51d7c`.
+- #266 is 204 commits ahead of, and has zero commits behind, Core integration base #229 head `8063ad968f6af50874b733186385fc7493b2cbfd`.
 - The combined candidate contains ordered migrations 0035 through 0041: verified-source ingestion guard; assessment-operation ledger, lease fencing and terminal audit; assessment insert terminalization; site lifecycle governance; and inactive-site assessment interlock.
 - The candidate includes the operation HTTP route module and completion service, and the private Worker dispatcher imports and dispatches both assessment-operation and site-lifecycle routes. The gateway has exact site lifecycle and assessment-operation path patterns, method restrictions and signed forwarding.
 
@@ -809,6 +809,7 @@ Do not infer that a previous commit's success validates a later head. Independen
 
 NOVA OS PR #64 is now the single browser integration candidate for Core assessment-operation recovery plus the site-lifecycle workspace. The earlier standalone OS PR #62 was closed without merge as superseded by #64; its operation API contract, strict response validators and command-transport pattern were incorporated into #64.
 
+- OS #64 is 56 commits ahead of, and has zero commits behind, OS #13 head `45a70194a98ffdb39821f14b573ef98a93d3e994`; it is stacked on OS #63 head `1bc6c16e7956dc227e7a5a6400f75e2118e5dd92`.
 - OS #64 latest exact head: `21b43f1f7c38e29bf92414fbc1d02a620f4b8893`
 - Latest exact CI: [run 44401357217](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44401357217) passed 65 tests, TypeScript and production build. It includes the on-screen site-lifecycle reload warning and distinct assessment lease-conflict messaging.
 - Core #266 exact head: `e157555927f85a30a04366c4317a32b00b0fa42c`
