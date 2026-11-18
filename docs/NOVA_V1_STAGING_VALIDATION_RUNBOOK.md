@@ -589,3 +589,11 @@ Core PR [#257](https://github.com/wisemaiarservices-debug/nova-core/pull/257) ad
 Exact-head CI [44326401282](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44326401282) passed all three jobs for `fd9dca89f55b0030fef90b9621256730c5818df1`, including ordered migrations and full Worker HTTP integration.
 
 This validates the final write boundary in local CI. Staging must repeat the case and additionally test membership suspension/revocation, tenant/site deactivation and source/mapping/calibration/policy revocation between claim and completion. PR #257 remains draft/unmerged.
+
+## 28. Membership suspension at assessment completion boundary (Core PR #258)
+
+Core PR [#258](https://github.com/wisemaiarservices-debug/nova-core/pull/258) adds a local D1 HTTP scenario using the real invitation and membership lifecycle routes. An invited member reserves and claims an assessment operation while authorized; the tenant owner suspends that membership before completion; the completion request is denied. The test then reactivates the member so later grant-revocation cases run against their intended fixture state.
+
+Exact-head CI [44329522954](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44329522954) passed all three jobs for `78743db97a7787582eedfae77147ffb63b2f496e`, including ordered migrations and full gateway/private Worker HTTP integration.
+
+This validates local membership rechecks at the completion endpoint. Staging must repeat suspension and permanent revocation while an operation is reserved and while a lease is active; confirm no assessment or terminal event is written after authorization denial. PR #258 remains draft/unmerged.
