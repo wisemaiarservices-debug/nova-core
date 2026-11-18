@@ -382,6 +382,14 @@ try {
     JSON.stringify(observationReviewerAssigned.body));
   assert.equal(observationReviewerAssigned.body.data.reviewer_role, "measurement_reviewer");
 
+  const policyInitiallyVerified = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a/assets/asset-http-grant/measurement-quality-policies/policy-http-revocation/verification",
+    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "verify", evidence_ref: "fixture:policy-http-revocation-verification" }));
+  assert.equal(policyInitiallyVerified.response.status, 201,
+    JSON.stringify(policyInitiallyVerified.body));
+  assert.equal(policyInitiallyVerified.body.data.status, "verified");
+
   const selfAssignment = await throughGateway(
     "/api/v1/tenants/tenant-http-a/observations/reviewers/assign",
     accessToken(), { "content-type": "application/json" }, "POST",
