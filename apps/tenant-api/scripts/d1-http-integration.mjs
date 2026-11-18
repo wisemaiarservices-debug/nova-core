@@ -825,7 +825,7 @@ try {
     expected_lease_expires_at: claimedOperation.body.data.lease_expires_at,
   });
   assert.equal(renewedOperation.response.status, 200, JSON.stringify(renewedOperation.body));
-  assert.equal(renewedOperation.body.data.lease_version, 2);
+  assert.equal(renewedOperation.body.data.lease_version, claimedOperation.body.data.lease_version + 1);
   assert.notEqual(renewedOperation.body.data.lease_request_id,
     claimedOperation.body.data.lease_request_id);
 
