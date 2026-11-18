@@ -551,3 +551,19 @@ All local CI evidence is pre-staging validation only. Core PR #266 and NOVA OS P
 - [ ] Any database restore requires explicit database-owner approval and a documented data-loss assessment; it is a disaster-recovery action, not routine rollback.
 
 Production release remains separately gated. This packet does not authorize production migration, deployment, tenant/site provisioning or customer-data operations.
+
+
+## 30. Cross-repository review handoff — candidate #266 (2026-11-18)
+
+**Review source:** Core PR #266 head `d815829ad47f8aac1dc31ba2588b2ce52a216d53`; NOVA OS PR #63 head `1bc6c16e7956dc227e7a5a6400f75e2118e5dd92`. Both are draft and unmerged.
+
+- [ ] Independent reviewer confirms Core ancestry #266 → #265 → #262 → #261 → #260 and verifies #266 includes #239 head `127b54608f315a8f5f64af04b1dd313d0bf51d7c` and #229 head `8063ad968f6af50874b733186385fc7493b2cbfd`.
+- [ ] Review ordered Core migrations 0035–0041, including source ingestion guard, assessment operation ledger/lease/terminalization, site lifecycle ledger and inactive-site completion interlock.
+- [ ] Verify exact Core #266 CI [44396662209](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44396662209) and OS #63 CI [44395675006](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44395675006) against the exact SHAs above.
+- [ ] Verify the gateway/private Worker assessment-operation and site-lifecycle route dispatch, authorization and HMAC binding.
+- [ ] **Open browser integration gate:** OS MeasurementEvidence still uses a component-memory idempotency key. Confirm OS uses server-backed Core operation IDs and reserve/read/claim/renew/complete endpoints before accepting page-reload or second-device recovery. OS site-lifecycle idempotency also remains memory-only.
+- [ ] Execute independent local D1/Worker concurrency, revocation, lease recovery, replay, cross-tenant and site-deactivation race tests.
+- [ ] Complete secret/key custody, Access, D1 migration, monitoring, retention/data-rights and rollback/forward-recovery review.
+- [ ] Record named independent reviewer and written decision. CI success or implementation-author review is not independent sign-off.
+
+**Decision:** PENDING INDEPENDENT REVIEW. This checklist does not authorize staging, production deployment, migrations, tenant/site provisioning or customer-data operations.
