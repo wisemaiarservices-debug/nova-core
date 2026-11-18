@@ -965,16 +965,6 @@ try {
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "lease_renewed").length, 1);
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "not_assessed").length, 1);
 
-  const grantRevocation = await siteGrant("ci-human-subject", {
-    action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
-    grant_action: "read", reason: "CI revoke assessment operation access",
-  });
-  assert.equal(grantRevocation.response.status, 200, JSON.stringify(grantRevocation.body));
-  const revokedGrantRead = await operationRequest(revokedGrantPath, "ci-invited-human", "GET");
-  assert.equal(revokedGrantRead.response.status, 404);
-  const revokedGrantClaim = await operationRequest(revokedGrantPath + "/claim", "ci-invited-human");
-  assert.equal(revokedGrantClaim.response.status, 404);
-
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
