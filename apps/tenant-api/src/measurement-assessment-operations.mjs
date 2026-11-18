@@ -170,3 +170,58 @@ export async function claimMeasurementAssessmentOperation(db,tenant,actorSubject
   lease_expires_at:leaseExpiresAt,lease_request_id:requestId,attempt_count:operation.attempt_count+1,
   updated_at:now},status:200};
 }
+
+
+export async function renewMeasurementAssessmentOperationLease(db,tenant,actorSubject,operationId,
+ expectedLeaseVersion,expectedLeaseRequestId,expectedLeaseExpiresAt,newRequestId,now,newLeaseExpiresAt){
+ if(!validId(tenant)||!validText(actorSubject,200)||!validId(operationId)||
+    !Number.isSafeInteger(expectedLeaseVersion)||expectedLeaseVersion<1||
+    !validId(expectedLeaseRequestId)||!validIsoTime(expectedLeaseExpiresAt)||
+    !validId(newRequestId)||newRequestId===expectedLeaseRequestId||
+    !validIsoTime(now)||!validIsoTime(newLeaseExpiresAt))
+  return {error:"assessment_operation_lease_renewal_invalid",status:400};
+ const nowMs=Date.parse(now),oldExpiryMs=Date.parse(expectedLeaseExpiresAt),newExpiryMs=Date.parse(newLeaseExpiresAt);
+ if(oldExpiryMs<=nowMs||newExpiryMs<=oldExpiryMs||newExpiryMs>nowMs+300000)
+  return {error:"assessment_operation_lease_renewal_window_invalid",status:409};
+ const current=await rows(db.prepare(OPERATION_SELECT).bind(tenant,actorSubject,operationId));
+ if(current.length!==1)return {error:"assessment_operation_not_found",status:404};
+ const operation=current[0];
+ if(operation.state!=="running"||operation.lease_version!==expectedLeaseVersion||
+    operation.lease_request_id!==expectedLeaseRequestId||operation.lease_expires_at!==expectedLeaseExpiresAt)
+  return {error:"assessment_operation_lease_conflict",status:409};
+ const update=`UPDATE measurement_assessment_operations
+ SET lease_version=lease_version+1,lease_expires_at=?,lease_request_id=?,updated_at=?
+ WHERE operation_id=? AND tenant_id=? AND site_id=? AND observation_id=? AND actor_subject=?
+ AND state='running' AND lease_version=? AND lease_request_id=? AND lease_expires_at=? AND lease_expires_at>?
+ AND EXISTS (SELECT 1 FROM tenant_memberships membership
+   JOIN tenants tenant_row ON tenant_row.id=membership.tenant_id AND tenant_row.status='active'
+   WHERE membership.tenant_id=? AND membership.subject=? AND membership.status='active')
+ AND EXISTS (SELECT 1 FROM sites site_row WHERE site_row.id=? AND site_row.tenant_id=? AND site_row.status='active')
+ AND EXISTS (SELECT 1 FROM tenant_resource_grants grant_read
+   WHERE grant_read.tenant_id=? AND grant_read.subject=? AND grant_read.resource_type='site'
+     AND grant_read.resource_id=? AND grant_read.action='read')`;
+ const event=`INSERT INTO measurement_assessment_operation_events
+ (event_id,operation_id,tenant_id,site_id,observation_id,actor_subject,from_state,to_state,event_type,request_id)
+ SELECT ?,operation_id,tenant_id,site_id,observation_id,actor_subject,'running','running','lease_renewed',?
+ FROM measurement_assessment_operations
+ WHERE operation_id=? AND tenant_id=? AND actor_subject=? AND state='running'
+   AND lease_version=? AND lease_request_id=? AND lease_expires_at=?
+   AND NOT EXISTS (SELECT 1 FROM measurement_assessment_operation_events
+     WHERE operation_id=? AND request_id=?)`;
+ const eventId=crypto.randomUUID();
+ const results=await db.batch([
+  db.prepare(update).bind(newLeaseExpiresAt,newRequestId,now,operationId,tenant,operation.site_id,
+   operation.observation_id,actorSubject,expectedLeaseVersion,expectedLeaseRequestId,expectedLeaseExpiresAt,now,
+   tenant,actorSubject,operation.site_id,tenant,tenant,actorSubject,operation.site_id),
+  db.prepare(event).bind(eventId,newRequestId,operationId,tenant,actorSubject,expectedLeaseVersion+1,
+   newRequestId,newLeaseExpiresAt,operationId,newRequestId)
+ ]);
+ if(!Array.isArray(results)||results.length!==2||!Number.isInteger(results[0]?.meta?.changes)||
+    !Number.isInteger(results[1]?.meta?.changes))
+  throw new Error("assessment_operation_lease_renewal_batch_invalid");
+ if(results[0].meta.changes===0)return {error:"assessment_operation_lease_conflict",status:409};
+ if(results[0].meta.changes!==1||results[1].meta.changes!==1)
+  throw new Error("assessment_operation_lease_renewal_event_missing");
+ return {data:{...operation,lease_version:expectedLeaseVersion+1,
+  lease_request_id:newRequestId,lease_expires_at:newLeaseExpiresAt,updated_at:now},status:200};
+}
