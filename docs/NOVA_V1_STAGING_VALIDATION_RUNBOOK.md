@@ -690,3 +690,41 @@ Migrations 0040 and 0041 are intentionally forward-compatible schema changes wit
 - [ ] No merge or staging deployment without independent security review and explicit staging authorization.
 - [ ] No production migration/deployment is authorized by this runbook or by passing CI.
 - [ ] If the exact deployed migration ledger, Worker version, key configuration or audit history cannot be verified, stop and do not enable site lifecycle actions.
+
+
+## 36. Site lifecycle security review evidence and outstanding sign-off
+
+This section records a repository-level implementation review of the current Core lifecycle candidate and NOVA OS client. It is not an independent penetration test, a production configuration review, or staging approval.
+
+### Reviewed security boundaries
+
+- [x] Gateway exposes exact site lifecycle action/history path patterns; mutation is POST-only and history is GET-only.
+- [x] Gateway rejects unlisted origins and limits CORS methods and requested headers; Idempotency-Key is explicitly allowed.
+- [x] Gateway validates the browser idempotency key and forwards it as x-nova-idempotency-key.
+- [x] Gateway and private Worker canonicalize the same HMAC envelope fields, including method, exact path, verified Access subject/issuer/audience, issued-at, single-use transport request ID, body digest, Supabase token digest and operation idempotency key.
+- [x] Private Worker validates the signed envelope, Access issuer/audience, bounded timestamp and one-use transport nonce before dispatch.
+- [x] Lifecycle actor is taken from the verified gateway subject, not the request body.
+- [x] Core mutation authorization checks active tenant, active owner/admin membership, exact site read grant and exact tenant/site/current-status match.
+- [x] Core history reads check active tenant, active membership and exact site read grant before reading the bounded event list.
+- [x] Lifecycle event and application ledgers are append-only; event insertion, status transition and application are coupled by database triggers.
+- [x] Direct site-status updates without a fresh unused lifecycle event are rejected by the database guard.
+- [x] Idempotency is actor + tenant + site scoped and bound to a canonical request digest; the transport nonce remains separate.
+- [x] Assessment completion rechecks current site/evidence/lease state at the final database write; inactive-site completion is constrained to not_assessed with site_inactive_at_completion.
+- [x] Browser client validates the response shape, rejects control characters in reasons, uses credentialed HTTPS requests and does not persist credentials or idempotency keys in browser storage.
+
+### Required independent review
+
+- [ ] Independent reviewer inspects the complete final integration diff, including the parent mapping-revocation and lease-recovery branches.
+- [ ] Independent reviewer verifies all migration triggers and constraints against the actual deployed D1 engine/version and the approved migration procedure.
+- [ ] Independent reviewer tests request replay, concurrent transitions, cross-tenant references, inactive/revoked membership, missing site grant, wrong role, malformed reason, body tampering, HMAC tampering, nonce replay and CORS rejection.
+- [ ] Independent reviewer checks the full route dispatch/method matrix and confirms no alternate route or legacy mutation path bypasses lifecycle authorization.
+- [ ] Independent reviewer verifies site history disclosure policy, actor-subject visibility and retention requirements.
+- [ ] Independent reviewer signs and dates the review record before staging authorization.
+
+### Operator handling after uncertain browser outcomes
+
+The browser currently retains the lifecycle idempotency key only in component memory. A full page reload loses that key. If the operator cannot confirm whether a transition succeeded, they must reload the exact tenant/site detail and lifecycle history, verify the current status and latest event, and only then decide whether a new action is appropriate. Do not blindly submit a new key for the same uncertain action.
+
+### Explicit non-claims
+
+Repository CI and this static review do not prove production secret correctness, Access policy correctness, live D1 trigger behavior under production concurrency, tenant data correctness, independent security approval or operational recovery readiness. Staging remains a separately authorized activity; production remains unapproved.
