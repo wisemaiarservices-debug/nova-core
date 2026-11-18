@@ -45,12 +45,12 @@ export async function changeTenantSiteLifecycle(db,{tenant,site,actorSubject,ide
   const {request_digest:_digest,...data}=prior[0];
   return {data,status:200};
  };
- const prior=await replay();
- if(prior)return prior;
  const authorized=await rows(db.prepare(
   "SELECT site.status FROM sites site JOIN tenants tenant ON tenant.id=site.tenant_id AND tenant.status='active' JOIN tenant_memberships membership ON membership.tenant_id=site.tenant_id AND membership.subject=? AND membership.status='active' AND membership.role IN ('tenant_owner','tenant_admin') JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=site.tenant_id AND grant_read.subject=membership.subject AND grant_read.resource_type='site' AND grant_read.resource_id=site.id AND grant_read.action='read' WHERE site.tenant_id=? AND site.id=? LIMIT 2"
  ).bind(actorSubject,tenant,site));
  if(authorized.length!==1)return {error:"site_not_found",status:404};
+ const prior=await replay();
+ if(prior)return prior;
  if(authorized[0].status!==previous)return {error:"site_lifecycle_state_conflict",status:409};
  try{
   const result=await db.prepare(
