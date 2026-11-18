@@ -823,6 +823,8 @@ try {
   const terminalOperation = await operationRequest(operationReadPath, "ci-human-subject", "GET");
   assert.equal(terminalOperation.response.status, 200);
   assert.equal(terminalOperation.body.data.state, "not_assessed");
+  assert.equal(terminalOperation.body.data.assessment.status, "not_assessed");
+  assert.equal(terminalOperation.body.data.assessment.request_id, operationId);
   assert.equal(terminalOperation.body.data.events.some(event => event.event_type === "completed" ||
     event.event_type === "not_assessed"), true);
 
