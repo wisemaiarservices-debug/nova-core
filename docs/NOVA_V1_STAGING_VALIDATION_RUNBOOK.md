@@ -605,3 +605,13 @@ Core PR [#259](https://github.com/wisemaiarservices-debug/nova-core/pull/259) ad
 Exact-head CI [44334952958](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44334952958) passed all three jobs for `e79d14a060608a0277e42593a75a317668220b1f`, including ordered disposable D1 migrations and full gateway/private Worker HTTP integration.
 
 Staging must repeat tenant suspension and archival at both reservation and active-lease boundaries. Confirm denied completion creates neither an assessment nor a terminal operation event, and confirm the tenant lifecycle event remains auditable. Reactivation must not silently resume or extend an expired lease.
+
+## 30. Source revocation during an active assessment lease (Core PR #260)
+
+Core PR [#260](https://github.com/wisemaiarservices-debug/nova-core/pull/260) fixes source lifecycle review result handling when D1 reports the source-event insert together with its source-status trigger side effect. The handler now accepts a positive changed-row count rather than incorrectly requiring exactly one.
+
+The local gateway → private Worker → disposable D1 integration seeds an append-only registered/verified source history and an independent reviewer. It reserves and claims an operation on a verified observation, revokes the source through the real reviewer HTTP route, and completes the operation. The durable outcome is `not_assessed` with reason `source_not_active_or_verified`.
+
+Exact-head CI [44347311546](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44347311546) passed all three jobs for `5dc2875a3d7b8e0bcd4cf5de5985a6134729fd7b`, including ordered disposable D1 and full gateway/private Worker HTTP integration.
+
+Staging must repeat revocation after reservation and after lease claim; confirm no passed/failed assessment is written, the source event is append-only, and subsequent ingestion/resolution fails closed. This is lifecycle integrity evidence, not scientific validation or source accreditation.
