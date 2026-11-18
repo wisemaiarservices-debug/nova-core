@@ -809,11 +809,24 @@ try {
   const crossActorClaim = await operationRequest(operationReadPath + "/claim", "ci-measurement-reviewer");
   assert.equal(crossActorClaim.response.status, 404);
 
-  const claimedOperation = await operationRequest(operationReadPath + "/claim");
+  let claimedOperation = await operationRequest(operationReadPath + "/claim");
   assert.equal(claimedOperation.response.status, 200, JSON.stringify(claimedOperation.body));
   assert.equal(claimedOperation.body.data.state, "running");
   assert.equal(claimedOperation.body.data.lease_version, 1);
   assert.equal(typeof claimedOperation.body.data.lease_request_id, "string");
+  // Expire the just-claimed operation in the disposable local D1 database,
+  // then recover it. The stale lease must be fenced out before completion.
+  expireLocalOperationLease(operationId);
+  const recoveredLease = await operationRequest(operationReadPath + "/claim");
+  assert.equal(recoveredLease.response.status, 200, JSON.stringify(recoveredLease.body));
+  assert.equal(recoveredLease.body.data.lease_version, claimedOperation.body.data.lease_version + 1);
+  assert.notEqual(recoveredLease.body.data.lease_request_id, claimedOperation.body.data.lease_request_id);
+  const staleWorkerCompletion = await operationRequest(operationReadPath + "/complete", "ci-human-subject", "POST", {
+    expected_lease_version: claimedOperation.body.data.lease_version,
+    expected_lease_request_id: claimedOperation.body.data.lease_request_id,
+  });
+  assert.equal(staleWorkerCompletion.response.status, 409, JSON.stringify(staleWorkerCompletion.body));
+  claimedOperation = recoveredLease;
 
   const renewedOperation = await operationRequest(operationReadPath + "/renew", "ci-human-subject", "POST", {
     expected_lease_version: claimedOperation.body.data.lease_version,
@@ -1013,33 +1026,6 @@ try {
     JSON.stringify(calibrationDeniedAssessment.body));
   assert.equal(calibrationDeniedAssessment.body.data.status, "not_assessed");
   assert.equal(calibrationDeniedAssessment.body.data.reason_code, "verified_calibration_missing_or_expired");
-
-  // Expired leases are recoverable, but the previous worker's fence must
-  // become unusable as soon as a new claim advances the lease version/token.
-  const expiryRoute = "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/measurement-assessment-operations";
-  const expiryReservation = await operationRequest(expiryRoute);
-  assert.equal(expiryReservation.response.status, 201, JSON.stringify(expiryReservation.body));
-  const expiryOperationId = expiryReservation.body.data.operation_id;
-  const expiryOperationPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + expiryOperationId;
-  const firstLease = await operationRequest(expiryOperationPath + "/claim");
-  assert.equal(firstLease.response.status, 200, JSON.stringify(firstLease.body));
-  expireLocalOperationLease(expiryOperationId);
-  const recoveredLease = await operationRequest(expiryOperationPath + "/claim");
-  assert.equal(recoveredLease.response.status, 200, JSON.stringify(recoveredLease.body));
-  assert.equal(recoveredLease.body.data.lease_version, firstLease.body.data.lease_version + 1);
-  assert.notEqual(recoveredLease.body.data.lease_request_id, firstLease.body.data.lease_request_id);
-  const staleWorkerCompletion = await operationRequest(expiryOperationPath + "/complete", "ci-human-subject", "POST", {
-    expected_lease_version: firstLease.body.data.lease_version,
-    expected_lease_request_id: firstLease.body.data.lease_request_id,
-  });
-  assert.equal(staleWorkerCompletion.response.status, 409, JSON.stringify(staleWorkerCompletion.body));
-  const recoveredCompletion = await operationRequest(expiryOperationPath + "/complete", "ci-human-subject", "POST", {
-    expected_lease_version: recoveredLease.body.data.lease_version,
-    expected_lease_request_id: recoveredLease.body.data.lease_request_id,
-  });
-  assert.equal([200, 201].includes(recoveredCompletion.response.status), true,
-    JSON.stringify(recoveredCompletion.body));
-  assert.equal(recoveredCompletion.body.data.status, "not_assessed");
 
   // Source lifecycle revocation after claim must produce a durable
   // not_assessed result, even though the observation and lease were valid.
