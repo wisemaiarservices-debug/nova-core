@@ -906,6 +906,32 @@ try {
   assert.equal(revokedGrantRead.response.status, 404);
   const revokedGrantClaim = await operationRequest(revokedGrantPath + "/claim", "ci-invited-human");
   assert.equal(revokedGrantClaim.response.status, 404);
+
+  // Revoke site authorization after a lease is acquired but before completion.
+  // The completion boundary must re-check authorization and must not insert
+  // an assessment merely because the operation was previously claimed.
+  const inFlightGrant = await siteGrant("ci-human-subject", {
+    action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI in-flight completion authorization",
+  });
+  assert.equal(inFlightGrant.response.status, 201, JSON.stringify(inFlightGrant.body));
+  const inFlightPath = "/api/v1/tenants/tenant-http-a/observations/obs-http-grant/measurement-assessment-operations";
+  const inFlightReserve = await operationRequest(inFlightPath, "ci-invited-human");
+  assert.equal(inFlightReserve.response.status, 201, JSON.stringify(inFlightReserve.body));
+  const inFlightId = inFlightReserve.body.data.operation_id;
+  const inFlightOperationPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + inFlightId;
+  const inFlightClaim = await operationRequest(inFlightOperationPath + "/claim", "ci-invited-human");
+  assert.equal(inFlightClaim.response.status, 200, JSON.stringify(inFlightClaim.body));
+  const inFlightRevoke = await siteGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI revoke access before assessment completion",
+  });
+  assert.equal(inFlightRevoke.response.status, 200, JSON.stringify(inFlightRevoke.body));
+  const deniedCompletion = await operationRequest(inFlightOperationPath + "/complete", "ci-invited-human", "POST", {
+    expected_lease_version: inFlightClaim.body.data.lease_version,
+    expected_lease_request_id: inFlightClaim.body.data.lease_request_id,
+  });
+  assert.equal(deniedCompletion.response.status, 404, JSON.stringify(deniedCompletion.body));
   const racedTerminal = await operationRequest(successorRoute, "ci-human-subject", "GET");
   assert.equal(racedTerminal.response.status, 200, JSON.stringify(racedTerminal.body));
   assert.equal(racedTerminal.body.data.state, "not_assessed");
