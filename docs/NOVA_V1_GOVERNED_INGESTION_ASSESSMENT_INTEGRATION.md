@@ -14,6 +14,8 @@ This document describes a draft integration candidate, not a production release.
 
 ## Included controls
 
+0. **Database-level ingestion guard (migration `0035`):** a `BEFORE INSERT` trigger rejects observations unless the exact source is still verified and matches tenant/module/site, with active tenant and site. This supplements the Worker lookup and closes the lookup-to-insert revocation gap at the database write boundary.
+
 1. **Ingestion source guard (#231):** a new observation insert is rejected unless its exact source remains verified and matches the tenant, site, module and active-resource scope.
 2. **Assessment source lifecycle (#232):** new assessments recheck that the source remains verified and correctly scoped.
 3. **Mapping lifecycle (#233):** a mapping cannot be newly verified after its source or mapped resources become ineligible.
@@ -21,6 +23,12 @@ This document describes a draft integration candidate, not a production release.
 5. **Atomic assessment evidence gate (#235):** passed/failed assessment writes recheck the exact observation and current source, mapping, calibration and policy state at the final insert.
 6. **Assessment idempotency (#236):** a request key is bound to its observation; cross-observation reuse conflicts, and same-observation retries return the immutable winner.
 7. **HTTP operation idempotency (#238):** the single-use `x-nova-request-id` transport nonce is separate from the stable browser `Idempotency-Key`; each retry uses a fresh transport nonce and the same operation key, which is bound to the tenant and observation.
+
+## Latest consolidated-head validation
+
+- Latest PR #239 head: `9596844d540e30d97d563e726630b0a637046f17`.
+- Exact-head Core CI [run 44293947333](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44293947333) passed all three jobs: API/security tests, tenant Worker integration including ordered disposable D1 migrations and gateway/private Worker integration, and research raster tests.
+- This head adds migration `0035_observation_ingestion_requires_verified_source.sql` and its migration tests. The earlier runtime snapshot and CI entries below are provenance for the constituent PRs, not a replacement for this consolidated-head run.
 
 ## Automated validation evidence
 
