@@ -143,13 +143,13 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                (id, tenant_id, site_id, observation_id, status, request_id)
                VALUES ('assessment-wrong', 'tenant-a', 'site-a', 'obs-b', 'passed', 'legacy-key')"""
         )
-        with self.assertRaises(sqlite3.IntegrityError):
-            self.db.execute(
-                """UPDATE measurement_assessment_operations
-                   SET state='running', lease_version=1, attempt_count=1
-                   WHERE operation_id='op-a'"""
-            )
-            # A scope-mismatched assessment cannot be attached to this operation.
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1
+               WHERE operation_id='op-a'"""
+        )
+        self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
+        # A scope-mismatched assessment cannot be attached to this operation.
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(
                 """UPDATE measurement_assessment_operations
