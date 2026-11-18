@@ -3,7 +3,7 @@ import sqlite3
 import unittest
 
 
-MIGRATIONS = [Path(__file__).resolve().parents[1] / "migrations" / name for name in ("0036_measurement_assessment_operations.sql", "0037_measurement_assessment_operation_lease_fencing.sql", "0038_measurement_assessment_operation_terminal_audit.sql")]
+MIGRATIONS = [Path(__file__).resolve().parents[1] / "migrations" / name for name in ("0036_measurement_assessment_operations.sql", "0037_measurement_assessment_operation_lease_fencing.sql", "0038_measurement_assessment_operation_terminal_audit.sql", "0039_measurement_assessment_insert_terminalizes_operation.sql")]
 
 
 class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
@@ -15,6 +15,14 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
           CREATE TABLE sites (
             id TEXT NOT NULL, tenant_id TEXT NOT NULL,
             PRIMARY KEY(id, tenant_id), UNIQUE(id, tenant_id)
+          );
+          CREATE TABLE tenant_memberships (
+            tenant_id TEXT NOT NULL, subject TEXT NOT NULL, status TEXT NOT NULL,
+            PRIMARY KEY(tenant_id, subject)
+          );
+          CREATE TABLE tenant_resource_grants (
+            tenant_id TEXT NOT NULL, subject TEXT NOT NULL, resource_type TEXT NOT NULL,
+            resource_id TEXT NOT NULL, action TEXT NOT NULL
           );
           CREATE TABLE observations (
             id TEXT NOT NULL, tenant_id TEXT NOT NULL, site_id TEXT NOT NULL,
@@ -29,7 +37,9 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
               REFERENCES observations(id, tenant_id, site_id)
           );
           INSERT INTO tenants VALUES ('tenant-a', 'active');
-          INSERT INTO sites VALUES ('site-a', 'tenant-a');
+          INSERT INTO sites VALUES ('site-a', 'tenant-a', 'active');
+          INSERT INTO tenant_memberships VALUES ('tenant-a', 'actor-a', 'active');
+          INSERT INTO tenant_resource_grants VALUES ('tenant-a', 'actor-a', 'site', 'site-a', 'read');
           INSERT INTO observations VALUES ('obs-a', 'tenant-a', 'site-a');
           INSERT INTO observations VALUES ('obs-b', 'tenant-a', 'site-a');
         """)
@@ -395,6 +405,103 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
             "SELECT from_state,to_state,event_type,request_id FROM measurement_assessment_operation_events WHERE operation_id='op-a' ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
         self.assertEqual(event, ("reserved", "not_assessed", "not_assessed", "request-not-assessed"))
+
+    def claim_for_insert_terminalization(self, operation_id="op-a", actor="actor-a", observation="obs-a"):
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1,
+                   lease_expires_at='2026-11-18T12:01:00Z',
+                   lease_request_id='lease-token'
+               WHERE operation_id=?""",
+            (operation_id,),
+        )
+        self.event(operation_id, actor, observation, "reserved", "running", "claimed")
+
+    def insert_bound_assessment(self, status="passed", operation_id="op-a", actor="actor-a",
+                                observation="obs-a", lease_version=1, lease_token="lease-token",
+                                terminal_request="terminal-request", completed_at="2026-11-18T12:00:00Z"):
+        self.db.execute(
+            """INSERT INTO measurement_quality_assessments
+               (id, tenant_id, site_id, observation_id, status, request_id,
+                operation_actor_subject, operation_lease_version,
+                operation_lease_request_id, operation_terminal_request_id,
+                operation_completed_at)
+               VALUES (?, 'tenant-a', 'site-a', ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("assessment-" + operation_id, observation, status, operation_id, actor,
+             lease_version, lease_token, terminal_request, completed_at),
+        )
+
+    def test_bound_assessment_insert_terminalizes_and_appends_audit_in_one_statement(self):
+        self.reserve()
+        self.claim_for_insert_terminalization()
+        self.insert_bound_assessment(status="passed")
+        operation = self.db.execute(
+            "SELECT state, assessment_id, lease_request_id, lease_expires_at, terminal_request_id FROM measurement_assessment_operations WHERE operation_id='op-a'"
+        ).fetchone()
+        self.assertEqual(operation, (
+            "completed", "assessment-op-a", None, None, "terminal-request"
+        ))
+        terminal = self.db.execute(
+            "SELECT from_state,to_state,event_type,request_id FROM measurement_assessment_operation_events WHERE operation_id='op-a' ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        self.assertEqual(terminal, ("running", "completed", "completed", "terminal-request"))
+
+    def test_not_assessed_insert_terminalizes_with_not_assessed_event(self):
+        self.reserve()
+        self.claim_for_insert_terminalization()
+        self.insert_bound_assessment(status="not_assessed")
+        operation = self.db.execute(
+            "SELECT state, assessment_id FROM measurement_assessment_operations WHERE operation_id='op-a'"
+        ).fetchone()
+        self.assertEqual(operation, ("not_assessed", "assessment-op-a"))
+        terminal = self.db.execute(
+            "SELECT from_state,to_state,event_type FROM measurement_assessment_operation_events WHERE operation_id='op-a' ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        self.assertEqual(terminal, ("running", "not_assessed", "not_assessed"))
+
+    def test_bound_assessment_rejects_stale_lease_or_revoked_membership(self):
+        self.reserve()
+        self.claim_for_insert_terminalization()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact active actor, scope and lease"):
+            self.insert_bound_assessment(lease_version=2)
+        self.db.execute(
+            "UPDATE tenant_memberships SET status='suspended' WHERE tenant_id='tenant-a' AND subject='actor-a'"
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact active actor, scope and lease"):
+            self.insert_bound_assessment(terminal_request="terminal-request-2")
+        self.assertEqual(self.db.execute(
+            "SELECT state FROM measurement_assessment_operations WHERE operation_id='op-a'"
+        ).fetchone()[0], "running")
+
+    def test_terminal_audit_failure_rolls_back_bound_assessment_insert_and_operation(self):
+        self.reserve()
+        self.claim_for_insert_terminalization()
+        self.db.execute("""
+          CREATE TRIGGER reject_bound_terminal_event
+          BEFORE INSERT ON measurement_assessment_operation_events
+          WHEN NEW.event_type='completed'
+          BEGIN SELECT RAISE(ABORT,'forced bound terminal audit failure'); END
+        """)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "forced bound terminal audit failure"):
+            self.insert_bound_assessment(status="passed")
+        self.assertEqual(self.db.execute(
+            "SELECT state, assessment_id FROM measurement_assessment_operations WHERE operation_id='op-a'"
+        ).fetchone(), ("running", None))
+        self.assertEqual(self.db.execute(
+            "SELECT COUNT(*) FROM measurement_quality_assessments WHERE request_id='op-a'"
+        ).fetchone()[0], 0)
+        self.assertEqual(self.db.execute(
+            "SELECT COUNT(*) FROM measurement_assessment_operation_events WHERE operation_id='op-a'"
+        ).fetchone()[0], 2)
+
+    def test_legacy_insert_cannot_bypass_an_existing_operation(self):
+        self.reserve()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact active actor, scope and lease"):
+            self.db.execute(
+                """INSERT INTO measurement_quality_assessments
+                   (id,tenant_id,site_id,observation_id,status,request_id)
+                   VALUES ('assessment-op-a','tenant-a','site-a','obs-a','passed','op-a')"""
+            )
 
 if __name__ == "__main__":
     unittest.main()
