@@ -3,7 +3,7 @@ import sqlite3
 import unittest
 
 
-MIGRATIONS = [Path(__file__).resolve().parents[1] / "migrations" / name for name in ("0036_measurement_assessment_operations.sql", "0037_measurement_assessment_operation_lease_fencing.sql", "0038_measurement_assessment_operation_terminal_audit.sql", "0039_measurement_assessment_insert_terminalizes_operation.sql")]
+MIGRATIONS = [Path(__file__).resolve().parents[1] / "migrations" / name for name in ("0036_measurement_assessment_operations.sql", "0037_measurement_assessment_operation_lease_fencing.sql", "0038_measurement_assessment_operation_terminal_audit.sql", "0039_measurement_assessment_insert_terminalizes_operation.sql", "0041_assessment_inactive_site_interlock.sql")]
 
 
 class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
@@ -31,7 +31,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
           );
           CREATE TABLE measurement_quality_assessments (
             id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, site_id TEXT NOT NULL,
-            observation_id TEXT NOT NULL, status TEXT NOT NULL, request_id TEXT NOT NULL,
+            observation_id TEXT NOT NULL, status TEXT NOT NULL, reason_code TEXT, request_id TEXT NOT NULL,
             UNIQUE(tenant_id, request_id),
             FOREIGN KEY(observation_id, tenant_id, site_id)
               REFERENCES observations(id, tenant_id, site_id)
@@ -83,15 +83,15 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
 
     def insert_bound_assessment(self, status="passed", operation_id="op-a", actor="actor-a",
                                 observation="obs-a", lease_version=1, lease_token="request-claimed",
-                                terminal_request="terminal-request", completed_at="2026-11-18T12:00:00Z"):
+                                terminal_request="terminal-request", completed_at="2026-11-18T12:00:00Z", reason="within_approved_policy_bounds"):
         self.db.execute(
             """INSERT INTO measurement_quality_assessments
-               (id, tenant_id, site_id, observation_id, status, request_id,
+               (id, tenant_id, site_id, observation_id, status, reason_code, request_id,
                 operation_actor_subject, operation_lease_version,
                 operation_lease_request_id, operation_terminal_request_id,
                 operation_completed_at)
-               VALUES (?, 'tenant-a', 'site-a', ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("assessment-" + operation_id, observation, status, operation_id, actor,
+               VALUES (?, 'tenant-a', 'site-a', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("assessment-" + operation_id, observation, status, reason, operation_id, actor,
              lease_version, lease_token, terminal_request, completed_at),
         )
 
@@ -445,6 +445,29 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                    (id,tenant_id,site_id,observation_id,status,request_id)
                    VALUES ('assessment-op-a','tenant-a','site-a','obs-a','passed','op-a')"""
             )
+
+
+    def test_inactive_site_allows_only_fixed_not_assessed_terminal_outcome(self):
+        self.reserve()
+        self.claim_for_insert_terminalization()
+        self.db.execute("UPDATE sites SET status='inactive' WHERE id='site-a'")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact actor, scope, lease and active-site"):
+            self.insert_bound_assessment(status="passed", reason="within_approved_policy_bounds")
+        self.insert_bound_assessment(status="not_assessed", reason="site_inactive_at_completion")
+        row = self.db.execute(
+            "SELECT status,reason_code FROM measurement_quality_assessments WHERE request_id='op-a'"
+        ).fetchone()
+        self.assertEqual(row, ("not_assessed", "site_inactive_at_completion"))
+        self.assertEqual(self.db.execute(
+            "SELECT state FROM measurement_assessment_operations WHERE operation_id='op-a'"
+        ).fetchone()[0], "not_assessed")
+
+    def test_inactive_site_rejects_noncanonical_not_assessed_reason(self):
+        self.reserve()
+        self.claim_for_insert_terminalization()
+        self.db.execute("UPDATE sites SET status='inactive' WHERE id='site-a'")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "exact actor, scope, lease and active-site"):
+            self.insert_bound_assessment(status="not_assessed", reason="governance_state_changed_before_assessment")
 
 if __name__ == "__main__":
     unittest.main()
