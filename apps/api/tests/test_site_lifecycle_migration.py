@@ -51,10 +51,10 @@ class SiteLifecycleMigrationTests(unittest.TestCase):
         return self.db.execute(
             """INSERT INTO tenant_site_lifecycle_events
                (id,tenant_id,site_id,actor_subject,event_type,previous_status,
-                new_status,reason,idempotency_key,request_id,occurred_at)
+                new_status,reason,idempotency_key,request_digest,request_id,occurred_at)
                VALUES(?, 'tenant-a', ?, ?, ?, ?, ?, 'approved operational reason',
-                      ?, ?, '2026-11-18T12:00:00.000Z')""",
-            (event_id, site, actor, kind, previous, new, key or event_id, "req-" + event_id),
+                      ?, ?, ?, '2026-11-18T12:00:00.000Z')""",
+            (event_id, site, actor, kind, previous, new, key or event_id, "a" * 64, "req-" + event_id),
         )
 
     def test_deactivation_is_atomic_and_audited(self):
@@ -93,9 +93,9 @@ class SiteLifecycleMigrationTests(unittest.TestCase):
             self.db.execute(
                 """INSERT INTO tenant_site_lifecycle_events
                    (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
-                    reason,idempotency_key,request_id,occurred_at)
+                    reason,idempotency_key,request_digest,request_id,occurred_at)
                    VALUES('cross','tenant-other','site-active','owner','deactivated',
-                          'active','inactive','reason','key','req-cross','2026-11-18T12:00:00Z')"""
+                          'active','inactive','reason','key','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','req-cross','2026-11-18T12:00:00Z')"""
             )
 
     def test_event_and_application_are_immutable(self):
