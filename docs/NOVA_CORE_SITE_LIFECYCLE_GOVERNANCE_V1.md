@@ -181,3 +181,16 @@ This is a release-blocking design/implementation gap, not a tested behavior. The
 - assessment insert, operation terminalization and terminal audit remain atomic under the existing trigger chain.
 
 Add a real D1 HTTP test for active operation → site deactivation → completion, plus the opposite race order. The database guard, not only the evaluator, must enforce the status/reason pairing.
+
+
+## 10. Runtime implementation follow-up (2026-11-18)
+
+The implementation corresponding to this design is in Core draft PR [#266](https://github.com/wisemaiarservices-debug/nova-core/pull/266), stacked on the source/mapping revocation integration PR #265.
+
+- Migration `0040_site_lifecycle_governance.sql` creates a dedicated append-only `tenant_site_lifecycle_events` ledger and one-to-one `tenant_site_lifecycle_applications` ledger. A fresh authorized event is consumed by exactly one site status transition; direct status updates without such an event are rejected.
+- Migration `0041_assessment_inactive_site_interlock.sql` changes the assessment insert guard so an operation already reserved/claimed before deactivation can terminate only as `not_assessed` / `site_inactive_at_completion`. Passed/failed remain active-site-only.
+- The private Worker and signed gateway expose exact site lifecycle action and bounded event-history routes. The actor is derived from the verified Access gateway envelope; the browser cannot supply an actor identity.
+- Local gateway → private Worker → disposable D1 tests cover owner/admin authorization, exact site grant, denied role, event replay, changed-intent conflict, event history, direct status-update bypass, explicit reactivation, both site-deactivation/assessment race orders and expired-lease recovery after deactivation.
+- Combined exact-head CI [44391344844](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44391344844) passed all three jobs for `b3aefd9bee13e7d4b4d2e3635bd4a01f7401d2a2`, including ordered disposable D1 migrations and full gateway/private Worker HTTP integration.
+
+The earlier completion-query blocker identified in section 8 is resolved in this draft implementation: inactive site context can be loaded for an existing operation, but the database and final write gate force the fixed not-assessed result. This remains local-CI evidence only. PR #266 is draft/unmerged; no staging migration, deployment or production action has occurred. The NOVA OS operator interface is in draft PR [#63](https://github.com/wisemaiarservices-debug/NovaOS/pull/63), with its TypeScript, tenant-client tests and production build passing in [run 44391066602](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44391066602).
