@@ -61,6 +61,13 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
 
     def complete(self, operation_id="op-a", actor="actor-a", observation="obs-a"):
         self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1
+               WHERE operation_id=?""",
+            (operation_id,),
+        )
+        self.event(operation_id, actor, observation, "reserved", "running", "claimed")
+        self.db.execute(
             """INSERT INTO measurement_quality_assessments
                (id, tenant_id, site_id, observation_id, status, request_id)
                VALUES (?, 'tenant-a', 'site-a', ?, 'passed', ?)""",
@@ -73,7 +80,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                WHERE operation_id=?""",
             ("assessment-" + operation_id, operation_id),
         )
-        self.event(operation_id, actor, observation, "reserved", "completed", "completed")
+        self.event(operation_id, actor, observation, "running", "completed", "completed")
 
     def test_reservation_and_append_only_initial_event(self):
         self.reserve()
@@ -131,15 +138,25 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
 
     def test_assessment_foreign_key_requires_exact_scope(self):
         self.reserve()
+        self.db.execute(
+            """INSERT INTO measurement_quality_assessments
+               (id, tenant_id, site_id, observation_id, status, request_id)
+               VALUES ('assessment-wrong', 'tenant-a', 'site-a', 'obs-b', 'passed', 'legacy-key')"""
+        )
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(
-                """INSERT INTO measurement_quality_assessments
-                   (id, tenant_id, site_id, observation_id, status, request_id)
-                   VALUES ('assessment-wrong', 'tenant-a', 'site-a', 'obs-b', 'passed', 'op-a')"""
+                """UPDATE measurement_assessment_operations
+                   SET state='running', lease_version=1, attempt_count=1
+                   WHERE operation_id='op-a'"""
             )
-        self.assertEqual(
-            self.db.execute("SELECT COUNT(*) FROM measurement_quality_assessments").fetchone()[0], 0
-        )
+            # A scope-mismatched assessment cannot be attached to this operation.
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                """UPDATE measurement_assessment_operations
+                   SET state='completed', assessment_id='assessment-wrong',
+                       completed_at='2026-11-18T12:00:00Z'
+                   WHERE operation_id='op-a'"""
+            )
 
     def test_only_one_explicit_successor_per_completed_predecessor(self):
         self.reserve()
