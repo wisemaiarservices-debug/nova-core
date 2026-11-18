@@ -1002,15 +1002,15 @@ test("allows idempotency-key in the exact-origin CORS preflight", async () => {
 })
 
 
-test("forwards stable assessment operation idempotency across fresh signed transport requests", async () => {
+test("forwards the retired assessment route without a client operation key", async () => {
   const gateway = createGateway({ verifyAccessToken: async () => ({
     subject: "assessment-reader", issuer: "https://example.cloudflareaccess.com", audience: "aud",
   }) });
   const forwarded = [];
   const testEnv = env({ TENANT_API: { fetch: async request => {
     forwarded.push(request);
-    return new Response(JSON.stringify({ data: { status: "not_assessed" } }), {
-      status: 200, headers: { "content-type": "application/json" },
+    return new Response(JSON.stringify({ error: "assessment_operation_required" }), {
+      status: 410, headers: { "content-type": "application/json" },
     });
   } } });
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -1019,13 +1019,13 @@ test("forwards stable assessment operation idempotency across fresh signed trans
       { method: "POST", headers: {
         "Cf-Access-Jwt-Assertion": "valid-access-token",
         "Content-Type": "application/json",
-        "Idempotency-Key": "assessment-operation-001",
       }, body: "{}" }), testEnv);
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 410);
+    assert.equal((await response.json()).error, "assessment_operation_required");
   }
   assert.equal(forwarded.length, 2);
-  assert.equal(forwarded[0].headers.get("x-nova-idempotency-key"), "assessment-operation-001");
-  assert.equal(forwarded[1].headers.get("x-nova-idempotency-key"), "assessment-operation-001");
+  assert.equal(forwarded[0].headers.get("x-nova-idempotency-key"), null);
+  assert.equal(forwarded[1].headers.get("x-nova-idempotency-key"), null);
   assert.notEqual(forwarded[0].headers.get("x-nova-request-id"),
     forwarded[1].headers.get("x-nova-request-id"));
   assert.match(forwarded[0].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
