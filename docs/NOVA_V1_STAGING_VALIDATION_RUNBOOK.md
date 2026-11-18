@@ -818,3 +818,41 @@ NOVA OS PR #64 is now the single browser integration candidate for Core assessme
 This is repository-level evidence, not live staging or independent certification. The Site Lifecycle page still has a separate component-memory idempotency key; operators must reload exact site status/history after an uncertain transition. Assessment reload recovery must not be conflated with site-lifecycle recovery.
 
 Independent review must verify the final Core/OS ancestry and exact SHAs, then exercise the actual browser against an isolated staging gateway before any staging release decision. No staging or production authorization is granted.
+
+
+## 41. Independent reviewer execution checklist — exact candidate scope
+
+This section is a reviewer handoff, not a claim that an independent review has occurred.
+
+### Exact implementation surfaces
+
+- Core candidate: PR #266, `feat/core-site-lifecycle-governance-v2`, head `e157555927f85a30a04366c4317a32b00b0fa42c`.
+- Core ancestry: 161 commits ahead of #239 (`127b54608f315a8f5f64af04b1dd313d0bf51d7c`) and 204 ahead of #229 (`8063ad968f6af50874b733186385fc7493b2cbfd`), zero commits behind each.
+- Core runtime surfaces: `measurement-assessment-operation-http.mjs`, `measurement-assessment-operations.mjs`, `measurement-assessment-completion.mjs`, `site-lifecycle.mjs`, private Worker `index.mjs`, and gateway `apps/tenant-gateway/src/index.mjs`.
+- Core migration ancestry: #239 supplies 0035–0039; #266 adds 0040–0041. Verify the complete ordered migration list and trigger definitions against a clean disposable D1.
+- OS candidate: PR #64, `feat/nova-os-server-backed-assessment-recovery-v1`, head `21b43f1f7c38e29bf92414fbc1d02a620f4b8893`; 56 commits ahead of OS #13 head `45a70194a98ffdb39821f14b573ef98a93d3e994`, zero behind, stacked on OS #63.
+- Release handoff: PR #267 is documentation-only and based on #230. It changes only the runbook and release-packet template.
+
+### Mandatory adversarial review
+
+1. Identity and tenancy: verify Access subject/issuer/audience originate only from validated gateway authentication and signed envelope; caller body cannot select actor; operation reads/writes remain actor + tenant + exact site grant scoped.
+2. Route surface: compare every browser path, gateway allowlist, rewrite target, private Worker matcher and method. Reject extra segments, query/hash, wrong methods, encoded path ambiguities and unlisted routes.
+3. Replay: prove same actor/tenant/site/observation/predecessor reservation recovers the same operation after lost response/reload; transport request IDs remain one-use; different actor, tenant, observation or predecessor cannot attach to it.
+4. Lease fencing: run simultaneous claims, renewals and completions against actual D1; stale lease version/request ID must never complete; expiry and recovery use server time.
+5. Evidence governance: revoke source, mapping, calibration and policy after claim; completion must produce only the exact durable `not_assessed` reason, never a pass/fail.
+6. Site lifecycle: exercise both race orders between deactivation and completion; direct status mutation must fail; reactivation must not reactivate child evidence or grants.
+7. Legacy bypass: confirm the former direct `measurement-quality-assessment` writer returns HTTP 410 `assessment_operation_required`; confirm no other route or background writer can insert an assessment outside the operation ledger.
+8. Audit and atomicity: verify operation state, assessment insert and terminal event roll back together on trigger failure; event ledgers remain append-only; test idempotent replay and concurrent writers.
+9. Browser safety: verify the OS uses credentialed HTTPS, bounded no-store response parsing, no local credential/operation-key persistence, stale-target cancellation, and clear handling of conflicts and uncertain site-lifecycle transitions.
+10. Operations: inspect secret custody/rotation, Access issuer/audience, gateway origins/CORS, D1 binding, backups, retention, rollback and incident procedures without exposing secrets in the review packet.
+
+### Evidence and limitations
+
+- Core exact-head CI for #266: run 44398811437, 3/3 jobs passed (API/security, tenant Worker/D1 integration, research raster).
+- OS exact-head CI for #64: run 44401357217, 65 tests passed; TypeScript and production build passed.
+- Core HTTP integration exercises gateway → private Worker → disposable D1, including operation reservation replay after a simulated browser reload, explicit successor, concurrent lease transitions, governance revocation, site deactivation and recovery.
+- OS CI is client/unit/build validation, not a live browser-to-staging end-to-end test.
+- Site-lifecycle action idempotency remains in component memory. After a full reload, inspect current site status and append-only history before taking another action.
+- No independent reviewer sign-off, live staging validation, production secret/config review, production migration, deployment or customer-data operation has occurred.
+
+Reviewer outcome must record the exact SHAs reviewed, commands/tests independently rerun, findings, severity, remediation commit SHAs, and explicit pass/fail for every mandatory item. A green repository CI result is not a substitute for this sign-off.
