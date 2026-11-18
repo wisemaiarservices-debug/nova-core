@@ -775,9 +775,9 @@ All referenced PRs remain draft/open/unmerged at the time of this handoff. The e
 
 ## 38. NOVA OS durable assessment recovery integration (2026-11-18)
 
-NOVA OS PR #64 ([link](https://github.com/wisemaiarservices-debug/NovaOS/pull/64)) now connects Measurement Evidence to Core's server-backed assessment operation API. It is stacked on OS #63 and currently remains draft/unmerged.
+NOVA OS PR #64 ([link](https://github.com/wisemaiarservices-debug/NovaOS/pull/64)) connects Measurement Evidence to Core's server-backed assessment operation API. It is stacked on OS #63 and remains draft/unmerged.
 
-Current OS branch head at handoff update: `ec720716426d9092d6387f8a984e9c1402bdef05`. It contains:
+Historical implementation checkpoint (superseded by the exact candidate recorded in sections 40–41): `ec720716426d9092d6387f8a984e9c1402bdef05`. It contains:
 - deterministic reserve/recover for the exact actor/tenant/observation/predecessor tuple;
 - server lease claim and completion with lease-version/request-ID fencing;
 - post-completion durable read;
@@ -812,6 +812,7 @@ NOVA OS PR #64 is now the single browser integration candidate for Core assessme
 - OS #64 is 56 commits ahead of, and has zero commits behind, OS #13 head `45a70194a98ffdb39821f14b573ef98a93d3e994`; it is stacked on OS #63 head `1bc6c16e7956dc227e7a5a6400f75e2118e5dd92`.
 - OS #64 latest exact head: `21b43f1f7c38e29bf92414fbc1d02a620f4b8893`
 - Latest exact CI: [run 44401357217](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44401357217) passed 65 tests, TypeScript and production build. It includes the on-screen site-lifecycle reload warning and distinct assessment lease-conflict messaging.
+- Core PR #267 reviewer-handoff documentation exact head: `8eda207252251bdd24f19fb5d12ceee37053bb17`; [CI run 44415107568](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44415107568) passed all 3 jobs: API/security, tenant Worker/D1 integration and research raster.
 - Core #266 exact head: `e157555927f85a30a04366c4317a32b00b0fa42c`
 - Core exact CI: [run 44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437) passed API/security, tenant Worker/D1 integration and research raster.
 
@@ -849,6 +850,7 @@ This section is a reviewer handoff, not a claim that an independent review has o
 ### Evidence and limitations
 
 - Core exact-head CI for #266: run 44398811437, 3/3 jobs passed (API/security, tenant Worker/D1 integration, research raster).
+- Reviewer-handoff documentation #267 exact-head CI: run 44415107568, 3/3 jobs passed (API/security, tenant Worker/D1 integration, research raster).
 - OS exact-head CI for #64: run 44401357217, 65 tests passed; TypeScript and production build passed.
 - Core HTTP integration exercises gateway → private Worker → disposable D1, including operation reservation replay after a simulated browser reload, explicit successor, concurrent lease transitions, governance revocation, site deactivation and recovery.
 - OS CI is client/unit/build validation, not a live browser-to-staging end-to-end test.
