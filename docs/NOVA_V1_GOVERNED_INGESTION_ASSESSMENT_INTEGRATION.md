@@ -2,11 +2,13 @@
 
 ## Candidate
 
-- Consolidated pull request: pending creation from this branch.
+- Consolidated pull request: [#239](https://github.com/wisemaiarservices-debug/nova-core/pull/239) (draft, open, unmerged).
 - Parent integration base: [#229](https://github.com/wisemaiarservices-debug/nova-core/pull/229).
 - Included governed ingestion and assessment changes: [#231](https://github.com/wisemaiarservices-debug/nova-core/pull/231) through [#236](https://github.com/wisemaiarservices-debug/nova-core/pull/236).
 - Included HTTP operation-idempotency change: [#238](https://github.com/wisemaiarservices-debug/nova-core/pull/238).
-- Runtime source snapshot before this integration note: `1b5266660fd675d6b873d9ebc5d37444c9a2ea58`.
+- Runtime source snapshot before this integration note: `1b5266660fd675d6b873d9ebc5d37444c9a2ea58` (#238).
+- Consolidated integration branch: `integration/core-governed-ingestion-assessment-http-v1`.
+- Consolidated head before this documentation correction: `3fbc2d75bf904f49548db7793b88776ce01ac3f3`.
 
 This document describes a draft integration candidate, not a production release.
 
