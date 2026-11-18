@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import { registerTenantSource, assignTenantSourceReviewer, reviewTenantSource } from "../src/source-registry.mjs";
 globalThis.crypto ??= webcrypto;
 
-function fixture({owner=true,site=true,prior=[],reviewer=true,source=true,sourceStatus="unverified",registrant="owner-sub",history=[{event_type:"registered"}]}={}){
+function fixture({owner=true,site=true,prior=[],reviewer=true,source=true,sourceStatus="unverified",registrant="owner-sub",history=[{event_type:"registered"}],eventChanges=1}={}){
  const calls=[];
  return {calls,prepare(sql){return {sql,values:[],bind(...values){this.values=values;return this;},
   async all(){
@@ -16,7 +16,7 @@ function fixture({owner=true,site=true,prior=[],reviewer=true,source=true,source
    if(sql.includes("FROM tenant_source_events"))return {results:history};
    throw Error("unexpected query "+sql);
   },
-  async run(){calls.push({sql,values:this.values});return {meta:{changes:1}};}
+  async run(){calls.push({sql,values:this.values});return {meta:{changes:eventChanges}};}
  };},async batch(statements){calls.push(...statements.map(x=>({sql:x.sql,values:x.values})));return statements.map(()=>({meta:{changes:1}}));}};
 }
 const body={module:"neoagro",provider:"gateway-vendor",source_type:"sensor_gateway",display_name:"North greenhouse gateway",license_reference:"licence-record-1",evidence_ref:"evidence/source-commissioning-1"};
@@ -59,6 +59,15 @@ test("source registrant cannot verify own source",async()=>{
 test("independent reviewer can verify a registered source",async()=>{
  const db=fixture();const r=await reviewTenantSource(db,"tenant-a","site-a","source-a","reviewer-sub","review-a",{decision:"verify",evidence_ref:"evidence/verification-1"});
  assert.equal(r.status,201);assert.equal(r.data.status,"verified");
+});
+test("source lifecycle review accepts the event insert when D1 also counts trigger side effects",async()=>{
+ const db=fixture({eventChanges:2,history:[{event_type:"verified"}]});
+ const r=await reviewTenantSource(db,"tenant-a","site-a","source-a","reviewer-sub","review-a",{
+  decision:"revoke",evidence_ref:"evidence/revoke-1",reason:"source withdrawn",
+ });
+ assert.equal(r.status,201);
+ assert.equal(r.data.status,"revoked");
+ assert.equal(db.calls.length,1);
 });
 test("rejected source cannot be revoked or re-verified",async()=>{
  const rejected=await reviewTenantSource(fixture({history:[{event_type:"rejected"}]}),"tenant-a","site-a","source-a","reviewer-sub","review-b",{decision:"revoke",evidence_ref:"evidence/revoke-1",reason:"invalid"});
