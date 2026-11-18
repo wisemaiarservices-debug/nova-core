@@ -106,7 +106,16 @@ export async function readMeasurementAssessmentOperation(db,tenant,actorSubject,
  const events=await rows(db.prepare(
   "SELECT event_id,from_state,to_state,event_type,request_id,occurred_at FROM measurement_assessment_operation_events WHERE tenant_id=? AND operation_id=? AND actor_subject=? ORDER BY occurred_at,event_id"
  ).bind(tenant,operationId,actorSubject));
- return {data:{...found[0],events},status:200};
+ let assessment=null;
+ if(["completed","not_assessed"].includes(found[0].state)){
+  const assessments=await rows(db.prepare(
+   "SELECT id,tenant_id,site_id,observation_id,status,reason_code,mapping_id,calibration_id,policy_id,method_version,request_id FROM measurement_quality_assessments WHERE tenant_id=? AND site_id=? AND observation_id=? AND request_id=? AND operation_actor_subject=? LIMIT 2"
+  ).bind(tenant,found[0].site_id,found[0].observation_id,operationId,actorSubject));
+  if(assessments.length!==1||assessments[0].id!==found[0].assessment_id)
+   return {error:"assessment_operation_result_unavailable",status:409};
+  assessment=assessments[0];
+ }
+ return {data:{...found[0],assessment,events},status:200};
 }
 
 
