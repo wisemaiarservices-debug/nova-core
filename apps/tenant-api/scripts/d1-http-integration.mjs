@@ -133,6 +133,36 @@ try {
   assert.equal(siteGrantCreated.response.status, 201, JSON.stringify(siteGrantCreated.body));
   assert.equal(siteGrantCreated.body.data.status, "active");
   assert.equal(siteGrantCreated.body.data.resource_type, "site");
+  // Membership suspension after lease claim must block the final write too.
+  // The invitation acceptance response supplies the exact durable membership
+  // identifier; no tenant/member lookup is inferred from a caller-provided ID.
+  const invitedMembershipId = invitationAccepted.body.data.membership_id;
+  assert.match(invitedMembershipId, /^[0-9a-f-]{36}$/i);
+  const membershipOperationPath = "/api/v1/tenants/tenant-http-a/observations/obs-http-grant/measurement-assessment-operations";
+  const membershipOperation = await operationRequest(membershipOperationPath, "ci-invited-human");
+  assert.equal(membershipOperation.response.status, 201, JSON.stringify(membershipOperation.body));
+  const membershipOperationId = membershipOperation.body.data.operation_id;
+  const membershipOperationRoute = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + membershipOperationId;
+  const membershipClaim = await operationRequest(membershipOperationRoute + "/claim", "ci-invited-human");
+  assert.equal(membershipClaim.response.status, 200, JSON.stringify(membershipClaim.body));
+  const membershipSuspended = await membershipAction("ci-human-subject", {
+    membership_id: invitedMembershipId, action: "suspend",
+    reason: "CI suspend member after assessment operation claim",
+  });
+  assert.equal(membershipSuspended.response.status, 200, JSON.stringify(membershipSuspended.body));
+  assert.equal(membershipSuspended.body.data.status, "inactive");
+  const membershipDeniedCompletion = await operationRequest(membershipOperationRoute + "/complete", "ci-invited-human", "POST", {
+    expected_lease_version: membershipClaim.body.data.lease_version,
+    expected_lease_request_id: membershipClaim.body.data.lease_request_id,
+  });
+  assert.equal(membershipDeniedCompletion.response.status, 404, JSON.stringify(membershipDeniedCompletion.body));
+  const membershipReactivated = await membershipAction("ci-human-subject", {
+    membership_id: invitedMembershipId, action: "reactivate",
+    reason: "CI restore member after assessment authorization test",
+  });
+  assert.equal(membershipReactivated.response.status, 200, JSON.stringify(membershipReactivated.body));
+  assert.equal(membershipReactivated.body.data.status, "active");
+
 
   const adminPrivilegedGrant = await siteGrant("ci-http-admin", {
     action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
