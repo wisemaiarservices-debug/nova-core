@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { reserveMeasurementAssessmentOperation, readMeasurementAssessmentOperation } from "../src/measurement-assessment-operations.mjs";
+import { reserveMeasurementAssessmentOperation, readMeasurementAssessmentOperation, claimMeasurementAssessmentOperation } from "../src/measurement-assessment-operations.mjs";
 globalThis.crypto ??= webcrypto;
 
 function fakeDb({prior=[],active=[],events=[],batchResults=[{meta:{changes:1}},{meta:{changes:1}}]}={}){
@@ -74,6 +74,68 @@ test("operation read is bound to active actor membership and exact site read gra
  assert.match(db.prepared[0].sql,/membership.status='active'/);
  assert.match(db.prepared[0].sql,/grant_read.resource_type='site'/);
  assert.deepEqual(db.prepared[0].values,["tenant-1","access-subject-1",op.operation_id]);
+});
+
+test("claim atomically advances a reserved operation and appends a fenced claim event",async()=>{
+ const db=fakeDb({prior:[{...op,state:"reserved",lease_version:0,attempt_count:0,lease_expires_at:null,lease_request_id:null}]});
+ const result=await claimMeasurementAssessmentOperation(db,"tenant-1","access-subject-1",op.operation_id,
+  "transport-claim","2026-11-18T12:00:00.000Z","2026-11-18T12:02:00.000Z");
+ assert.equal(result.status,200);
+ assert.equal(result.data.state,"running");
+ assert.equal(result.data.lease_request_id,"transport-claim");
+ assert.equal(result.data.lease_version,1);
+ assert.equal(db.batches.length,1);
+ assert.equal(db.batches[0].length,2);
+ assert.match(db.batches[0][0].sql,/state='reserved' AND lease_expires_at IS NULL/);
+ assert.match(db.batches[0][0].sql,/tenant_resource_grants/);
+ assert.match(db.batches[0][1].sql,/lease_request_id=\?/);
+ assert.equal(db.batches[0][1].values[3],"claimed");
+});
+
+test("claim recovers only an expired running lease using its exact prior version and expiry",async()=>{
+ const prior={...op,state:"running",lease_version:3,attempt_count:3,
+  lease_expires_at:"2026-11-18T11:59:00.000Z",lease_request_id:"old-transport"};
+ const db=fakeDb({prior:[prior]});
+ const result=await claimMeasurementAssessmentOperation(db,"tenant-1","access-subject-1",op.operation_id,
+  "transport-recovery","2026-11-18T12:00:00.000Z","2026-11-18T12:02:00.000Z");
+ assert.equal(result.status,200);
+ assert.equal(result.data.lease_version,4);
+ assert.equal(result.data.attempt_count,4);
+ assert.equal(result.data.lease_request_id,"transport-recovery");
+ assert.match(db.batches[0][0].sql,/lease_version=\? AND lease_expires_at=\? AND lease_expires_at<=\?/);
+ assert.equal(db.batches[0][1].values[3],"lease_recovered");
+});
+
+test("claim refuses an unexpired running operation and terminal operation",async()=>{
+ for(const current of [
+  {...op,state:"running",lease_version:1,attempt_count:1,lease_expires_at:"2026-11-18T12:01:00.000Z",lease_request_id:"active"},
+  {...op,state:"completed",lease_version:1,attempt_count:1,lease_expires_at:null,lease_request_id:null}
+ ]){
+  const db=fakeDb({prior:[current]});
+  const result=await claimMeasurementAssessmentOperation(db,"tenant-1","access-subject-1",op.operation_id,
+   "transport-next","2026-11-18T12:00:00.000Z","2026-11-18T12:02:00.000Z");
+  assert.equal(result.status,409);
+  assert.equal(db.batches.length,0);
+ }
+});
+
+test("a losing concurrent claim update returns conflict and appends no event",async()=>{
+ const db=fakeDb({prior:[{...op,state:"reserved",lease_version:0,attempt_count:0,lease_expires_at:null}],
+  batchResults:[{meta:{changes:0}},{meta:{changes:0}}]});
+ const result=await claimMeasurementAssessmentOperation(db,"tenant-1","access-subject-1",op.operation_id,
+  "loser-transport","2026-11-18T12:00:00.000Z","2026-11-18T12:02:00.000Z");
+ assert.equal(result.status,409);
+ assert.equal(db.batches.length,1);
+});
+
+test("claim rejects invalid or excessive lease windows before storage writes",async()=>{
+ const db=fakeDb({prior:[{...op,state:"reserved",lease_version:0,attempt_count:0,lease_expires_at:null}]});
+ for(const expiry of ["2026-11-18T11:59:00.000Z","2026-11-18T12:06:00.000Z","not-a-time"]){
+  const result=await claimMeasurementAssessmentOperation(db,"tenant-1","access-subject-1",op.operation_id,
+   "transport-claim","2026-11-18T12:00:00.000Z",expiry);
+  assert.equal(result.status,400);
+ }
+ assert.equal(db.batches.length,0);
 });
 
 test("operation read hides another actor's operation",async()=>{
