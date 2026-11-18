@@ -77,11 +77,10 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         self.db.execute(
             """UPDATE measurement_assessment_operations
                SET state='completed', assessment_id=?, completed_at='2026-11-18T12:00:00Z',
-                   lease_expires_at=NULL, lease_request_id=NULL, updated_at='2026-11-18T12:00:00Z'
+                   lease_expires_at=NULL, lease_request_id=NULL, terminal_request_id='request-completed', updated_at='2026-11-18T12:00:00Z'
                WHERE operation_id=?""",
             ("assessment-" + operation_id, operation_id),
         )
-        self.event(operation_id, actor, observation, "running", "completed", "completed")
 
     def test_reservation_and_append_only_initial_event(self):
         self.reserve()
@@ -305,6 +304,91 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                 ("a" * 64,),
             )
 
+
+    def test_terminal_transition_appends_its_event_atomically(self):
+        self.reserve()
+        self.complete()
+        events = self.db.execute(
+            "SELECT from_state, to_state, event_type, request_id FROM measurement_assessment_operation_events WHERE operation_id='op-a' ORDER BY rowid"
+        ).fetchall()
+        self.assertEqual(events, [
+            (None, "reserved", "reserved", "request-reserved"),
+            ("reserved", "running", "claimed", "request-claimed"),
+            ("running", "completed", "completed", "request-completed"),
+        ])
+
+    def test_terminal_transition_without_request_id_or_exact_assessment_is_rejected(self):
+        self.reserve()
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1,
+                   lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed'
+               WHERE operation_id='op-a'"""
+        )
+        self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "terminalization requires exact linked assessment"):
+            self.db.execute(
+                """UPDATE measurement_assessment_operations
+                   SET state='completed', assessment_id=NULL, completed_at='2026-11-18T12:00:00Z',
+                       lease_expires_at=NULL, lease_request_id=NULL, updated_at='2026-11-18T12:00:00Z'
+                   WHERE operation_id='op-a'"""
+            )
+
+    def test_terminal_event_trigger_failure_rolls_back_operation_update(self):
+        self.reserve()
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1,
+                   lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed'
+               WHERE operation_id='op-a'"""
+        )
+        self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
+        self.db.execute(
+            """INSERT INTO measurement_quality_assessments
+               (id, tenant_id, site_id, observation_id, status, request_id)
+               VALUES ('assessment-op-a', 'tenant-a', 'site-a', 'obs-a', 'passed', 'op-a')"""
+        )
+        self.db.execute("""
+          CREATE TRIGGER reject_terminal_event
+          BEFORE INSERT ON measurement_assessment_operation_events
+          WHEN NEW.event_type='completed'
+          BEGIN SELECT RAISE(ABORT,'forced terminal audit failure'); END
+        """)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "forced terminal audit failure"):
+            self.db.execute(
+                """UPDATE measurement_assessment_operations
+                   SET state='completed', assessment_id='assessment-op-a',
+                       completed_at='2026-11-18T12:00:00Z', lease_expires_at=NULL,
+                       lease_request_id=NULL, terminal_request_id='request-completed',
+                       updated_at='2026-11-18T12:00:00Z'
+                   WHERE operation_id='op-a'"""
+            )
+        state = self.db.execute(
+            "SELECT state, assessment_id FROM measurement_assessment_operations WHERE operation_id='op-a'"
+        ).fetchone()
+        self.assertEqual(state, ("running", None))
+        self.assertEqual(self.db.execute(
+            "SELECT COUNT(*) FROM measurement_assessment_operation_events WHERE operation_id='op-a'"
+        ).fetchone()[0], 2)
+
+    def test_not_assessed_can_terminalize_from_reserved_with_atomic_event(self):
+        self.reserve()
+        self.db.execute(
+            """INSERT INTO measurement_quality_assessments
+               (id, tenant_id, site_id, observation_id, status, request_id)
+               VALUES ('assessment-not-assessed', 'tenant-a', 'site-a', 'obs-a', 'not_assessed', 'op-a')"""
+        )
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='not_assessed', assessment_id='assessment-not-assessed',
+                   completed_at='2026-11-18T12:00:00Z',
+                   terminal_request_id='request-not-assessed', updated_at='2026-11-18T12:00:00Z'
+               WHERE operation_id='op-a'"""
+        )
+        event = self.db.execute(
+            "SELECT from_state,to_state,event_type,request_id FROM measurement_assessment_operation_events WHERE operation_id='op-a' ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        self.assertEqual(event, ("reserved", "not_assessed", "not_assessed", "request-not-assessed"))
 
 if __name__ == "__main__":
     unittest.main()
