@@ -3,7 +3,7 @@ import sqlite3
 import unittest
 
 
-MIGRATION = Path(__file__).resolve().parents[1] / "migrations" / "0036_measurement_assessment_operations.sql"
+MIGRATIONS = [Path(__file__).resolve().parents[1] / "migrations" / name for name in ("0036_measurement_assessment_operations.sql", "0037_measurement_assessment_operation_lease_fencing.sql")]"
 
 
 class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
@@ -33,7 +33,8 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
           INSERT INTO observations VALUES ('obs-a', 'tenant-a', 'site-a');
           INSERT INTO observations VALUES ('obs-b', 'tenant-a', 'site-a');
         """)
-        self.db.executescript(MIGRATION.read_text(encoding="utf-8"))
+        for migration in MIGRATIONS:
+            self.db.executescript(migration.read_text(encoding="utf-8"))
 
     def tearDown(self):
         self.db.close()
@@ -62,7 +63,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
     def complete(self, operation_id="op-a", actor="actor-a", observation="obs-a"):
         self.db.execute(
             """UPDATE measurement_assessment_operations
-               SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z'
+               SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed'
                WHERE operation_id=?""",
             (operation_id,),
         )
@@ -76,7 +77,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         self.db.execute(
             """UPDATE measurement_assessment_operations
                SET state='completed', assessment_id=?, completed_at='2026-11-18T12:00:00Z',
-                   lease_expires_at=NULL, updated_at='2026-11-18T12:00:00Z'
+                   lease_expires_at=NULL, lease_request_id=NULL, updated_at='2026-11-18T12:00:00Z'
                WHERE operation_id=?""",
             ("assessment-" + operation_id, operation_id),
         )
@@ -145,7 +146,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         )
         self.db.execute(
             """UPDATE measurement_assessment_operations
-               SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z'
+               SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed'
                WHERE operation_id='op-a'"""
         )
         self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
@@ -176,7 +177,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
     def test_operation_event_must_match_current_state_and_actor(self):
         self.reserve()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "event does not match"):
-            self.event("op-a", "actor-b", "obs-a", "reserved", "running", "claimed")
+            self.event("op-a", "actor-b", "obs-a", "reserved", "not_assessed", "not_assessed")
 
 
     def test_running_operation_requires_bounded_lease_and_terminal_clears_it(self):
@@ -216,7 +217,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         self.db.execute(
             """UPDATE measurement_assessment_operations
                SET state='running', lease_version=1, attempt_count=1,
-                   lease_expires_at='2026-11-18T12:01:00Z'
+                   lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed'
                WHERE operation_id='op-no-event'"""
         )
         with self.assertRaisesRegex(sqlite3.IntegrityError, "event does not match"):
@@ -225,7 +226,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                    (event_id, operation_id, tenant_id, site_id, observation_id,
                     actor_subject, from_state, to_state, event_type, request_id)
                    VALUES ('bad-event', 'op-no-event', 'tenant-a', 'site-a', 'obs-a',
-                           'actor-a', NULL, 'running', 'claimed', 'req-bad')"""
+                           'actor-a', NULL, 'running', 'claimed', 'request-claimed')"""
             )
 
     def test_operation_digest_must_be_lowercase_sha256_hex(self):
@@ -235,6 +236,73 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                    (operation_id, tenant_id, site_id, observation_id, actor_subject,
                     request_digest, state)
                    VALUES ('bad-digest', 'tenant-a', 'site-a', 'obs-a', 'actor-a', 'NOT-A-DIGEST', 'reserved')"""
+            )
+
+    def test_lease_events_are_fenced_to_the_winning_transport_request(self):
+        self.reserve()
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1,
+                   lease_expires_at='2026-11-18T12:01:00Z',
+                   lease_request_id='winner-request'
+               WHERE operation_id='op-a'"""
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "lease event does not match the current fence"):
+            self.db.execute(
+                """INSERT INTO measurement_assessment_operation_events
+                   (event_id, operation_id, tenant_id, site_id, observation_id,
+                    actor_subject, from_state, to_state, event_type, request_id)
+                   VALUES ('loser-event', 'op-a', 'tenant-a', 'site-a', 'obs-a',
+                           'actor-a', 'reserved', 'running', 'claimed', 'loser-request')"""
+            )
+        self.db.execute(
+            """INSERT INTO measurement_assessment_operation_events
+               (event_id, operation_id, tenant_id, site_id, observation_id,
+                actor_subject, from_state, to_state, event_type, request_id)
+               VALUES ('winner-event', 'op-a', 'tenant-a', 'site-a', 'obs-a',
+                       'actor-a', 'reserved', 'running', 'claimed', 'winner-request')"""
+        )
+
+    def test_lease_fence_changes_only_with_one_version_increment(self):
+        self.reserve()
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1,
+                   lease_expires_at='2026-11-18T12:01:00Z',
+                   lease_request_id='request-claimed'
+               WHERE operation_id='op-a'"""
+        )
+        self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "lease fencing is invalid"):
+            self.db.execute(
+                """UPDATE measurement_assessment_operations
+                   SET lease_request_id='request-without-version-change'
+                   WHERE operation_id='op-a'"""
+            )
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET lease_version=2, attempt_count=2,
+                   lease_expires_at='2026-11-18T12:02:00Z',
+                   lease_request_id='request-lease_renewed'
+               WHERE operation_id='op-a'"""
+        )
+        self.db.execute(
+            """INSERT INTO measurement_assessment_operation_events
+               (event_id, operation_id, tenant_id, site_id, observation_id,
+                actor_subject, from_state, to_state, event_type, request_id)
+               VALUES ('renew-event', 'op-a', 'tenant-a', 'site-a', 'obs-a',
+                       'actor-a', 'running', 'running', 'lease_renewed', 'request-lease_renewed')"""
+        )
+
+    def test_running_operation_cannot_be_inserted_without_reservation(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "must be reserved before it is claimed"):
+            self.db.execute(
+                """INSERT INTO measurement_assessment_operations
+                   (operation_id, tenant_id, site_id, observation_id, actor_subject,
+                    request_digest, state, lease_version, lease_expires_at, lease_request_id)
+                   VALUES ('op-direct', 'tenant-a', 'site-a', 'obs-a', 'actor-a', ?, 'running',
+                           1, '2026-11-18T12:01:00Z', 'direct-request')""",
+                ("a" * 64,),
             )
 
 
