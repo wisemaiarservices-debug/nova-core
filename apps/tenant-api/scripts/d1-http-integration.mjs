@@ -922,6 +922,26 @@ try {
   assert.equal(membershipReactivated.response.status, 200, JSON.stringify(membershipReactivated.body));
   assert.equal(membershipReactivated.body.data.status, "active");
 
+  // Tenant suspension after an operation is leased must deny the final write.
+  const tenantSuspendedDuringOperation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/lifecycle-actions", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "suspend", reason: "CI suspend tenant after assessment operation claim" }));
+  assert.equal(tenantSuspendedDuringOperation.response.status, 200, JSON.stringify(tenantSuspendedDuringOperation.body));
+  assert.equal(tenantSuspendedDuringOperation.body.data.status, "suspended");
+  const tenantDeniedCompletion = await operationRequest(membershipOperationRoute + "/complete", "ci-invited-human", "POST", {
+    expected_lease_version: membershipClaim.body.data.lease_version,
+    expected_lease_request_id: membershipClaim.body.data.lease_request_id,
+  });
+  assert.equal(tenantDeniedCompletion.response.status, 404, JSON.stringify(tenantDeniedCompletion.body));
+  const tenantReactivatedDuringOperation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/lifecycle-actions", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ action: "reactivate", reason: "CI restore tenant after assessment authorization test" }));
+  assert.equal(tenantReactivatedDuringOperation.response.status, 200, JSON.stringify(tenantReactivatedDuringOperation.body));
+  assert.equal(tenantReactivatedDuringOperation.body.data.status, "active");
+
+
   const grantRevocation = await siteGrant("ci-human-subject", {
     action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
     grant_action: "read", reason: "CI revoke assessment operation access",
