@@ -11,6 +11,7 @@ CREATE TABLE tenant_site_lifecycle_events (
   new_status TEXT NOT NULL CHECK(new_status IN ('active','inactive')),
   reason TEXT NOT NULL CHECK(length(trim(reason)) BETWEEN 1 AND 2000),
   idempotency_key TEXT NOT NULL CHECK(length(trim(idempotency_key)) BETWEEN 1 AND 160),
+  request_digest TEXT NOT NULL CHECK(length(request_digest)=64 AND request_digest NOT GLOB '*[^a-f0-9]*'),
   request_id TEXT NOT NULL UNIQUE CHECK(length(trim(request_id)) BETWEEN 1 AND 160),
   occurred_at TEXT NOT NULL,
   UNIQUE(tenant_id, actor_subject, site_id, idempotency_key),
