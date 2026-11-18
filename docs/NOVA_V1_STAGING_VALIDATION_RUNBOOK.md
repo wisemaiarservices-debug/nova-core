@@ -496,7 +496,7 @@ Core PR #238 separates the one-time internal transport replay nonce from the dur
 ### Repository validation
 
 - Core PR #238 exact head: `1b5266660fd675d6b873d9ebc5d37444c9a2ea58`; [CI run 44203727812](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44203727812) passed all three jobs, including gateway/private Worker and disposable D1 integration.
-- NOVA OS PR #13 exact head: `f6bc39e246390fc78e0c49a5b52d673e6583b455`; [CI run 44204929877](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44204929877) passed tenant resource validation tests, TypeScript and production build.
+- NOVA OS PR #13 exact head: `45a70194a98ffdb39821f14b573ef98a93d3e994`; [CI run 44207888914](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44207888914) passed tenant resource validation tests, TypeScript and production build.
 - OS browser code holds the stable operation key in component memory for same-target retries and clears it after validated success or when tenant/observation changes. A full page reload loses this in-memory retry key; this implementation does not claim reload-surviving recovery.
 
 ### Staging evidence required
@@ -509,3 +509,6 @@ Core PR #238 separates the one-time internal transport replay nonce from the dur
 - Exercise browser cancellation, timeout and retry; confirm the same operation key is reused until a validated success or the user changes tenant/observation.
 
 **Stop condition:** PR #238 and OS PR #13 remain draft/unmerged. Their CI validates repository code, not deployed staging configuration or live lost-response behavior. Require coordinated staging E2E and independent security review before enabling the workflow in production. No staging/production changes, secrets or deployments are authorized by this runbook.
+
+
+Latest OS PR #13 documentation-inclusive head `45a70194a98ffdb39821f14b573ef98a93d3e994` passed [NOVA OS CI run 44207888914](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44207888914): tenant resource validation, TypeScript and production build. This supersedes the earlier OS head/run recorded above. The browser retry key remains in component memory only; page-reload recovery is not implemented. This remains repository CI evidence, not live staging validation.
