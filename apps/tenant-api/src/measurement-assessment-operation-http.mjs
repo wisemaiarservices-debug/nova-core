@@ -7,7 +7,7 @@ import {
 } from "./measurement-assessment-operations.mjs";
 import { completeMeasurementAssessmentOperation } from "./measurement-assessment-completion.mjs";
 
-const ROOT = /^\\/internal\\/v1\\/tenants\\/([^/]+)\\/(?:observations\\/([^/]+)\\/measurement-assessment-operations|measurement-assessment-operations\\/([^/]+)(?:\\/(claim|renew|complete))?)$/;
+const ROOT = /^\/internal\/v1\/tenants\/([^/]+)\/(?:observations\/([^/]+)\/measurement-assessment-operations|measurement-assessment-operations\/([^/]+)(?:\/(claim|renew|complete))?)$/;
 
 const validId = value => typeof value === "string" && value.length > 0 &&
   value.length <= 160 && value.trim() === value &&
