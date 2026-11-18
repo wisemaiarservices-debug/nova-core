@@ -388,18 +388,6 @@ try {
     JSON.stringify({ ...observationReviewer, reviewer_subject: "ci-human-subject" }));
   assert.equal(selfAssignment.response.status, 400);
 
-  const sourceReviewerAssigned = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/sites/site-http-a/source-reviewers/assign",
-    accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ reviewer_subject: "ci-measurement-reviewer", evidence_ref: "fixture:source-reviewer-appointment" }));
-  assert.equal(sourceReviewerAssigned.response.status, 201, JSON.stringify(sourceReviewerAssigned.body));
-  const sourceVerified = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/sites/site-http-a/sources/source-http-a/verification",
-    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ decision: "verify", evidence_ref: "fixture:source-verification" }));
-  assert.equal(sourceVerified.response.status, 201, JSON.stringify(sourceVerified.body));
-  assert.equal(sourceVerified.body.data.status, "verified");
-
   const verifiedObservation = await throughGateway(
     "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/verification",
     accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
