@@ -907,6 +907,8 @@ try {
   assert.equal(revokedGrantClaim.response.status, 404);
   // Reuse this invited actor's already-reserved operation after restoring
   // exact site access, then suspend membership after claim and before write.
+  const invitedMembershipId = invitationAccepted.body.data.membership_id;
+  assert.match(invitedMembershipId, /^[0-9a-f-]{36}$/i);
   const membershipGrantRestored = await siteGrant("ci-human-subject", {
     action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
     grant_action: "read", reason: "CI restore site grant for membership suspension test",
