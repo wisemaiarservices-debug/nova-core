@@ -597,3 +597,11 @@ Core PR [#258](https://github.com/wisemaiarservices-debug/nova-core/pull/258) ad
 Exact-head CI [44329522954](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44329522954) passed all three jobs for `78743db97a7787582eedfae77147ffb63b2f496e`, including ordered migrations and full gateway/private Worker HTTP integration.
 
 This validates local membership rechecks at the completion endpoint. Staging must repeat suspension and permanent revocation while an operation is reserved and while a lease is active; confirm no assessment or terminal event is written after authorization denial. PR #258 remains draft/unmerged.
+
+## 29. Tenant suspension at assessment completion boundary (Core PR #259)
+
+Core PR [#259](https://github.com/wisemaiarservices-debug/nova-core/pull/259) adds a local gateway → private Worker → disposable D1 scenario using an invited member's already-claimed assessment operation. The current tenant owner suspends the tenant after lease claim; the member's completion request is denied even though the lease was previously valid. The current owner then reactivates the tenant so subsequent grant-revocation scenarios can run.
+
+Exact-head CI [44334952958](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44334952958) passed all three jobs for `e79d14a060608a0277e42593a75a317668220b1f`, including ordered disposable D1 migrations and full gateway/private Worker HTTP integration.
+
+Staging must repeat tenant suspension and archival at both reservation and active-lease boundaries. Confirm denied completion creates neither an assessment nor a terminal operation event, and confirm the tenant lifecycle event remains auditable. Reactivation must not silently resume or extend an expired lease.
