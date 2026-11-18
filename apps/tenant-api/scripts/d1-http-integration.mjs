@@ -761,6 +761,12 @@ try {
       method === "POST" ? { "content-type": "application/json" } : {},
       method, method === "POST" ? JSON.stringify(payload) : undefined);
   }
+  const legacyAssessment = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/measurement-quality-assessment",
+    accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(legacyAssessment.response.status, 410, JSON.stringify(legacyAssessment.body));
+  assert.equal(legacyAssessment.body.error, "assessment_operation_required");
+
   const reservedOperation = await operationRequest(operationPath);
   assert.equal(reservedOperation.response.status, 201, JSON.stringify(reservedOperation.body));
   const operationId = reservedOperation.body.data.operation_id;
