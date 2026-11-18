@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHash, createHmac, createPrivateKey, randomUUID, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -23,6 +23,15 @@ function accessToken(subject = "ci-human-subject") {
   const input = head + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
 }
+function expireLocalOperationLease(operationId) {
+  const sql = "UPDATE measurement_assessment_operations SET lease_expires_at='2000-01-01T00:00:00.000Z' WHERE operation_id='" +
+    operationId.replace(/'/g, "''") + "' AND state='running'";
+  const result = spawnSync("npx", ["--yes", "wrangler@4.13.2", "d1", "execute",
+    "nova-core-tenant-api-contract-test", "--local", "--persist-to", "./.wrangler-d1-test",
+    "--command", sql, "--config", "wrangler.d1-test.toml"], { encoding: "utf8" });
+  if (result.status !== 0) throw new Error("Could not expire local CI lease: " + (result.stderr || result.stdout));
+}
+
 async function throughGateway(path, token = accessToken(), extraHeaders = {}, method = "GET", body = undefined) {
   const response = await fetch(base + path, {
     method, headers: { "Cf-Access-Jwt-Assertion": token, ...extraHeaders },
@@ -1004,6 +1013,33 @@ try {
     JSON.stringify(calibrationDeniedAssessment.body));
   assert.equal(calibrationDeniedAssessment.body.data.status, "not_assessed");
   assert.equal(calibrationDeniedAssessment.body.data.reason_code, "verified_calibration_missing_or_expired");
+
+  // Expired leases are recoverable, but the previous worker's fence must
+  // become unusable as soon as a new claim advances the lease version/token.
+  const expiryRoute = "/api/v1/tenants/tenant-http-a/observations/obs-http-verified/measurement-assessment-operations";
+  const expiryReservation = await operationRequest(expiryRoute);
+  assert.equal(expiryReservation.response.status, 201, JSON.stringify(expiryReservation.body));
+  const expiryOperationId = expiryReservation.body.data.operation_id;
+  const expiryOperationPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + expiryOperationId;
+  const firstLease = await operationRequest(expiryOperationPath + "/claim");
+  assert.equal(firstLease.response.status, 200, JSON.stringify(firstLease.body));
+  expireLocalOperationLease(expiryOperationId);
+  const recoveredLease = await operationRequest(expiryOperationPath + "/claim");
+  assert.equal(recoveredLease.response.status, 200, JSON.stringify(recoveredLease.body));
+  assert.equal(recoveredLease.body.data.lease_version, firstLease.body.data.lease_version + 1);
+  assert.notEqual(recoveredLease.body.data.lease_request_id, firstLease.body.data.lease_request_id);
+  const staleWorkerCompletion = await operationRequest(expiryOperationPath + "/complete", "ci-human-subject", "POST", {
+    expected_lease_version: firstLease.body.data.lease_version,
+    expected_lease_request_id: firstLease.body.data.lease_request_id,
+  });
+  assert.equal(staleWorkerCompletion.response.status, 409, JSON.stringify(staleWorkerCompletion.body));
+  const recoveredCompletion = await operationRequest(expiryOperationPath + "/complete", "ci-human-subject", "POST", {
+    expected_lease_version: recoveredLease.body.data.lease_version,
+    expected_lease_request_id: recoveredLease.body.data.lease_request_id,
+  });
+  assert.equal([200, 201].includes(recoveredCompletion.response.status), true,
+    JSON.stringify(recoveredCompletion.body));
+  assert.equal(recoveredCompletion.body.data.status, "not_assessed");
 
   // Source lifecycle revocation after claim must produce a durable
   // not_assessed result, even though the observation and lease were valid.
