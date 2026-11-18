@@ -567,3 +567,15 @@ Production release remains separately gated. This packet does not authorize prod
 - [ ] Record named independent reviewer and written decision. CI success or implementation-author review is not independent sign-off.
 
 **Decision:** PENDING INDEPENDENT REVIEW. This checklist does not authorize staging, production deployment, migrations, tenant/site provisioning or customer-data operations.
+
+## 31. NOVA OS assessment-operation recovery integration gate
+
+- [ ] Review NOVA OS PR #64, current handoff head `ec720716426d9092d6387f8a984e9c1402bdef05`, against Core PR #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c`.
+- [ ] Confirm exact-head CI for OS #64 after the state-machine tests and final fix; the earlier code head `dfc8039e948661fe567b8eea4123b01341d305a3` passed run 44398946075 but does not validate later commits.
+- [ ] Verify reload recovery by repeating the same server-side reservation; verify lost reserve/claim/complete responses and explicit successor replay.
+- [ ] Verify that no operation ID, bearer token or credential is stored in browser storage.
+- [ ] Verify site-deactivation recovery returns the original operation and allows only the governed inactive-site `not_assessed` outcome.
+- [ ] Keep site lifecycle action recovery separate; its page-reload idempotency remains unresolved.
+- [ ] Obtain independent reviewer sign-off for Core/OS cross-repository behavior.
+
+**Decision remains PENDING.** This checklist is not staging or production authorization.
