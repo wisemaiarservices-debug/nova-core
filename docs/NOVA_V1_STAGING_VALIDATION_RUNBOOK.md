@@ -540,3 +540,27 @@ Core PR [#239](https://github.com/wisemaiarservices-debug/nova-core/pull/239) in
 - Add migration `0035` after the previously ordered Core migrations in the staging rehearsal. Do not apply it to production or any live database from this runbook.
 
 This is repository CI evidence only. It does not prove a deployed Worker/D1 race, authorize ingestion activation, or change the no-production-release boundary.
+
+## 23. Assessment-operation HTTP V1 and reload-safe result recovery (Core PRs #251–#253; NOVA OS PR #62)
+
+### Candidate implementation and exact CI evidence
+
+- Core PR #251 adds the actor-scoped private HTTP handler and public gateway routes for reserve/recover, read, claim, renew and complete. Lease expiry is calculated from the same server timestamp used by the five-minute lease validator. Exact-head CI run 44319855156 passed all three jobs for code head `f77732ff910628d9cb6bbbbd1604489ab389bb98`.
+- Core PR #252 adds a local Wrangler multi-Worker HTTP integration through the public Access gateway, private Worker Service Binding and disposable D1. It exercises reserve/recover, actor isolation, claim, renew, completion, terminal replay and explicit successor creation. The CI observation is deliberately unverified and must produce `not_assessed`; this is not evidence of a scientific pass. Exact-head CI run 44320168686 passed all three jobs for head `ad23f8e61eb41dc4a120e1f1bc7550ec3e27e705`.
+- Core PR #253 extends actor-scoped operation reads to return the exact immutable assessment for completed/not_assessed operations. The result lookup binds tenant, site, observation, operation ID and verified Access actor; a missing or mismatched result fails closed. Exact-head CI run 44320629236 passed all three jobs for head `be5c98380c43ef9943e65b9290ce245ee8ccf238`.
+- NOVA OS PR #62 replaces component-memory idempotency with the Core operation ledger. A reload repeats the same reserve intent and reads the stored terminal result; reassessment requires an explicit predecessor. It stores no operation ID or credential in localStorage/sessionStorage. Exact-head OS CI run 44322386574 passed tenant resource validation tests, TypeScript and production build for head `c6e1c63cb71119c2ac8ca3deaee527a1f3d70ccc`.
+
+### Release interpretation
+
+These are draft PRs and CI evidence only. They do not prove a deployed Worker, staging migration, live Access session, configured HMAC/JWK, real customer tenant, or production readiness. Core's legacy measurement-quality assessment route remains present; this candidate has not yet forced all new assessment writes through the operation ledger.
+
+### Additional staging gates
+
+1. Merge only after independent review of Core #251–#253 and NOVA OS #62, including authorization, route allowlists, request replay and migration ordering.
+2. Apply the ordered migrations to a disposable staging D1 and verify the operation tables/triggers and exact assessment-to-operation binding.
+3. Deploy the matching private Worker and gateway routes with approved Service Bindings, Access audience/issuer, HMAC key ring, NOVA OS pinned public JWK/key ID, CORS allowlist and OS gateway origin. Do not put secrets in repository files or browser bundles.
+4. Run live staging tests for reserve retry after lost response, page reload and second-device recovery, active/expired lease recovery, terminal result read, explicit successor replay, actor isolation, membership/site-grant revocation, source/mapping/calibration/policy revocation, and concurrent reserve/claim/renew/complete races.
+5. Prove no legacy route bypass can create a new assessment outside the ledger before enabling the OS workflow. Preserve historical assessment reads; do not rewrite historical results.
+6. Capture exact migration versions, Worker deployment IDs, configuration fingerprints (never secret values), test request IDs, outcomes and reviewer sign-off in the release packet.
+
+No staging or production action is authorized by these PRs. Do not provision tenants, enable ingestion, write customer data, or enable production UI routes based solely on CI success.
