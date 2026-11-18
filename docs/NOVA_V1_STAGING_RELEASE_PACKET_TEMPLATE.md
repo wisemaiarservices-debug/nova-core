@@ -404,7 +404,8 @@ PR #239 and all constituent changes remain draft/unmerged. CI is not deployed st
 - [ ] HMAC secret and key ring, Access issuer/audience, pinned OS public JWK/key ID and exact CORS origins verified without exposing secret values.
 - [ ] Live staging reload/second-device/lost-response tests completed.
 - [ ] Live staging actor, membership/grant revocation and source/mapping/calibration/policy revocation races completed.
-- [ ] True concurrent D1 route races validated; current local integration covers sequential HTTP flows and the separate service/database tests, not all live concurrency cases.
+- [x] Local concurrent D1 route races validated in Core PR #255 / CI 44324522544: one claim winner, one lease-renew winner, and one immutable terminal assessment/event under concurrent completion.
+- [ ] Repeat concurrent operation and revocation races against the actual staging D1/Worker deployment; local CI does not replace staging validation.
 - [ ] Merge Core PR #254 with dependencies #251–#253 and NOVA OS #62 after review; verify the retired direct assessment POST returns `410 assessment_operation_required` in staging and no new assessment row is written through that route.
 - [ ] Independent security review and operator sign-off recorded.
 
