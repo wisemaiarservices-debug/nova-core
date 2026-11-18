@@ -59,6 +59,14 @@ INSERT INTO tenant_source_events
 VALUES
 ('source-http-a-registered','tenant-http-a','site-http-a','source-http-a',
  'ci-human-subject','registered','fixture:source-registration',NULL,'ci-source-registration');
+INSERT INTO observations
+(id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
+ idempotency_key, verification_status, provenance_json, quality_flags_json)
+VALUES
+('obs-http-source-revocation', 'site-http-a', 'tenant-http-a', 'source-http-a', 'neoagro',
+ 'ec', 1.5, 'dS/m', '2026-05-10T10:00:00Z', 'ci-source-revocation-observation',
+ 'verified', '{"provider":"CI fixture provider","acquisition_method":"manual"}', '[]');
+
 
 INSERT INTO observations
 (id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
