@@ -108,7 +108,7 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
     } else if (action === "claim") {
       if (!onlyKeys(body, [])) return error("invalid_request_body", 400);
       const configuredLeaseMs = env.CI_TEST_CONFIGURATION_WRITES === "true" &&
-        /^\\d+$/.test(env.CI_TEST_ASSESSMENT_LEASE_MS ?? "")
+        /^\d+$/.test(env.CI_TEST_ASSESSMENT_LEASE_MS ?? "")
         ? Number(env.CI_TEST_ASSESSMENT_LEASE_MS) : 300000;
       const leaseMs = Number.isSafeInteger(configuredLeaseMs) && configuredLeaseMs >= 100 &&
         configuredLeaseMs <= 300000 ? configuredLeaseMs : 300000;
