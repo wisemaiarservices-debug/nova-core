@@ -2,7 +2,7 @@ import { evaluateMeasurementQuality } from "./measurement-quality.mjs";
 
 const validText=(value,max)=>typeof value==="string"&&value.length>0&&value.length<=max&&
  value.trim()===value&&!Array.from(value).some(character=>character.charCodeAt(0)<32||character.charCodeAt(0)===127);
-const validId=value=>validText(value,160)&&/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+const validId=value=>validText(value,160)&&/^[A-Za-z0-9][A-Za-z0-9._:\\-]*$/.test(value);
 const validTime=value=>{if(typeof value!=="string")return false;try{return Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;}catch{return false;}};
 async function rows(statement){
  const result=await statement.all();
