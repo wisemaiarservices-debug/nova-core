@@ -921,6 +921,17 @@ try {
   assert.equal(membershipReactivated.response.status, 200, JSON.stringify(membershipReactivated.body));
   assert.equal(membershipReactivated.body.data.status, "active");
 
+  const grantRevocation = await siteGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI revoke assessment operation access",
+  });
+  assert.equal(grantRevocation.response.status, 200, JSON.stringify(grantRevocation.body));
+  const revokedGrantRead = await operationRequest(revokedGrantPath, "ci-invited-human", "GET");
+  assert.equal(revokedGrantRead.response.status, 404);
+  const revokedGrantClaim = await operationRequest(revokedGrantPath + "/claim", "ci-invited-human");
+  assert.equal(revokedGrantClaim.response.status, 404);
+
+
 
   // Revoke site authorization after a lease is acquired but before completion.
   // The completion boundary must re-check authorization and must not insert
