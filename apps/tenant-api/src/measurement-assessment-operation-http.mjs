@@ -62,7 +62,7 @@ function publicOperation(data) {
 
 async function authorizeSite(db, tenant, subject, siteId) {
   const authorized = await readRows(db.prepare(
-    "SELECT site.id FROM sites site JOIN tenants tenant_row ON tenant_row.id=site.tenant_id AND tenant_row.status='active' JOIN tenant_memberships membership ON membership.tenant_id=site.tenant_id AND membership.subject=? AND membership.status='active' JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=site.tenant_id AND grant_read.subject=membership.subject AND grant_read.resource_type='site' AND grant_read.resource_id=site.id AND grant_read.action='read' WHERE site.tenant_id=? AND site.id=? AND site.status='active' LIMIT 2"
+    "SELECT site.id FROM sites site JOIN tenants tenant_row ON tenant_row.id=site.tenant_id AND tenant_row.status='active' JOIN tenant_memberships membership ON membership.tenant_id=site.tenant_id AND membership.subject=? AND membership.status='active' JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=site.tenant_id AND grant_read.subject=membership.subject AND grant_read.resource_type='site' AND grant_read.resource_id=site.id AND grant_read.action='read' WHERE site.tenant_id=? AND site.id=? AND site.status IN ('active','inactive') LIMIT 2"
   ).bind(subject, tenant, siteId));
   return authorized.length === 1 && authorized[0].id === siteId;
 }
