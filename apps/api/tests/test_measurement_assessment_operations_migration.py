@@ -204,6 +204,30 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(sqlite3.IntegrityError, "event does not match"):
             self.event("op-a", "actor-a", "obs-a", None, "reserved", "claimed")
 
+
+    def test_claim_event_cannot_omit_required_prior_state(self):
+        self.db.execute(
+            """INSERT INTO measurement_assessment_operations
+               (operation_id, tenant_id, site_id, observation_id, actor_subject,
+                request_digest, state)
+               VALUES ('op-no-event', 'tenant-a', 'site-a', 'obs-a', 'actor-a', ?, 'reserved')""",
+            ("a" * 64,),
+        )
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1,
+                   lease_expires_at='2026-11-18T12:01:00Z'
+               WHERE operation_id='op-no-event'"""
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "event does not match"):
+            self.db.execute(
+                """INSERT INTO measurement_assessment_operation_events
+                   (event_id, operation_id, tenant_id, site_id, observation_id,
+                    actor_subject, from_state, to_state, event_type, request_id)
+                   VALUES ('bad-event', 'op-no-event', 'tenant-a', 'site-a', 'obs-a',
+                           'actor-a', NULL, 'running', 'claimed', 'req-bad')"""
+            )
+
     def test_operation_digest_must_be_lowercase_sha256_hex(self):
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(
