@@ -519,3 +519,35 @@ Local CI is not staging approval; PR #260 remains draft/unmerged.
 - [ ] Capture migration version, Worker deployment IDs, request IDs, audit evidence and operator sign-off before any production change.
 
 All local CI evidence is pre-staging validation only. Core PR #266 and NOVA OS PR #63 remain draft/unmerged; no staging or production migration/deployment has been performed.
+
+
+## 29. Site lifecycle migration and rollback approval record
+
+### Migration evidence
+
+- [ ] Confirm the staging migration ledger is contiguous through 0039 before applying 0040 and 0041.
+- [ ] Record the exact schema migration ledger and non-secret schema fingerprint before and after migration.
+- [ ] Confirm 0040 creates the lifecycle event/application ledgers and all authorization, transition, application and append-only triggers.
+- [ ] Confirm 0041 replaces the assessment-operation binding guard and preserves the fixed inactive-site not_assessed outcome.
+- [ ] Record disposable-clone rehearsal evidence and the approved database backup/snapshot reference.
+- [ ] Record the exact Core private Worker and gateway deployment IDs, Service Binding configuration fingerprint, Access issuer/audience identifiers, HMAC key version identifiers and CORS origin set. Never record secret values.
+- [ ] Record NOVA OS deployment ID and the exact gateway origin only after the Core routes are verified.
+
+### Rollout approval
+
+- [ ] Independent security reviewer approved the Core migration, authorization triggers, exact route allowlists, HMAC envelope and browser contract.
+- [ ] Staging operator explicitly approved migration and deployment.
+- [ ] Authenticated read-only site detail and event-history checks passed before mutation controls are enabled.
+- [ ] Both site-deactivation/assessment-completion race orders passed in staging.
+- [ ] Owner/admin, non-admin, inactive membership, revoked site grant, cross-tenant and idempotent replay cases passed.
+- [ ] Reactivation was verified not to restore child assets, sources, grants, calibrations, mappings or policies.
+- [ ] NOVA OS mutation controls were enabled only after the matching Core runtime passed the above gates.
+
+### Rollback decision record
+
+- [ ] Confirm whether any lifecycle event has been written. If none, an application rollback may leave migrations 0040/0041 in place under the approved procedure.
+- [ ] If any lifecycle event exists, do not roll back to code that lacks lifecycle history/actions or inactive-site assessment completion. Preserve the matching Core runtime and audit records; use a reviewed forward fix.
+- [ ] Do not drop lifecycle tables/triggers, delete or rewrite lifecycle events/applications, reverse 0041, or change site status with direct SQL.
+- [ ] Any database restore requires explicit database-owner approval and a documented data-loss assessment; it is a disaster-recovery action, not routine rollback.
+
+Production release remains separately gated. This packet does not authorize production migration, deployment, tenant/site provisioning or customer-data operations.
