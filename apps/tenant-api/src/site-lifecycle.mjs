@@ -13,7 +13,7 @@ async function digest(value){
  return Array.from(new Uint8Array(bytes),byte=>byte.toString(16).padStart(2,"0")).join("");
 }
 const EVENT_SELECT=`SELECT id,tenant_id,site_id,actor_subject,event_type,previous_status,
- new_status,reason,idempotency_key,request_id,occurred_at
+ new_status,reason,idempotency_key,request_digest,request_id,occurred_at
  FROM tenant_site_lifecycle_events WHERE tenant_id=? AND site_id=? AND actor_subject=? AND idempotency_key=? LIMIT 2`;
 
 export function matchTenantSiteLifecycleRoute(url,method){
