@@ -924,7 +924,7 @@ try {
 
   // Tenant suspension after an operation is leased must deny the final write.
   const tenantSuspendedDuringOperation = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/lifecycle-actions", accessToken("ci-human-subject"),
+    "/api/v1/tenants/tenant-http-a/lifecycle-actions", accessToken("ci-measurement-reviewer"),
     { "content-type": "application/json" }, "POST",
     JSON.stringify({ action: "suspend", reason: "CI suspend tenant after assessment operation claim" }));
   assert.equal(tenantSuspendedDuringOperation.response.status, 200, JSON.stringify(tenantSuspendedDuringOperation.body));
