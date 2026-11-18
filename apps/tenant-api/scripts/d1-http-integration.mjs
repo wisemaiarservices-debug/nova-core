@@ -842,6 +842,56 @@ try {
   assert.equal(successor.response.status, 201, JSON.stringify(successor.body));
   assert.notEqual(successor.body.data.operation_id, operationId);
   assert.equal(successor.body.data.predecessor_operation_id, operationId);
+  // Exercise actual simultaneous route requests against the same disposable
+  // D1 operation. Exactly one claim and one lease renewal may win.
+  const successorId = successor.body.data.operation_id;
+  const successorRoute = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + successorId;
+  const claimRace = await Promise.all([
+    operationRequest(successorRoute + "/claim"),
+    operationRequest(successorRoute + "/claim"),
+  ]);
+  assert.deepEqual(claimRace.map(item => item.response.status).sort((a, b) => a - b), [200, 409]);
+  const claimWinner = claimRace.find(item => item.response.status === 200);
+  assert.ok(claimWinner);
+  assert.equal(claimWinner.body.data.state, "running");
+  assert.equal(claimWinner.body.data.lease_version, 1);
+
+  const renewPayload = {
+    expected_lease_version: claimWinner.body.data.lease_version,
+    expected_lease_request_id: claimWinner.body.data.lease_request_id,
+    expected_lease_expires_at: claimWinner.body.data.lease_expires_at,
+  };
+  const renewRace = await Promise.all([
+    operationRequest(successorRoute + "/renew", "ci-human-subject", "POST", renewPayload),
+    operationRequest(successorRoute + "/renew", "ci-human-subject", "POST", renewPayload),
+  ]);
+  assert.deepEqual(renewRace.map(item => item.response.status).sort((a, b) => a - b), [200, 409]);
+  const renewWinner = renewRace.find(item => item.response.status === 200);
+  assert.ok(renewWinner);
+  assert.equal(renewWinner.body.data.lease_version, 2);
+
+  // Concurrent completion is idempotent: both callers receive the same
+  // immutable assessment, while the D1 trigger appends one terminal event.
+  const completePayload = {
+    expected_lease_version: renewWinner.body.data.lease_version,
+    expected_lease_request_id: renewWinner.body.data.lease_request_id,
+  };
+  const completionRace = await Promise.all([
+    operationRequest(successorRoute + "/complete", "ci-human-subject", "POST", completePayload),
+    operationRequest(successorRoute + "/complete", "ci-human-subject", "POST", completePayload),
+  ]);
+  assert.equal(completionRace.every(item => [200, 201].includes(item.response.status)), true,
+    JSON.stringify(completionRace.map(item => item.body)));
+  assert.equal(completionRace[0].body.data.id, completionRace[1].body.data.id);
+  assert.equal(completionRace[0].body.data.status, "not_assessed");
+
+  const racedTerminal = await operationRequest(successorRoute, "ci-human-subject", "GET");
+  assert.equal(racedTerminal.response.status, 200, JSON.stringify(racedTerminal.body));
+  assert.equal(racedTerminal.body.data.state, "not_assessed");
+  assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "claimed").length, 1);
+  assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "lease_renewed").length, 1);
+  assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "not_assessed").length, 1);
+
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
