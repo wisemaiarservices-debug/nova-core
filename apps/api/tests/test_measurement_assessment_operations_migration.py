@@ -88,7 +88,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
             "SELECT state, actor_subject, request_digest FROM measurement_assessment_operations WHERE operation_id='op-a'"
         ).fetchone()
         self.assertEqual(row, ("reserved", "actor-a", "a" * 64))
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "events are immutable"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "events cannot be deleted"):
             self.db.execute("DELETE FROM measurement_assessment_operation_events")
 
     def test_only_one_unresolved_operation_per_actor_observation(self):
