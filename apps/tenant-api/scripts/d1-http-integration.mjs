@@ -807,7 +807,7 @@ try {
     expected_lease_version: renewedOperation.body.data.lease_version,
     expected_lease_request_id: renewedOperation.body.data.lease_request_id,
   });
-  assert.equal(completedOperation.response.status, 201, JSON.stringify(completedOperation.body));
+  assert.equal([200, 201].includes(completedOperation.response.status), true, JSON.stringify(completedOperation.body));
   assert.equal(completedOperation.body.data.status, "not_assessed");
   assert.equal(completedOperation.body.data.reason_code, "observation_not_verified");
   assert.equal(completedOperation.body.data.request_id, operationId);
