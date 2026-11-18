@@ -24,7 +24,7 @@ const observation="observation-completion-sqlite";
 const now="2026-11-18T12:00:00.000Z";
 const leaseExpiry="2026-11-18T12:05:00.000Z";
 
-function d1Adapter(sqlite){
+function d1Adapter(sqlite,{beforeRun=null}={}){
  let batchTail=Promise.resolve();
  return {
   prepare(sql){
@@ -32,7 +32,7 @@ function d1Adapter(sqlite){
     bind(...args){
      return {
       async all(){return {results:sqlite.prepare(sql).all(...args)};},
-      async run(){const result=sqlite.prepare(sql).run(...args);return {meta:{changes:Number(result.changes)}};}
+      async run(){if(beforeRun)await beforeRun(sql,args);const result=sqlite.prepare(sql).run(...args);return {meta:{changes:Number(result.changes)}};}
      };
     }
    };
@@ -54,7 +54,7 @@ function d1Adapter(sqlite){
  };
 }
 
-function fixture(t){
+function fixture(t,{beforeRun=null}={}){
  const sqlite=new DatabaseSync(":memory:");
  t.after(()=>sqlite.close());
  sqlite.exec("PRAGMA foreign_keys=ON");
@@ -125,7 +125,7 @@ function fixture(t){
  sqlite.prepare("INSERT INTO measurement_quality_policies VALUES ('policy-1',?,?,?,?,'temperature','degC',0,40,'policy-v1','2026-01-01T00:00:00.000Z',NULL)")
   .run(tenant,site,"asset-1","sensor-1");
  sqlite.prepare("INSERT INTO measurement_quality_policy_events VALUES ('policy-event-1',?,'policy-1','verified','2026-01-01T00:00:00.000Z')").run(tenant);
- return {sqlite,db:d1Adapter(sqlite)};
+ return {sqlite,db:d1Adapter(sqlite,{beforeRun})};
 }
 
 async function createRunningOperation(db){
@@ -189,4 +189,63 @@ test("lost-response retry returns the original actor-scoped result without anoth
  assert.equal(second.status,200);
  assert.equal(second.data.id,first.data.id);
  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM measurement_quality_assessments WHERE request_id=?").get(operationId).count,1);
+});
+
+
+test("concurrent claim attempts produce one lease winner and one claim event",async t=>{
+ const {sqlite,db}=fixture(t);
+ const reserved=await reserveMeasurementAssessmentOperation(db,tenant,site,observation,actor,
+  "b".repeat(64),"reserve-concurrent");
+ assert.equal(reserved.status,201);
+ const claims=await Promise.all([
+  claimMeasurementAssessmentOperation(db,tenant,actor,reserved.data.operation_id,
+   "claim-winner-a",now,leaseExpiry),
+  claimMeasurementAssessmentOperation(db,tenant,actor,reserved.data.operation_id,
+   "claim-winner-b",now,leaseExpiry)
+ ]);
+ assert.deepEqual(claims.map(result=>result.status).sort(),[200,409]);
+ assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM measurement_assessment_operation_events WHERE operation_id=? AND event_type='claimed'").get(reserved.data.operation_id).count,1);
+});
+
+test("governance revoked after evaluation but before INSERT is downgraded to not_assessed",async t=>{
+ let revoked=false;
+ const {sqlite,db}=fixture(t,{beforeRun:async sql=>{
+  if(!revoked&&sql.includes("WITH operation_context AS")){
+   revoked=true;
+   sqlite.prepare("UPDATE sources SET verification_status='disabled' WHERE id='source-1'").run();
+  }
+ }});
+ const operationId=await createRunningOperation(db);
+ const result=await completeMeasurementAssessmentOperation(db,completionInput(operationId));
+ assert.equal(result.status,201);
+ assert.equal(result.data.status,"not_assessed");
+ assert.equal(result.data.reason_code,"governance_state_changed_before_assessment");
+ assert.equal(sqlite.prepare("SELECT state FROM measurement_assessment_operations WHERE operation_id=?").get(operationId).state,"not_assessed");
+});
+
+test("membership revoked after evaluation prevents assessment persistence",async t=>{
+ let revoked=false;
+ const {sqlite,db}=fixture(t,{beforeRun:async sql=>{
+  if(!revoked&&sql.includes("WITH operation_context AS")){
+   revoked=true;
+   sqlite.prepare("UPDATE tenant_memberships SET status='suspended' WHERE tenant_id=? AND subject=?").run(tenant,actor);
+  }
+ }});
+ const operationId=await createRunningOperation(db);
+ const result=await completeMeasurementAssessmentOperation(db,completionInput(operationId));
+ assert.equal(result.status,409);
+ assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM measurement_quality_assessments WHERE request_id=?").get(operationId).count,0);
+ assert.equal(sqlite.prepare("SELECT state FROM measurement_assessment_operations WHERE operation_id=?").get(operationId).state,"running");
+});
+
+test("concurrent completion requests persist exactly one assessment and one terminal event",async t=>{
+ const {sqlite,db}=fixture(t);
+ const operationId=await createRunningOperation(db);
+ const results=await Promise.all([
+  completeMeasurementAssessmentOperation(db,completionInput(operationId)),
+  completeMeasurementAssessmentOperation(db,completionInput(operationId))
+ ]);
+ assert.deepEqual(results.map(result=>result.status).sort(),[200,201]);
+ assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM measurement_quality_assessments WHERE request_id=?").get(operationId).count,1);
+ assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM measurement_assessment_operation_events WHERE operation_id=? AND event_type='completed'").get(operationId).count,1);
 });
