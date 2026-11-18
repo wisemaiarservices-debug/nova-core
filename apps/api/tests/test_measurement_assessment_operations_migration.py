@@ -115,7 +115,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
     def test_state_transition_and_event_ledger(self):
         self.reserve()
         self.db.execute(
-            "UPDATE measurement_assessment_operations SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z' WHERE operation_id='op-a'"
+            "UPDATE measurement_assessment_operations SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed' WHERE operation_id='op-a'"
         )
         self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "transition is invalid"):
@@ -189,7 +189,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
         self.db.execute(
             """UPDATE measurement_assessment_operations
                SET state='running', lease_version=1, attempt_count=1,
-                   lease_expires_at='2026-11-18T12:01:00Z'
+                   lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed'
                WHERE operation_id='op-a'"""
         )
         self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
@@ -203,7 +203,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
     def test_event_type_must_match_transition(self):
         self.reserve()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "event does not match"):
-            self.event("op-a", "actor-a", "obs-a", None, "reserved", "claimed")
+            self.event("op-a", "actor-a", "obs-a", "reserved", "completed", "completed")
 
 
     def test_claim_event_cannot_omit_required_prior_state(self):
