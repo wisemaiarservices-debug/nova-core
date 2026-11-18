@@ -9,7 +9,7 @@ CREATE UNIQUE INDEX idx_tenant_site_lifecycle_event_command
  WHERE command_id IS NOT NULL;
 
 CREATE TABLE tenant_site_lifecycle_commands (
-  id TEXT PRIMARY KEY CHECK(length(trim(id)) BETWEEN 1 AND 160),
+  id TEXT PRIMARY KEY CHECK(length(trim(id)) BETWEEN 1 AND 151),
   tenant_id TEXT NOT NULL,
   site_id TEXT NOT NULL,
   actor_subject TEXT NOT NULL CHECK(length(trim(actor_subject)) BETWEEN 1 AND 200),
@@ -32,7 +32,6 @@ CREATE TABLE tenant_site_lifecycle_commands (
         (status='rejected' AND event_id IS NULL AND length(trim(rejection_code)) BETWEEN 1 AND 120))
 );
 
--- A site can have only one unresolved transition, regardless of actor.
 CREATE UNIQUE INDEX idx_tenant_site_lifecycle_one_pending_command
  ON tenant_site_lifecycle_commands(tenant_id,site_id)
  WHERE status='pending';
@@ -150,7 +149,7 @@ END;
 CREATE TRIGGER tenant_site_lifecycle_commands_no_delete
 BEFORE DELETE ON tenant_site_lifecycle_commands
 BEGIN
- SELECT RAISE(ABORT,'site lifecycle commands are retained for audit'); 
+ SELECT RAISE(ABORT,'site lifecycle commands are retained for audit');
 END;
 CREATE TRIGGER tenant_site_lifecycle_command_events_no_update
 BEFORE UPDATE ON tenant_site_lifecycle_command_events
