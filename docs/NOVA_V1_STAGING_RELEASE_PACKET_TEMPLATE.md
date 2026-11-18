@@ -471,3 +471,15 @@ Local CI is not staging approval; PR #258 remains draft/unmerged.
 - [ ] Verify lifecycle event history remains consistent and tenant-isolated.
 
 Local CI is not staging approval; PR #259 remains draft/unmerged.
+
+## 24. Source lifecycle revocation at assessment completion (Core PR #260)
+
+- [x] Source lifecycle result handling accepts a positive D1 changed-row count when the source-status trigger also runs.
+- [x] Unit regression test covers D1 reporting two changed rows for one lifecycle event plus trigger side effect.
+- [x] Local D1 HTTP test: reserve and claim an assessment operation, revoke the verified source through the independent reviewer route, then complete as `not_assessed` / `source_not_active_or_verified`.
+- [x] Exact-head CI [44347311546](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44347311546) passed all three jobs for `5dc2875a3d7b8e0bcd4cf5de5985a6134729fd7b`.
+- [ ] Repeat in staging for source revocation after reservation and after lease claim.
+- [ ] Verify no passed/failed assessment is written and source lifecycle history remains append-only.
+- [ ] Verify ingestion and subsequent assessment attempts fail closed after revocation.
+
+Local CI is not staging approval; PR #260 remains draft/unmerged.
