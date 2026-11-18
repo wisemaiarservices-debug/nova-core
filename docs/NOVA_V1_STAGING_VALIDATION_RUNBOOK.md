@@ -562,3 +562,14 @@ PR #254 remains draft/unmerged. Before activation:
 - [ ] Preserve historical assessment reads and audit history.
 
 This closes the code-level bypass in the candidate branch, not the live deployment gate. No production activation is authorized.
+
+## 25. Concurrent operation-route races against local D1 (Core PR #255)
+
+Core PR [#255](https://github.com/wisemaiarservices-debug/nova-core/pull/255) extends the actual gateway → private Worker → disposable D1 integration to issue simultaneous HTTP requests for:
+- Two claims against the same reserved operation: exactly one succeeds; the other receives a conflict.
+- Two renewals against the same lease fence: exactly one advances the lease version.
+- Two completions against the same lease: both callers recover the same immutable assessment, while the ledger records one terminal event.
+
+Exact-head CI [44324522544](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44324522544) passed all three jobs for code head `1f40fa0a16cff21f46f1cbe8712635279a48f0d9`. The observation fixture is deliberately unverified and completion is `not_assessed`.
+
+This is local D1 concurrency evidence, not a staging deployment. Live staging must still test membership/site-grant revocation, source/mapping/calibration/policy revocation, Access/HMAC/JWK configuration, Worker bindings and operational rollback. PR #255 remains draft/unmerged.
