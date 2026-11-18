@@ -803,3 +803,17 @@ OS PR #64 now includes the separately testable assessment operation state machin
 - Core PR #266 exact head remains `e157555927f85a30a04366c4317a32b00b0fa42c`, with 3/3 CI jobs passed in run 44398811437.
 
 Do not infer that a previous commit's success validates a later head. Independent review remains mandatory; no staging/production authorization.
+
+
+## 40. Consolidated OS candidate and superseded branch closure
+
+NOVA OS PR #64 is now the single browser integration candidate for Core assessment-operation recovery plus the site-lifecycle workspace. The earlier standalone OS PR #62 was closed without merge as superseded by #64; its operation API contract, strict response validators and command-transport pattern were incorporated into #64.
+
+- OS #64 exact head: `6215930188bfae21ad2a27fbcf057903a1733c6d`
+- Exact CI: [run 44400731962](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44400731962) passed 64 tests, TypeScript and production build.
+- Core #266 exact head: `e157555927f85a30a04366c4317a32b00b0fa42c`
+- Core exact CI: [run 44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437) passed API/security, tenant Worker/D1 integration and research raster.
+
+This is repository-level evidence, not live staging or independent certification. The Site Lifecycle page still has a separate component-memory idempotency key; operators must reload exact site status/history after an uncertain transition. Assessment reload recovery must not be conflated with site-lifecycle recovery.
+
+Independent review must verify the final Core/OS ancestry and exact SHAs, then exercise the actual browser against an isolated staging gateway before any staging release decision. No staging or production authorization is granted.
