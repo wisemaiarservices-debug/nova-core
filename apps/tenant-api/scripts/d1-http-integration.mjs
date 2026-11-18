@@ -1178,10 +1178,20 @@ try {
   assert.equal(immutableAssessmentAfterSiteChange.body.data.assessment.id, immutableAssessmentId);
   assert.equal(immutableAssessmentAfterSiteChange.body.data.assessment.reason_code, immutableAssessmentReason);
 
+  // The short CI-only lease expires naturally. An inactive site still allows
+  // the same actor to recover the stale worker fence, but completion can only
+  // persist the fixed not_assessed outcome.
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  const inactiveSiteRecoveredClaim = await operationRequest(inactiveSiteOperationPath + "/claim",
+    "ci-human-subject");
+  assert.equal(inactiveSiteRecoveredClaim.response.status, 200,
+    JSON.stringify(inactiveSiteRecoveredClaim.body));
+  assert.equal(inactiveSiteRecoveredClaim.body.data.lease_version,
+    inactiveSiteClaim.body.data.lease_version + 1);
   const inactiveSiteCompletion = await operationRequest(inactiveSiteOperationPath + "/complete",
     "ci-human-subject", "POST", {
-      expected_lease_version: inactiveSiteClaim.body.data.lease_version,
-      expected_lease_request_id: inactiveSiteClaim.body.data.lease_request_id,
+      expected_lease_version: inactiveSiteRecoveredClaim.body.data.lease_version,
+      expected_lease_request_id: inactiveSiteRecoveredClaim.body.data.lease_request_id,
     });
   assert.equal([200, 201].includes(inactiveSiteCompletion.response.status), true,
     JSON.stringify(inactiveSiteCompletion.body));
