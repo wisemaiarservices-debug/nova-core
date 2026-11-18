@@ -587,3 +587,13 @@ Production release remains separately gated. This packet does not authorize prod
 - [x] Prior code head `b76ef56906025b5c9d1c68a8fd66bde7fd680d47` passed run 44399619773.
 - [x] Core #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c` passed run 44398811437.
 - [ ] Independent reviewer validates browser/API interaction and second-device/reload scenarios.
+
+
+## 33. Consolidated OS candidate sign-off
+
+- [x] Superseded standalone OS PR #62 is closed without merge; its useful operation recovery work is incorporated into OS #64.
+- [x] OS #64 exact head `6215930188bfae21ad2a27fbcf057903a1733c6d` passed CI run 44400731962: 64 tests, TypeScript and production build.
+- [x] Core #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c` passed CI run 44398811437.
+- [ ] Independent reviewer verifies the complete Core #266 + OS #63/#64 stack.
+- [ ] Isolated staging browser test: lost reserve/claim/complete response, reload, second device, explicit successor, site deactivation and stale lease.
+- [ ] Confirm separate Site Lifecycle reload/manual-recovery behavior; do not treat assessment operation recovery as site-lifecycle recovery.
