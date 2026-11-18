@@ -898,6 +898,7 @@ try {
   const revokedGrantPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + revokedGrantOperationId;
   // Reuse this invited actor's already-reserved operation while the exact
   // site grant is active, then suspend membership after claim and before write.
+  // The same operation is subsequently checked for site-grant revocation.
   const invitedMembershipId = invitationAccepted.body.data.membership_id;
   assert.match(invitedMembershipId, /^[0-9a-f-]{36}$/i);
   const membershipOperationRoute = revokedGrantPath;
