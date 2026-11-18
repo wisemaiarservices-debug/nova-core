@@ -334,7 +334,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                    WHERE operation_id='op-a'"""
             )
 
-    def test_terminal_event_trigger_failure_rolls_back_operation_update(self):
+    def test_terminal_event_trigger_failure_rolls_back_operation_and_assessment_transaction(self):
         self.reserve()
         self.db.execute(
             """UPDATE measurement_assessment_operations
@@ -343,18 +343,20 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                WHERE operation_id='op-a'"""
         )
         self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
-        self.db.execute(
-            """INSERT INTO measurement_quality_assessments
-               (id, tenant_id, site_id, observation_id, status, request_id)
-               VALUES ('assessment-op-a', 'tenant-a', 'site-a', 'obs-a', 'passed', 'op-a')"""
-        )
         self.db.execute("""
           CREATE TRIGGER reject_terminal_event
           BEFORE INSERT ON measurement_assessment_operation_events
           WHEN NEW.event_type='completed'
           BEGIN SELECT RAISE(ABORT,'forced terminal audit failure'); END
         """)
+        self.db.commit()
+        self.db.execute("BEGIN")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "forced terminal audit failure"):
+            self.db.execute(
+                """INSERT INTO measurement_quality_assessments
+                   (id, tenant_id, site_id, observation_id, status, request_id)
+                   VALUES ('assessment-op-a', 'tenant-a', 'site-a', 'obs-a', 'passed', 'op-a')"""
+            )
             self.db.execute(
                 """UPDATE measurement_assessment_operations
                    SET state='completed', assessment_id='assessment-op-a',
@@ -363,10 +365,14 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
                        updated_at='2026-11-18T12:00:00Z'
                    WHERE operation_id='op-a'"""
             )
+        self.db.rollback()
         state = self.db.execute(
             "SELECT state, assessment_id FROM measurement_assessment_operations WHERE operation_id='op-a'"
         ).fetchone()
         self.assertEqual(state, ("running", None))
+        self.assertEqual(self.db.execute(
+            "SELECT COUNT(*) FROM measurement_quality_assessments WHERE request_id='op-a'"
+        ).fetchone()[0], 0)
         self.assertEqual(self.db.execute(
             "SELECT COUNT(*) FROM measurement_assessment_operation_events WHERE operation_id='op-a'"
         ).fetchone()[0], 2)
