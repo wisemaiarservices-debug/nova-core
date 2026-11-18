@@ -34,7 +34,7 @@ CREATE TABLE measurement_assessment_operations (
   REFERENCES measurement_assessment_operations(operation_id, tenant_id, site_id, observation_id) ON DELETE RESTRICT,
  CHECK(
    (state IN ('completed','not_assessed') AND assessment_id IS NOT NULL AND completed_at IS NOT NULL)
-   OR (state IN ('reserved','running','failed') AND completed_at IS NULL)
+   OR (state IN ('reserved','running','failed') AND assessment_id IS NULL AND completed_at IS NULL)
  )
 );
 
@@ -104,6 +104,7 @@ WHEN NOT (
       OR NEW.lease_expires_at IS NOT OLD.lease_expires_at
       OR NEW.attempt_count<>OLD.attempt_count
       OR NEW.assessment_id IS NOT OLD.assessment_id
+      OR NEW.completed_at IS NOT OLD.completed_at
     ))
 BEGIN
  SELECT RAISE(ABORT,'assessment operation transition is invalid');
@@ -140,10 +141,11 @@ WHEN NOT EXISTS (
    SELECT 1 FROM measurement_assessment_operation_events prior
    WHERE prior.operation_id=NEW.operation_id
  ))
- OR (NEW.from_state IS NOT NULL AND NOT EXISTS (
-   SELECT 1 FROM measurement_assessment_operation_events prior
-   WHERE prior.operation_id=NEW.operation_id AND prior.to_state=NEW.from_state
- ))
+ OR (NEW.from_state IS NOT NULL AND (
+   SELECT prior.to_state FROM measurement_assessment_operation_events prior
+   WHERE prior.operation_id=NEW.operation_id
+   ORDER BY prior.occurred_at DESC, prior.rowid DESC LIMIT 1
+ ) IS NOT NEW.from_state)
 BEGIN
  SELECT RAISE(ABORT,'assessment operation event does not match its guarded state');
 END;
