@@ -164,3 +164,20 @@ Implementation consequences:
 Audit boundary:
 - This pass inspected the Core migration set, tenant API source modules, tenant API route dispatcher, tenant gateway route dispatcher, and the current NOVA OS UI route/page inventory.
 - It is a static repository audit, not proof about deployed Workers, external automation, operator SQL access, or uninspected external consumers. Re-run the audit against the final integration branch before merge and staging.
+
+
+## Assessment-completion implementation gap discovered during pre-implementation review
+
+The current operation completion service does **not yet** satisfy the proposed inactive-site outcome:
+- `OPERATION_SQL` inner-joins `sites` with `site.status='active'`. Once a site is deactivated, completion cannot load the actor-scoped operation and returns not-found rather than a durable outcome.
+- `INSERT_SQL`'s operation context also requires an active site, so it cannot create a `not_assessed` row after deactivation.
+- Migration 0039's assessment insert guard requires the site to remain active for every operation-bound assessment, including `not_assessed`.
+
+This is a release-blocking design/implementation gap, not a tested behavior. The site lifecycle implementation must update the operation lookup and final insert contract so that:
+- active site remains mandatory for passed/failed results;
+- inactive site may produce only `not_assessed` with a fixed reason such as `site_inactive_at_completion`;
+- tenant, membership, exact site grant, observation/site identity, running operation and current lease fence remain mandatory;
+- archived or missing sites do not become assessable, and must not be treated as ordinary deactivation;
+- assessment insert, operation terminalization and terminal audit remain atomic under the existing trigger chain.
+
+Add a real D1 HTTP test for active operation → site deactivation → completion, plus the opposite race order. The database guard, not only the evaluator, must enforce the status/reason pairing.
