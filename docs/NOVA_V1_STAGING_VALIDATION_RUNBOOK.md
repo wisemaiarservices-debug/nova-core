@@ -772,3 +772,23 @@ The independent reviewer should:
 ### Release boundary
 
 All referenced PRs remain draft/open/unmerged at the time of this handoff. The exact-head CI runs establish automated repository checks only. No independent security approval, live staging handshake, staging credentials/configuration, pilot site/data approval, production secret verification, production migration or deployment is established. Staging and production remain unauthorized.
+
+## 38. NOVA OS durable assessment recovery integration (2026-11-18)
+
+NOVA OS PR #64 ([link](https://github.com/wisemaiarservices-debug/NovaOS/pull/64)) now connects Measurement Evidence to Core's server-backed assessment operation API. It is stacked on OS #63 and currently remains draft/unmerged.
+
+Current OS branch head at handoff update: `ec720716426d9092d6387f8a984e9c1402bdef05`. It contains:
+- deterministic reserve/recover for the exact actor/tenant/observation/predecessor tuple;
+- server lease claim and completion with lease-version/request-ID fencing;
+- post-completion durable read;
+- explicit successor operation from the displayed predecessor;
+- no browser storage for credentials or operation IDs;
+- a separately testable client-side operation state machine and tests for reservation/claim/complete, reload replay, expired-lease recovery, stale completion conflict and authorization denial.
+
+Core #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c` passed [CI run 44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437), including an HTTP test that repeats the same reservation after site deactivation and receives the original operation ID. New operation creation remains restricted to active sites.
+
+OS code head `dfc8039e948661fe567b8eea4123b01341d305a3` passed [CI run 44398946075](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44398946075). The later OS workflow state-machine test addition and final narrowing fix are on head `ec720716426d9092d6387f8a984e9c1402bdef05`; exact-head CI for that newer head is pending and must be checked before accepting the browser integration.
+
+The Site Lifecycle workspace remains separate: its action idempotency key is component-memory-only, and reload-safe recovery for uncertain deactivate/reactivate requests is not yet implemented. Assessment recovery must not be used to imply site-lifecycle recovery.
+
+Release gate: independent reviewer must validate OS #64 against Core #266, including browser workflow tests, exact gateway paths, Access identity binding, reload and second-device behavior, successor retries, stale lease fencing and site-deactivation recovery. No staging or production action is authorized.
