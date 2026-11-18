@@ -370,3 +370,16 @@ Latest OS PR #13 documentation-inclusive head `45a70194a98ffdb39821f14b573ef98a9
 - [ ] Record independent security approval and explicit staging release authorization.
 
 **Release gate:** PR #239 remains draft/unmerged. Passing repository CI is not live staging evidence and does not authorize migration, deployment, customer onboarding or production activation.
+
+
+## 16. Governed ingestion and assessment candidate — Core PR #239
+
+- [ ] Record Core PR #239 exact reviewed/deployed SHA. Latest fetched candidate head: `9596844d540e30d97d563e726630b0a637046f17` (re-fetch before staging).
+- [ ] Verify exact-head Core CI [run 44293947333](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44293947333): API/security, ordered disposable D1 migration/query/fixture plus gateway/private Worker integration, and research raster tests.
+- [ ] Include migration `0035_observation_ingestion_requires_verified_source.sql` after its prerequisites; verify the trigger rejects unverified/disabled/mismatched sources and inactive tenant/site state.
+- [ ] Exercise a real two-session source-revocation race between ingestion lookup and observation insert against staging D1; confirm no observation is written when revocation wins.
+- [ ] Validate assessment source lifecycle, atomic mapping/calibration/policy transitions, final assessment evidence gates, and same-key idempotent replay using actual concurrent D1 requests.
+- [ ] Through the deployed Access gateway, test a committed assessment with a lost response: retry with the same operation `Idempotency-Key` and a fresh transport nonce; confirm one immutable assessment and the original result.
+- [ ] Record OS PR #13 exact SHA and verify browser retry behavior; note that a full page reload loses the component-memory operation key and is not reload-safe.
+
+PR #239 and all constituent changes remain draft/unmerged. CI is not deployed staging evidence, and this packet authorizes no migration, secret configuration, ingestion activation, tenant provisioning, deployment or production operation.
