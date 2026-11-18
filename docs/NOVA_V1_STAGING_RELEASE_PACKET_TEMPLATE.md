@@ -338,24 +338,18 @@ Draft PR [#237](https://github.com/wisemaiarservices-debug/nova-core/pull/237) c
 PR #237 remains draft/unmerged. No deployment or migration is authorized.
 
 
-## 14. HTTP assessment operation idempotency and transport replay
+## 14. Legacy Idempotency-Key assessment transport model (superseded)
 
-Core PR #238 exact head `1b5266660fd675d6b873d9ebc5d37444c9a2ea58` passed [CI run 44203727812](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44203727812), all three jobs including gateway/private Worker and disposable D1 integration. It separates the single-use `x-nova-request-id` transport nonce from the stable assessment operation `Idempotency-Key`. The gateway validates and forwards the operation key as `x-nova-idempotency-key` and includes it in the internal HMAC envelope. Every retry must use a fresh transport nonce and the same operation key.
+Core PR #238 and NOVA OS PR #13 introduced an interim browser-held `Idempotency-Key` model. It is superseded for the current browser workflow by the server-owned operation ledger in Core PRs #251–#253 and NOVA OS PR #62.
 
-NOVA OS PR #13 exact head `45a70194a98ffdb39821f14b573ef98a93d3e994` passed [CI run 44207888914](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44207888914), including tenant resource validation, TypeScript and production build. The browser keeps the operation key in component memory for retries of the same tenant/observation until validated success or target change. A full page reload loses the in-memory retry key; reload-surviving recovery is not implemented.
+Current behavior:
+- A fresh `x-nova-request-id` transport nonce is generated for each gateway/private Worker attempt.
+- The browser repeats the same exact reserve intent; Core derives the durable operation identity from verified Access actor and tenant/site/observation scope.
+- The browser claims a bounded lease and completes the operation. Assessment insert and operation terminalization are atomic.
+- After lost response or page reload, reserve recovers the same operation and actor-scoped read returns the original terminal assessment.
+- Reassessment requires an explicit successor operation naming the previous terminal operation.
 
-- [ ] Review Core PR #238 and NOVA OS PR #13 together.
-- [ ] Confirm gateway CORS preflight allows `Idempotency-Key` only for exact configured origins.
-- [ ] Simulate a committed assessment with a lost gateway response; retry using the same operation key and a fresh transport nonce; confirm original result replay and one durable row.
-- [ ] Verify same-key/different-observation returns 409 without disclosing the other result.
-- [ ] Verify transport nonce reuse is rejected and each retry has a distinct nonce.
-- [ ] Exercise browser timeout/cancellation/retry and confirm key retention for same target.
-- [ ] Repeat with real staging Access, private Worker and D1 configuration.
-
-**Release gate:** both PRs remain draft/unmerged. Repository CI is not deployed staging evidence. Require coordinated lost-response E2E, independent security review, and staging verification before production activation. No production changes are authorized by this packet.
-
-
-Latest OS PR #13 documentation-inclusive head `45a70194a98ffdb39821f14b573ef98a93d3e994` passed [NOVA OS CI run 44207888914](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44207888914): tenant resource validation, TypeScript and production build. This supersedes the earlier OS head/run recorded above. The browser retry key remains in component memory only; page-reload recovery is not implemented. This remains repository CI evidence, not live staging validation.
+The older browser-memory key is not the current recovery mechanism. Refer to section 17 for current Core/OS PR heads, exact CI evidence and outstanding release gates. The legacy assessment route remains present and must not bypass the operation ledger at activation.
 
 
 ## 15. Consolidated governed ingestion and assessment HTTP candidate
