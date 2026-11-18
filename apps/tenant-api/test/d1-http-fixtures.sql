@@ -63,12 +63,12 @@ INSERT INTO tenant_source_reviewer_events
 VALUES ('source-http-a-reviewer-assigned','tenant-http-a','site-http-a','ci-measurement-reviewer',
  'ci-human-subject','assigned','fixture:source-reviewer-appointment','ci-source-reviewer-assigned');
 INSERT INTO tenant_source_events
-(id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
+(id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id,occurred_at)
 VALUES
 ('source-http-a-registered','tenant-http-a','site-http-a','source-http-a',
- 'ci-human-subject','registered','fixture:source-registration',NULL,'ci-source-registration'),
+ 'ci-human-subject','registered','fixture:source-registration',NULL,'ci-source-registration','2026-01-01T00:00:00.000Z'),
 ('source-http-a-verified','tenant-http-a','site-http-a','source-http-a',
- 'ci-measurement-reviewer','verified','fixture:source-verification',NULL,'ci-source-verified');
+ 'ci-measurement-reviewer','verified','fixture:source-verification',NULL,'ci-source-verified','2026-01-02T00:00:00.000Z');
 INSERT INTO observations
 (id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
  idempotency_key, verification_status, provenance_json, quality_flags_json)
