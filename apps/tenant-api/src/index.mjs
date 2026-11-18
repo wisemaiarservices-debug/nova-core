@@ -1628,10 +1628,15 @@ export default {
         if (qualityAssessment) {
           if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read") ||
               !onlyKeys(draftBody, [])) return error("not_found", 404);
+          // The signed request ID is a one-time transport nonce. Assessment
+          // retries use a distinct, signed operation key so each HTTP attempt
+          // can carry a fresh nonce while resolving to the same immutable result.
+          const operationIdempotencyKey = request.headers.get("x-nova-idempotency-key");
+          if (!validId(operationIdempotencyKey)) return error("idempotency_key_required", 400);
           const observed = await rows(env.DB.prepare("SELECT site_id FROM observations WHERE tenant_id=? AND id=? LIMIT 2")
             .bind(tenant, qualityAssessment[2]));
           if (observed.length !== 1 || !await hasSiteReadGrant(env.DB, tenant, subject, observed[0].site_id)) return error("not_found", 404);
-          const assessed = await assessMeasurementQuality(env.DB, tenant, qualityAssessment[2], requestId);
+          const assessed = await assessMeasurementQuality(env.DB, tenant, qualityAssessment[2], operationIdempotencyKey);
           return assessed.error ? json({ error: assessed.error }, assessed.status)
             : json({ data: assessed.data, request_id: requestId }, assessed.status);
         }

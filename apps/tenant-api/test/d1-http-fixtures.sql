@@ -52,7 +52,7 @@ INSERT INTO sources
 (id, site_id, tenant_id, module, provider, source_type, display_name, verification_status, metadata_json)
 VALUES
 ('source-http-a', 'site-http-a', 'tenant-http-a', 'neoagro', 'CI fixture provider',
- 'sensor', 'CI measurement source', 'unverified', '{}');
+ 'sensor', 'CI measurement source', 'verified', '{}');
 
 INSERT INTO observations
 (id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
