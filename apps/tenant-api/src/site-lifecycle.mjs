@@ -19,7 +19,7 @@ const EVENT_SELECT=`SELECT id,tenant_id,site_id,actor_subject,event_type,previou
 export function matchTenantSiteLifecycleRoute(url,method){
  const parsed=url instanceof URL?url:new URL(url);
  if(parsed.search||parsed.hash)return null;
- const match=parsed.pathname.match(/^\\/internal\\/v1\\/tenants\\/([^/]+)\\/sites\\/([^/]+)\\/lifecycle-(actions|events)$/);
+ const match=parsed.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/lifecycle-(actions|events)$/);
  if(!match)return null;
  const action=match[3]==="actions"?"change":"read";
  if(!validId(match[1])||!validId(match[2])||method!==(action==="change"?"POST":"GET"))return null;
