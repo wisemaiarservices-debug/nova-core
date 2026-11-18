@@ -1,5 +1,5 @@
 const validText=(v,n)=>typeof v==="string"&&v.length>0&&v.length<=n&&v.trim()===v&&!Array.from(v).some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127);
-const validId=v=>validText(v,160)&&/^[A-Za-z0-9][A-Za-z0-9._:\\-]*$/.test(v);
+const validId=v=>validText(v,160)&&/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(v);
 const validDigest=v=>typeof v==="string"&&/^[a-f0-9]{64}$/.test(v);
 const validPredecessor=v=>v===null||v===undefined||validId(v);
 
