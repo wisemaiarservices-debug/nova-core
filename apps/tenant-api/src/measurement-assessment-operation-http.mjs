@@ -101,7 +101,7 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
     result = await reserveMeasurementAssessmentOperation(env.DB, tenant,
       observed[0].site_id, observation, subject, requestDigest, requestId, predecessor);
   } else {
-    if (!await operationVisible(env.DB, tenant, subject, operation, action === "read" || action === "complete")) return error("not_found", 404);
+    if (!await operationVisible(env.DB, tenant, subject, operation, action === "read" || action === "complete" || action === "claim")) return error("not_found", 404);
     if (action === "read") {
       if (Object.keys(body).length) return error("invalid_request_body", 400);
       result = await readMeasurementAssessmentOperation(env.DB, tenant, subject, operation);
