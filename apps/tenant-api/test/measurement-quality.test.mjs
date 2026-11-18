@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { registerMeasurementQualityPolicy, reviewMeasurementQualityPolicy, assessMeasurementQuality } from "../src/measurement-quality.mjs";
+import { registerMeasurementQualityPolicy, reviewMeasurementQualityPolicy, assessMeasurementQuality, evaluateMeasurementQuality } from "../src/measurement-quality.mjs";
 globalThis.crypto ??= webcrypto;
 function dbFixture({observation={id:"obs-1",site_id:"site-1",source_id:"source-1",module:"neoagro",metric:"temperature",value:22,unit:"degC",observed_at:"2026-06-01T10:00:00Z",verification_status:"verified",provenance_json:"{}"},source={id:"source-1",site_id:"site-1",module:"neoagro",verification_status:"verified"},mapping=[{id:"map-1",asset_id:"asset-1",sensor_id:"sensor-1",parameter:"temperature",unit:"degC"}],calibration=[{id:"cal-1",calibrated_at:"2026-01-01T00:00:00Z",valid_until:"2026-12-01T00:00:00Z",uncertainty:null}],policy=[{id:"policy-1",minimum_value:0,maximum_value:40,version:"v1"}],policyHistory=[],eventWriteChanges=1,assessmentGateChanges=1,assessmentInsertChanges=1,priorAssessment=null,racedAssessment=null}={}){
  const calls=[];let assessmentLookups=0;
@@ -146,4 +146,34 @@ test("synthetic provenance is not promoted to field measurement quality",async()
  const db=dbFixture({observation:{id:"obs-1",site_id:"site-1",source_id:"source-1",module:"neoagro",metric:"temperature",value:22,unit:"degC",observed_at:"2026-06-01T10:00:00Z",verification_status:"verified",provenance_json:'{"provenance_class":"synthetic"}'}});
  const r=await assessMeasurementQuality(db,"tenant-1","obs-1","req-1");
  assert.equal(r.data.status,"not_assessed");assert.equal(r.data.reason_code,"non_field_evidence");
+});
+
+
+test("read-only evaluator returns the exact decision without inserting an assessment",async()=>{
+ const db=dbFixture();
+ const decision=await evaluateMeasurementQuality(db,"tenant-1","obs-1");
+ assert.equal(decision.status,"passed");
+ assert.equal(decision.reason,"within_approved_policy_bounds");
+ assert.equal(decision.observation.id,"obs-1");
+ assert.equal(decision.mapping.id,"map-1");
+ assert.equal(decision.calibration.id,"cal-1");
+ assert.equal(decision.policy.id,"policy-1");
+ assert.equal(db.calls.length,0);
+});
+
+test("read-only evaluator preserves not-assessed reasons and never writes",async()=>{
+ const db=dbFixture({source:{id:"source-1",site_id:"site-1",module:"neoagro",verification_status:"disabled"}});
+ const decision=await evaluateMeasurementQuality(db,"tenant-1","obs-1");
+ assert.equal(decision.status,"not_assessed");
+ assert.equal(decision.reason,"source_not_active_or_verified");
+ assert.equal(db.calls.length,0);
+});
+
+test("legacy assessment wrapper still persists the evaluator's decision exactly once",async()=>{
+ const db=dbFixture();
+ const result=await assessMeasurementQuality(db,"tenant-1","obs-1","req-after-refactor");
+ assert.equal(result.status,201);
+ assert.equal(result.data.status,"passed");
+ assert.equal(db.calls.length,1);
+ assert.match(db.calls[0].sql,/INSERT INTO measurement_quality_assessments/);
 });

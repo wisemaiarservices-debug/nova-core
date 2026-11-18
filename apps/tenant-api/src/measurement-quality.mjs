@@ -79,37 +79,48 @@ async function assessmentResult(db,tenant,observation,requestId,status,reason,ma
  return {data:{id,tenant_id:tenant,observation_id:observation.id,status,reason_code:reason,mapping_id:mapping?.id??null,calibration_id:calibration?.id??null,policy_id:policy?.id??null,method_version:"1.0.0"},status:201};
 }
 
-export async function assessMeasurementQuality(db,tenant,observationId,requestId){
- if(!validId(observationId)||!validText(requestId,80))return {error:"measurement_quality_assessment_request_invalid",status:400};
- const replay=await assessmentReplay(db,tenant,observationId,requestId);
- if(replay)return replay;
+export async function evaluateMeasurementQuality(db,tenant,observationId){
+ if(!validId(observationId))return {error:"measurement_quality_assessment_request_invalid",status:400};
+ const decision=(observation,status,reason,mapping=null,calibration=null,policy=null)=>
+  ({observation,status,reason,mapping,calibration,policy});
  const observation=await exactlyOne(db,"SELECT id,tenant_id,site_id,source_id,module,metric,value,unit,observed_at,verification_status,provenance_json FROM observations WHERE tenant_id=? AND id=? LIMIT 2",[tenant,observationId]);
  if(!observation)return {error:"observation_not_found",status:404};
- if(observation.verification_status!=="verified")return assessmentResult(db,tenant,observation,requestId,"not_assessed","observation_not_verified");
+ if(observation.verification_status!=="verified")return decision(observation,"not_assessed","observation_not_verified");
  if(!Number.isFinite(observation.value)||!validText(observation.source_id,160)||!validText(observation.metric,120)||!validText(observation.unit,48)||!validTime(observation.observed_at))
-  return assessmentResult(db,tenant,observation,requestId,"not_assessed","observation_measurement_fields_invalid");
+  return decision(observation,"not_assessed","observation_measurement_fields_invalid");
  let provenance={};
- try{provenance=JSON.parse(observation.provenance_json??"{}");}catch{return assessmentResult(db,tenant,observation,requestId,"not_assessed","observation_provenance_invalid");}
+ try{provenance=JSON.parse(observation.provenance_json??"{}");}catch{return decision(observation,"not_assessed","observation_provenance_invalid");}
  if(["synthetic","demo","modelled","modeled"].includes(provenance.provenance_class))
-  return assessmentResult(db,tenant,observation,requestId,"not_assessed","non_field_evidence");
+  return decision(observation,"not_assessed","non_field_evidence");
  const source=await exactlyOne(db,"SELECT s.id FROM sources s JOIN tenants t ON t.id=s.tenant_id AND t.status='active' JOIN sites st ON st.id=? AND st.tenant_id=s.tenant_id AND st.status='active' WHERE s.id=? AND s.tenant_id=? AND s.module=? AND s.verification_status='verified' AND (s.site_id IS NULL OR s.site_id=?) LIMIT 2",[observation.site_id,observation.source_id,tenant,observation.module,observation.site_id]);
- if(!source)return assessmentResult(db,tenant,observation,requestId,"not_assessed","source_not_active_or_verified");
+ if(!source)return decision(observation,"not_assessed","source_not_active_or_verified");
  const mapRows=await db.prepare("SELECT m.id,m.asset_id,m.sensor_id,m.parameter,m.unit FROM sensor_source_identity_mappings m JOIN sensor_source_mapping_events e ON e.mapping_id=m.id AND e.tenant_id=m.tenant_id WHERE m.tenant_id=? AND m.site_id=? AND m.source_id=? AND m.parameter=? AND m.unit=? AND m.effective_from<=? AND (m.effective_to IS NULL OR m.effective_to>?) AND e.id=(SELECT e2.id FROM sensor_source_mapping_events e2 WHERE e2.tenant_id=m.tenant_id AND e2.mapping_id=m.id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1) AND e.event_type='verified' ORDER BY m.effective_from DESC LIMIT 2")
  .bind(tenant,observation.site_id,observation.source_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at).all();
  if(!Array.isArray(mapRows?.results))throw new Error("measurement_quality_mapping_lookup_invalid");
- if(mapRows.results.length!==1)return assessmentResult(db,tenant,observation,requestId,"not_assessed",mapRows.results.length?"ambiguous_sensor_mapping":"verified_sensor_mapping_missing");
+ if(mapRows.results.length!==1)return decision(observation,"not_assessed",mapRows.results.length?"ambiguous_sensor_mapping":"verified_sensor_mapping_missing");
  const mapping=mapRows.results[0];
  const calRows=await db.prepare("SELECT c.id,c.calibrated_at,c.valid_until,c.uncertainty FROM sensor_calibrations c JOIN sensor_calibration_verification_events e ON e.calibration_id=c.id AND e.tenant_id=c.tenant_id WHERE c.tenant_id=? AND c.site_id=? AND c.asset_id=? AND c.sensor_id=? AND c.parameter=? AND c.unit=? AND c.calibrated_at<=? AND c.valid_until>=? AND e.id=(SELECT e2.id FROM sensor_calibration_verification_events e2 WHERE e2.tenant_id=c.tenant_id AND e2.calibration_id=c.id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1) AND e.event_type='verified' ORDER BY c.calibrated_at DESC LIMIT 2")
  .bind(tenant,observation.site_id,mapping.asset_id,mapping.sensor_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at).all();
  if(!Array.isArray(calRows?.results))throw new Error("measurement_quality_calibration_lookup_invalid");
- if(calRows.results.length!==1)return assessmentResult(db,tenant,observation,requestId,"not_assessed",calRows.results.length?"ambiguous_verified_calibration":"verified_calibration_missing_or_expired",mapping);
+ if(calRows.results.length!==1)return decision(observation,"not_assessed",calRows.results.length?"ambiguous_verified_calibration":"verified_calibration_missing_or_expired",mapping);
  const calibration=calRows.results[0];
  const policyRows=await db.prepare("SELECT p.id,p.minimum_value,p.maximum_value,p.version FROM measurement_quality_policies p JOIN measurement_quality_policy_events e ON e.policy_id=p.id AND e.tenant_id=p.tenant_id WHERE p.tenant_id=? AND p.site_id=? AND p.asset_id=? AND p.sensor_id=? AND p.parameter=? AND p.unit=? AND p.effective_from<=? AND (p.effective_to IS NULL OR p.effective_to>?) AND e.id=(SELECT e2.id FROM measurement_quality_policy_events e2 WHERE e2.tenant_id=p.tenant_id AND e2.policy_id=p.id ORDER BY e2.occurred_at DESC,e2.rowid DESC LIMIT 1) AND e.event_type='verified' ORDER BY p.effective_from DESC LIMIT 2")
  .bind(tenant,observation.site_id,mapping.asset_id,mapping.sensor_id,observation.metric,observation.unit,observation.observed_at,observation.observed_at).all();
  if(!Array.isArray(policyRows?.results))throw new Error("measurement_quality_policy_lookup_invalid");
- if(policyRows.results.length!==1)return assessmentResult(db,tenant,observation,requestId,"not_assessed",policyRows.results.length?"ambiguous_quality_policy":"approved_quality_policy_missing",mapping,calibration);
+ if(policyRows.results.length!==1)return decision(observation,"not_assessed",policyRows.results.length?"ambiguous_quality_policy":"approved_quality_policy_missing",mapping,calibration);
  const policy=policyRows.results[0];
  const inRange=(policy.minimum_value===null||observation.value>=policy.minimum_value)&&
   (policy.maximum_value===null||observation.value<=policy.maximum_value);
- return assessmentResult(db,tenant,observation,requestId,inRange?"passed":"failed",inRange?"within_approved_policy_bounds":"outside_approved_policy_bounds",mapping,calibration,policy);
+ return decision(observation,inRange?"passed":"failed",inRange?"within_approved_policy_bounds":"outside_approved_policy_bounds",mapping,calibration,policy);
+}
+
+export async function assessMeasurementQuality(db,tenant,observationId,requestId){
+ if(!validId(observationId)||!validText(requestId,80))
+  return {error:"measurement_quality_assessment_request_invalid",status:400};
+ const replay=await assessmentReplay(db,tenant,observationId,requestId);
+ if(replay)return replay;
+ const evaluated=await evaluateMeasurementQuality(db,tenant,observationId);
+ if(evaluated?.error)return evaluated;
+ return assessmentResult(db,tenant,evaluated.observation,requestId,evaluated.status,evaluated.reason,
+  evaluated.mapping,evaluated.calibration,evaluated.policy);
 }
