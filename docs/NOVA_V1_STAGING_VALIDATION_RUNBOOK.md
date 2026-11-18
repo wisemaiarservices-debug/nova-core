@@ -480,3 +480,32 @@ Draft integration PR #237 consolidates the source-governance and assessment chan
 The consolidated PR is a review surface, not a merge. Its included runtime controls and staging checklist are described in the integration note. All constituent PRs remain draft/unmerged. Independent review, true staging D1 concurrency/revocation tests, migration rehearsal, exact secret/key reconciliation and explicit release approval remain mandatory.
 
 **Stop condition:** Do not treat PR #237 as independently CI-validated at its docs-only head; cite the #236 runtime head and CI only for the unchanged runtime files. No staging/production changes.
+
+
+## 20. HTTP assessment operation idempotency and transport nonce separation
+
+### Contract
+
+Core PR #238 separates the one-time internal transport replay nonce from the durable assessment operation key:
+
+- `x-nova-request-id` is a fresh transport nonce for every gateway-to-private-Worker attempt. It is consumed by the private API's replay ledger before route dispatch.
+- Browser `Idempotency-Key` is stable for retries of the same assessment operation. The gateway validates it, forwards it as `x-nova-idempotency-key`, and includes it in the HMAC canonical envelope.
+- The assessment service binds the operation key to the exact tenant and observation. Same-key/same-observation replay returns the original immutable assessment; same-key/different-observation use conflicts.
+- A retry after a timeout or lost response must retain the same operation key while using a new transport request ID. Never reuse a consumed transport nonce.
+
+### Repository validation
+
+- Core PR #238 exact head: `1b5266660fd675d6b873d9ebc5d37444c9a2ea58`; [CI run 44203727812](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44203727812) passed all three jobs, including gateway/private Worker and disposable D1 integration.
+- NOVA OS PR #13 exact head: `f6bc39e246390fc78e0c49a5b52d673e6583b455`; [CI run 44204929877](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44204929877) passed tenant resource validation tests, TypeScript and production build.
+- OS browser code holds the stable operation key in component memory for same-target retries and clears it after validated success or when tenant/observation changes. A full page reload loses this in-memory retry key; this implementation does not claim reload-surviving recovery.
+
+### Staging evidence required
+
+- Submit an assessment through the real Access gateway and confirm the private API receives the stable operation key in its authenticated envelope.
+- Simulate a gateway/private Worker response loss after Core commits; retry with the same browser operation key and a fresh transport request ID; confirm the original assessment is returned and no second assessment row is created.
+- Repeat with same key/different observation; confirm 409 with no unrelated assessment disclosure.
+- Confirm every transport retry has a distinct request nonce and the nonce replay ledger rejects reuse of a consumed nonce.
+- Verify CORS preflight accepts the exact `Idempotency-Key` header only for configured origins.
+- Exercise browser cancellation, timeout and retry; confirm the same operation key is reused until a validated success or the user changes tenant/observation.
+
+**Stop condition:** PR #238 and OS PR #13 remain draft/unmerged. Their CI validates repository code, not deployed staging configuration or live lost-response behavior. Require coordinated staging E2E and independent security review before enabling the workflow in production. No staging/production changes, secrets or deployments are authorized by this runbook.
