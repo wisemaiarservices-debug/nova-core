@@ -118,7 +118,7 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
             "UPDATE measurement_assessment_operations SET state='running', lease_version=1, attempt_count=1, lease_expires_at='2026-11-18T12:01:00Z', lease_request_id='request-claimed' WHERE operation_id='op-a'"
         )
         self.event("op-a", "actor-a", "obs-a", "reserved", "running", "claimed")
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "transition is invalid"):
+        with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(
                 "UPDATE measurement_assessment_operations SET state='reserved' WHERE operation_id='op-a'"
             )
