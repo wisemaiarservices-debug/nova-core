@@ -954,6 +954,32 @@ try {
   assert.equal(tenantReactivatedDuringOperation.body.data.status, "active");
 
 
+  // Source lifecycle revocation after claim must produce a durable
+  // not_assessed result, even though the observation and lease were valid.
+  const sourceOperationPath = "/api/v1/tenants/tenant-http-a/observations/obs-http-source-revocation/measurement-assessment-operations";
+  const sourceOperation = await operationRequest(sourceOperationPath, "ci-human-subject");
+  assert.equal(sourceOperation.response.status, 201, JSON.stringify(sourceOperation.body));
+  const sourceOperationRoute = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" +
+    sourceOperation.body.data.operation_id;
+  const sourceOperationClaim = await operationRequest(sourceOperationRoute + "/claim", "ci-human-subject");
+  assert.equal(sourceOperationClaim.response.status, 200, JSON.stringify(sourceOperationClaim.body));
+  const sourceRevokedDuringOperation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a/sources/source-http-a/verification",
+    accessToken("ci-measurement-reviewer"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "revoke", evidence_ref: "fixture:source-revoked-during-assessment",
+      reason: "CI source revoked after assessment operation claim" }));
+  assert.equal(sourceRevokedDuringOperation.response.status, 201,
+    JSON.stringify(sourceRevokedDuringOperation.body));
+  assert.equal(sourceRevokedDuringOperation.body.data.status, "revoked");
+  const sourceDeniedAssessment = await operationRequest(sourceOperationRoute + "/complete", "ci-human-subject", "POST", {
+    expected_lease_version: sourceOperationClaim.body.data.lease_version,
+    expected_lease_request_id: sourceOperationClaim.body.data.lease_request_id,
+  });
+  assert.equal([200, 201].includes(sourceDeniedAssessment.response.status), true,
+    JSON.stringify(sourceDeniedAssessment.body));
+  assert.equal(sourceDeniedAssessment.body.data.status, "not_assessed");
+  assert.equal(sourceDeniedAssessment.body.data.reason_code, "source_not_active_or_verified");
+
   const grantRevocation = await siteGrant("ci-human-subject", {
     action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
     grant_action: "read", reason: "CI revoke assessment operation access",
