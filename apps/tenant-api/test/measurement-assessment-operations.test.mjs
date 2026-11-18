@@ -89,7 +89,7 @@ test("claim atomically advances a reserved operation and appends a fenced claim 
  assert.match(db.batches[0][0].sql,/state='reserved' AND lease_expires_at IS NULL/);
  assert.match(db.batches[0][0].sql,/tenant_resource_grants/);
  assert.match(db.batches[0][1].sql,/lease_request_id=\?/);
- assert.equal(db.batches[0][1].values[3],"claimed");
+ assert.equal(db.batches[0][1].values[2],"claimed");
 });
 
 test("claim recovers only an expired running lease using its exact prior version and expiry",async()=>{
@@ -103,7 +103,7 @@ test("claim recovers only an expired running lease using its exact prior version
  assert.equal(result.data.attempt_count,4);
  assert.equal(result.data.lease_request_id,"transport-recovery");
  assert.match(db.batches[0][0].sql,/lease_version=\? AND lease_expires_at=\? AND lease_expires_at<=\?/);
- assert.equal(db.batches[0][1].values[3],"lease_recovered");
+ assert.equal(db.batches[0][1].values[2],"lease_recovered");
 });
 
 test("claim refuses an unexpired running operation and terminal operation",async()=>{
