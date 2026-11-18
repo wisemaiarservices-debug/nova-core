@@ -52,7 +52,13 @@ INSERT INTO sources
 (id, site_id, tenant_id, module, provider, source_type, display_name, verification_status, metadata_json)
 VALUES
 ('source-http-a', 'site-http-a', 'tenant-http-a', 'neoagro', 'CI fixture provider',
- 'sensor', 'CI measurement source', 'verified', '{}');
+ 'sensor', 'CI measurement source', 'unverified', '{}');
+UPDATE sources SET registered_by_subject='ci-human-subject' WHERE id='source-http-a';
+INSERT INTO tenant_source_events
+(id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
+VALUES
+('source-http-a-registered','tenant-http-a','site-http-a','source-http-a',
+ 'ci-human-subject','registered','fixture:source-registration',NULL,'ci-source-registration');
 
 INSERT INTO observations
 (id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
