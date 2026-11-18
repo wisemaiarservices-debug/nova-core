@@ -573,3 +573,11 @@ Core PR [#255](https://github.com/wisemaiarservices-debug/nova-core/pull/255) ex
 Exact-head CI [44324522544](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44324522544) passed all three jobs for code head `1f40fa0a16cff21f46f1cbe8712635279a48f0d9`. The observation fixture is deliberately unverified and completion is `not_assessed`.
 
 This is local D1 concurrency evidence, not a staging deployment. Live staging must still test membership/site-grant revocation, source/mapping/calibration/policy revocation, Access/HMAC/JWK configuration, Worker bindings and operational rollback. PR #255 remains draft/unmerged.
+
+## 26. Site-grant revocation after assessment-operation reservation (Core PR #256)
+
+Core PR [#256](https://github.com/wisemaiarservices-debug/nova-core/pull/256) adds a local gateway → private Worker → disposable D1 test for a separately invited tenant member. The member reserves an operation while holding the exact site `read` grant; the owner then revokes that grant. Subsequent operation read and claim both return 404 although the durable operation remains stored.
+
+Exact-head CI [44325916622](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44325916622) passed all three jobs for `189764f113dfe4e4ba0283508bd5759f95e00ccb`, including ordered D1 migrations and full HTTP integration.
+
+This confirms access is re-evaluated and an operation ID is not a bearer credential. Repeat the same revocation test in staging, including membership suspension/revocation and grant changes during an in-flight completion. PR #256 remains draft/unmerged.
