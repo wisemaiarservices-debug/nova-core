@@ -405,7 +405,7 @@ PR #239 and all constituent changes remain draft/unmerged. CI is not deployed st
 - [ ] Live staging reload/second-device/lost-response tests completed.
 - [ ] Live staging actor, membership/grant revocation and source/mapping/calibration/policy revocation races completed.
 - [ ] True concurrent D1 route races validated; current local integration covers sequential HTTP flows and the separate service/database tests, not all live concurrency cases.
-- [ ] Legacy assessment write path closed or safely redirected so no new assessment bypasses the operation ledger.
+- [ ] Merge Core PR #254 with dependencies #251–#253 and NOVA OS #62 after review; verify the retired direct assessment POST returns `410 assessment_operation_required` in staging and no new assessment row is written through that route.
 - [ ] Independent security review and operator sign-off recorded.
 
 The CI fixture intentionally uses an unverified observation and validates `not_assessed`; it does not establish scientific correctness or a passed assessment. No staging/production deployment, tenant provisioning, customer data operation or paid service is included in these PRs.
