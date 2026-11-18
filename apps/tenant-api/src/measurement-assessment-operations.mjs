@@ -143,7 +143,7 @@ export async function claimMeasurementAssessmentOperation(db,tenant,actorSubject
  const nowMs=Date.parse(now),expiryMs=Date.parse(leaseExpiresAt);
  if(expiryMs<=nowMs||expiryMs>nowMs+300000)
   return {error:"assessment_operation_lease_window_invalid",status:400};
- const current=await rows(db.prepare(OPERATION_SELECT).bind(tenant,actorSubject,operationId));
+ const current=await rows(db.prepare(OPERATION_HISTORY_SELECT).bind(tenant,actorSubject,operationId));
  if(current.length!==1)return {error:"assessment_operation_not_found",status:404};
  const operation=current[0];
  let fromState,eventType,statePredicate,stateValues;
@@ -166,7 +166,7 @@ export async function claimMeasurementAssessmentOperation(db,tenant,actorSubject
  AND EXISTS (SELECT 1 FROM tenant_memberships membership
    JOIN tenants tenant_row ON tenant_row.id=membership.tenant_id AND tenant_row.status='active'
    WHERE membership.tenant_id=? AND membership.subject=? AND membership.status='active')
- AND EXISTS (SELECT 1 FROM sites site_row WHERE site_row.id=? AND site_row.tenant_id=? AND site_row.status='active')
+ AND EXISTS (SELECT 1 FROM sites site_row WHERE site_row.id=? AND site_row.tenant_id=? AND site_row.status IN ('active','inactive'))
  AND EXISTS (SELECT 1 FROM tenant_resource_grants grant_read
    WHERE grant_read.tenant_id=? AND grant_read.subject=? AND grant_read.resource_type='site'
      AND grant_read.resource_id=? AND grant_read.action='read')`;
