@@ -33,7 +33,8 @@ class SiteLifecycleMigrationTests(unittest.TestCase):
             ('tenant-a','owner','tenant_owner','active'),
             ('tenant-a','admin','tenant_admin','active'),
             ('tenant-a','operator','operator','active'),
-            ('tenant-a','revoked-admin','tenant_admin','revoked');
+            ('tenant-a','revoked-admin','tenant_admin','revoked'),
+            ('tenant-a','admin-no-grant','tenant_admin','active');
           INSERT INTO tenant_resource_grants VALUES
             ('tenant-a','owner','site','site-active','read'),
             ('tenant-a','admin','site','site-active','read'),
@@ -74,11 +75,16 @@ class SiteLifecycleMigrationTests(unittest.TestCase):
             self.db.execute("UPDATE sites SET status='inactive' WHERE id='site-active'")
 
     def test_role_membership_and_grant_are_required(self):
-        for actor in ("operator", "revoked-admin"):
+        for actor in ("operator", "revoked-admin", "admin-no-grant"):
             with self.subTest(actor=actor), self.assertRaises(sqlite3.IntegrityError):
                 self.event("bad-" + actor, "site-active", actor, "deactivated", "active", "inactive")
         with self.assertRaises(sqlite3.IntegrityError):
             self.event("bad-site", "site-unconfigured", "owner", "deactivated", "active", "inactive")
+
+    def test_inactive_tenant_cannot_apply_lifecycle_event(self):
+        self.db.execute("UPDATE tenants SET status='inactive' WHERE id='tenant-a'")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "requires active tenant"):
+            self.event("inactive-tenant", "site-active", "owner", "deactivated", "active", "inactive")
 
     def test_archived_and_unconfigured_sites_cannot_transition(self):
         with self.assertRaises(sqlite3.IntegrityError):
