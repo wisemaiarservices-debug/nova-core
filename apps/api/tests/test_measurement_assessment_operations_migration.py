@@ -3,7 +3,7 @@ import sqlite3
 import unittest
 
 
-MIGRATIONS = [Path(__file__).resolve().parents[1] / "migrations" / name for name in ("0036_measurement_assessment_operations.sql", "0037_measurement_assessment_operation_lease_fencing.sql")]
+MIGRATIONS = [Path(__file__).resolve().parents[1] / "migrations" / name for name in ("0036_measurement_assessment_operations.sql", "0037_measurement_assessment_operation_lease_fencing.sql", "0038_measurement_assessment_operation_terminal_audit.sql")]
 
 
 class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
