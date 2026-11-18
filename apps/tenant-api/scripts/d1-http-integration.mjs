@@ -935,7 +935,7 @@ try {
   });
   assert.equal(tenantDeniedCompletion.response.status, 404, JSON.stringify(tenantDeniedCompletion.body));
   const tenantReactivatedDuringOperation = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/lifecycle-actions", accessToken("ci-human-subject"),
+    "/api/v1/tenants/tenant-http-a/lifecycle-actions", accessToken("ci-measurement-reviewer"),
     { "content-type": "application/json" }, "POST",
     JSON.stringify({ action: "reactivate", reason: "CI restore tenant after assessment authorization test" }));
   assert.equal(tenantReactivatedDuringOperation.response.status, 200, JSON.stringify(tenantReactivatedDuringOperation.body));
