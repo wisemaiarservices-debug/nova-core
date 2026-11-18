@@ -513,12 +513,12 @@ Local CI is not staging approval; PR #260 remains draft/unmerged.
 - [x] Local gateway → private Worker → disposable D1 verifies owner/admin authorization, exact site grant, event replay, changed-intent conflict, event history and explicit reactivation.
 - [x] Migration 0041 permits only fixed `not_assessed` / `site_inactive_at_completion` when deactivation wins; passed/failed still require active site.
 - [x] Both assessment/deactivation race orders and expired-lease recovery after deactivation pass.
-- [x] Combined exact-head CI [44391344844](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44391344844) passed all three jobs, including ordered disposable D1 migrations and full HTTP integration.
+- [x] Latest Core #266 exact-head CI [44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437) passed all three jobs, including ordered disposable D1 migrations and full HTTP integration.
 - [ ] Repeat all authorization, replay, direct SQL bypass and both race-order cases in approved staging.
 - [ ] Verify reactivation does not restore child resource, source, grant, calibration, mapping or policy state.
 - [ ] Capture migration version, Worker deployment IDs, request IDs, audit evidence and operator sign-off before any production change.
 
-All local CI evidence is pre-staging validation only. Core PR #266 and NOVA OS PR #63 remain draft/unmerged; no staging or production migration/deployment has been performed.
+All local CI evidence is pre-staging validation only. Core PR #266 and consolidated NOVA OS PR #64 (including #63) remain draft/unmerged; no staging or production migration/deployment has been performed.
 
 
 ## 29. Site lifecycle migration and rollback approval record
