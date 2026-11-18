@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import { reserveMeasurementAssessmentOperation, readMeasurementAssessmentOperation, claimMeasurementAssessmentOperation, renewMeasurementAssessmentOperationLease } from "../src/measurement-assessment-operations.mjs";
 globalThis.crypto ??= webcrypto;
 
-function fakeDb({prior=[],active=[],events=[],batchResults=[{meta:{changes:1}},{meta:{changes:1}}]}={}){
+function fakeDb({prior=[],active=[],events=[],existingAssessment=null,batchResults=[{meta:{changes:1}},{meta:{changes:1}}]}={}){
  const prepared=[];const batches=[];
  return {prepared,batches,
   prepare(sql){const statement={sql,values:[],bind(...values){this.values=values;return this;},async all(){
@@ -12,6 +12,7 @@ function fakeDb({prior=[],active=[],events=[],batchResults=[{meta:{changes:1}},{
    if(sql.includes("request_digest=?"))return {results:prior};
    if(sql.includes("state IN ('reserved','running')"))return {results:active};
    if(sql.includes("FROM measurement_assessment_operations operation")&&sql.includes("operation.operation_id=?"))return {results:prior};
+   if(sql.includes("FROM measurement_quality_assessments"))return {results:existingAssessment?[existingAssessment]:[]};
    if(sql.includes("FROM measurement_assessment_operation_events"))return {results:events};
    throw new Error("unhandled query: "+sql);
   }};return statement;},
@@ -74,6 +75,28 @@ test("operation read is bound to active actor membership and exact site read gra
  assert.match(db.prepared[0].sql,/membership.status='active'/);
  assert.match(db.prepared[0].sql,/grant_read.resource_type='site'/);
  assert.deepEqual(db.prepared[0].values,["tenant-1","access-subject-1",op.operation_id]);
+});
+
+test("terminal operation read returns its exact actor-scoped immutable assessment",async()=>{
+ const terminal={...op,state:"not_assessed",assessment_id:"assessment-1",lease_request_id:null,lease_expires_at:null};
+ const assessment={id:"assessment-1",tenant_id:"tenant-1",site_id:"site-1",observation_id:"obs-1",
+  status:"not_assessed",reason_code:"observation_not_verified",mapping_id:null,calibration_id:null,
+  policy_id:null,method_version:"1.0.0",request_id:op.operation_id};
+ const db=fakeDb({prior:[terminal],existingAssessment:assessment});
+ const result=await readMeasurementAssessmentOperation(db,"tenant-1","access-subject-1",op.operation_id);
+ assert.equal(result.status,200);
+ assert.deepEqual(result.data.assessment,assessment);
+ const query=db.prepared.find(item=>item.sql.includes("FROM measurement_quality_assessments"));
+ assert.deepEqual(query.values,["tenant-1","site-1","obs-1",op.operation_id,"access-subject-1"]);
+ assert.match(query.sql,/operation_actor_subject=\?/);
+});
+
+test("terminal operation read fails closed if its exact assessment row is missing",async()=>{
+ const terminal={...op,state:"completed",assessment_id:"assessment-1",lease_request_id:null,lease_expires_at:null};
+ const db=fakeDb({prior:[terminal]});
+ const result=await readMeasurementAssessmentOperation(db,"tenant-1","access-subject-1",op.operation_id);
+ assert.equal(result.status,409);
+ assert.equal(result.error,"assessment_operation_result_unavailable");
 });
 
 test("claim atomically advances a reserved operation and appends a fenced claim event",async()=>{
