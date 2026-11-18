@@ -356,3 +356,17 @@ NOVA OS PR #13 exact head `45a70194a98ffdb39821f14b573ef98a93d3e994` passed [CI 
 
 
 Latest OS PR #13 documentation-inclusive head `45a70194a98ffdb39821f14b573ef98a93d3e994` passed [NOVA OS CI run 44207888914](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44207888914): tenant resource validation, TypeScript and production build. This supersedes the earlier OS head/run recorded above. The browser retry key remains in component memory only; page-reload recovery is not implemented. This remains repository CI evidence, not live staging validation.
+
+
+## 15. Consolidated governed ingestion and assessment HTTP candidate
+
+- [ ] Review Core draft PR [#239](https://github.com/wisemaiarservices-debug/nova-core/pull/239), which consolidates governed ingestion/assessment PRs #231–#236 and HTTP operation-idempotency PR #238 on integration base #229.
+- [ ] Verify exact documentation-inclusive head `3fbc2d75bf904f49548db7793b88776ce01ac3f3` and exact-head Core CI [run 44293452819](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44293452819). All three jobs passed: API/security, research raster, and Tenant Worker integration including ordered disposable D1 migrations, query preparation, isolated fixture seeding and gateway/private Worker integration.
+- [ ] Confirm independent review covers the full consolidated diff and all prerequisite PRs.
+- [ ] Complete true staging D1 source/governance revocation races and concurrent same-key/different-observation replay tests.
+- [ ] Complete deployed Access gateway/private Worker lost-response replay with stable operation key and fresh transport nonce.
+- [ ] Reconcile deployed secrets, HMAC key ring, issuer/audience, owner assertion signer, permit JWK and key IDs without recording secret values.
+- [ ] Verify the actual migration ledger and rollback/recovery rehearsal on isolated staging.
+- [ ] Record independent security approval and explicit staging release authorization.
+
+**Release gate:** PR #239 remains draft/unmerged. Passing repository CI is not live staging evidence and does not authorize migration, deployment, customer onboarding or production activation.
