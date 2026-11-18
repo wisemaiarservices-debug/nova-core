@@ -15,6 +15,45 @@ The lifecycle mutation must fail closed. A site status change must not be implem
 - Existing tenant lifecycle operations demonstrate the owner-authorized event-plus-state-change pattern, but site lifecycle needs its own exact site-scoped authorization and database guards.
 - Assessment completion SQL already requires the observation's tenant and site to remain active at insert time. A site deactivation committed before completion should therefore prevent a passed/failed assessment from being inserted and produce the operation's durable not_assessed result through the completion service.
 
+
+## Confirmed schema and consumer audit (2026-11-18)
+
+The current sites table is created in apps/api/migrations/0001_initial.sql. Its status CHECK permits exactly:
+- unconfigured (the column default);
+- active;
+- inactive;
+- archived.
+
+The controlled site-creation service (apps/tenant-api/src/site-creation.mjs) explicitly inserts new governed sites as active. Its retry returns the site's current status, not a historical snapshot. This means lifecycle work must not change creation idempotency semantics.
+
+Migration 0002_tenant_isolation.sql adds site/tenant integrity guards:
+- site insert requires an active tenant;
+- tenant_id changes require an active tenant;
+- every site update requires the owning tenant to remain active.
+These guards do not currently authorize or audit a status transition.
+
+The existing tenant_site_events table from migration 0027 is strictly event_type='created' and append-only. It has no status-transition representation and must remain unchanged.
+
+Confirmed tenant-API consumers in apps/tenant-api/src/index.mjs include:
+- site resource detail reads status without requiring active status, supporting controlled visibility of the exact site record;
+- site listing returns active sites only;
+- site observation feed requires active site;
+- asset reads and grantable-asset resolution require active site and active asset;
+- site-bound source reads/resolution require active site; global sources remain possible;
+- observation reads and grantable-observation resolution require active site;
+- site grant mutation requires active site;
+- tenant asset/source/observation grant creation rechecks active site for site-bound resources.
+
+Consequences for the lifecycle contract:
+- The only initial supported lifecycle transitions should be active -> inactive (deactivate) and inactive -> active (reactivate).
+- archived remains terminal and must not be reactivated by this route.
+- unconfigured is not a lifecycle synonym for inactive. It is not accepted by deactivate/reactivate until a separate explicit policy and tests establish its meaning.
+- Deactivation should leave status='inactive'; do not introduce a new value or modify the CHECK.
+- The active-site predicates already present in reads, grants and the assessment completion write should naturally fail closed after deactivation. New integration tests must assert these effects, not assume all reads are blocked: exact site detail read currently selects by tenant/id and does not filter status.
+- Reactivation restores only site-level eligibility. It must not reactivate assets, verify sources, restore grants or make stale calibration/mapping/policy evidence valid.
+
+This audit is scoped to the inspected initial/tenant-isolation/site-creation migrations and tenant-api index/service files. Before runtime implementation, repeat the search across all migrations, Worker packages and NOVA OS callers for direct sites.status writes and status-dependent queries; no unreviewed generic update path may bypass the new event guard.
+
 ## Proposed HTTP contract
 
 Private Worker routes, forwarded only by the authenticated gateway:
