@@ -787,7 +787,7 @@ Current OS branch head at handoff update: `ec720716426d9092d6387f8a984e9c1402bde
 
 Core #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c` passed [CI run 44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437), including an HTTP test that repeats the same reservation after site deactivation and receives the original operation ID. New operation creation remains restricted to active sites.
 
-OS code head `dfc8039e948661fe567b8eea4123b01341d305a3` passed [CI run 44398946075](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44398946075). The later OS workflow state-machine test addition and final narrowing fix are on head `ec720716426d9092d6387f8a984e9c1402bdef05`; exact-head CI for that newer head is pending and must be checked before accepting the browser integration.
+OS code head `dfc8039e948661fe567b8eea4123b01341d305a3` passed [CI run 44398946075](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44398946075). The state-machine test addition and final code cleanup are included in current head `df5fb4ecaabb5b6580f6ab7d3e97b22b90476213`, which passed exact-head CI run 44399707616.
 
 The Site Lifecycle workspace remains separate: its action idempotency key is component-memory-only, and reload-safe recovery for uncertain deactivate/reactivate requests is not yet implemented. Assessment recovery must not be used to imply site-lifecycle recovery.
 
@@ -799,7 +799,7 @@ Release gate: independent reviewer must validate OS #64 against Core #266, inclu
 OS PR #64 now includes the separately testable assessment operation state machine and tests for initial reservation/claim/completion, terminal replay after reload, expired-lease recovery, stale-completion conflict and denial without fallback.
 
 - OS commit `b76ef56906025b5c9d1c68a8fd66bde7fd680d47` passed [CI run 44399619773](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44399619773).
-- Current OS PR #64 head is `df5fb4ecaabb5b6580f6ab7d3e97b22b90476213`. Its only change after the passing code head is import organization and module-boundary comment/type export cleanup; exact-head CI run 44399707616 is in progress and must finish successfully before this head is accepted.
+- Current OS PR #64 head `df5fb4ecaabb5b6580f6ab7d3e97b22b90476213` passed exact-head CI run [44399707616](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44399707616): 57 tests passed, TypeScript check passed, production build passed.
 - Core PR #266 exact head remains `e157555927f85a30a04366c4317a32b00b0fa42c`, with 3/3 CI jobs passed in run 44398811437.
 
 Do not infer that a previous commit's success validates a later head. Independent review remains mandatory; no staging/production authorization.
