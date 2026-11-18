@@ -160,7 +160,7 @@ test("lease renewal atomically advances the fence and appends a matching event",
 
 test("lease renewal refuses stale version, stale token, expired lease and non-running operation",async()=>{
  const cases=[
-  {...op,state:"running",lease_version:2,lease_expires_at:"2026-11-18T12:02:00.000Z",lease_request_id:"old-transport"},
+  {...op,state:"running",lease_version:1,lease_expires_at:"2026-11-18T12:02:00.000Z",lease_request_id:"old-transport"},
   {...op,state:"running",lease_version:3,lease_expires_at:"2026-11-18T12:02:00.000Z",lease_request_id:"newer-transport"},
   {...op,state:"running",lease_version:2,lease_expires_at:"2026-11-18T11:59:00.000Z",lease_request_id:"old-transport"},
   {...op,state:"completed",lease_version:2,lease_expires_at:null,lease_request_id:null}
