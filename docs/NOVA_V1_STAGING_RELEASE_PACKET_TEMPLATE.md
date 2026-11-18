@@ -579,3 +579,11 @@ Production release remains separately gated. This packet does not authorize prod
 - [ ] Obtain independent reviewer sign-off for Core/OS cross-repository behavior.
 
 **Decision remains PENDING.** This checklist is not staging or production authorization.
+
+
+## 32. Latest OS #64 exact-head CI gate
+
+- [ ] Confirm OS PR #64 head `df5fb4ecaabb5b6580f6ab7d3e97b22b90476213` exact-head run 44399707616 completes successfully.
+- [x] Prior code head `b76ef56906025b5c9d1c68a8fd66bde7fd680d47` passed run 44399619773.
+- [x] Core #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c` passed run 44398811437.
+- [ ] Independent reviewer validates browser/API interaction and second-device/reload scenarios.
