@@ -33,8 +33,10 @@ CREATE TABLE measurement_assessment_operations (
  FOREIGN KEY(predecessor_operation_id, tenant_id, site_id, observation_id)
   REFERENCES measurement_assessment_operations(operation_id, tenant_id, site_id, observation_id) ON DELETE RESTRICT,
  CHECK(
-   (state IN ('completed','not_assessed') AND assessment_id IS NOT NULL AND completed_at IS NOT NULL)
-   OR (state IN ('reserved','running','failed') AND assessment_id IS NULL AND completed_at IS NULL)
+   (state='reserved' AND assessment_id IS NULL AND completed_at IS NULL AND lease_expires_at IS NULL)
+   OR (state='running' AND assessment_id IS NULL AND completed_at IS NULL AND lease_expires_at IS NOT NULL)
+   OR (state IN ('completed','not_assessed') AND assessment_id IS NOT NULL AND completed_at IS NOT NULL AND lease_expires_at IS NULL)
+   OR (state='failed' AND assessment_id IS NULL AND completed_at IS NULL AND lease_expires_at IS NULL)
  )
 );
 
@@ -128,7 +130,13 @@ END;
 
 CREATE TRIGGER measurement_assessment_operation_event_guard
 BEFORE INSERT ON measurement_assessment_operation_events
-WHEN NOT EXISTS (
+WHEN (NEW.event_type='reserved' AND (NEW.from_state IS NOT NULL OR NEW.to_state<>'reserved'))
+ OR (NEW.event_type='claimed' AND (NEW.from_state<>'reserved' OR NEW.to_state<>'running'))
+ OR (NEW.event_type IN ('lease_renewed','lease_recovered') AND (NEW.from_state<>'running' OR NEW.to_state<>'running'))
+ OR (NEW.event_type='completed' AND (NEW.from_state<>'running' OR NEW.to_state<>'completed'))
+ OR (NEW.event_type='not_assessed' AND (NEW.from_state NOT IN ('reserved','running') OR NEW.to_state<>'not_assessed'))
+ OR (NEW.event_type='failed' AND (NEW.from_state NOT IN ('reserved','running') OR NEW.to_state<>'failed'))
+ OR NOT EXISTS (
  SELECT 1 FROM measurement_assessment_operations operation
  WHERE operation.operation_id=NEW.operation_id
    AND operation.tenant_id=NEW.tenant_id
