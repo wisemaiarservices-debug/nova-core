@@ -383,3 +383,35 @@ Latest OS PR #13 documentation-inclusive head `45a70194a98ffdb39821f14b573ef98a9
 - [ ] Record OS PR #13 exact SHA and verify browser retry behavior; note that a full page reload loses the component-memory operation key and is not reload-safe.
 
 PR #239 and all constituent changes remain draft/unmerged. CI is not deployed staging evidence, and this packet authorizes no migration, secret configuration, ingestion activation, tenant provisioning, deployment or production operation.
+
+## 17. Assessment-operation HTTP V1 and reload-safe recovery
+
+### Candidate PRs and exact-head CI
+
+| Component | PR / exact head | CI evidence | State |
+|---|---|---|---|
+| Core private/public operation routes | [Core #251](https://github.com/wisemaiarservices-debug/nova-core/pull/251), `f77732ff910628d9cb6bbbbd1604489ab389bb98` | Run 44319855156 — 3/3 jobs passed | Draft / unmerged |
+| Local Worker + D1 operation workflow | [Core #252](https://github.com/wisemaiarservices-debug/nova-core/pull/252), `ad23f8e61eb41dc4a120e1f1bc7550ec3e27e705` | Run 44320168686 — 3/3 jobs passed | Draft / unmerged |
+| Terminal result in actor-scoped reads | [Core #253](https://github.com/wisemaiarservices-debug/nova-core/pull/253), `be5c98380c43ef9943e65b9290ce245ee8ccf238` | Run 44320629236 — 3/3 jobs passed | Draft / unmerged |
+| Browser reload recovery | [NOVA OS #62](https://github.com/wisemaiarservices-debug/NovaOS/pull/62), `c6e1c63cb71119c2ac8ca3deaee527a1f3d70ccc` | Run 44322386574 — validation, TypeScript and production build passed | Draft / unmerged |
+
+### Evidence demonstrated in CI
+
+- Full local Worker HTTP route flow through Access gateway, Service Binding and disposable D1.
+- Actor-scoped operation access, five-minute lease fencing, claim/renew, durable `not_assessed` completion for an unverified fixture, completion replay and explicit successor.
+- Terminal operation read returns the exact actor/scope-bound immutable assessment.
+- Browser workflow reserves/recover operations from server-derived scope, reads terminal result after reload, and does not persist operation IDs or credentials in browser storage.
+
+### Outstanding release evidence
+
+- [ ] All four PRs merged after review; matching Core base and migrations approved.
+- [ ] Staging D1 migrations applied and verified in order.
+- [ ] Private Worker/gateway deployments and Service Bindings verified.
+- [ ] HMAC secret and key ring, Access issuer/audience, pinned OS public JWK/key ID and exact CORS origins verified without exposing secret values.
+- [ ] Live staging reload/second-device/lost-response tests completed.
+- [ ] Live staging actor, membership/grant revocation and source/mapping/calibration/policy revocation races completed.
+- [ ] True concurrent D1 route races validated; current local integration covers sequential HTTP flows and the separate service/database tests, not all live concurrency cases.
+- [ ] Legacy assessment write path closed or safely redirected so no new assessment bypasses the operation ledger.
+- [ ] Independent security review and operator sign-off recorded.
+
+The CI fixture intentionally uses an unverified observation and validates `not_assessed`; it does not establish scientific correctness or a passed assessment. No staging/production deployment, tenant provisioning, customer data operation or paid service is included in these PRs.
