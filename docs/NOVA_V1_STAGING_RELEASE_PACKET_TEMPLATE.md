@@ -421,3 +421,14 @@ The CI fixture intentionally uses an unverified observation and validates `not_a
 - [ ] Preserve historical assessment reads and audit history.
 
 PR #254 remains draft/unmerged. CI proves the candidate code path only; no staging/production action has been initiated.
+
+## 19. Concurrent assessment-operation HTTP route evidence (Core PR #255)
+
+- [x] Local concurrent claim race: exactly one winner.
+- [x] Local concurrent lease-renew race: exactly one winner for the expected lease fence.
+- [x] Local concurrent completion: both callers recover the same immutable `not_assessed` result and only one terminal event is recorded.
+- [x] Exact-head CI [44324522544](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44324522544) passed all three jobs for `1f40fa0a16cff21f46f1cbe8712635279a48f0d9`.
+- [ ] Repeat these races against staging D1 and verify behavior under live membership/site-grant and source/governance revocation.
+- [ ] Capture staging deployment IDs, migration versions, request IDs and operator sign-off.
+
+The CI observation is intentionally unverified; it validates concurrency and durable `not_assessed` handling, not scientific correctness. PR #255 remains draft/unmerged.
