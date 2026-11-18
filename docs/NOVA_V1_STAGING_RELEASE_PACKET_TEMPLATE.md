@@ -450,3 +450,13 @@ Local CI confirms the candidate route behavior only; PR #256 remains draft/unmer
 - [ ] Verify no assessment row or terminal event is written after authorization failure, and confirm audit consistency.
 
 PR #257 remains draft/unmerged; local CI is not staging approval.
+
+## 22. Membership lifecycle recheck at final assessment write (Core PR #258)
+
+- [x] Local D1 HTTP test: invited member reserves and claims an operation, owner suspends membership, completion is denied, and membership is reactivated for later test cases.
+- [x] Exact-head CI [44329522954](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44329522954) passed all three jobs for `78743db97a7787582eedfae77147ffb63b2f496e`.
+- [ ] Repeat in staging for membership suspension and permanent revocation while reserved and while a lease is active.
+- [ ] Verify denial produces no assessment row or terminal event and preserves audit consistency.
+- [ ] Confirm recovery after legitimate membership reactivation follows the approved operation state/lease rules.
+
+Local CI is not staging approval; PR #258 remains draft/unmerged.
