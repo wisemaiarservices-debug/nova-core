@@ -19,3 +19,4 @@ ACCESS_AUDIENCE = "nova-ci-test-audience"
 INTERNAL_AUTH_SECRET = "local-ci-only-secret-not-for-any-deployment"
 
 CI_TEST_CONFIGURATION_WRITES = "true"
+CI_TEST_ASSESSMENT_LEASE_MS = "1000"
