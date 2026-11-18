@@ -441,3 +441,12 @@ The CI observation is intentionally unverified; it validates concurrency and dur
 - [ ] Confirm audit records and no result leakage after authorization revocation.
 
 Local CI confirms the candidate route behavior only; PR #256 remains draft/unmerged.
+
+## 21. Final assessment-write authorization recheck (Core PR #257)
+
+- [x] Local D1 test reserves and claims while authorized, revokes the exact site read grant, then verifies completion returns 404 without inserting an assessment.
+- [x] Exact-head CI [44326401282](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44326401282) passed all three jobs for `fd9dca89f55b0030fef90b9621256730c5818df1`.
+- [ ] Repeat in staging for site-grant and membership revocation, tenant/site deactivation, and source/mapping/calibration/policy revocation between claim and completion.
+- [ ] Verify no assessment row or terminal event is written after authorization failure, and confirm audit consistency.
+
+PR #257 remains draft/unmerged; local CI is not staging approval.
