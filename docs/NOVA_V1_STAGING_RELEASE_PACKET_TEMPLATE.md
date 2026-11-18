@@ -342,7 +342,7 @@ PR #237 remains draft/unmerged. No deployment or migration is authorized.
 
 Core PR #238 exact head `1b5266660fd675d6b873d9ebc5d37444c9a2ea58` passed [CI run 44203727812](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44203727812), all three jobs including gateway/private Worker and disposable D1 integration. It separates the single-use `x-nova-request-id` transport nonce from the stable assessment operation `Idempotency-Key`. The gateway validates and forwards the operation key as `x-nova-idempotency-key` and includes it in the internal HMAC envelope. Every retry must use a fresh transport nonce and the same operation key.
 
-NOVA OS PR #13 exact head `f6bc39e246390fc78e0c49a5b52d673e6583b455` passed [CI run 44204929877](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44204929877), including tenant resource validation, TypeScript and production build. The browser keeps the operation key in component memory for retries of the same tenant/observation until validated success or target change. A full page reload loses the in-memory retry key; reload-surviving recovery is not implemented.
+NOVA OS PR #13 exact head `45a70194a98ffdb39821f14b573ef98a93d3e994` passed [CI run 44207888914](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44207888914), including tenant resource validation, TypeScript and production build. The browser keeps the operation key in component memory for retries of the same tenant/observation until validated success or target change. A full page reload loses the in-memory retry key; reload-surviving recovery is not implemented.
 
 - [ ] Review Core PR #238 and NOVA OS PR #13 together.
 - [ ] Confirm gateway CORS preflight allows `Idempotency-Key` only for exact configured origins.
@@ -353,3 +353,6 @@ NOVA OS PR #13 exact head `f6bc39e246390fc78e0c49a5b52d673e6583b455` passed [CI 
 - [ ] Repeat with real staging Access, private Worker and D1 configuration.
 
 **Release gate:** both PRs remain draft/unmerged. Repository CI is not deployed staging evidence. Require coordinated lost-response E2E, independent security review, and staging verification before production activation. No production changes are authorized by this packet.
+
+
+Latest OS PR #13 documentation-inclusive head `45a70194a98ffdb39821f14b573ef98a93d3e994` passed [NOVA OS CI run 44207888914](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44207888914): tenant resource validation, TypeScript and production build. This supersedes the earlier OS head/run recorded above. The browser retry key remains in component memory only; page-reload recovery is not implemented. This remains repository CI evidence, not live staging validation.
