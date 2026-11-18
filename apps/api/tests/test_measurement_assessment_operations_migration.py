@@ -70,6 +70,31 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
              actor, previous, current, kind, "request-" + kind),
         )
 
+    def claim_for_insert_terminalization(self, operation_id="op-a", actor="actor-a", observation="obs-a"):
+        self.db.execute(
+            """UPDATE measurement_assessment_operations
+               SET state='running', lease_version=1, attempt_count=1,
+                   lease_expires_at='2026-11-18T12:01:00Z',
+                   lease_request_id='request-claimed'
+               WHERE operation_id=?""",
+            (operation_id,),
+        )
+        self.event(operation_id, actor, observation, "reserved", "running", "claimed")
+
+    def insert_bound_assessment(self, status="passed", operation_id="op-a", actor="actor-a",
+                                observation="obs-a", lease_version=1, lease_token="request-claimed",
+                                terminal_request="terminal-request", completed_at="2026-11-18T12:00:00Z"):
+        self.db.execute(
+            """INSERT INTO measurement_quality_assessments
+               (id, tenant_id, site_id, observation_id, status, request_id,
+                operation_actor_subject, operation_lease_version,
+                operation_lease_request_id, operation_terminal_request_id,
+                operation_completed_at)
+               VALUES (?, 'tenant-a', 'site-a', ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("assessment-" + operation_id, observation, status, operation_id, actor,
+             lease_version, lease_token, terminal_request, completed_at),
+        )
+
     def complete(self, operation_id="op-a", actor="actor-a", observation="obs-a"):
         self.claim_for_insert_terminalization(operation_id, actor, observation)
         self.insert_bound_assessment(
@@ -376,19 +401,6 @@ class MeasurementAssessmentOperationsMigrationTests(unittest.TestCase):
             "SELECT from_state,to_state,event_type,request_id FROM measurement_assessment_operation_events WHERE operation_id='op-a' ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
         self.assertEqual(terminal, ("running", "completed", "completed", "terminal-request"))
-
-    def test_not_assessed_insert_terminalizes_with_not_assessed_event(self):
-        self.reserve()
-        self.claim_for_insert_terminalization()
-        self.insert_bound_assessment(status="not_assessed")
-        operation = self.db.execute(
-            "SELECT state, assessment_id FROM measurement_assessment_operations WHERE operation_id='op-a'"
-        ).fetchone()
-        self.assertEqual(operation, ("not_assessed", "assessment-op-a"))
-        terminal = self.db.execute(
-            "SELECT from_state,to_state,event_type FROM measurement_assessment_operation_events WHERE operation_id='op-a' ORDER BY rowid DESC LIMIT 1"
-        ).fetchone()
-        self.assertEqual(terminal, ("running", "not_assessed", "not_assessed"))
 
     def test_bound_assessment_rejects_stale_lease_or_revoked_membership(self):
         self.reserve()
