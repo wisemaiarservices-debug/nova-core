@@ -885,6 +885,27 @@ try {
   assert.equal(completionRace[0].body.data.id, completionRace[1].body.data.id);
   assert.equal(completionRace[0].body.data.status, "not_assessed");
 
+
+  // A previously authorized member's durable operation must become
+  // inaccessible immediately after the exact site read grant is revoked.
+  const operationGrant = await siteGrant("ci-human-subject", {
+    action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI assessment operation grant revocation",
+  });
+  assert.equal(operationGrant.response.status, 201, JSON.stringify(operationGrant.body));
+  const revokedGrantOperation = await operationRequest(operationPath, "ci-invited-human");
+  assert.equal(revokedGrantOperation.response.status, 201, JSON.stringify(revokedGrantOperation.body));
+  const revokedGrantOperationId = revokedGrantOperation.body.data.operation_id;
+  const revokedGrantPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + revokedGrantOperationId;
+  const grantRevocation = await siteGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI revoke assessment operation access",
+  });
+  assert.equal(grantRevocation.response.status, 200, JSON.stringify(grantRevocation.body));
+  const revokedGrantRead = await operationRequest(revokedGrantPath, "ci-invited-human", "GET");
+  assert.equal(revokedGrantRead.response.status, 404);
+  const revokedGrantClaim = await operationRequest(revokedGrantPath + "/claim", "ci-invited-human");
+  assert.equal(revokedGrantClaim.response.status, 404);
   const racedTerminal = await operationRequest(successorRoute, "ci-human-subject", "GET");
   assert.equal(racedTerminal.response.status, 200, JSON.stringify(racedTerminal.body));
   assert.equal(racedTerminal.body.data.state, "not_assessed");
