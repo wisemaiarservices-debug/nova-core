@@ -56,7 +56,7 @@ export async function reviewTenantSource(db,tenant,site,sourceId,reviewer,reques
  if(!Array.isArray(latest?.results))throw new Error("source_history_invalid");
  const current=latest.results[0]?.event_type;
  const allowed={verify:"registered",reject:"registered",revoke:"verified"};
- if(current!==allowed[body.decision])return {error:"source_state_conflict",status:409};
+ if(current!==allowed[body.decision])return {error:"source_state_conflict_"+String(current??"none"),status:409};
  const eventType={verify:"verified",reject:"rejected",revoke:"revoked"}[body.decision];
  const result=await db.prepare("INSERT INTO tenant_source_events(id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id) VALUES(?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),tenant,site,sourceId,reviewer,eventType,body.evidence_ref,body.reason??null,requestId).run();
  if(result?.meta?.changes!==1)return {error:"source_state_conflict",status:409};
