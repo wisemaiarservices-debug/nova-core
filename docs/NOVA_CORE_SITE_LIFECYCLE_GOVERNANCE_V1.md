@@ -139,3 +139,28 @@ Test both orders of the race (deactivation before completion and completion befo
 ## Explicit non-goals
 
 No production or staging mutation, migration, deployment, tenant/site provisioning, customer data, secrets, paid service, automatic evidence restoration, or scientific-validity claim is authorized by this design.
+
+
+## Expanded write-path audit (2026-11-18)
+
+The follow-up audit inspected the complete current migration sequence (0001–0039 where present), the tenant API route dispatcher and site-creation/configuration persistence services, and the tenant gateway route dispatcher.
+
+Findings:
+- The only application-level site INSERT found is the governed site-creation service. It inserts a new site with status `active`; it does not update an existing site's status.
+- No `UPDATE sites`, `REPLACE INTO sites`, or site-status mutation statement was found in the inspected tenant API services or migrations.
+- The generic tenant resource route permits site detail reads, not writes. Site creation is a separate owner-authorized route. Site configuration persistence writes immutable rows to `tenant_site_configurations`, not to `sites`.
+- The gateway currently exposes site list/detail, site creation, asset/source operations, and the other exact governance routes; it has no site lifecycle action or event route.
+- The existing database trigger `sites_active_tenant_update_guard` only requires the target tenant to be active. It does **not** authorize a site status transition or require an audit event. Therefore direct database status updates are not currently protected by a site-lifecycle-specific guard, even though no application route was found that performs them.
+- The existing `tenant_site_events` ledger is constrained to site creation and cannot safely represent deactivation/reactivation.
+- NOVA OS's currently inspected UI route/page set contains no site lifecycle mutation workflow; a UI addition will be needed after the API contract is implemented.
+
+Implementation consequences:
+1. Add a database-level status transition guard that permits only a matching, transactionally inserted lifecycle event for active→inactive or inactive→active. It must reject status changes that lack that event, regardless of whether the writer is an API route or direct SQL.
+2. Do not treat the current active-tenant update trigger as sufficient authorization. The new event guard must bind tenant/site, exact prior/new state, actor, reason, request ID, active owner/admin membership, and exact site grant; it must also ensure that the event is consumed by exactly one matching transition.
+3. Preserve existing general site updates only if they are required and separately audited; do not let metadata/name edits become an alternate status-transition path. Prefer a trigger scoped to `UPDATE OF status` plus existing tenant immutability guards.
+4. Add an integration test proving a direct status update without an event is rejected, then prove event+status transition commits atomically through the private Worker.
+5. The current site detail read remains available for inactive sites; the lifecycle UI and API must not promise that all site reads disappear. Active-only list/feed/resource operations continue to use their existing status predicates.
+
+Audit boundary:
+- This pass inspected the Core migration set, tenant API source modules, tenant API route dispatcher, tenant gateway route dispatcher, and the current NOVA OS UI route/page inventory.
+- It is a static repository audit, not proof about deployed Workers, external automation, operator SQL access, or uninspected external consumers. Re-run the audit against the final integration branch before merge and staging.
