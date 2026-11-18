@@ -896,24 +896,10 @@ try {
   assert.equal(revokedGrantOperation.response.status, 201, JSON.stringify(revokedGrantOperation.body));
   const revokedGrantOperationId = revokedGrantOperation.body.data.operation_id;
   const revokedGrantPath = "/api/v1/tenants/tenant-http-a/measurement-assessment-operations/" + revokedGrantOperationId;
-  const grantRevocation = await siteGrant("ci-human-subject", {
-    action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
-    grant_action: "read", reason: "CI revoke assessment operation access",
-  });
-  assert.equal(grantRevocation.response.status, 200, JSON.stringify(grantRevocation.body));
-  const revokedGrantRead = await operationRequest(revokedGrantPath, "ci-invited-human", "GET");
-  assert.equal(revokedGrantRead.response.status, 404);
-  const revokedGrantClaim = await operationRequest(revokedGrantPath + "/claim", "ci-invited-human");
-  assert.equal(revokedGrantClaim.response.status, 404);
   // Reuse this invited actor's already-reserved operation after restoring
   // exact site access, then suspend membership after claim and before write.
   const invitedMembershipId = invitationAccepted.body.data.membership_id;
   assert.match(invitedMembershipId, /^[0-9a-f-]{36}$/i);
-  const membershipGrantRestored = await siteGrant("ci-human-subject", {
-    action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
-    grant_action: "read", reason: "CI restore site grant for membership suspension test",
-  });
-  assert.equal(membershipGrantRestored.response.status, 201, JSON.stringify(membershipGrantRestored.body));
   const membershipOperationRoute = revokedGrantPath;
   const membershipClaim = await operationRequest(membershipOperationRoute + "/claim", "ci-invited-human");
   assert.equal(membershipClaim.response.status, 200, JSON.stringify(membershipClaim.body));
@@ -967,6 +953,16 @@ try {
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "claimed").length, 1);
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "lease_renewed").length, 1);
   assert.equal(racedTerminal.body.data.events.filter(event => event.event_type === "not_assessed").length, 1);
+
+  const grantRevocation = await siteGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-invited-human", site_id: "site-http-a",
+    grant_action: "read", reason: "CI revoke assessment operation access",
+  });
+  assert.equal(grantRevocation.response.status, 200, JSON.stringify(grantRevocation.body));
+  const revokedGrantRead = await operationRequest(revokedGrantPath, "ci-invited-human", "GET");
+  assert.equal(revokedGrantRead.response.status, 404);
+  const revokedGrantClaim = await operationRequest(revokedGrantPath + "/claim", "ci-invited-human");
+  assert.equal(revokedGrantClaim.response.status, 404);
 
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
