@@ -7,7 +7,7 @@ globalThis.crypto ??= webcrypto;
 
 const operation={
  operation_id:"operation-1",tenant_id:"tenant-1",site_id:"site-1",observation_id:"observation-1",
- actor_subject:"access-subject-1",state:"running",assessment_id:null,lease_version:2,
+ actor_subject:"access-subject-1",state:"running",assessment_id:null,site_status:"active",lease_version:2,
  lease_expires_at:"2026-11-18T12:05:00.000Z",lease_request_id:"lease-transport-1"
 };
 const observation={
