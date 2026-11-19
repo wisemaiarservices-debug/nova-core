@@ -1,6 +1,6 @@
 import { json, error } from "./http.mjs";
 import { matchMeasurementAssessmentOperationRoute, handleMeasurementAssessmentOperationRequest } from "./measurement-assessment-operation-http.mjs";
-import { matchTenantSiteLifecycleRoute, changeTenantSiteLifecycle, readTenantSiteLifecycleEvents } from "./site-lifecycle.mjs";
+import { matchTenantSiteLifecycleRoute, readTenantSiteLifecycleEvents } from "./site-lifecycle.mjs";
 import { matchTenantSiteLifecycleCommandRoute, prepareTenantSiteLifecycleCommand, recoverTenantSiteLifecycleCommand, readTenantSiteLifecycleCommand, applyTenantSiteLifecycleCommand, rejectTenantSiteLifecycleCommand } from "./site-lifecycle-command.mjs";
 import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
 import { verifyNovaOsOwnerAssertion } from "./nova-os-provisioning-auth.mjs";
@@ -1301,14 +1301,8 @@ export default {
           : json({ data: result.data, request_id: requestId }, result.status);
       }
       if (siteLifecycleRoute) {
-        const result = siteLifecycleRoute.action === "change"
-          ? await changeTenantSiteLifecycle(env.DB, {
-              tenant: siteLifecycleRoute.tenant, site: siteLifecycleRoute.site,
-              actorSubject: subject, idempotencyKey: request.headers.get("x-nova-idempotency-key"),
-              requestId, body: draftBody, now: new Date().toISOString(),
-            })
-          : await readTenantSiteLifecycleEvents(env.DB, siteLifecycleRoute.tenant,
-              siteLifecycleRoute.site, subject);
+        const result = await readTenantSiteLifecycleEvents(env.DB, siteLifecycleRoute.tenant,
+          siteLifecycleRoute.site, subject);
         return result.error ? json({ error: result.error }, result.status)
           : json({ data: result.data, request_id: requestId }, result.status);
       }

@@ -11,6 +11,7 @@ MIGRATIONS = [
     ROOT / "migrations" / "0044_site_lifecycle_command_idempotency.sql",
     ROOT / "migrations" / "0045_site_lifecycle_command_resolver_reason_guard.sql",
     ROOT / "migrations" / "0046_site_lifecycle_command_distinct_resolver.sql",
+    ROOT / "migrations" / "0047_site_lifecycle_event_requires_command.sql",
 ]
 
 
@@ -63,6 +64,28 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
                VALUES(?, 'tenant-a', ?, ?, ?, ?, ?, ?, 'pending',
                       '2026-11-19T12:00:00.000Z','2026-11-19T12:00:00.000Z',?)""",
             (command_id, site, actor, action, expected, reason, digest, idempotency_key or ("retry-" + command_id)),
+        )
+
+    def simulate_pre_cutover_legacy_transition(self):
+        # Historical pre-cutover event fixture: temporarily remove the new
+        # guard only while creating the already-existing legacy state.
+        self.db.execute("DROP TRIGGER tenant_site_lifecycle_event_requires_command")
+        self.db.execute(
+            """INSERT INTO tenant_site_lifecycle_events
+               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
+                reason,idempotency_key,request_digest,request_id,occurred_at)
+               VALUES('legacy-event','tenant-a','site-active','admin','deactivated',
+                'active','inactive','separate governed transition','legacy-key',?,
+                'legacy-request','2026-11-19T12:01:00.000Z')""",
+            ("c" * 64,),
+        )
+        self.db.executescript(
+            """CREATE TRIGGER tenant_site_lifecycle_event_requires_command
+               BEFORE INSERT ON tenant_site_lifecycle_events
+               WHEN NEW.command_id IS NULL
+               BEGIN
+                 SELECT RAISE(ABORT,'site lifecycle event requires a durable command');
+               END;"""
         )
 
     def apply(self, command_id="command-1", event_id="event-1", actor="owner",
@@ -296,15 +319,7 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
 
     def test_site_state_change_allows_audited_rejection_without_changing_site_again(self):
         self.command(actor="owner")
-        self.db.execute(
-            """INSERT INTO tenant_site_lifecycle_events
-               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
-                reason,idempotency_key,request_digest,request_id,occurred_at)
-               VALUES('legacy-event','tenant-a','site-active','admin','deactivated',
-                'active','inactive','separate governed transition','legacy-key',?,
-                'legacy-request','2026-11-19T12:01:00.000Z')""",
-            ("c" * 64,),
-        )
+        self.simulate_pre_cutover_legacy_transition()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
             self.db.execute(
                 """UPDATE tenant_site_lifecycle_commands
@@ -331,15 +346,7 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
 
     def test_original_actor_cannot_resolve_own_stale_command(self):
         self.command(actor="owner")
-        self.db.execute(
-            """INSERT INTO tenant_site_lifecycle_events
-               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
-                reason,idempotency_key,request_digest,request_id,occurred_at)
-               VALUES('legacy-event','tenant-a','site-active','admin','deactivated',
-                'active','inactive','separate governed transition','legacy-key',?,
-                'legacy-request','2026-11-19T12:01:00.000Z')""",
-            ("c" * 64,),
-        )
+        self.simulate_pre_cutover_legacy_transition()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
             self.db.execute(
                 """UPDATE tenant_site_lifecycle_commands
@@ -418,22 +425,24 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
             [("prepared",)],
         )
 
-    def test_existing_event_path_remains_compatible_until_runtime_cutover(self):
-        self.db.execute(
-            """INSERT INTO tenant_site_lifecycle_events
-               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
-                reason,idempotency_key,request_digest,request_id,occurred_at)
-               VALUES('legacy-event','tenant-a','site-active','owner','deactivated',
-                'active','inactive','legacy approved reason','legacy-key',?,
-                'legacy-request','2026-11-19T12:00:00.000Z')""",
-            ("c" * 64,),
-        )
+    def test_lifecycle_event_without_durable_command_is_rejected(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "requires a durable command"):
+            self.db.execute(
+                """INSERT INTO tenant_site_lifecycle_events
+                   (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
+                    reason,idempotency_key,request_digest,request_id,occurred_at)
+                   VALUES('legacy-event','tenant-a','site-active','owner','deactivated',
+                    'active','inactive','legacy approved reason','legacy-key',?,
+                    'legacy-request','2026-11-19T12:00:00.000Z')""",
+                ("c" * 64,),
+            )
         self.assertEqual(
             self.db.execute("SELECT status FROM sites WHERE id='site-active'").fetchone()[0],
-            "inactive",
+            "active",
         )
-        self.assertIsNone(
-            self.db.execute("SELECT command_id FROM tenant_site_lifecycle_events WHERE id='legacy-event'").fetchone()[0]
+        self.assertEqual(
+            self.db.execute("SELECT count(*) FROM tenant_site_lifecycle_events").fetchone()[0],
+            0,
         )
 
 

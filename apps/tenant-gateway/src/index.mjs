@@ -169,6 +169,10 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         return error("request_not_authorized", 401);
       }
       if (!validSubject(principal.subject)) return error("request_not_authorized", 401);
+      // Site status mutations must use the durable prepare/apply command ledger.
+      if (siteLifecycleAction && request.method === "POST") {
+        return error("durable_site_lifecycle_command_required", 410);
+      }
       if (tenantProvision && !configuredProvisioningSubjects(env.TENANT_PROVISIONING_SUBJECTS)?.has(principal.subject)) return error("not_found", 404);
 
       const requestId = crypto.randomUUID();
