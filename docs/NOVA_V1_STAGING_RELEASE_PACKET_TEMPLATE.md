@@ -669,3 +669,21 @@ Core #270 is a parallel documentation branch, not a runtime dependency in the #2
 **Reviewer requirements:** independently fetch and inspect each exact SHA; verify branch ancestry and migration order 0042–0045; rerun the integrated Core disposable-D1 HTTP suite and OS Chromium/build jobs; record commands, findings, severity, remediation SHAs and explicit pass/fail. Green CI is not independent security approval.
 
 **Decision: PENDING INDEPENDENT REVIEW AND EXPLICIT STAGING AUTHORIZATION.** No migration, deployment, tenant/site provisioning or customer-data operation is authorized by this packet.
+
+
+## 37. Durable site lifecycle authorization and coordinated cutover — exact heads (2026-11-19)
+
+**Implemented and CI-validated**
+- [x] Core #291 requires resolver identity to differ from the original command actor; exact head `2f9b24a2f9db7f6caa41a8b124de4efebd58e1fa`, workflow [44585485623](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44585485623), 3/3 passed.
+- [x] Core #292 retires the legacy direct site mutation route (410) and migration 0047 requires every lifecycle event to consume a durable command; exact head `13a4311c124e1080653981c5ae1651a0239fb95b`, workflow [44586428729](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44586428729), 3/3 passed.
+- [x] Core #293 proves that membership revocation, site-read-grant revocation or tenant deactivation after prepare blocks the event insert; command remains pending and site status unchanged. This test confirms the existing migration 0040 authorization guard; no schema/runtime change. Exact head `1fa06aa52d9fe0a614d581ebfe5d2bc53cef0917`, workflow [44587234028](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44587234028), 3/3 passed.
+- [x] NOVA OS #66 uses durable prepare/recover/read/apply/reject routes and has Chromium/build CI [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857), 2/2 passed; simulated gateway only.
+
+**Still mandatory before any release**
+- [ ] Independent reviewer validates Core #291/#292/#293 exact heads, migrations 0040–0047, trigger ordering, route/HMAC/Access identity binding, actor fencing, replay and audit semantics.
+- [ ] Independent reviewer reruns Core disposable-D1 integration and OS Chromium/build tests against exact recorded SHAs.
+- [ ] Explicitly authorized isolated staging E2E confirms Core and OS compatibility with real Access authentication, lost prepare/apply/reject responses, full reload, second device, original-actor revocation and resolver attribution.
+- [ ] Verify no legacy direct site mutation route or event-insert bypass remains; history reads remain authorized and read-only.
+- [ ] Record reviewer identity, exact SHAs, findings/remediation and written pass/fail.
+
+**Decision: PENDING INDEPENDENT REVIEW AND AUTHORIZED STAGING.** All listed PRs remain draft/unmerged. This packet does not authorize staging or production migrations, deployments, tenant/site provisioning or customer-data operations.
