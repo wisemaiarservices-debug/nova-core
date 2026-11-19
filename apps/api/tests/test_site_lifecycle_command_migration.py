@@ -11,6 +11,7 @@ MIGRATIONS = [
     ROOT / "migrations" / "0044_site_lifecycle_command_idempotency.sql",
     ROOT / "migrations" / "0045_site_lifecycle_command_resolver_reason_guard.sql",
     ROOT / "migrations" / "0046_site_lifecycle_command_distinct_resolver.sql",
+    ROOT / "migrations" / "0047_site_lifecycle_event_requires_command.sql",
 ]
 
 
@@ -418,22 +419,24 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
             [("prepared",)],
         )
 
-    def test_existing_event_path_remains_compatible_until_runtime_cutover(self):
-        self.db.execute(
-            """INSERT INTO tenant_site_lifecycle_events
-               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
-                reason,idempotency_key,request_digest,request_id,occurred_at)
-               VALUES('legacy-event','tenant-a','site-active','owner','deactivated',
-                'active','inactive','legacy approved reason','legacy-key',?,
-                'legacy-request','2026-11-19T12:00:00.000Z')""",
-            ("c" * 64,),
-        )
+    def test_lifecycle_event_without_durable_command_is_rejected(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "requires a durable command"):
+            self.db.execute(
+                """INSERT INTO tenant_site_lifecycle_events
+                   (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
+                    reason,idempotency_key,request_digest,request_id,occurred_at)
+                   VALUES('legacy-event','tenant-a','site-active','owner','deactivated',
+                    'active','inactive','legacy approved reason','legacy-key',?,
+                    'legacy-request','2026-11-19T12:00:00.000Z')""",
+                ("c" * 64,),
+            )
         self.assertEqual(
             self.db.execute("SELECT status FROM sites WHERE id='site-active'").fetchone()[0],
-            "inactive",
+            "active",
         )
-        self.assertIsNone(
-            self.db.execute("SELECT command_id FROM tenant_site_lifecycle_events WHERE id='legacy-event'").fetchone()[0]
+        self.assertEqual(
+            self.db.execute("SELECT count(*) FROM tenant_site_lifecycle_events").fetchone()[0],
+            0,
         )
 
 
