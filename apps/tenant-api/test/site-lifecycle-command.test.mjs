@@ -18,6 +18,7 @@ const migrations = [
   "0042_site_lifecycle_command_recovery.sql",
   "0043_site_lifecycle_command_resolver.sql",
   "0044_site_lifecycle_command_idempotency.sql",
+  "0045_site_lifecycle_command_resolver_reason_guard.sql",
 ].map(name => readFileSync(fileURLToPath(new URL(name, migrationDir)), "utf8"));
 
 const tenant = "tenant-command-test";
