@@ -1329,6 +1329,56 @@ try {
   assert.equal(restoreAfterResolver.response.status, 201, JSON.stringify(restoreAfterResolver.body));
   assert.equal(restoreAfterResolver.body.data.new_status, "active");
 
+  // Exercise the other resolver condition through the real Access gateway,
+  // signed private Worker envelope and disposable D1: revoke the original
+  // command actor while leaving the site itself active.
+  const revokedActorKey = "site-command-original-actor-revoked-" + randomUUID();
+  const revokedActorPrepare = await throughGateway(commandCollectionPath, accessToken("ci-http-admin"),
+    { "content-type": "application/json", "Idempotency-Key": revokedActorKey },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI original actor revocation resolver" }));
+  assert.equal([200, 201].includes(revokedActorPrepare.response.status), true,
+    JSON.stringify(revokedActorPrepare.body));
+  assert.equal(revokedActorPrepare.body.data.status, "pending");
+  const revokedActorCommandId = revokedActorPrepare.body.data.id;
+
+  const lifecycleBeforeRevokedActorReject = await throughGateway(siteLifecycleEventsPath,
+    accessToken("ci-command-resolver"));
+  assert.equal(lifecycleBeforeRevokedActorReject.response.status, 200,
+    JSON.stringify(lifecycleBeforeRevokedActorReject.body));
+  const revokeOriginalActor = await membershipAction("ci-measurement-reviewer", {
+    membership_id: "membership-http-admin", action: "revoke",
+    reason: "CI revoke original durable command actor",
+  });
+  assert.equal(revokeOriginalActor.response.status, 200, JSON.stringify(revokeOriginalActor.body));
+  assert.equal(revokeOriginalActor.body.data.status, "revoked");
+
+  const rejectRevokedActor = await throughGateway(commandCollectionPath + "/" + revokedActorCommandId + "/reject",
+    accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ rejection_code: "original_actor_revoked" }));
+  assert.equal(rejectRevokedActor.response.status, 200, JSON.stringify(rejectRevokedActor.body));
+  assert.equal(rejectRevokedActor.body.data.status, "rejected");
+  assert.equal(rejectRevokedActor.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
+
+  const recoverRevokedActorCommand = await throughGateway(commandCollectionPath + "/" + revokedActorCommandId,
+    accessToken("ci-command-resolver"));
+  assert.equal(recoverRevokedActorCommand.response.status, 200, JSON.stringify(recoverRevokedActorCommand.body));
+  assert.equal(recoverRevokedActorCommand.body.data.status, "rejected");
+  assert.equal(recoverRevokedActorCommand.body.data.events.at(-1).rejection_code, "original_actor_revoked");
+
+  const siteAfterRevokedActorReject = await throughGateway(sitePath, accessToken("ci-command-resolver"));
+  assert.equal(siteAfterRevokedActorReject.response.status, 200, JSON.stringify(siteAfterRevokedActorReject.body));
+  assert.equal(siteAfterRevokedActorReject.body.data.status, "active");
+  const lifecycleAfterRevokedActorReject = await throughGateway(siteLifecycleEventsPath,
+    accessToken("ci-command-resolver"));
+  assert.equal(lifecycleAfterRevokedActorReject.response.status, 200,
+    JSON.stringify(lifecycleAfterRevokedActorReject.body));
+  assert.equal(lifecycleAfterRevokedActorReject.body.data.events.length,
+    lifecycleBeforeRevokedActorReject.body.data.events.length,
+    "rejection after actor revocation must not create a lifecycle event or application");
+
+  const revokedActorCannotApply = await throughGateway(commandCollectionPath + "/" + revokedActorCommandId + "/apply",
+    accessToken("ci-http-admin"), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(revokedActorCannotApply.response.status, 404);
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");

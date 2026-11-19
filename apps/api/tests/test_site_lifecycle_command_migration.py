@@ -257,6 +257,42 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
                     "INSERT INTO tenant_resource_grants VALUES('tenant-a','admin','site','site-active','read')"
                 )
 
+    def test_resolver_must_remain_authorized_until_rejection_commits(self):
+        for revoke_grant in (False, True):
+            with self.subTest(revoke_grant=revoke_grant):
+                self.command(command_id="resolver-race", actor="owner")
+                self.db.execute(
+                    "UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='tenant-a' AND subject='owner'"
+                )
+                if revoke_grant:
+                    self.db.execute(
+                        "DELETE FROM tenant_resource_grants WHERE tenant_id='tenant-a' AND subject='admin' AND resource_type='site' AND resource_id='site-active' AND action='read'"
+                    )
+                else:
+                    self.db.execute(
+                        "UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='tenant-a' AND subject='admin'"
+                    )
+                with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
+                    self.db.execute(
+                        """UPDATE tenant_site_lifecycle_commands
+                           SET status='rejected',rejection_code='original_actor_revoked',
+                               resolved_by_subject='admin',updated_at='2026-11-19T12:02:00.000Z'
+                           WHERE id='resolver-race'"""
+                    )
+                self.assertEqual(
+                    self.db.execute("SELECT status FROM tenant_site_lifecycle_commands WHERE id='resolver-race'").fetchone()[0],
+                    "pending",
+                )
+                self.assertEqual(
+                    self.db.execute("SELECT status FROM sites WHERE id='site-active'").fetchone()[0],
+                    "active",
+                )
+                self.assertEqual(
+                    self.db.execute("SELECT event_type FROM tenant_site_lifecycle_command_events WHERE command_id='resolver-race' ORDER BY rowid").fetchall(),
+                    [("prepared",)],
+                )
+                self.db.rollback()
+
     def test_site_state_change_allows_audited_rejection_without_changing_site_again(self):
         self.command(actor="owner")
         self.db.execute(
