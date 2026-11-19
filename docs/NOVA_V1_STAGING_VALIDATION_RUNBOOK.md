@@ -934,3 +934,21 @@ Core #270 is a parallel API-contract documentation branch; it is not part of the
 Reviewer must independently inspect exact SHAs and ancestry, verify migrations 0042–0045 and triggers, rerun the integrated Core disposable-D1 HTTP suite and OS Chromium/build jobs, and record test commands, findings/severity, remediation SHAs and explicit pass/fail. Repository CI is not independent security approval.
 
 **Release boundary:** independent security review and explicitly authorized staging E2E remain mandatory. No staging/production migration, deployment, tenant/site provisioning or customer-data operation is authorized.
+
+
+## 45. Concurrent durable site-command HTTP evidence — exact heads (2026-11-19)
+
+This section records test-only race coverage added after the command-recovery matrix in section 44. Each result is from the exact PR head and a disposable local D1 exercised through the signed Access gateway and private Worker Service Binding. These are repository CI results, not staging validation.
+
+| PR | Race invariant | Exact head | Exact-head CI |
+|---|---|---|---|
+| Core #278 | Concurrent identical prepare requests converge on one pending command and one prepared audit event; competing intents receive conflict | `d8470304dd83095a41f5518c2bc92e7b9cc9bb07` | [44574754101](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44574754101), 3/3 passed |
+| Core #279 | Concurrent reuse of one idempotency key for different request digests yields one winner and one conflict; recovery preserves the winning immutable intent | `fa914fabd07a995a87da85ae092f0d207c6fb469` | [44575582034](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44575582034), 3/3 passed |
+| Core #281 | Concurrent apply requests converge on one lifecycle event ID and one applied audit event | `6eac70c634657d1bda131c21cea05bbcc7d5e40b` | [44576560346](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44576560346), 3/3 passed |
+| Core #282 | Concurrent resolver rejection requests converge on one rejected command and one correctly attributed rejection audit event; rejection creates no lifecycle event/application and does not change site status | `a42caf44181d2d5a5e8491c4fe8ec2908a172644` | [44578144427](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44578144427), 3/3 passed |
+
+The #278–#282 test branches are stacked; preserve their recorded base relationships when reviewing or integrating. Core #282 is based on #281, #281 on #279, #279 on #278, and #278 on the original-actor-revocation HTTP test branch #275. PR #280 is not represented in this evidence row set.
+
+**Reviewer actions:** independently fetch the exact heads and confirm ancestry; rerun the concurrent HTTP/D1 integration tests; inspect transaction/trigger behavior and verify the one-winner, immutable-intent and append-only audit invariants under repetition. Confirm that test fixtures use synthetic identities and that no production or staging configuration is involved.
+
+**Boundary:** all listed test PRs remain draft/unmerged. Green CI is not independent security sign-off or live staging evidence. Independent security review and explicitly authorized staging E2E remain mandatory. No migration, deployment, tenant/site provisioning or customer-data operation is authorized by this evidence record.
