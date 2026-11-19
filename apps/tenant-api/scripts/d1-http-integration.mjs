@@ -1308,12 +1308,18 @@ try {
   assert.equal(staleSiteTransition.response.status, 201, JSON.stringify(staleSiteTransition.body));
   assert.equal(staleSiteTransition.body.data.new_status, "inactive");
 
-  const resolverReject = await throughGateway(commandCollectionPath + "/" + abandonedId + "/reject",
+  const resolverRejectPath = commandCollectionPath + "/" + abandonedId + "/reject";
+  const concurrentResolverRejects = await Promise.all([1, 2].map(() => throughGateway(resolverRejectPath,
     accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ rejection_code: "site_status_changed" }));
-  assert.equal(resolverReject.response.status, 200, JSON.stringify(resolverReject.body));
-  assert.equal(resolverReject.body.data.status, "rejected");
-  assert.equal(resolverReject.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
+    JSON.stringify({ rejection_code: "site_status_changed" }))));
+  assert.deepEqual(concurrentResolverRejects.map(result => result.response.status).sort(), [200, 200],
+    JSON.stringify(concurrentResolverRejects.map(result => ({ status: result.response.status, body: result.body }))));
+  const concurrentRejectEventIds = concurrentResolverRejects.map(result => result.body.data.events.at(-1).id);
+  assert.ok(concurrentRejectEventIds[0]);
+  assert.equal(concurrentRejectEventIds[1], concurrentRejectEventIds[0]);
+  assert.equal(concurrentResolverRejects.every(result => result.body.data.status === "rejected"), true);
+  assert.equal(concurrentResolverRejects.every(result =>
+    result.body.data.events.at(-1).performed_by_subject === "ci-command-resolver"), true);
 
   const resolverRead = await throughGateway(commandCollectionPath + "/" + abandonedId,
     accessToken("ci-command-resolver"));
@@ -1352,12 +1358,19 @@ try {
   assert.equal(revokeOriginalActor.response.status, 200, JSON.stringify(revokeOriginalActor.body));
   assert.equal(revokeOriginalActor.body.data.status, "revoked");
 
-  const rejectRevokedActor = await throughGateway(commandCollectionPath + "/" + revokedActorCommandId + "/reject",
-    accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ rejection_code: "original_actor_revoked" }));
-  assert.equal(rejectRevokedActor.response.status, 200, JSON.stringify(rejectRevokedActor.body));
-  assert.equal(rejectRevokedActor.body.data.status, "rejected");
-  assert.equal(rejectRevokedActor.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
+  const revokedActorRejectPath = commandCollectionPath + "/" + revokedActorCommandId + "/reject";
+  const concurrentRevokedActorRejects = await Promise.all([1, 2].map(() => throughGateway(
+    revokedActorRejectPath, accessToken("ci-command-resolver"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ rejection_code: "original_actor_revoked" }))));
+  assert.deepEqual(concurrentRevokedActorRejects.map(result => result.response.status).sort(), [200, 200],
+    JSON.stringify(concurrentRevokedActorRejects.map(result => ({ status: result.response.status, body: result.body }))));
+  const revokedActorRejectEventIds = concurrentRevokedActorRejects.map(result => result.body.data.events.at(-1).id);
+  assert.ok(revokedActorRejectEventIds[0]);
+  assert.equal(revokedActorRejectEventIds[1], revokedActorRejectEventIds[0]);
+  assert.equal(concurrentRevokedActorRejects.every(result => result.body.data.status === "rejected"), true);
+  assert.equal(concurrentRevokedActorRejects.every(result =>
+    result.body.data.events.at(-1).performed_by_subject === "ci-command-resolver"), true);
 
   const recoverRevokedActorCommand = await throughGateway(commandCollectionPath + "/" + revokedActorCommandId,
     accessToken("ci-command-resolver"));
