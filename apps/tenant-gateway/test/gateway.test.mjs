@@ -726,6 +726,30 @@ test("routes tenant lifecycle actions and audit reads through signed Access gate
 });
 
 
+test("retires legacy site lifecycle mutation endpoint in favor of durable commands", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "tenant-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  let forwarded = false;
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/lifecycle-actions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+      body: JSON.stringify({ action: "deactivate", reason: "Legacy route must be retired" }),
+    }), {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async () => {
+      forwarded = true;
+      return new Response("unexpected", { status: 200 });
+    } },
+  });
+  assert.equal(response.status, 410);
+  assert.deepEqual(await response.json(), { error: "durable_site_lifecycle_command_required" });
+  assert.equal(forwarded, false);
+});
+
 test("routes dual-identity challenge and owner-review endpoints through the signed gateway", async () => {
   const gateway = createGateway({ verifyAccessToken: async () => ({
     subject: "cloudflare-user", issuer: "https://example.cloudflareaccess.com", audience: "aud",
