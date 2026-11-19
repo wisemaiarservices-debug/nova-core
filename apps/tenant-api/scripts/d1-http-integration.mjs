@@ -1345,7 +1345,7 @@ try {
     accessToken("ci-command-resolver"));
   assert.equal(lifecycleBeforeRevokedActorReject.response.status, 200,
     JSON.stringify(lifecycleBeforeRevokedActorReject.body));
-  const revokeOriginalActor = await membershipAction("ci-human-subject", {
+  const revokeOriginalActor = await membershipAction("ci-measurement-reviewer", {
     membership_id: "membership-http-admin", action: "revoke",
     reason: "CI revoke original durable command actor",
   });
