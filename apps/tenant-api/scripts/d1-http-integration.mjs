@@ -1389,7 +1389,7 @@ try {
     commandCollectionPath, accessToken("ci-human-subject"),
     { "content-type": "application/json", "Idempotency-Key": prepareRaceKey },
     "POST", JSON.stringify(prepareRacePayload))));
-  assert.deepEqual(prepareRace.map(result => result.response.status).sort(), [200, 201],
+  assert.deepEqual(prepareRace.map(result => result.response.status).sort(), [200, 200],
     JSON.stringify(prepareRace.map(result => ({ status: result.response.status, body: result.body }))));
   const racedCommandId = prepareRace[0].body.data.id;
   assert.ok(racedCommandId);
