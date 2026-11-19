@@ -157,6 +157,9 @@ test("resolver rejection is separately attributed and cannot change site status"
   assert.equal(rejected.status, 200);
   assert.equal(rejected.data.status, "rejected");
   assert.equal(rejected.data.events.at(-1).performed_by_subject, resolver);
+  const resolverReload = await recoverTenantSiteLifecycleCommand(db, { tenant, site, actorSubject: resolver });
+  assert.equal(resolverReload.data.id, prepared.data.id);
+  assert.equal(resolverReload.data.status, "rejected");
   assert.equal(sqlite.prepare("SELECT status FROM sites WHERE id=?").get(site).status, "active");
   assert.equal(sqlite.prepare("SELECT count(*) AS n FROM tenant_site_lifecycle_applications").get().n, 0);
   assert.equal(sqlite.prepare("SELECT actor_subject FROM tenant_site_lifecycle_commands WHERE id=?")
