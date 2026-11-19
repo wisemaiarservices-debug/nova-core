@@ -151,7 +151,7 @@ export async function recoverTenantSiteLifecycleCommand(db, { tenant, site, acto
       WHERE tenant_id=? AND site_id=? AND (status='pending' OR actor_subject=?)
       ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,updated_at DESC,id DESC LIMIT 1`
   ).bind(tenant, site, actorSubject));
-  return command ? await responseFor(db, command) : { data: null, status: 200 };
+  return command ? await responseFor(db, command) : { error: "site_lifecycle_command_not_found", status: 404 };
 }
 
 export async function readTenantSiteLifecycleCommand(db, { tenant, site, actorSubject, commandId }) {
