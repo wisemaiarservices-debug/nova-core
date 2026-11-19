@@ -1234,9 +1234,10 @@ try {
   // prepare/replay, reload recovery, actor fencing, atomic apply and resolver
   // attribution end-to-end rather than only through service-level tests.
   const commandCollectionPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/lifecycle-commands";
+  const commandApplyKey = "site-command-apply-" + randomUUID();
   const commandPayload = { action: "deactivate", reason: "CI durable command atomic apply" };
   const commandPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
-    { "content-type": "application/json", "Idempotency-Key": "site-command-apply-001" },
+    { "content-type": "application/json", "Idempotency-Key": commandApplyKey },
     "POST", JSON.stringify(commandPayload));
   assert.equal(commandPrepare.response.status, 201, JSON.stringify(commandPrepare.body));
   assert.equal(commandPrepare.body.data.status, "pending");
@@ -1283,9 +1284,10 @@ try {
   assert.equal(commandSiteAfterApply.response.status, 200, JSON.stringify(commandSiteAfterApply.body));
   assert.equal(commandSiteAfterApply.body.data.status, "inactive");
 
+  const reactivateKey = "site-command-reactivate-" + randomUUID();
   const reactivatePayload = { action: "reactivate", reason: "CI durable command restore site" };
   const reactivatePrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
-    { "content-type": "application/json", "Idempotency-Key": "site-command-reactivate-001" },
+    { "content-type": "application/json", "Idempotency-Key": reactivateKey },
     "POST", JSON.stringify(reactivatePayload));
   assert.equal(reactivatePrepare.response.status, 201, JSON.stringify(reactivatePrepare.body));
   const reactivateApply = await throughGateway(commandCollectionPath + "/" + reactivatePrepare.body.data.id + "/apply",
@@ -1293,8 +1295,9 @@ try {
   assert.equal(reactivateApply.response.status, 200, JSON.stringify(reactivateApply.body));
   assert.equal(reactivateApply.body.data.status, "applied");
 
+  const abandonedKey = "site-command-abandoned-" + randomUUID();
   const abandonedPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
-    { "content-type": "application/json", "Idempotency-Key": "site-command-abandoned-001" },
+    { "content-type": "application/json", "Idempotency-Key": abandonedKey },
     "POST", JSON.stringify({ action: "deactivate", reason: "CI abandoned command resolver" }));
   assert.equal(abandonedPrepare.response.status, 201, JSON.stringify(abandonedPrepare.body));
   const abandonedId = abandonedPrepare.body.data.id;
