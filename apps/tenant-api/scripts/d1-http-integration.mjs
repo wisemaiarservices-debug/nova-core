@@ -1323,7 +1323,11 @@ try {
   assert.equal(siteAfterResolverReject.response.status, 200, JSON.stringify(siteAfterResolverReject.body));
   assert.equal(siteAfterResolverReject.body.data.status, "inactive");
 
-  const restoreAfterResolver = await throughGateway(siteLifecycleActionPath, PLACEHOLDER
+  const restoreAfterResolver = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-command-resolver-restore-" + randomUUID() },
+    "POST", JSON.stringify({ action: "reactivate", reason: "CI restore site after resolver test" }));
+  assert.equal(restoreAfterResolver.response.status, 201, JSON.stringify(restoreAfterResolver.body));
+  assert.equal(restoreAfterResolver.body.data.new_status, "active");
 
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
