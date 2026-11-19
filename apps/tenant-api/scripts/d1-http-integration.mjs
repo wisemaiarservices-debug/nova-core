@@ -1251,7 +1251,7 @@ try {
   assert.equal(commandReloadRecovery.body.data.status, "pending");
 
   const commandPrepareReplay = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
-    { "content-type": "application/json", "Idempotency-Key": "site-command-apply-001" },
+    { "content-type": "application/json", "Idempotency-Key": commandApplyKey },
     "POST", JSON.stringify(commandPayload));
   assert.equal(commandPrepareReplay.response.status, 200, JSON.stringify(commandPrepareReplay.body));
   assert.equal(commandPrepareReplay.body.data.id, commandId);
