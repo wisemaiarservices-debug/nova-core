@@ -73,7 +73,7 @@ try {
   assert.equal(roleChanged.body.data.role, "analyst");
   assert.equal(roleChanged.body.data.event_type, "role_changed");
 
-  const adminRoleChange = await membershipAction("ci-http-admin", {
+  const adminRoleChange = await membershipAction("ci-command-resolver", {
     membership_id: "membership-http-lifecycle", action: "change_role",
     role: "viewer", reason: "Admin role change must be denied",
   });
@@ -133,7 +133,7 @@ try {
   assert.equal(siteGrantCreated.response.status, 201, JSON.stringify(siteGrantCreated.body));
   assert.equal(siteGrantCreated.body.data.status, "active");
   assert.equal(siteGrantCreated.body.data.resource_type, "site");
-  const adminPrivilegedGrant = await siteGrant("ci-http-admin", {
+  const adminPrivilegedGrant = await siteGrant("ci-command-resolver", {
     action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
     grant_action: "delete", reason: "Admin must not grant destructive access",
   });
@@ -669,7 +669,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   const adminCannotTransferOwnership = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-http-admin"),
+    "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-command-resolver"),
     { "content-type": "application/json" }, "POST",
     JSON.stringify({ target_membership_id: "membership-http-reviewer",
       reason: "Admin must not transfer ownership" }));
@@ -1234,12 +1234,6 @@ try {
   // prepare/replay, reload recovery, actor fencing, atomic apply and resolver
   // attribution end-to-end rather than only through service-level tests.
   const commandCollectionPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/lifecycle-commands";
-  const adminSiteGrant = await siteGrant("ci-human-subject", {
-    action: "grant", subject: "ci-http-admin", site_id: "site-http-a",
-    grant_action: "read", reason: "CI resolver admin exact site grant",
-  });
-  assert.equal(adminSiteGrant.response.status, 201, JSON.stringify(adminSiteGrant.body));
-
   const commandPayload = { action: "deactivate", reason: "CI durable command atomic apply" };
   const commandPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
     { "content-type": "application/json", "Idempotency-Key": "site-command-apply-001" },
