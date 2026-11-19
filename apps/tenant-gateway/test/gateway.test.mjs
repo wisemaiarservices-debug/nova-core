@@ -1031,3 +1031,67 @@ test("forwards the retired assessment route without a client operation key", asy
   assert.match(forwarded[0].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
   assert.match(forwarded[1].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
 });
+
+
+test("routes durable site lifecycle command prepare, recover, apply and reject through signed gateway", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "tenant-owner", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const forwarded = [];
+  const env = {
+    ACCESS_ISSUER: "https://example.cloudflareaccess.com",
+    ACCESS_AUDIENCE: "aud",
+    INTERNAL_AUTH_SECRET: "test-only-internal-secret-with-32-bytes-minimum",
+    TENANT_API: { fetch: async request => {
+      forwarded.push(request);
+      return new Response(JSON.stringify({ data: { status: "pending" } }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } },
+  };
+  const base = "https://gateway.test/api/v1/tenants/tenant-a/sites/site-a/lifecycle-commands";
+  const preparePayload = JSON.stringify({ action: "deactivate", reason: "Planned maintenance" });
+  const prepare = await gateway.fetch(new Request(base, {
+    method: "POST",
+    headers: { "content-type": "application/json", "Idempotency-Key": "lifecycle-retry-001",
+      "Cf-Access-Jwt-Assertion": "valid" },
+    body: preparePayload,
+  }), env);
+  assert.equal(prepare.status, 200);
+  assert.equal(new URL(forwarded[0].url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/lifecycle-commands");
+  assert.equal(forwarded[0].headers.get("x-nova-idempotency-key"), "lifecycle-retry-001");
+  assert.equal(await forwarded[0].text(), preparePayload);
+  assert.match(forwarded[0].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
+
+  const read = await gateway.fetch(new Request(base + "/command-001", {
+    method: "GET", headers: { "Cf-Access-Jwt-Assertion": "valid" },
+  }), env);
+  assert.equal(read.status, 200);
+  assert.equal(new URL(forwarded[1].url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/lifecycle-commands/command-001");
+
+  const apply = await gateway.fetch(new Request(base + "/command-001/apply", {
+    method: "POST", headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+    body: "{}",
+  }), env);
+  assert.equal(apply.status, 200);
+  assert.equal(new URL(forwarded[2].url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/lifecycle-commands/command-001/apply");
+
+  const rejectPayload = JSON.stringify({ rejection_code: "original_actor_revoked" });
+  const reject = await gateway.fetch(new Request(base + "/command-001/reject", {
+    method: "POST", headers: { "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid" },
+    body: rejectPayload,
+  }), env);
+  assert.equal(reject.status, 200);
+  assert.equal(new URL(forwarded[3].url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/lifecycle-commands/command-001/reject");
+  assert.equal(await forwarded[3].text(), rejectPayload);
+
+  const wrongMethod = await gateway.fetch(new Request(base + "/command-001/apply", {
+    method: "GET", headers: { "Cf-Access-Jwt-Assertion": "valid" },
+  }), env);
+  assert.equal(wrongMethod.status, 404);
+  assert.equal(forwarded.length, 4);
+});
