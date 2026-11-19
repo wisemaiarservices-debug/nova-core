@@ -9,6 +9,7 @@ MIGRATIONS = [
     ROOT / "migrations" / "0042_site_lifecycle_command_recovery.sql",
     ROOT / "migrations" / "0043_site_lifecycle_command_resolver.sql",
     ROOT / "migrations" / "0044_site_lifecycle_command_idempotency.sql",
+    ROOT / "migrations" / "0045_site_lifecycle_command_resolver_reason_guard.sql",
 ]
 
 
@@ -165,6 +166,13 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
         self.db.execute(
             "UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='tenant-a' AND subject='owner'"
         )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
+            self.db.execute(
+                """UPDATE tenant_site_lifecycle_commands
+                   SET status='rejected',rejection_code='site_status_changed',
+                       resolved_by_subject='admin',updated_at='2026-11-19T12:02:00.000Z'
+                   WHERE id='command-1'"""
+            )
         self.db.execute(
             """UPDATE tenant_site_lifecycle_commands
                SET status='rejected',rejection_code='original_actor_revoked',
@@ -260,6 +268,13 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
                 'legacy-request','2026-11-19T12:01:00.000Z')""",
             ("c" * 64,),
         )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
+            self.db.execute(
+                """UPDATE tenant_site_lifecycle_commands
+                   SET status='rejected',rejection_code='original_actor_revoked',
+                       resolved_by_subject='admin',updated_at='2026-11-19T12:02:00.000Z'
+                   WHERE id='command-1'"""
+            )
         self.db.execute(
             """UPDATE tenant_site_lifecycle_commands
                SET status='rejected',rejection_code='site_status_changed',
@@ -276,6 +291,20 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
             ).fetchone()[0],
             "admin",
         )
+
+    def test_rejection_reason_must_match_an_allowed_resolver_condition(self):
+        self.command()
+        for code in ("operator_requested", "site_status_changed", "original_actor_revoked", None):
+            with self.subTest(code=code), self.assertRaisesRegex(
+                sqlite3.IntegrityError, "not eligible for resolution"
+            ):
+                self.db.execute(
+                    """UPDATE tenant_site_lifecycle_commands
+                       SET status='rejected',rejection_code=?,resolved_by_subject='admin',
+                           updated_at='2026-11-19T12:02:00.000Z'
+                       WHERE id='command-1'""",
+                    (code,),
+                )
 
     def test_terminal_commands_and_command_history_are_immutable(self):
         self.command()
