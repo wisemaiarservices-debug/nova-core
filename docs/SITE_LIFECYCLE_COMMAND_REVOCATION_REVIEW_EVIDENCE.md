@@ -18,6 +18,14 @@ All integration scenarios use synthetic identities, the signed local Access gate
 
 Each listed workflow completed successfully on the exact SHA shown. The CI jobs include API/security tests, research raster tests, and tenant Worker tests; the tenant Worker job applies ordered migrations to disposable local D1 and exercises the signed gateway/private Worker integration.
 
+## Follow-up evidence — resolver rejection is also actor-bound
+
+| PR | Added invariant | Exact head | Exact-head CI |
+|---|---|---|---|
+| Core #289 | After original administrator membership is revoked, their attempt to reject the pending command is denied before the separately authorized resolver acts; the command remains pending for authorized recovery | `da5ee9141e5f175fd20110c638ae9729c1829d7d` | [44584057281](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44584057281), 3/3 passed |
+
+The #289 regression uses the signed local Access gateway, private Worker and disposable local D1. It complements #284–#286 by covering the rejection mutation route as well as apply, individual read and collection recovery. It does not establish production Access behavior or live staging validation.
+
 ## Security properties exercised
 
 - Authorization is checked at the time of apply and read; command authorship does not preserve access after membership revocation.
