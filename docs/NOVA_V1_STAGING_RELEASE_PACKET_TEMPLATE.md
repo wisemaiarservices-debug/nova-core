@@ -396,6 +396,7 @@ PR #239 and all constituent changes remain draft/unmerged. CI is not deployed st
 - Browser workflow reserves/recover operations from server-derived scope, reads terminal result after reload, and does not persist operation IDs or credentials in browser storage.
 
 ### Outstanding release evidence
+
 - [ ] All four PRs merged after review; matching Core base and migrations approved.
 - [ ] Staging D1 migrations applied and verified in order.
 - [ ] Private Worker/gateway deployments and Service Bindings verified.
