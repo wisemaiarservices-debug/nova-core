@@ -198,6 +198,7 @@ Until these gates pass, no production configuration, migrations, deployment, cus
 ## 10. Follow-up Core response-boundary hardening
 
 Core PR #228 (`fix/core-bound-owner-authorization-response`) is a draft child of the combined Core PR #227 integration branch. It changes the private NOVA OS authorization response reader to enforce a 16 KiB byte cap while streaming, reject malformed/oversized declared lengths before reading, cancel oversized streams, and decode UTF-8 strictly.
+
 - PR #228 exact head: `46ca757c110313270f7212dab91a933dbdb47e44`.
 - Exact-head Core CI [run 44189340065](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44189340065) passed all three jobs: API tests, tenant Worker/D1 integration (including ordered migrations, SQL preparation, isolated fixtures and gateway/private Worker Service Bindings E2E), and research raster tests.
 - Focused tests cover oversized streaming and cancellation, oversized and malformed Content-Length rejection before body read, and acceptance at exactly 16 KiB.
@@ -397,6 +398,7 @@ No staging or production database was queried or changed during this source audi
 ### Finding
 
 A second-order lifecycle gap remained after ingestion: measurement-quality assessment required a verified observation, exact verified sensor/source mapping, effective verified calibration and exact verified policy, but did not recheck the source's current lifecycle status. A previously verified observation could therefore receive a new assessment after its source had subsequently been disabled or revoked.
+
 ### Remediation candidate
 
 Core PR #232 adds a live source check before creating a new assessment. It requires the exact source to remain verified, match the observation's tenant and module, be explicitly global or scoped to the observation site, and belong to an active tenant and active site. Otherwise the assessment is recorded as `not_assessed` with reason `source_not_active_or_verified`. Historical observations and already-created immutable assessment records are not rewritten; exact idempotent replay returns the original result rather than creating a new assessment.
@@ -595,6 +597,7 @@ Core PR [#258](https://github.com/wisemaiarservices-debug/nova-core/pull/258) ad
 Exact-head CI [44329522954](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44329522954) passed all three jobs for `78743db97a7787582eedfae77147ffb63b2f496e`, including ordered migrations and full gateway/private Worker HTTP integration.
 
 This validates local membership rechecks at the completion endpoint. Staging must repeat suspension and permanent revocation while an operation is reserved and while a lease is active; confirm no assessment or terminal event is written after authorization denial. PR #258 remains draft/unmerged.
+
 ## 29. Tenant suspension at assessment completion boundary (Core PR #259)
 
 Core PR [#259](https://github.com/wisemaiarservices-debug/nova-core/pull/259) adds a local gateway → private Worker → disposable D1 scenario using an invited member's already-claimed assessment operation. The current tenant owner suspends the tenant after lease claim; the member's completion request is denied even though the lease was previously valid. The current owner then reactivates the tenant so subsequent grant-revocation scenarios can run.
@@ -794,6 +797,7 @@ Release gate: independent reviewer must validate OS #64 against Core #266, inclu
 ## 39. Latest OS #64 workflow-state test validation
 
 OS PR #64 now includes the separately testable assessment operation state machine and tests for initial reservation/claim/completion, terminal replay after reload, expired-lease recovery, stale-completion conflict and denial without fallback.
+
 - OS commit `b76ef56906025b5c9d1c68a8fd66bde7fd680d47` passed [CI run 44399619773](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44399619773).
 - Current OS PR #64 head `df5fb4ecaabb5b6580f6ab7d3e97b22b90476213` passed exact-head CI run [44399707616](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44399707616): 57 tests passed, TypeScript check passed, production build passed.
 - Core PR #266 exact head remains `e157555927f85a30a04366c4317a32b00b0fa42c`, with 3/3 CI jobs passed in run 44398811437.
