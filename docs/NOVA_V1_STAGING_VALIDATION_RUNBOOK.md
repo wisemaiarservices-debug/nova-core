@@ -927,7 +927,7 @@ This is an evidence index for the independent reviewer, not an approval. PR meta
 | NOVA OS #66 | Durable lifecycle browser workflow | `f6f3fac6eeef77194975b6b462b499413c36fe1c` | [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857), success |
 | Core #267 | Documentation handoff | `21487321ee762c25285ff65448dbab4976fe2781` | [44561864602](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44561864602), success |
 | NOVA OS #67 | Original-actor revocation Chromium scenario (test-only) | `71669c2481496d24f4f3a61e0c0ab2103c6dd25e` | [44566307214](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44566307214), success |
-| Core #275 | Original-actor revocation through signed gateway/private Worker/disposable D1 (test-only) | `a7381fb32554198ac7d0726503cc97dcc0320e8d` | [44567289774](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44567289774), success |
+| Core #275 | Original-actor revocation plus resolver reauthorization regression (test-only) | `17271e9d4d76af33e2a15ba2a195dad564540d5c` | [44572507610](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44572507610), success |
 
 Core #270 is a parallel API-contract documentation branch; it is not part of the runtime dependency chain #271–#274. #274 is the integrated Core runtime candidate and OS #66 is the draft browser client. All are open/draft/unmerged. The OS browser gateway is simulated with synthetic tenant/site identifiers and does not validate production Access or live staging.
 
