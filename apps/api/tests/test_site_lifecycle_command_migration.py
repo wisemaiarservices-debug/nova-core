@@ -70,7 +70,15 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
         # Historical pre-cutover event fixture: temporarily remove the new
         # guard only while creating the already-existing legacy state.
         self.db.execute("DROP TRIGGER tenant_site_lifecycle_event_requires_command")
-        self.simulate_pre_cutover_legacy_transition()
+        self.db.execute(
+            """INSERT INTO tenant_site_lifecycle_events
+               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
+                reason,idempotency_key,request_digest,request_id,occurred_at)
+               VALUES('legacy-event','tenant-a','site-active','admin','deactivated',
+                'active','inactive','separate governed transition','legacy-key',?,
+                'legacy-request','2026-11-19T12:01:00.000Z')""",
+            ("c" * 64,),
+        )
         self.db.executescript(
             """CREATE TRIGGER tenant_site_lifecycle_event_requires_command
                BEFORE INSERT ON tenant_site_lifecycle_events
