@@ -952,3 +952,21 @@ The #278–#282 test branches are stacked; preserve their recorded base relation
 **Reviewer actions:** independently fetch the exact heads and confirm ancestry; rerun the concurrent HTTP/D1 integration tests; inspect transaction/trigger behavior and verify the one-winner, immutable-intent and append-only audit invariants under repetition. Confirm that test fixtures use synthetic identities and that no production or staging configuration is involved.
 
 **Boundary:** all listed test PRs remain draft/unmerged. Green CI is not independent security sign-off or live staging evidence. Independent security review and explicitly authorized staging E2E remain mandatory. No migration, deployment, tenant/site provisioning or customer-data operation is authorized by this evidence record.
+
+
+## 46. Durable site lifecycle authorization and coordinated cutover — exact heads (2026-11-19)
+
+This update supersedes the earlier legacy-route-retention note for the current Core command candidate. Core #292 retires the legacy direct `lifecycle-actions` mutation route (HTTP 410) and migration 0047 rejects lifecycle-event inserts without a durable command ID. Lifecycle history remains GET-only. NOVA OS #66 already uses prepare/recover/read/apply/reject command routes; its PR description now records Core #291/#292 as coordinated cutover dependencies.
+
+| PR | Scope | Exact head | Exact-head CI |
+|---|---|---|---|
+| Core #291 | Distinct authorized resolver; original actor cannot self-reject stale command | `2f9b24a2f9db7f6caa41a8b124de4efebd58e1fa` | [44585485623](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44585485623), 3/3 passed |
+| Core #292 | Retire direct lifecycle mutation; require command-backed lifecycle events | `13a4311c124e1080653981c5ae1651a0239fb95b` | [44586428729](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44586428729), 3/3 passed |
+| Core #293 | Test authorization revalidation at event insertion after membership, site-grant or tenant revocation | `1fa06aa52d9fe0a614d581ebfe5d2bc53cef0917` | [44587234028](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44587234028), 3/3 passed |
+| NOVA OS #66 | Durable lifecycle browser client; simulated gateway only | `f6f3fac6eeef77194975b6b462b499413c36fe1c` | [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857), 2/2 passed |
+
+The authorization recheck at the actual event insert already exists in migration 0040's `tenant_site_lifecycle_event_insert_guard`: active tenant, active owner/admin membership, exact site read grant and exact current site status. Core #293 adds direct migration-level regression tests proving that revoking each prerequisite after command preparation blocks event insertion, leaves the command pending, preserves site status and appends no terminal command event. No new production migration was needed for this test.
+
+**Reviewer actions:** independently inspect the #291/#292/#293 exact heads and branch ancestry; verify 0040, 0045, 0046 and 0047 trigger ordering and invariants; rerun the disposable-D1 HTTP integration and the three post-prepare revocation tests; inspect OS #66's route methods, replay behavior and resolver confirmation against the current Core candidate. Confirm no legacy direct write path remains and that lifecycle history remains read-only.
+
+**Release boundary:** all listed PRs remain draft/unmerged. The OS browser runner uses a simulated gateway and synthetic tenant/site IDs. Repository CI is not live staging, production Access authentication, customer-data validation or independent security review. Independent review and explicitly authorized staging E2E remain mandatory. No migration, deployment, tenant/site provisioning or customer-data operation is authorized.
