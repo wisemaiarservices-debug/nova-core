@@ -153,7 +153,7 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
         )
         self.assertEqual(
             self.db.execute("SELECT event_type,rejection_code FROM tenant_site_lifecycle_command_events WHERE command_id='command-1' ORDER BY rowid DESC LIMIT 1").fetchone(),
-            ("rejected", "site_status_changed"),
+            ("rejected", "original_actor_revoked"),
         )
 
 
