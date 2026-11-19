@@ -10,6 +10,7 @@ MIGRATIONS = [
     ROOT / "migrations" / "0043_site_lifecycle_command_resolver.sql",
     ROOT / "migrations" / "0044_site_lifecycle_command_idempotency.sql",
     ROOT / "migrations" / "0045_site_lifecycle_command_resolver_reason_guard.sql",
+    ROOT / "migrations" / "0046_site_lifecycle_command_distinct_resolver.sql",
 ]
 
 
@@ -326,6 +327,43 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
                 "SELECT performed_by_subject FROM tenant_site_lifecycle_command_events WHERE command_id='command-1' AND event_type='rejected'"
             ).fetchone()[0],
             "admin",
+        )
+
+    def test_original_actor_cannot_resolve_own_stale_command(self):
+        self.command(actor="owner")
+        self.db.execute(
+            """INSERT INTO tenant_site_lifecycle_events
+               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
+                reason,idempotency_key,request_digest,request_id,occurred_at)
+               VALUES('legacy-event','tenant-a','site-active','admin','deactivated',
+                'active','inactive','separate governed transition','legacy-key',?,
+                'legacy-request','2026-11-19T12:01:00.000Z')""",
+            ("c" * 64,),
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
+            self.db.execute(
+                """UPDATE tenant_site_lifecycle_commands
+                   SET status='rejected',rejection_code='site_status_changed',
+                       resolved_by_subject='owner',updated_at='2026-11-19T12:02:00.000Z'
+                   WHERE id='command-1'"""
+            )
+        self.assertEqual(
+            self.db.execute("SELECT status,resolved_by_subject FROM tenant_site_lifecycle_commands WHERE id='command-1'").fetchone(),
+            ("pending", None),
+        )
+        self.assertEqual(
+            self.db.execute("SELECT event_type FROM tenant_site_lifecycle_command_events WHERE command_id='command-1' ORDER BY rowid").fetchall(),
+            [("prepared",)],
+        )
+        self.db.execute(
+            """UPDATE tenant_site_lifecycle_commands
+               SET status='rejected',rejection_code='site_status_changed',
+                   resolved_by_subject='admin',updated_at='2026-11-19T12:03:00.000Z'
+               WHERE id='command-1'"""
+        )
+        self.assertEqual(
+            self.db.execute("SELECT actor_subject,resolved_by_subject,status FROM tenant_site_lifecycle_commands WHERE id='command-1'").fetchone(),
+            ("owner", "admin", "rejected"),
         )
 
     def test_rejection_reason_must_match_an_allowed_resolver_condition(self):
