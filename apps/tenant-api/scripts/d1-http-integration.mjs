@@ -1308,6 +1308,20 @@ try {
   assert.equal(staleSiteTransition.response.status, 201, JSON.stringify(staleSiteTransition.body));
   assert.equal(staleSiteTransition.body.data.new_status, "inactive");
 
+  // The original actor is still an administrator, but must not self-resolve
+  // its own stale command; only a distinct authorized resolver may reject it.
+  const selfRejectStaleCommand = await throughGateway(
+    commandCollectionPath + "/" + abandonedId + "/reject",
+    accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ rejection_code: "site_status_changed" }));
+  assert.equal(selfRejectStaleCommand.response.status, 409, JSON.stringify(selfRejectStaleCommand.body));
+  const stillPendingAfterSelfReject = await throughGateway(
+    commandCollectionPath + "/" + abandonedId, accessToken("ci-human-subject"));
+  assert.equal(stillPendingAfterSelfReject.response.status, 200,
+    JSON.stringify(stillPendingAfterSelfReject.body));
+  assert.equal(stillPendingAfterSelfReject.body.data.status, "pending");
+  assert.equal(stillPendingAfterSelfReject.body.data.events.filter(event => event.event_type === "rejected").length, 0);
+
   const resolverRejectPath = commandCollectionPath + "/" + abandonedId + "/reject";
   const concurrentResolverRejects = await Promise.all([1, 2].map(() => throughGateway(resolverRejectPath,
     accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
