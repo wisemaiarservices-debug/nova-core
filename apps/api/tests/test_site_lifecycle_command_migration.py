@@ -139,14 +139,17 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
     def test_pending_command_can_be_terminally_rejected_and_is_audited(self):
         self.command()
         self.db.execute(
+            "UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='tenant-a' AND subject='owner'"
+        )
+        self.db.execute(
             """UPDATE tenant_site_lifecycle_commands
-               SET status='rejected',rejection_code='site_status_changed',
-                   updated_at='2026-11-19T12:02:00.000Z'
+               SET status='rejected',rejection_code='original_actor_revoked',
+                   resolved_by_subject='admin',updated_at='2026-11-19T12:02:00.000Z'
                WHERE id='command-1'"""
         )
         self.assertEqual(
             self.db.execute("SELECT status,rejection_code FROM tenant_site_lifecycle_commands WHERE id='command-1'").fetchone(),
-            ("rejected", "site_status_changed"),
+            ("rejected", "original_actor_revoked"),
         )
         self.assertEqual(
             self.db.execute("SELECT event_type,rejection_code FROM tenant_site_lifecycle_command_events WHERE command_id='command-1' ORDER BY rowid DESC LIMIT 1").fetchone(),
