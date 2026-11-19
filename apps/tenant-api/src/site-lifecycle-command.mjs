@@ -149,7 +149,7 @@ export async function recoverTenantSiteLifecycleCommand(db, { tenant, site, acto
             idempotency_key,created_at,updated_at
        FROM tenant_site_lifecycle_commands
       WHERE tenant_id=? AND site_id=? AND (status='pending' OR actor_subject=?)
-      ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,updated_at DESC,id DESC LIMIT 2`
+      ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,updated_at DESC,id DESC LIMIT 1`
   ).bind(tenant, site, actorSubject));
   return command ? await responseFor(db, command) : { data: null, status: 200 };
 }
