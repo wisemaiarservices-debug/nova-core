@@ -1433,9 +1433,9 @@ try {
     { "content-type": "application/json", "Idempotency-Key": conflictingRaceKey },
     "POST", JSON.stringify(payload))));
   const conflictingRaceStatuses = conflictingDigestRace.map(result => result.response.status).sort();
-  assert.deepEqual(conflictingRaceStatuses, [201, 409],
+  assert.deepEqual(conflictingRaceStatuses, [200, 409],
     JSON.stringify(conflictingDigestRace.map(result => ({ status: result.response.status, body: result.body }))));
-  const winningConflictingRace = conflictingDigestRace.find(result => result.response.status === 201);
+  const winningConflictingRace = conflictingDigestRace.find(result => result.response.status === 200);
   assert.ok(winningConflictingRace?.body?.data?.id);
   const conflictingRaceRecovery = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"));
   assert.equal(conflictingRaceRecovery.response.status, 200, JSON.stringify(conflictingRaceRecovery.body));
