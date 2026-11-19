@@ -256,7 +256,7 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
     def test_terminal_commands_and_command_history_are_immutable(self):
         self.command()
         self.apply()
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "pending-to-terminal"):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
             self.db.execute(
                 "UPDATE tenant_site_lifecycle_commands SET reason='changed' WHERE id='command-1'"
             )
