@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import {
   matchTenantSiteLifecycleCommandRoute,
   prepareTenantSiteLifecycleCommand,
-  readTenantSiteLifecycleCommand,\n  recoverTenantSiteLifecycleCommand,
+  readTenantSiteLifecycleCommand,
+  recoverTenantSiteLifecycleCommand,
   applyTenantSiteLifecycleCommand,
   rejectTenantSiteLifecycleCommand,
 } from "../src/site-lifecycle-command.mjs";
