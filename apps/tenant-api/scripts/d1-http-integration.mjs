@@ -1314,7 +1314,7 @@ try {
     JSON.stringify({ rejection_code: "site_status_changed" }))));
   assert.deepEqual(concurrentResolverRejects.map(result => result.response.status).sort(), [200, 200],
     JSON.stringify(concurrentResolverRejects.map(result => ({ status: result.response.status, body: result.body }))));
-  const concurrentRejectEventIds = concurrentResolverRejects.map(result => result.body.data.events.at(-1).id);
+  const concurrentRejectEventIds = concurrentResolverRejects.map(result => result.body.data.event_id);
   assert.ok(concurrentRejectEventIds[0]);
   assert.equal(concurrentRejectEventIds[1], concurrentRejectEventIds[0]);
   assert.equal(concurrentResolverRejects.every(result => result.body.data.status === "rejected"), true);
@@ -1365,7 +1365,7 @@ try {
     JSON.stringify({ rejection_code: "original_actor_revoked" }))));
   assert.deepEqual(concurrentRevokedActorRejects.map(result => result.response.status).sort(), [200, 200],
     JSON.stringify(concurrentRevokedActorRejects.map(result => ({ status: result.response.status, body: result.body }))));
-  const revokedActorRejectEventIds = concurrentRevokedActorRejects.map(result => result.body.data.events.at(-1).id);
+  const revokedActorRejectEventIds = concurrentRevokedActorRejects.map(result => result.body.data.event_id);
   assert.ok(revokedActorRejectEventIds[0]);
   assert.equal(revokedActorRejectEventIds[1], revokedActorRejectEventIds[0]);
   assert.equal(concurrentRevokedActorRejects.every(result => result.body.data.status === "rejected"), true);
