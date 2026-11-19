@@ -1334,6 +1334,69 @@ try {
   assert.equal(restoreAfterResolver.response.status, 201, JSON.stringify(restoreAfterResolver.body));
   assert.equal(restoreAfterResolver.body.data.new_status, "active");
 
+  // Revoke only the original command actor's exact site read grant while
+  // preserving their active administrator membership. Current site access,
+  // not membership role alone, must govern apply and recovery visibility.
+  const grantRevokedActorKey = "site-command-original-actor-grant-revoked-" + randomUUID();
+  const grantRevokedActorPrepare = await throughGateway(commandCollectionPath, accessToken("ci-http-admin"),
+    { "content-type": "application/json", "Idempotency-Key": grantRevokedActorKey },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI original actor site grant revocation resolver" }));
+  assert.equal([200, 201].includes(grantRevokedActorPrepare.response.status), true,
+    JSON.stringify(grantRevokedActorPrepare.body));
+  const grantRevokedActorCommandId = grantRevokedActorPrepare.body.data.id;
+  const lifecycleBeforeGrantRevokedActorReject = await throughGateway(siteLifecycleEventsPath,
+    accessToken("ci-command-resolver"));
+  assert.equal(lifecycleBeforeGrantRevokedActorReject.response.status, 200,
+    JSON.stringify(lifecycleBeforeGrantRevokedActorReject.body));
+  const revokeOriginalActorSiteGrant = await siteGrant("ci-human-subject", {
+    action: "revoke", subject: "ci-http-admin", site_id: "site-http-a",
+    grant_action: "read", reason: "CI revoke original command actor site read grant",
+  });
+  assert.equal(revokeOriginalActorSiteGrant.response.status, 200,
+    JSON.stringify(revokeOriginalActorSiteGrant.body));
+  assert.equal(revokeOriginalActorSiteGrant.body.data.status, "revoked");
+  const grantRevokedActorApply = await throughGateway(
+    commandCollectionPath + "/" + grantRevokedActorCommandId + "/apply",
+    accessToken("ci-http-admin"), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(grantRevokedActorApply.response.status, 404, JSON.stringify(grantRevokedActorApply.body));
+  const grantRevokedActorRead = await throughGateway(
+    commandCollectionPath + "/" + grantRevokedActorCommandId, accessToken("ci-http-admin"));
+  assert.equal(grantRevokedActorRead.response.status, 404, JSON.stringify(grantRevokedActorRead.body));
+  const grantRevokedActorCollection = await throughGateway(commandCollectionPath, accessToken("ci-http-admin"));
+  assert.equal(grantRevokedActorCollection.response.status, 404,
+    JSON.stringify(grantRevokedActorCollection.body));
+  const grantRevokedActorResolverRead = await throughGateway(
+    commandCollectionPath + "/" + grantRevokedActorCommandId, accessToken("ci-command-resolver"));
+  assert.equal(grantRevokedActorResolverRead.response.status, 200,
+    JSON.stringify(grantRevokedActorResolverRead.body));
+  assert.equal(grantRevokedActorResolverRead.body.data.status, "pending");
+  const grantRevokedActorReject = await throughGateway(
+    commandCollectionPath + "/" + grantRevokedActorCommandId + "/reject",
+    accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ rejection_code: "original_actor_revoked" }));
+  assert.equal(grantRevokedActorReject.response.status, 200,
+    JSON.stringify(grantRevokedActorReject.body));
+  assert.equal(grantRevokedActorReject.body.data.status, "rejected");
+  assert.equal(grantRevokedActorReject.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
+  assert.equal(grantRevokedActorReject.body.data.events.at(-1).rejection_code, "original_actor_revoked");
+  const siteAfterGrantRevokedActorReject = await throughGateway(sitePath, accessToken("ci-command-resolver"));
+  assert.equal(siteAfterGrantRevokedActorReject.response.status, 200,
+    JSON.stringify(siteAfterGrantRevokedActorReject.body));
+  assert.equal(siteAfterGrantRevokedActorReject.body.data.status, "active");
+  const lifecycleAfterGrantRevokedActorReject = await throughGateway(siteLifecycleEventsPath,
+    accessToken("ci-command-resolver"));
+  assert.equal(lifecycleAfterGrantRevokedActorReject.response.status, 200,
+    JSON.stringify(lifecycleAfterGrantRevokedActorReject.body));
+  assert.equal(lifecycleAfterGrantRevokedActorReject.body.data.events.length,
+    lifecycleBeforeGrantRevokedActorReject.body.data.events.length,
+    "site-grant revocation rejection must not create a lifecycle event or application");
+  const restoreOriginalActorSiteGrant = await siteGrant("ci-human-subject", {
+    action: "grant", subject: "ci-http-admin", site_id: "site-http-a",
+    grant_action: "read", reason: "CI restore original command actor site read grant",
+  });
+  assert.equal(restoreOriginalActorSiteGrant.response.status, 201,
+    JSON.stringify(restoreOriginalActorSiteGrant.body));
+
   // Exercise the other resolver condition through the real Access gateway,
   // signed private Worker envelope and disposable D1: revoke the original
   // command actor while leaving the site itself active.
