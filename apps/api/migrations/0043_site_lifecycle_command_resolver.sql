@@ -94,3 +94,36 @@ BEGIN
   CASE WHEN NEW.status='rejected' THEN NEW.resolved_by_subject ELSE NEW.actor_subject END
  );
 END;
+
+-- Command history rows may only be emitted by the matching guarded command transition.
+CREATE TRIGGER tenant_site_lifecycle_command_event_insert_guard
+BEFORE INSERT ON tenant_site_lifecycle_command_events
+WHEN NOT EXISTS (
+ SELECT 1 FROM tenant_site_lifecycle_commands command
+ WHERE command.id=NEW.command_id
+   AND command.tenant_id=NEW.tenant_id
+   AND command.site_id=NEW.site_id
+   AND command.actor_subject=NEW.actor_subject
+   AND (
+     (NEW.event_type='prepared' AND command.status='pending'
+       AND NEW.id='prepared:'||command.id
+       AND NEW.occurred_at=command.created_at
+       AND NEW.performed_by_subject=command.actor_subject
+       AND NEW.rejection_code IS NULL)
+     OR
+     (NEW.event_type='applied' AND command.status='applied'
+       AND NEW.id='applied:'||command.id
+       AND NEW.occurred_at=command.updated_at
+       AND NEW.performed_by_subject=command.actor_subject
+       AND NEW.rejection_code IS NULL)
+     OR
+     (NEW.event_type='rejected' AND command.status='rejected'
+       AND NEW.id='rejected:'||command.id
+       AND NEW.occurred_at=command.updated_at
+       AND NEW.performed_by_subject=command.resolved_by_subject
+       AND NEW.rejection_code=command.rejection_code)
+   )
+)
+BEGIN
+ SELECT RAISE(ABORT,'site lifecycle command history must match a guarded command transition');
+END;
