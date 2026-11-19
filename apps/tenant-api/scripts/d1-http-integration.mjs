@@ -1329,6 +1329,58 @@ try {
   assert.equal(restoreAfterResolver.response.status, 201, JSON.stringify(restoreAfterResolver.body));
   assert.equal(restoreAfterResolver.body.data.new_status, "active");
 
+  // Revoke only the original command actor's site-read grant while keeping
+  // the tenant membership active. Apply must reauthorize and deny the stale
+  // actor; an independently authorized resolver may then reject the command.
+  const revokedGrantKey = "site-command-original-grant-revoked-" + randomUUID();
+  const revokedGrantPrepare = await throughGateway(commandCollectionPath, accessToken("ci-http-admin"),
+    { "content-type": "application/json", "Idempotency-Key": revokedGrantKey },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI original actor site grant revocation" }));
+  assert.equal([200, 201].includes(revokedGrantPrepare.response.status), true,
+    JSON.stringify(revokedGrantPrepare.body));
+  assert.equal(revokedGrantPrepare.body.data.status, "pending");
+  const revokedGrantCommandId = revokedGrantPrepare.body.data.id;
+  const lifecycleBeforeGrantResolver = await throughGateway(siteLifecycleEventsPath,
+    accessToken("ci-command-resolver"));
+  assert.equal(lifecycleBeforeGrantResolver.response.status, 200,
+    JSON.stringify(lifecycleBeforeGrantResolver.body));
+  const revokeOriginalSiteGrant = await siteGrant("ci-measurement-reviewer", {
+    action: "revoke", subject: "ci-http-admin", site_id: "site-http-a",
+    grant_action: "read", reason: "CI revoke original command actor site-read grant",
+  });
+  assert.equal(revokeOriginalSiteGrant.response.status, 200,
+    JSON.stringify(revokeOriginalSiteGrant.body));
+  const deniedOriginalGrantApply = await throughGateway(
+    commandCollectionPath + "/" + revokedGrantCommandId + "/apply", accessToken("ci-http-admin"),
+    { "content-type": "application/json" }, "POST", "{}");
+  assert.equal([403, 404].includes(deniedOriginalGrantApply.response.status), true,
+    JSON.stringify(deniedOriginalGrantApply.body));
+  const rejectAfterGrantRevocation = await throughGateway(
+    commandCollectionPath + "/" + revokedGrantCommandId + "/reject", accessToken("ci-command-resolver"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ rejection_code: "original_actor_revoked" }));
+  assert.equal(rejectAfterGrantRevocation.response.status, 200,
+    JSON.stringify(rejectAfterGrantRevocation.body));
+  assert.equal(rejectAfterGrantRevocation.body.data.status, "rejected");
+  assert.equal(rejectAfterGrantRevocation.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
+  const recoverAfterGrantRevocation = await throughGateway(
+    commandCollectionPath + "/" + revokedGrantCommandId, accessToken("ci-command-resolver"));
+  assert.equal(recoverAfterGrantRevocation.response.status, 200,
+    JSON.stringify(recoverAfterGrantRevocation.body));
+  assert.equal(recoverAfterGrantRevocation.body.data.status, "rejected");
+  assert.equal(recoverAfterGrantRevocation.body.data.events.at(-1).rejection_code, "original_actor_revoked");
+  const siteAfterGrantRevocationReject = await throughGateway(sitePath, accessToken("ci-command-resolver"));
+  assert.equal(siteAfterGrantRevocationReject.response.status, 200,
+    JSON.stringify(siteAfterGrantRevocationReject.body));
+  assert.equal(siteAfterGrantRevocationReject.body.data.status, "active");
+  const lifecycleAfterGrantResolver = await throughGateway(siteLifecycleEventsPath,
+    accessToken("ci-command-resolver"));
+  assert.equal(lifecycleAfterGrantResolver.response.status, 200,
+    JSON.stringify(lifecycleAfterGrantResolver.body));
+  assert.equal(lifecycleAfterGrantResolver.body.data.events.length,
+    lifecycleBeforeGrantResolver.body.data.events.length,
+    "rejection after original actor site-grant revocation must not create a lifecycle event or application");
+
   // Exercise the other resolver condition through the real Access gateway,
   // signed private Worker envelope and disposable D1: revoke the original
   // command actor while leaving the site itself active.
