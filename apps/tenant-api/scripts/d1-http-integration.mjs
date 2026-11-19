@@ -1314,61 +1314,6 @@ try {
   assert.equal(reactivateApply.response.status, 200, JSON.stringify(reactivateApply.body));
   assert.equal(reactivateApply.body.data.status, "applied");
 
-  const abandonedKey = "site-command-abandoned-" + randomUUID();
-  const abandonedPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
-    { "content-type": "application/json", "Idempotency-Key": abandonedKey },
-    "POST", JSON.stringify({ action: "deactivate", reason: "CI abandoned command resolver" }));
-  assert.equal([200, 201].includes(abandonedPrepare.response.status), true, JSON.stringify(abandonedPrepare.body));
-  const abandonedId = abandonedPrepare.body.data.id;
-
-  const staleSiteTransition = await runSiteLifecycleCommand("deactivate",
-    "CI stale pending command state change", "site-command-stale-site-" + randomUUID());
-  const staleSiteRead = await throughGateway("/api/v1/tenants/tenant-http-a/sites/site-http-a",
-    accessToken("ci-human-subject"));
-  assert.equal(staleSiteRead.response.status, 200, JSON.stringify(staleSiteRead.body));
-  assert.equal(staleSiteRead.body.data.status, "inactive");
-
-  // The original actor is still an administrator, but must not self-resolve
-  // its own stale command; only a distinct authorized resolver may reject it.
-  const selfRejectStaleCommand = await throughGateway(
-    commandCollectionPath + "/" + abandonedId + "/reject",
-    accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ rejection_code: "site_status_changed" }));
-  assert.equal(selfRejectStaleCommand.response.status, 409, JSON.stringify(selfRejectStaleCommand.body));
-  const stillPendingAfterSelfReject = await throughGateway(
-    commandCollectionPath + "/" + abandonedId, accessToken("ci-human-subject"));
-  assert.equal(stillPendingAfterSelfReject.response.status, 200,
-    JSON.stringify(stillPendingAfterSelfReject.body));
-  assert.equal(stillPendingAfterSelfReject.body.data.status, "pending");
-  assert.equal(stillPendingAfterSelfReject.body.data.events.filter(event => event.event_type === "rejected").length, 0);
-
-  const resolverRejectPath = commandCollectionPath + "/" + abandonedId + "/reject";
-  const concurrentResolverRejects = await Promise.all([1, 2].map(() => throughGateway(resolverRejectPath,
-    accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ rejection_code: "site_status_changed" }))));
-  assert.deepEqual(concurrentResolverRejects.map(result => result.response.status).sort(), [200, 200],
-    JSON.stringify(concurrentResolverRejects.map(result => ({ status: result.response.status, body: result.body }))));
-  assert.equal(concurrentResolverRejects.every(result => result.body.data.status === "rejected"), true);
-  assert.deepEqual(concurrentResolverRejects[0].body.data.events, concurrentResolverRejects[1].body.data.events);
-  assert.equal(concurrentResolverRejects[0].body.data.events.filter(event => event.event_type === "rejected").length, 1);
-  assert.equal(concurrentResolverRejects[0].body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
-  assert.equal(concurrentResolverRejects[0].body.data.events.at(-1).rejection_code, "site_status_changed");
-
-  const resolverRead = await throughGateway(commandCollectionPath + "/" + abandonedId,
-    accessToken("ci-command-resolver"));
-  assert.equal(resolverRead.response.status, 200, JSON.stringify(resolverRead.body));
-  assert.equal(resolverRead.body.data.status, "rejected");
-  const siteAfterResolverReject = await throughGateway(sitePath, accessToken("ci-command-resolver"));
-  assert.equal(siteAfterResolverReject.response.status, 200, JSON.stringify(siteAfterResolverReject.body));
-  assert.equal(siteAfterResolverReject.body.data.status, "inactive");
-
-  const restoreAfterResolver = await runSiteLifecycleCommand("reactivate",
-    "CI restore site after resolver test", "site-command-resolver-restore-" + randomUUID());
-  const restoredAfterResolver = await throughGateway("/api/v1/tenants/tenant-http-a/sites/site-http-a",
-    accessToken("ci-human-subject"));
-  assert.equal(restoredAfterResolver.response.status, 200, JSON.stringify(restoredAfterResolver.body));
-  assert.equal(restoredAfterResolver.body.data.status, "active");
-
   // Exercise the other resolver condition through the real Access gateway,
   // signed private Worker envelope and disposable D1: revoke the original
   // command actor while leaving the site itself active.
@@ -1380,6 +1325,18 @@ try {
     JSON.stringify(revokedActorPrepare.body));
   assert.equal(revokedActorPrepare.body.data.status, "pending");
   const revokedActorCommandId = revokedActorPrepare.body.data.id;
+
+  // Even while a durable command is pending, the retired mutation endpoint
+  // cannot change site status or bypass the command's actor/audit lifecycle.
+  const legacyMutationWhilePending = await throughGateway(siteLifecycleActionPath,
+    accessToken("ci-http-admin"), { "content-type": "application/json", "Idempotency-Key": "legacy-pending-bypass" },
+    "POST", JSON.stringify({ action: "deactivate", reason: "Must use command ledger" }));
+  assert.equal(legacyMutationWhilePending.response.status, 410);
+  assert.equal(legacyMutationWhilePending.body.error, "durable_site_lifecycle_command_required");
+  const pendingAfterLegacyMutation = await throughGateway(commandCollectionPath + "/" + revokedActorCommandId,
+    accessToken("ci-http-admin"));
+  assert.equal(pendingAfterLegacyMutation.response.status, 200);
+  assert.equal(pendingAfterLegacyMutation.body.data.status, "pending");
 
   const lifecycleBeforeRevokedActorReject = await throughGateway(siteLifecycleEventsPath,
     accessToken("ci-command-resolver"));
