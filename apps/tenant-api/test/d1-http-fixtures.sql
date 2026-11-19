@@ -18,6 +18,7 @@ INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resou
   ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create'),
   ('grant-http-a-reviewer-site', 'tenant-http-a', 'ci-measurement-reviewer', 'site', 'site-http-a', 'read'),
   ('grant-http-a-command-resolver-site', 'tenant-http-a', 'ci-command-resolver', 'site', 'site-http-a', 'read'),
+  ('grant-http-a-admin-site', 'tenant-http-a', 'ci-http-admin', 'site', 'site-http-a', 'read'),
   ('grant-http-a-service-subject-site', 'tenant-http-a', 'neoagro-ingestion-service', 'site', 'site-http-a', 'read'),
   ('grant-http-b-owner-site', 'tenant-http-b', 'ci-tenant-b-owner', 'site', 'site-http-b', 'read');
 
