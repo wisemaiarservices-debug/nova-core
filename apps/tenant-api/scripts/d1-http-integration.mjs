@@ -1357,6 +1357,22 @@ try {
   assert.equal(revokeOriginalActor.response.status, 200, JSON.stringify(revokeOriginalActor.body));
   assert.equal(revokeOriginalActor.body.data.status, "revoked");
 
+  // The original actor must lose apply authority immediately after membership
+  // revocation, while the command is still pending and before resolver action.
+  const revokedActorApplyBeforeResolution = await throughGateway(
+    commandCollectionPath + "/" + revokedActorCommandId + "/apply",
+    accessToken("ci-http-admin"), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(revokedActorApplyBeforeResolution.response.status, 404,
+    JSON.stringify(revokedActorApplyBeforeResolution.body));
+  const pendingAfterRevokedActorApply = await throughGateway(
+    commandCollectionPath + "/" + revokedActorCommandId, accessToken("ci-command-resolver"));
+  assert.equal(pendingAfterRevokedActorApply.response.status, 200,
+    JSON.stringify(pendingAfterRevokedActorApply.body));
+  assert.equal(pendingAfterRevokedActorApply.body.data.status, "pending");
+  assert.equal(pendingAfterRevokedActorApply.body.data.events.some(event =>
+    event.event_type === "applied" || event.event_type === "rejected"), false,
+    "revoked original actor must not terminalize the command");
+
   const revokedActorRejectPath = commandCollectionPath + "/" + revokedActorCommandId + "/reject";
   const concurrentRevokedActorRejects = await Promise.all([1, 2].map(() => throughGateway(
     revokedActorRejectPath, accessToken("ci-command-resolver"),
