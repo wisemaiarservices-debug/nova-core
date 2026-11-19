@@ -1364,6 +1364,12 @@ try {
     accessToken("ci-http-admin"), { "content-type": "application/json" }, "POST", "{}");
   assert.equal(revokedActorApplyBeforeResolution.response.status, 404,
     JSON.stringify(revokedActorApplyBeforeResolution.body));
+  // Revocation must also remove the former administrator's ability to read
+  // the command's audit history; an authorized resolver retains recovery access.
+  const revokedActorReadBeforeResolution = await throughGateway(
+    commandCollectionPath + "/" + revokedActorCommandId, accessToken("ci-http-admin"));
+  assert.equal(revokedActorReadBeforeResolution.response.status, 404,
+    JSON.stringify(revokedActorReadBeforeResolution.body));
   const pendingAfterRevokedActorApply = await throughGateway(
     commandCollectionPath + "/" + revokedActorCommandId, accessToken("ci-command-resolver"));
   assert.equal(pendingAfterRevokedActorApply.response.status, 200,
