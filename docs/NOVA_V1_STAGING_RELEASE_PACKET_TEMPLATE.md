@@ -595,7 +595,8 @@ Production release remains separately gated. This packet does not authorize prod
 
 ## 33. Consolidated OS candidate sign-off
 
-- [x] Superseded standalone OS PR #62 is closed without merge; its useful operation recovery work is incorporated into OS #64.- [x] OS #64 latest exact head `21b43f1f7c38e29bf92414fbc1d02a620f4b8893` passed CI run 44401357217: 65 tests, TypeScript and production build.
+- [x] Superseded standalone OS PR #62 is closed without merge; its useful operation recovery work is incorporated into OS #64.
+- [x] OS #64 latest exact head `21b43f1f7c38e29bf92414fbc1d02a620f4b8893` passed CI run 44401357217: 65 tests, TypeScript and production build.
 - [x] Core #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c` passed CI run 44398811437.
 - [ ] Independent reviewer verifies the complete Core #266 + OS #63/#64 stack.
 - [ ] Isolated staging browser test: lost reserve/claim/complete response, reload, second device, explicit successor, site deactivation and stale lease.
