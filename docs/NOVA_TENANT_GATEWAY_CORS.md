@@ -14,10 +14,10 @@ Use the exact deployed NOVA OS and Engineering Console origins that need browser
 
 ## Browser contract
 
-- Preflight: `OPTIONS` is handled without forwarding to the private Tenant API.
-- Allowed methods: `GET`, `POST`.
-- Allowed request headers: `Accept`, `Content-Type`.
-- Credentialed requests: `Access-Control-Allow-Credentials: true` with the exact requesting origin.
+- Preflight: `OPTIONS` is handled by the gateway and is not forwarded to the private Tenant API.
+- Allowed actual methods: `GET`, `POST`; `OPTIONS` is reserved for preflight.
+- Allowed request headers: `Accept`, `Authorization`, `Content-Type`, `Idempotency-Key`. The implementation and gateway regression tests permit all four; clients should send only the headers required by their operation.
+- Credentialed requests: `Access-Control-Allow-Credentials: true` with the exact requesting origin. Wildcard origins are rejected.
 - Exposed response header: `X-Request-Id`, required by clients to correlate and validate Core responses.
 - Responses use `Cache-Control: no-store` and vary on Origin; preflight responses also vary on requested method and headers.
 - Actual API requests still require Cloudflare Access JWT verification, signed internal identity forwarding, tenant membership and exact resource grants. CORS is not authentication or authorization.
