@@ -68,8 +68,8 @@ export function matchTenantSiteLifecycleCommandRoute(url, method) {
   const parsed = url instanceof URL ? url : new URL(url);
   if (parsed.search || parsed.hash) return null;
   let match = parsed.pathname.match(new RegExp("^/internal/v1/tenants/([^/]+)/sites/([^/]+)/lifecycle-commands$"));
-  if (match && method === "POST" && validId(match[1], 120) && validId(match[2])) {
-    return { tenant: match[1], site: match[2], action: "prepare" };
+  if (match && (method === "POST" || method === "GET") && validId(match[1], 120) && validId(match[2])) {
+    return { tenant: match[1], site: match[2], action: method === "POST" ? "prepare" : "recover" };
   }
   match = parsed.pathname.match(new RegExp("^/internal/v1/tenants/([^/]+)/sites/([^/]+)/lifecycle-commands/([^/]+)(?:/(apply|reject))?$"));
   if (!match || !validId(match[1], 120) || !validId(match[2]) || !validId(match[3], 151)) return null;
