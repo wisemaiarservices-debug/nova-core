@@ -25,7 +25,7 @@ WHEN NEW.id IS NOT OLD.id OR NEW.tenant_id IS NOT OLD.tenant_id OR
      (NEW.status='rejected' AND (
        NEW.event_id IS NOT NULL OR NEW.resolved_by_subject IS NULL OR
        length(trim(NEW.resolved_by_subject)) NOT BETWEEN 1 AND 200 OR
-       NEW.rejection_code NOT IN ('original_actor_revoked','site_status_changed') OR
+       NEW.rejection_code IS NULL OR NEW.rejection_code NOT IN ('original_actor_revoked','site_status_changed') OR
        NOT EXISTS (
          SELECT 1
          FROM tenants tenant
