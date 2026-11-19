@@ -1380,6 +1380,12 @@ try {
   assert.equal(lifecycleAfterGrantResolver.body.data.events.length,
     lifecycleBeforeGrantResolver.body.data.events.length,
     "rejection after original actor site-grant revocation must not create a lifecycle event or application");
+  const restoreOriginalActorSiteGrant = await siteGrant("ci-measurement-reviewer", {
+    action: "grant", subject: "ci-http-admin", site_id: "site-http-a",
+    grant_action: "read", reason: "CI restore original command actor site-read grant for next scenario",
+  });
+  assert.equal(restoreOriginalActorSiteGrant.response.status, 201,
+    JSON.stringify(restoreOriginalActorSiteGrant.body));
 
   // Exercise the other resolver condition through the real Access gateway,
   // signed private Worker envelope and disposable D1: revoke the original
