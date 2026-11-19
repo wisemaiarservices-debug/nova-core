@@ -198,7 +198,6 @@ This follow-up changes the Core private authorization HTTP response handling onl
 
 These results establish source-branch automated validation only. They do not establish independent security approval, a live OS↔Core staging handshake, deployed secret/key custody, production readiness, or permission to stage. The full staging E2E matrix, independent security review, rollback/recovery rehearsal, pilot/data-rights approval and explicit staging authorization remain outstanding. No production release is authorized.
 
-
 ## 10. Cross-repository authorization contract review
 
 Static source audit completed against Core #229 head `8063ad968f6af50874b733186385fc7493b2cbfd` and OS #57/#60/#61 heads `110116d844ed73e46ee85d3508c4bac740cd6230`, `17f6c9dc590693e53bd534849192b0daf71aa030`, and `2b6da562cdb1df354e04d6969ca2d54b646914e3`.
@@ -397,7 +396,6 @@ PR #239 and all constituent changes remain draft/unmerged. CI is not deployed st
 - Browser workflow reserves/recover operations from server-derived scope, reads terminal result after reload, and does not persist operation IDs or credentials in browser storage.
 
 ### Outstanding release evidence
-
 - [ ] All four PRs merged after review; matching Core base and migrations approved.
 - [ ] Staging D1 migrations applied and verified in order.
 - [ ] Private Worker/gateway deployments and Service Bindings verified.
@@ -597,8 +595,7 @@ Production release remains separately gated. This packet does not authorize prod
 
 ## 33. Consolidated OS candidate sign-off
 
-- [x] Superseded standalone OS PR #62 is closed without merge; its useful operation recovery work is incorporated into OS #64.
-- [x] OS #64 latest exact head `21b43f1f7c38e29bf92414fbc1d02a620f4b8893` passed CI run 44401357217: 65 tests, TypeScript and production build.
+- [x] Superseded standalone OS PR #62 is closed without merge; its useful operation recovery work is incorporated into OS #64.- [x] OS #64 latest exact head `21b43f1f7c38e29bf92414fbc1d02a620f4b8893` passed CI run 44401357217: 65 tests, TypeScript and production build.
 - [x] Core #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c` passed CI run 44398811437.
 - [ ] Independent reviewer verifies the complete Core #266 + OS #63/#64 stack.
 - [ ] Isolated staging browser test: lost reserve/claim/complete response, reload, second device, explicit successor, site deactivation and stale lease.
@@ -662,6 +659,8 @@ The following SHAs and exact-head workflow conclusions were re-fetched from the 
 | Core #274 | Private Worker + signed gateway | `bee2cfa56f0327dc8518bc9056f98e8d48aea471` | [44534356078](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44534356078), success |
 | NOVA OS #66 | Durable lifecycle browser workflow | `f6f3fac6eeef77194975b6b462b499413c36fe1c` | [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857), success |
 | Core #267 | This documentation handoff | `21487321ee762c25285ff65448dbab4976fe2781` | [44561864602](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44561864602), success |
+| NOVA OS #67 | Original-actor revocation Chromium scenario (test-only) | `71669c2481496d24f4f3a61e0c0ab2103c6dd25e` | [44566307214](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44566307214), success |
+| Core #275 | Original-actor revocation through signed gateway/private Worker/disposable D1 (test-only) | `a7381fb32554198ac7d0726503cc97dcc0320e8d` | [44567289774](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44567289774), success |
 
 Core #270 is a parallel documentation branch, not a runtime dependency in the #271–#274 chain. Core #274 is the integrated runtime candidate; OS #66 is its draft browser client. Every listed PR remains open/draft/unmerged. The OS browser gateway uses synthetic identifiers and a simulated gateway; no live staging or production Access validation is claimed.
 
