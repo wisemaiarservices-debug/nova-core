@@ -1374,6 +1374,14 @@ try {
     commandCollectionPath, accessToken("ci-http-admin"));
   assert.equal(revokedActorCollectionRecovery.response.status, 404,
     JSON.stringify(revokedActorCollectionRecovery.body));
+  // Revocation must fence the former administrator from every command
+  // mutation, including resolver rejection, while preserving resolver access.
+  const revokedActorRejectBeforeResolution = await throughGateway(
+    commandCollectionPath + "/" + revokedActorCommandId + "/reject",
+    accessToken("ci-http-admin"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ rejection_code: "original_actor_revoked" }));
+  assert.equal(revokedActorRejectBeforeResolution.response.status, 404,
+    JSON.stringify(revokedActorRejectBeforeResolution.body));
   const pendingAfterRevokedActorApply = await throughGateway(
     commandCollectionPath + "/" + revokedActorCommandId, accessToken("ci-command-resolver"));
   assert.equal(pendingAfterRevokedActorApply.response.status, 200,
