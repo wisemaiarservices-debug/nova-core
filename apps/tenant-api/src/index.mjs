@@ -1,7 +1,7 @@
 import { json, error } from "./http.mjs";
 import { matchMeasurementAssessmentOperationRoute, handleMeasurementAssessmentOperationRequest } from "./measurement-assessment-operation-http.mjs";
 import { matchTenantSiteLifecycleRoute, changeTenantSiteLifecycle, readTenantSiteLifecycleEvents } from "./site-lifecycle.mjs";
-import { matchTenantSiteLifecycleCommandRoute, prepareTenantSiteLifecycleCommand, readTenantSiteLifecycleCommand, applyTenantSiteLifecycleCommand, rejectTenantSiteLifecycleCommand } from "./site-lifecycle-command.mjs";
+import { matchTenantSiteLifecycleCommandRoute, prepareTenantSiteLifecycleCommand, recoverTenantSiteLifecycleCommand, readTenantSiteLifecycleCommand, applyTenantSiteLifecycleCommand, rejectTenantSiteLifecycleCommand } from "./site-lifecycle-command.mjs";
 import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
 import { verifyNovaOsOwnerAssertion } from "./nova-os-provisioning-auth.mjs";
 import { createNovaOsProvisioningReceiptSigner, validateNovaOsProvisioningReceiptClaims } from "./nova-os-provisioning-receipt.mjs";
@@ -1275,7 +1275,9 @@ export default {
           now: new Date().toISOString(),
         };
         let result;
-        if (siteLifecycleCommandRoute.action === "prepare") {
+        if (siteLifecycleCommandRoute.action === "recover") {
+          result = await recoverTenantSiteLifecycleCommand(env.DB, input);
+        } else if (siteLifecycleCommandRoute.action === "prepare") {
           result = await prepareTenantSiteLifecycleCommand(env.DB, {
             ...input,
             idempotencyKey: request.headers.get("x-nova-idempotency-key"),
