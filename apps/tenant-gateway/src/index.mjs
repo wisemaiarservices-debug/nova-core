@@ -103,8 +103,8 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
       const siteLifecycleAction = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/lifecycle-actions$/);
       const siteLifecycleEvents = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/lifecycle-events$/);
       const siteLifecycleCommandMatch = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/lifecycle-commands(?:\/([^/]+)(?:\/(apply|reject))?)?$/);
-      const siteLifecycleCommand = siteLifecycleCommandMatch && ((siteLifecycleCommandMatch[3] === undefined && request.method === "POST") || (siteLifecycleCommandMatch[3] !== undefined && !siteLifecycleCommandMatch[4] && request.method === "GET") || (siteLifecycleCommandMatch[4] && request.method === "POST"))
-        ? { tenant: siteLifecycleCommandMatch[1], site: siteLifecycleCommandMatch[2], commandId: siteLifecycleCommandMatch[3], action: siteLifecycleCommandMatch[4] ?? (siteLifecycleCommandMatch[3] ? "read" : "prepare") }
+      const siteLifecycleCommand = siteLifecycleCommandMatch && ((siteLifecycleCommandMatch[3] === undefined && request.method === "POST") || (siteLifecycleCommandMatch[3] === undefined && request.method === "GET") || (siteLifecycleCommandMatch[3] !== undefined && !siteLifecycleCommandMatch[4] && request.method === "GET") || (siteLifecycleCommandMatch[4] && request.method === "POST"))
+        ? { tenant: siteLifecycleCommandMatch[1], site: siteLifecycleCommandMatch[2], commandId: siteLifecycleCommandMatch[3], action: siteLifecycleCommandMatch[4] ?? (siteLifecycleCommandMatch[3] ? "read" : request.method === "GET" ? "recover" : "prepare") }
         : null;
       const assetCreate = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets$/);
       const sourceRegister = url.pathname.match(/^\/api\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources$/);
