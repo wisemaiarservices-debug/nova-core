@@ -899,3 +899,14 @@ Reviewer outcome must record the exact SHAs reviewed, commands/tests independent
 ### Current boundary
 
 Core PRs #269–#274 and NOVA OS PR #66 remain draft/unmerged. Core #274 is stacked on the service candidate #273; OS #66 is stacked on OS #65. Repository CI is not live browser-to-staging E2E, independent security review, production Access/configuration review or operational readiness evidence. No independent reviewer has signed off. No staging/production migration, deployment, tenant/site provisioning or customer-data operation has occurred. Production remains unauthorized.
+
+
+## 43. NOVA OS #66 site-lifecycle Chromium validation — exact head 2026-11-19
+
+- OS PR #66 latest exact head: `f6f3fac6eeef77194975b6b462b499413c36fe1c`.
+- Exact-head workflow [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857) completed successfully: both `site-lifecycle-browser` and `web-build` jobs passed.
+- Chromium browser coverage exercises a persisted prepare whose response is lost, full-page reload and command recovery, original-actor resume/apply, and stale-site resolver rejection without changing site status or creating a lifecycle application.
+- The browser gateway is simulated and uses synthetic tenant/site identifiers; this is not live Core staging, real Access authentication, or customer-data validation.
+- The same workflow passed tenant resource validation, TypeScript and production build. Dependency vulnerability inventory is diagnostic/non-blocking and must not be represented as a security audit.
+- The prior browser-test failure was corrected by modeling a transport failure before the simulated apply endpoint receives the request; the pending command is then available for stale-state resolver coverage.
+- PR #66 remains draft/unmerged. Independent security review, exact Core/OS route and migration review, and explicitly authorized staging browser E2E remain mandatory. No staging/production migration, deployment, tenant/site provisioning or customer-data operation is authorized.
