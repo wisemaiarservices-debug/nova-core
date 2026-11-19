@@ -73,7 +73,7 @@ try {
   assert.equal(roleChanged.body.data.role, "analyst");
   assert.equal(roleChanged.body.data.event_type, "role_changed");
 
-  const adminRoleChange = await membershipAction("ci-command-resolver", {
+  const adminRoleChange = await membershipAction("ci-http-admin", {
     membership_id: "membership-http-lifecycle", action: "change_role",
     role: "viewer", reason: "Admin role change must be denied",
   });
@@ -133,7 +133,7 @@ try {
   assert.equal(siteGrantCreated.response.status, 201, JSON.stringify(siteGrantCreated.body));
   assert.equal(siteGrantCreated.body.data.status, "active");
   assert.equal(siteGrantCreated.body.data.resource_type, "site");
-  const adminPrivilegedGrant = await siteGrant("ci-command-resolver", {
+  const adminPrivilegedGrant = await siteGrant("ci-http-admin", {
     action: "grant", subject: "ci-invited-human", site_id: "site-http-a",
     grant_action: "delete", reason: "Admin must not grant destructive access",
   });
@@ -669,7 +669,7 @@ try {
   assert.equal(rolledBack.audits.length, 5);
 
   const adminCannotTransferOwnership = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-command-resolver"),
+    "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-http-admin"),
     { "content-type": "application/json" }, "POST",
     JSON.stringify({ target_membership_id: "membership-http-reviewer",
       reason: "Admin must not transfer ownership" }));
@@ -1299,24 +1299,24 @@ try {
   assert.equal(abandonedPrepare.response.status, 201, JSON.stringify(abandonedPrepare.body));
   const abandonedId = abandonedPrepare.body.data.id;
 
-  const revokeOriginalActorGrant = await siteGrant("ci-http-admin", {
+  const revokeOriginalActorGrant = await siteGrant("ci-command-resolver", {
     action: "revoke", subject: "ci-human-subject", site_id: "site-http-a",
     grant_action: "read", reason: "CI revoke original command actor authority",
   });
   assert.equal(revokeOriginalActorGrant.response.status, 200, JSON.stringify(revokeOriginalActorGrant.body));
 
   const resolverReject = await throughGateway(commandCollectionPath + "/" + abandonedId + "/reject",
-    accessToken("ci-http-admin"), { "content-type": "application/json" }, "POST",
+    accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
     JSON.stringify({ rejection_code: "original_actor_revoked" }));
   assert.equal(resolverReject.response.status, 200, JSON.stringify(resolverReject.body));
   assert.equal(resolverReject.body.data.status, "rejected");
-  assert.equal(resolverReject.body.data.events.at(-1).performed_by_subject, "ci-http-admin");
+  assert.equal(resolverReject.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
 
   const resolverRead = await throughGateway(commandCollectionPath + "/" + abandonedId,
-    accessToken("ci-http-admin"));
+    accessToken("ci-command-resolver"));
   assert.equal(resolverRead.response.status, 200, JSON.stringify(resolverRead.body));
   assert.equal(resolverRead.body.data.status, "rejected");
-  const siteAfterResolverReject = await throughGateway(sitePath, accessToken("ci-http-admin"));
+  const siteAfterResolverReject = await throughGateway(sitePath, accessToken("ci-command-resolver"));
   assert.equal(siteAfterResolverReject.response.status, 200, JSON.stringify(siteAfterResolverReject.body));
   assert.equal(siteAfterResolverReject.body.data.status, "active");
 
