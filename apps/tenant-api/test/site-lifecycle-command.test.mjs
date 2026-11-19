@@ -144,7 +144,7 @@ test("prepare is reload-safe, binds the retry key to immutable intent, and apply
 
 test("resolver rejection is separately attributed and cannot change site status", async t => {
   const { sqlite, db } = fixture(t);
-  const prepared = await prepareTenantSiteLifecycleCommand(db);
+  const prepared = await prepareTenantSiteLifecycleCommand(db, prepareInput());
   sqlite.prepare("UPDATE tenant_memberships SET status='revoked' WHERE tenant_id=? AND subject=?")
     .run(tenant, owner);
 
