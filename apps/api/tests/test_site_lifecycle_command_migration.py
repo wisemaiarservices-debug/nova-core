@@ -170,6 +170,44 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
             1,
         )
 
+    def assert_apply_denied_after_authority_change(self, revoke):
+        self.command()
+        revoke()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.apply()
+        self.assertEqual(
+            self.db.execute(
+                "SELECT status,event_id FROM tenant_site_lifecycle_commands WHERE id='command-1'"
+            ).fetchone(),
+            ("pending", None),
+        )
+        self.assertEqual(
+            self.db.execute("SELECT status FROM sites WHERE id='site-active'").fetchone()[0],
+            "active",
+        )
+        self.assertEqual(
+            self.db.execute(
+                "SELECT event_type FROM tenant_site_lifecycle_command_events WHERE command_id='command-1'"
+            ).fetchall(),
+            [("prepared",)],
+        )
+
+    def test_apply_event_rechecks_original_admin_membership_at_insert(self):
+        self.assert_apply_denied_after_authority_change(lambda: self.db.execute(
+            "UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='tenant-a' AND subject='owner'"
+        ))
+
+    def test_apply_event_rechecks_exact_site_read_grant_at_insert(self):
+        self.assert_apply_denied_after_authority_change(lambda: self.db.execute(
+            "DELETE FROM tenant_resource_grants WHERE tenant_id='tenant-a' AND subject='owner' "
+            "AND resource_type='site' AND resource_id='site-active' AND action='read'"
+        ))
+
+    def test_apply_event_rechecks_tenant_active_status_at_insert(self):
+        self.assert_apply_denied_after_authority_change(lambda: self.db.execute(
+            "UPDATE tenants SET status='inactive' WHERE id='tenant-a'"
+        ))
+
     def test_event_cannot_consume_wrong_digest_actor_reason_or_transition(self):
         self.command()
         for args in (
