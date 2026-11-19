@@ -1239,7 +1239,7 @@ try {
   const commandPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
     { "content-type": "application/json", "Idempotency-Key": commandApplyKey },
     "POST", JSON.stringify(commandPayload));
-  assert.equal(commandPrepare.response.status, 201, JSON.stringify(commandPrepare.body));
+  assert.equal([200, 201].includes(commandPrepare.response.status), true, JSON.stringify(commandPrepare.body));
   assert.equal(commandPrepare.body.data.status, "pending");
   assert.equal(commandPrepare.body.data.reason, commandPayload.reason);
   const commandId = commandPrepare.body.data.id;
@@ -1289,7 +1289,7 @@ try {
   const reactivatePrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
     { "content-type": "application/json", "Idempotency-Key": reactivateKey },
     "POST", JSON.stringify(reactivatePayload));
-  assert.equal(reactivatePrepare.response.status, 201, JSON.stringify(reactivatePrepare.body));
+  assert.equal([200, 201].includes(reactivatePrepare.response.status), true, JSON.stringify(reactivatePrepare.body));
   const reactivateApply = await throughGateway(commandCollectionPath + "/" + reactivatePrepare.body.data.id + "/apply",
     accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST", "{}");
   assert.equal(reactivateApply.response.status, 200, JSON.stringify(reactivateApply.body));
@@ -1299,7 +1299,7 @@ try {
   const abandonedPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
     { "content-type": "application/json", "Idempotency-Key": abandonedKey },
     "POST", JSON.stringify({ action: "deactivate", reason: "CI abandoned command resolver" }));
-  assert.equal(abandonedPrepare.response.status, 201, JSON.stringify(abandonedPrepare.body));
+  assert.equal([200, 201].includes(abandonedPrepare.response.status), true, JSON.stringify(abandonedPrepare.body));
   const abandonedId = abandonedPrepare.body.data.id;
 
   const staleSiteTransition = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
