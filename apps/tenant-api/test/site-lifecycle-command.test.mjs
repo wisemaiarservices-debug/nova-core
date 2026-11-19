@@ -97,8 +97,9 @@ test("route matcher exposes only exact method/path combinations", () => {
     { tenant: "t1", site: "s1", commandId: "c1", action: "apply" });
   assert.equal(matchTenantSiteLifecycleCommandRoute(
     "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-commands/c1/apply?x=1", "POST"), null);
-  assert.equal(matchTenantSiteLifecycleCommandRoute(
-    "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-commands", "GET"), null);
+  assert.deepEqual(matchTenantSiteLifecycleCommandRoute(
+    "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-commands", "GET"),
+    { tenant: "t1", site: "s1", action: "recover" });
   assert.equal(matchTenantSiteLifecycleCommandRoute(
     "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-commands/c1/reject", "GET"), null);
 });
