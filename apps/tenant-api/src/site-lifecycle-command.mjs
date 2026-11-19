@@ -148,9 +148,13 @@ export async function recoverTenantSiteLifecycleCommand(db, { tenant, site, acto
             request_digest,status,event_id,rejection_code,resolved_by_subject,
             idempotency_key,created_at,updated_at
        FROM tenant_site_lifecycle_commands
-      WHERE tenant_id=? AND site_id=? AND (status='pending' OR actor_subject=?)
+      WHERE tenant_id=? AND site_id=? AND (status='pending' OR actor_subject=? OR EXISTS (
+        SELECT 1 FROM tenant_site_lifecycle_command_events performed
+         WHERE performed.command_id=tenant_site_lifecycle_commands.id
+           AND performed.performed_by_subject=?
+      ))
       ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,updated_at DESC,id DESC LIMIT 1`
-  ).bind(tenant, site, actorSubject));
+  ).bind(tenant, site, actorSubject, actorSubject));
   return command ? await responseFor(db, command) : { error: "site_lifecycle_command_not_found", status: 404 };
 }
 
