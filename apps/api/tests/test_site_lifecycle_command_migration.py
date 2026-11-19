@@ -8,6 +8,7 @@ MIGRATIONS = [
     ROOT / "migrations" / "0040_site_lifecycle_governance.sql",
     ROOT / "migrations" / "0042_site_lifecycle_command_recovery.sql",
     ROOT / "migrations" / "0043_site_lifecycle_command_resolver.sql",
+    ROOT / "migrations" / "0044_site_lifecycle_command_idempotency.sql",
 ]
 
 
@@ -56,10 +57,10 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
         self.db.execute(
             """INSERT INTO tenant_site_lifecycle_commands
                (id,tenant_id,site_id,actor_subject,action,expected_status,reason,
-                request_digest,status,created_at,updated_at)
+                request_digest,status,created_at,updated_at,idempotency_key)
                VALUES(?, 'tenant-a', ?, ?, ?, ?, ?, ?, 'pending',
-                      '2026-11-19T12:00:00.000Z','2026-11-19T12:00:00.000Z')""",
-            (command_id, site, actor, action, expected, reason, digest),
+                      '2026-11-19T12:00:00.000Z','2026-11-19T12:00:00.000Z',?)""",
+            (command_id, site, actor, action, expected, reason, digest, "retry-" + command_id),
         )
 
     def apply(self, command_id="command-1", event_id="event-1", actor="owner",
@@ -85,6 +86,35 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
             "SELECT event_type FROM tenant_site_lifecycle_command_events WHERE command_id='command-1'"
         ).fetchall()
         self.assertEqual(events, [("prepared",)])
+
+    def test_idempotency_key_is_unique_per_tenant_site_and_actor(self):
+        self.command(command_id="first", actor="owner")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE constraint failed"):
+            self.db.execute(
+                """INSERT INTO tenant_site_lifecycle_commands
+                   (id,tenant_id,site_id,actor_subject,action,expected_status,reason,
+                    request_digest,status,created_at,updated_at,idempotency_key)
+                   VALUES('second','tenant-a','site-active','owner','deactivate','active',
+                    'another intent',?, 'pending','2026-11-19T12:00:00.000Z',
+                    '2026-11-19T12:00:00.000Z','retry-first')""",
+                ("b" * 64,),
+            )
+
+    def test_idempotency_key_cannot_be_missing_or_changed(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "requires a bounded idempotency key"):
+            self.db.execute(
+                """INSERT INTO tenant_site_lifecycle_commands
+                   (id,tenant_id,site_id,actor_subject,action,expected_status,reason,
+                    request_digest,status,created_at,updated_at)
+                   VALUES('missing-key','tenant-a','site-active','owner','deactivate','active',
+                    'reason',?,'pending','2026-11-19T12:00:00.000Z','2026-11-19T12:00:00.000Z')""",
+                ("d" * 64,),
+            )
+        self.command()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "idempotency key is immutable"):
+            self.db.execute(
+                "UPDATE tenant_site_lifecycle_commands SET idempotency_key='changed-key' WHERE id='command-1'"
+            )
 
     def test_only_one_pending_command_per_site_even_across_actors(self):
         self.command()
