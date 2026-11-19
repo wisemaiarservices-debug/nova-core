@@ -728,3 +728,207 @@ The browser currently retains the lifecycle idempotency key only in component me
 ### Explicit non-claims
 
 Repository CI and this static review do not prove production secret correctness, Access policy correctness, live D1 trigger behavior under production concurrency, tenant data correctness, independent security approval or operational recovery readiness. Staging remains a separately authorized activity; production remains unapproved.
+
+
+## 37. Cross-repository integration review handoff (2026-11-18)
+
+**Purpose:** provide an exact-source handoff for an independent reviewer. This section is not an independent review, approval, staging authorization or production release decision.
+
+### Core ancestry and candidate scope
+
+The current Core lifecycle candidate is [PR #266](https://github.com/wisemaiarservices-debug/nova-core/pull/266), branch `feat/core-site-lifecycle-governance-v2`, exact head `d815829ad47f8aac1dc31ba2588b2ce52a216d53`, based on PR #265 head `97dd69e1823be2012038d57bf7e5f3237f2b6741`.
+
+Verified ancestry:
+- #266 is stacked on #265; #265 is stacked on #262; #262 is stacked on #261; #261 is stacked on #260.
+- #266 is 161 commits ahead of, and has zero commits behind, the governed ingestion/assessment integration branch #239 head `127b54608f315a8f5f64af04b1dd313d0bf51d7c`.
+- #266 is 204 commits ahead of, and has zero commits behind, Core integration base #229 head `8063ad968f6af50874b733186385fc7493b2cbfd`.
+- The combined candidate contains ordered migrations 0035 through 0041: verified-source ingestion guard; assessment-operation ledger, lease fencing and terminal audit; assessment insert terminalization; site lifecycle governance; and inactive-site assessment interlock.
+- The candidate includes the operation HTTP route module and completion service, and the private Worker dispatcher imports and dispatches both assessment-operation and site-lifecycle routes. The gateway has exact site lifecycle and assessment-operation path patterns, method restrictions and signed forwarding.
+
+### Exact automated validation evidence
+
+- Core #266 exact head `d815829ad47f8aac1dc31ba2588b2ce52a216d53`: [CI run 44396662209](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44396662209), completed successfully (API/security, tenant Worker/D1 integration, research raster).
+- NOVA OS #63 exact head `1bc6c16e7956dc227e7a5a6400f75e2118e5dd92`: [CI run 44395675006](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44395675006), completed successfully (tenant resource validation, TypeScript, production build).
+- Core release documentation #230 exact head `402eb8ed4051b2a62700dec00816527c2d6b7e3f`: [CI run 44396557558](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44396557558), completed successfully. This is documentation validation, not runtime validation.
+
+### NOVA OS dependency and remaining browser integration gap
+
+OS #63 (`1bc6c16e7956dc227e7a5a6400f75e2118e5dd92`) is stacked on OS #13 head `45a70194a98ffdb39821f14b573ef98a93d3e994`. The current site lifecycle page supports governed deactivate/reactivate and event history. Its idempotency key is component-memory-only and does not survive a full page reload.
+
+Core now has server-backed assessment-operation reserve/read/claim/renew/complete routes in the candidate. However, the current OS MeasurementEvidence page still keeps its assessment idempotency key in a component `useRef`; this handoff does not establish that the browser workflow has been migrated to Core's server-backed operation ID/recovery API. Treat assessment page-reload/second-device recovery as **not yet accepted end to end** until OS calls those operation endpoints and tests reload, second-device, lost-response and explicit successor behavior.
+
+### Independent review checklist
+
+The independent reviewer should:
+1. Review the complete #266 diff against #229, including migrations 0035–0041, SQL triggers, Worker/gateway routing, operation service and site lifecycle service.
+2. Confirm the final OS branch uses Core operation reserve/read/claim/renew/complete APIs; if not, record this as a release blocker and require a separately tested OS integration change.
+3. Run real local D1/Worker tests for both site-deactivation race orders, source/mapping/calibration/policy revocation, lease expiry/recovery/stale fencing, concurrent completion, idempotent replay and cross-actor/tenant denial.
+4. Inspect exact route/method/CORS allowlists, HMAC canonicalization, Access issuer/audience, actor derivation, authorization-before-read and DB trigger bypass resistance.
+5. Review ordered migration rehearsal and forward-recovery/restore plan; do not treat destructive rollback of append-only lifecycle/assessment ledgers as safe.
+6. Review OS browser reload behavior, stale-response cancellation, and idempotency key lifecycle.
+7. Verify secret custody, key IDs/JWK fingerprints, staging Access policy, D1 binding, retention/data-rights controls and monitoring in an isolated environment.
+8. Record reviewer identity, exact reviewed SHAs, findings, remediation commits and explicit sign-off independently of the implementation author.
+
+### Release boundary
+
+All referenced PRs remain draft/open/unmerged at the time of this handoff. The exact-head CI runs establish automated repository checks only. No independent security approval, live staging handshake, staging credentials/configuration, pilot site/data approval, production secret verification, production migration or deployment is established. Staging and production remain unauthorized.
+
+## 38. NOVA OS durable assessment recovery integration (2026-11-18)
+
+NOVA OS PR #64 ([link](https://github.com/wisemaiarservices-debug/NovaOS/pull/64)) connects Measurement Evidence to Core's server-backed assessment operation API. It is stacked on OS #63 and remains draft/unmerged.
+
+Historical implementation checkpoint (superseded by the exact candidate recorded in sections 40–41): `ec720716426d9092d6387f8a984e9c1402bdef05`. It contains:
+- deterministic reserve/recover for the exact actor/tenant/observation/predecessor tuple;
+- server lease claim and completion with lease-version/request-ID fencing;
+- post-completion durable read;
+- explicit successor operation from the displayed predecessor;
+- no browser storage for credentials or operation IDs;
+- a separately testable client-side operation state machine and tests for reservation/claim/complete, reload replay, expired-lease recovery, stale completion conflict and authorization denial.
+
+Core #266 exact head `e157555927f85a30a04366c4317a32b00b0fa42c` passed [CI run 44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437), including an HTTP test that repeats the same reservation after site deactivation and receives the original operation ID. New operation creation remains restricted to active sites.
+
+OS code head `dfc8039e948661fe567b8eea4123b01341d305a3` passed [CI run 44398946075](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44398946075). The state-machine test addition and final code cleanup are included in current head `df5fb4ecaabb5b6580f6ab7d3e97b22b90476213`, which passed exact-head CI run 44399707616.
+
+The Site Lifecycle workspace remains separate: its action idempotency key is component-memory-only, and reload-safe recovery for uncertain deactivate/reactivate requests is not yet implemented. Assessment recovery must not be used to imply site-lifecycle recovery.
+
+Release gate: independent reviewer must validate OS #64 against Core #266, including browser workflow tests, exact gateway paths, Access identity binding, reload and second-device behavior, successor retries, stale lease fencing and site-deactivation recovery. No staging or production action is authorized.
+
+
+## 39. Latest OS #64 workflow-state test validation
+
+OS PR #64 now includes the separately testable assessment operation state machine and tests for initial reservation/claim/completion, terminal replay after reload, expired-lease recovery, stale-completion conflict and denial without fallback.
+
+- OS commit `b76ef56906025b5c9d1c68a8fd66bde7fd680d47` passed [CI run 44399619773](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44399619773).
+- Current OS PR #64 head `df5fb4ecaabb5b6580f6ab7d3e97b22b90476213` passed exact-head CI run [44399707616](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44399707616): 57 tests passed, TypeScript check passed, production build passed.
+- Core PR #266 exact head remains `e157555927f85a30a04366c4317a32b00b0fa42c`, with 3/3 CI jobs passed in run 44398811437.
+
+Do not infer that a previous commit's success validates a later head. Independent review remains mandatory; no staging/production authorization.
+
+
+## 40. Consolidated OS candidate and superseded branch closure
+
+NOVA OS PR #64 is now the single browser integration candidate for Core assessment-operation recovery plus the site-lifecycle workspace. The earlier standalone OS PR #62 was closed without merge as superseded by #64; its operation API contract, strict response validators and command-transport pattern were incorporated into #64.
+
+- OS #64 is 56 commits ahead of, and has zero commits behind, OS #13 head `45a70194a98ffdb39821f14b573ef98a93d3e994`; it is stacked on OS #63 head `1bc6c16e7956dc227e7a5a6400f75e2118e5dd92`.
+- OS #64 latest exact head: `21b43f1f7c38e29bf92414fbc1d02a620f4b8893`
+- Latest exact CI: [run 44401357217](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44401357217) passed 65 tests, TypeScript and production build. It includes the on-screen site-lifecycle reload warning and distinct assessment lease-conflict messaging.
+- Core PR #267 reviewer-handoff documentation exact head: `8eda207252251bdd24f19fb5d12ceee37053bb17`; [CI run 44415107568](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44415107568) passed all 3 jobs: API/security, tenant Worker/D1 integration and research raster.
+- Core #266 exact head: `e157555927f85a30a04366c4317a32b00b0fa42c`
+- Core exact CI: [run 44398811437](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44398811437) passed API/security, tenant Worker/D1 integration and research raster.
+
+This is repository-level evidence, not live staging or independent certification. The Site Lifecycle page still has a separate component-memory idempotency key; operators must reload exact site status/history after an uncertain transition. Assessment reload recovery must not be conflated with site-lifecycle recovery.
+
+Independent review must verify the final Core/OS ancestry and exact SHAs, then exercise the actual browser against an isolated staging gateway before any staging release decision. No staging or production authorization is granted.
+
+
+## 41. Independent reviewer execution checklist — exact candidate scope
+
+This section is a reviewer handoff, not a claim that an independent review has occurred.
+
+### Exact implementation surfaces
+
+- Core candidate: PR #266, `feat/core-site-lifecycle-governance-v2`, head `e157555927f85a30a04366c4317a32b00b0fa42c`.
+- Core ancestry: 161 commits ahead of #239 (`127b54608f315a8f5f64af04b1dd313d0bf51d7c`) and 204 ahead of #229 (`8063ad968f6af50874b733186385fc7493b2cbfd`), zero commits behind each.
+- Core runtime surfaces: `measurement-assessment-operation-http.mjs`, `measurement-assessment-operations.mjs`, `measurement-assessment-completion.mjs`, `site-lifecycle.mjs`, private Worker `index.mjs`, and gateway `apps/tenant-gateway/src/index.mjs`.
+- Core migration ancestry: #239 supplies 0035–0039; #266 adds 0040–0041. Verify the complete ordered migration list and trigger definitions against a clean disposable D1.
+- OS candidate: PR #64, `feat/nova-os-server-backed-assessment-recovery-v1`, head `21b43f1f7c38e29bf92414fbc1d02a620f4b8893`; 56 commits ahead of OS #13 head `45a70194a98ffdb39821f14b573ef98a93d3e994`, zero behind, stacked on OS #63.
+- Release handoff: PR #267 is documentation-only and based on #230. It changes only the runbook and release-packet template.
+
+### Mandatory adversarial review
+
+1. Identity and tenancy: verify Access subject/issuer/audience originate only from validated gateway authentication and signed envelope; caller body cannot select actor; operation reads/writes remain actor + tenant + exact site grant scoped.
+2. Route surface: compare every browser path, gateway allowlist, rewrite target, private Worker matcher and method. Reject extra segments, query/hash, wrong methods, encoded path ambiguities and unlisted routes.
+3. Replay: prove same actor/tenant/site/observation/predecessor reservation recovers the same operation after lost response/reload; transport request IDs remain one-use; different actor, tenant, observation or predecessor cannot attach to it.
+4. Lease fencing: run simultaneous claims, renewals and completions against actual D1; stale lease version/request ID must never complete; expiry and recovery use server time.
+5. Evidence governance: revoke source, mapping, calibration and policy after claim; completion must produce only the exact durable `not_assessed` reason, never a pass/fail.
+6. Site lifecycle: exercise both race orders between deactivation and completion; direct status mutation must fail; reactivation must not reactivate child evidence or grants.
+7. Legacy bypass: confirm the former direct `measurement-quality-assessment` writer returns HTTP 410 `assessment_operation_required`; confirm no other route or background writer can insert an assessment outside the operation ledger.
+8. Audit and atomicity: verify operation state, assessment insert and terminal event roll back together on trigger failure; event ledgers remain append-only; test idempotent replay and concurrent writers.
+9. Browser safety: verify the OS uses credentialed HTTPS, bounded no-store response parsing, no local credential/operation-key persistence, stale-target cancellation, and clear handling of conflicts and uncertain site-lifecycle transitions.
+10. Operations: inspect secret custody/rotation, Access issuer/audience, gateway origins/CORS, D1 binding, backups, retention, rollback and incident procedures without exposing secrets in the review packet.
+
+### Evidence and limitations
+
+- Core exact-head CI for #266: run 44398811437, 3/3 jobs passed (API/security, tenant Worker/D1 integration, research raster).
+- Reviewer-handoff documentation #267 exact-head CI: run 44415107568, 3/3 jobs passed (API/security, tenant Worker/D1 integration, research raster).
+- OS exact-head CI for #64: run 44401357217, 65 tests passed; TypeScript and production build passed.
+- Core HTTP integration exercises gateway → private Worker → disposable D1, including operation reservation replay after a simulated browser reload, explicit successor, concurrent lease transitions, governance revocation, site deactivation and recovery.
+- OS CI is client/unit/build validation, not a live browser-to-staging end-to-end test.
+- Site-lifecycle action idempotency remains in component memory. After a full reload, inspect current site status and append-only history before taking another action.
+- No independent reviewer sign-off, live staging validation, production secret/config review, production migration, deployment or customer-data operation has occurred.
+
+Reviewer outcome must record the exact SHAs reviewed, commands/tests independently rerun, findings, severity, remediation commit SHAs, and explicit pass/fail for every mandatory item. A green repository CI result is not a substitute for this sign-off.
+
+
+## 42. Durable site lifecycle command recovery — Core #269–#274 and OS #66
+
+**Purpose:** record the next cross-repository candidate stack for independent review. This section is a handoff only; it is not approval to merge, stage or deploy.
+
+### Exact implementation candidates
+
+- Core schema foundation #269: durable command ledger, pending-per-site uniqueness and atomic event/application linkage.
+- Core resolver foundation #271: preserves original actor identity and separately attributes an authorized resolver.
+- Core retry-key foundation #272: durable idempotency key scoped to tenant/site/original actor; immutable and unique.
+- Core command service #273: prepare/recover/read/apply/reject service, strict request validation and SQLite service tests.
+- Core private Worker + signed gateway routes #274: exact GET/POST routes, server-derived Access actor, authorization rechecks, reload collection recovery and end-to-end disposable D1 HTTP integration.
+- Core #274 exact head `bee2cfa56f0327dc8518bc9056f98e8d48aea471`; exact-head CI [44534356078](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44534356078) passed all 3 jobs: API/security, tenant Worker + ordered D1 migrations + full gateway/private Worker integration, research raster.
+- NOVA OS #66 adds the browser prepare → apply flow, durable recovery after reload, original-actor-only resume and separately confirmed administrator resolver actions. Exact head `af8df15b091095f262215f357402f69bdeecf0b8`; exact-head CI [44534466001](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44534466001) passed tenant-resource tests, TypeScript and production build.
+
+### Command contract and adversarial coverage
+
+- [x] Prepare persists immutable tenant/site/original-actor/action/reason intent and binds it to a durable retry key.
+- [x] Collection GET recovers the pending command after reload even when the original response and in-memory retry key were lost; it also recovers the current actor's latest terminal command or a command this actor resolved.
+- [x] Read-by-command, apply and reject have exact method/path matching and bounded request bodies.
+- [x] Apply is restricted to the original actor; a different administrator with exact site read access receives a not-found response and cannot take over.
+- [x] Resolver identity is separately attributed; rejection does not alter site status or create a lifecycle application.
+- [x] Resolver reason `original_actor_revoked` is accepted only when the original actor has lost active owner/admin membership or exact site read grant.
+- [x] Resolver reason `site_status_changed` is accepted only when current site status differs from the command's expected status. Null, generic or mismatched reasons are rejected by the database.
+- [x] Disposable-D1 HTTP integration exercises prepare/replay, reload recovery, command read, wrong-actor apply denial, original-actor apply/replay, terminal recovery, stale-site resolver rejection and proof that rejection itself leaves site status unchanged.
+- [x] OS requires fresh exact-site status/history review acknowledgement before resume or resolver action; acknowledgement resets on reload and tenant/site change.
+
+### Mandatory independent review and staging gates
+
+- [ ] Reviewer verifies migration ancestry 0042–0045 against 0040/0041 and all trigger definitions on a clean disposable D1.
+- [ ] Reviewer independently verifies prepare/replay under concurrency, pending-per-site uniqueness, lost response, reload recovery, terminal recovery by original actor and resolver.
+- [ ] Reviewer verifies both resolver reason/code directions, original actor membership revocation, site-grant revocation, stale site state, invalid reason, no-admin-remains and no status mutation on rejection.
+- [ ] Reviewer verifies HMAC canonicalization, Access subject/issuer/audience, one-use transport request ID, request digest and body/path/method binding on every new route.
+- [ ] In explicitly authorized isolated staging, test browser lost prepare/apply/reject responses, reload, second device, stale site state and resolver audit event.
+- [ ] Confirm legacy lifecycle action remains separate until coordinated cross-repository cutover is reviewed and approved; no endpoint removal or migration rollback is implied.
+- [ ] Record exact Core/OS SHAs, reviewer identity, independently rerun tests, findings/severity, remediation commits and written pass/fail.
+
+### Current boundary
+
+Core PRs #269–#274 and NOVA OS PR #66 remain draft/unmerged. Core #274 is stacked on the service candidate #273; OS #66 is stacked on OS #65. Repository CI is not live browser-to-staging E2E, independent security review, production Access/configuration review or operational readiness evidence. No independent reviewer has signed off. No staging/production migration, deployment, tenant/site provisioning or customer-data operation has occurred. Production remains unauthorized.
+
+
+## 43. NOVA OS #66 site-lifecycle Chromium validation — exact head 2026-11-19
+
+- OS PR #66 latest exact head: `f6f3fac6eeef77194975b6b462b499413c36fe1c`.
+- Exact-head workflow [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857) completed successfully: both `site-lifecycle-browser` and `web-build` jobs passed.
+- Chromium browser coverage exercises a persisted prepare whose response is lost, full-page reload and command recovery, original-actor resume/apply, and stale-site resolver rejection without changing site status or creating a lifecycle application.
+- The browser gateway is simulated and uses synthetic tenant/site identifiers; this is not live Core staging, real Access authentication, or customer-data validation.
+- The same workflow passed tenant resource validation, TypeScript and production build. Dependency vulnerability inventory is diagnostic/non-blocking and must not be represented as a security audit.
+- The prior browser-test failure was corrected by modeling a transport failure before the simulated apply endpoint receives the request; the pending command is then available for stale-state resolver coverage.
+- PR #66 remains draft/unmerged. Independent security review, exact Core/OS route and migration review, and explicitly authorized staging browser E2E remain mandatory. No staging/production migration, deployment, tenant/site provisioning or customer-data operation is authorized.
+
+
+## 44. Exact Core/OS command-recovery candidate matrix (2026-11-19)
+
+This is an evidence index for the independent reviewer, not an approval. PR metadata and workflow status were re-fetched at this checkpoint.
+
+| PR | Scope | Exact head | Exact-head CI |
+|---|---|---|---|
+| Core #269 | Durable command ledger | `024c416fcd1b3eafeb4972ae4da221a8825ab162` | [44419113035](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44419113035), success |
+| Core #270 | Parallel API-contract docs | `5f5ff725fee5f6102831aa2aba784305100d5789` | [44423114799](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44423114799), success |
+| Core #271 | Resolver safeguards | `4b8408a2588d2983d1d26c59d4e850a189436b8e` | [44429015759](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44429015759), success |
+| Core #272 | Durable retry keys | `03258be130caa4692bc419a60a1eeaa7bf5c81ec` | [44435163843](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44435163843), success |
+| Core #273 | Command service | `77f9e5d8192c5070246f6b25468c6421a1270ff6` | [44528863233](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44528863233), success |
+| Core #274 | Private Worker + signed gateway | `bee2cfa56f0327dc8518bc9056f98e8d48aea471` | [44534356078](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44534356078), success |
+| NOVA OS #66 | Durable lifecycle browser workflow | `f6f3fac6eeef77194975b6b462b499413c36fe1c` | [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857), success |
+| Core #267 | Documentation handoff | `21487321ee762c25285ff65448dbab4976fe2781` | [44561864602](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44561864602), success |
+
+Core #270 is a parallel API-contract documentation branch; it is not part of the runtime dependency chain #271–#274. #274 is the integrated Core runtime candidate and OS #66 is the draft browser client. All are open/draft/unmerged. The OS browser gateway is simulated with synthetic tenant/site identifiers and does not validate production Access or live staging.
+
+Reviewer must independently inspect exact SHAs and ancestry, verify migrations 0042–0045 and triggers, rerun the integrated Core disposable-D1 HTTP suite and OS Chromium/build jobs, and record test commands, findings/severity, remediation SHAs and explicit pass/fail. Repository CI is not independent security approval.
+
+**Release boundary:** independent security review and explicitly authorized staging E2E remain mandatory. No staging/production migration, deployment, tenant/site provisioning or customer-data operation is authorized.
