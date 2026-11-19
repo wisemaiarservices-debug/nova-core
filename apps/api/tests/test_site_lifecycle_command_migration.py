@@ -53,14 +53,14 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
 
     def command(self, command_id="command-1", actor="owner", site="site-active",
                 action="deactivate", expected="active", reason="approved operational reason",
-                digest="a" * 64):
+                digest="a" * 64, idempotency_key=None):
         self.db.execute(
             """INSERT INTO tenant_site_lifecycle_commands
                (id,tenant_id,site_id,actor_subject,action,expected_status,reason,
                 request_digest,status,created_at,updated_at,idempotency_key)
                VALUES(?, 'tenant-a', ?, ?, ?, ?, ?, ?, 'pending',
                       '2026-11-19T12:00:00.000Z','2026-11-19T12:00:00.000Z',?)""",
-            (command_id, site, actor, action, expected, reason, digest, "retry-" + command_id),
+            (command_id, site, actor, action, expected, reason, digest, idempotency_key or ("retry-" + command_id)),
         )
 
     def apply(self, command_id="command-1", event_id="event-1", actor="owner",
@@ -88,18 +88,12 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
         self.assertEqual(events, [("prepared",)])
 
     def test_idempotency_key_is_unique_per_tenant_site_and_actor(self):
-        self.command(command_id="first", actor="owner")
+        self.command(command_id="first", actor="owner", idempotency_key="same-key")
+        self.apply(command_id="first", event_id="first-event")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE constraint failed"):
-            self.db.execute(
-                """INSERT INTO tenant_site_lifecycle_commands
-                   (id,tenant_id,site_id,actor_subject,action,expected_status,reason,
-                    request_digest,status,created_at,updated_at,idempotency_key)
-                   VALUES('second','tenant-a','site-active','owner','deactivate','active',
-                    'another intent',?, 'pending','2026-11-19T12:00:00.000Z',
-                    '2026-11-19T12:00:00.000Z','retry-first')""",
-                ("b" * 64,),
-            )
-
+            self.command(command_id="second", actor="owner", action="reactivate",
+                         expected="inactive", site="site-active", idempotency_key="same-key",
+                         digest="b" * 64)
     def test_idempotency_key_cannot_be_missing_or_changed(self):
         with self.assertRaisesRegex(sqlite3.IntegrityError, "requires a bounded idempotency key"):
             self.db.execute(
