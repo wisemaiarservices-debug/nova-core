@@ -932,3 +932,15 @@ Core #270 is a parallel API-contract documentation branch; it is not part of the
 Reviewer must independently inspect exact SHAs and ancestry, verify migrations 0042–0045 and triggers, rerun the integrated Core disposable-D1 HTTP suite and OS Chromium/build jobs, and record test commands, findings/severity, remediation SHAs and explicit pass/fail. Repository CI is not independent security approval.
 
 **Release boundary:** independent security review and explicitly authorized staging E2E remain mandatory. No staging/production migration, deployment, tenant/site provisioning or customer-data operation is authorized.
+
+
+
+## 45. Core #275 original-actor revocation HTTP integration — exact head 2026-11-19
+
+- Core PR #275 exact head: `a7381fb32554198ac7d0726503cc97dcc0320e8d`.
+- Exact-head workflow [44567289774](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44567289774) completed successfully: `api-tests`, `research-raster-tests`, and `tenant-worker-tests` all passed.
+- The tenant Worker job applied ordered migrations to disposable local D1, prepared queries, seeded synthetic fixtures, and exercised the public gateway and private Worker through local Service Bindings plus D1.
+- The new scenario prepares a durable command as a synthetic tenant admin, revokes that original actor through the governed membership endpoint, then resolves it as a separate authorized administrator using `original_actor_revoked`.
+- Assertions cover resolver attribution, command read/recovery, unchanged active site status, no new lifecycle event/application, and denial of apply by the revoked original actor. The test uses synthetic identities and disposable local D1 only.
+- PR #275 is test-only, stacked on Core #274, and remains draft/unmerged. This is repository integration evidence, not live staging, production Access, independent security review, or customer-data validation.
+- No staging/production migration, deployment, tenant/site provisioning, secrets, customer data, or paid service was used. Independent security review and explicitly authorized staging E2E remain mandatory.

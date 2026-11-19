@@ -668,3 +668,16 @@ Core #270 is a parallel documentation branch, not a runtime dependency in the #2
 **Reviewer requirements:** independently fetch and inspect each exact SHA; verify branch ancestry and migration order 0042–0045; rerun the integrated Core disposable-D1 HTTP suite and OS Chromium/build jobs; record commands, findings, severity, remediation SHAs and explicit pass/fail. Green CI is not independent security approval.
 
 **Decision: PENDING INDEPENDENT REVIEW AND EXPLICIT STAGING AUTHORIZATION.** No migration, deployment, tenant/site provisioning or customer-data operation is authorized by this packet.
+
+
+
+## 37. Core #275 original-actor revocation HTTP integration — exact head 2026-11-19
+
+**Automated evidence**
+- Core PR #275 exact head: `a7381fb32554198ac7d0726503cc97dcc0320e8d`.
+- Exact-head workflow [44567289774](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44567289774) passed all three jobs: API/security, research raster, and tenant Worker integration.
+- Tenant Worker integration used ordered migrations and disposable local D1, then exercised gateway → private Worker → D1 over local Service Bindings.
+- New case revokes the original command actor via governed membership action and resolves the pending command as a separate administrator. It verifies attribution, durable read recovery, unchanged site status, no lifecycle application/event, and denial of apply by the revoked actor.
+- Synthetic fixtures and disposable local D1 only. Test-only PR stacked on Core #274; PR #275 remains draft/unmerged. This is not live staging or production validation and is not independent security sign-off.
+
+**Decision remains PENDING INDEPENDENT REVIEW AND AUTHORIZED STAGING.** This evidence does not authorize merge, staging/production migration, deployment, tenant/site provisioning or customer-data operations.
