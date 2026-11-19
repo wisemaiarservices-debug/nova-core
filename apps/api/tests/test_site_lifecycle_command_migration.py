@@ -66,6 +66,20 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
             (command_id, site, actor, action, expected, reason, digest, idempotency_key or ("retry-" + command_id)),
         )
 
+    def simulate_pre_cutover_legacy_transition(self):
+        # Historical pre-cutover event fixture: temporarily remove the new
+        # guard only while creating the already-existing legacy state.
+        self.db.execute("DROP TRIGGER tenant_site_lifecycle_event_requires_command")
+        self.simulate_pre_cutover_legacy_transition()
+        self.db.executescript(
+            """CREATE TRIGGER tenant_site_lifecycle_event_requires_command
+               BEFORE INSERT ON tenant_site_lifecycle_events
+               WHEN NEW.command_id IS NULL
+               BEGIN
+                 SELECT RAISE(ABORT,'site lifecycle event requires a durable command');
+               END;"""
+        )
+
     def apply(self, command_id="command-1", event_id="event-1", actor="owner",
               site="site-active", event_type="deactivated", previous="active",
               new="inactive", reason="approved operational reason", digest="a" * 64):
