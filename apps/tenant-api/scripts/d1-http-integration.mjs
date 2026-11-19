@@ -1370,6 +1370,10 @@ try {
     commandCollectionPath + "/" + revokedActorCommandId, accessToken("ci-http-admin"));
   assert.equal(revokedActorReadBeforeResolution.response.status, 404,
     JSON.stringify(revokedActorReadBeforeResolution.body));
+  const revokedActorCollectionRecovery = await throughGateway(
+    commandCollectionPath, accessToken("ci-http-admin"));
+  assert.equal(revokedActorCollectionRecovery.response.status, 404,
+    JSON.stringify(revokedActorCollectionRecovery.body));
   const pendingAfterRevokedActorApply = await throughGateway(
     commandCollectionPath + "/" + revokedActorCommandId, accessToken("ci-command-resolver"));
   assert.equal(pendingAfterRevokedActorApply.response.status, 200,
