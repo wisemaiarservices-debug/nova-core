@@ -11,6 +11,7 @@ import {
   applyTenantSiteLifecycleCommand,
   rejectTenantSiteLifecycleCommand,
 } from "../src/site-lifecycle-command.mjs";
+import { matchTenantSiteLifecycleRoute } from "../src/site-lifecycle.mjs";
 
 const migrationDir = new URL("../../api/migrations/", import.meta.url);
 const migrations = [
@@ -19,6 +20,8 @@ const migrations = [
   "0043_site_lifecycle_command_resolver.sql",
   "0044_site_lifecycle_command_idempotency.sql",
   "0045_site_lifecycle_command_resolver_reason_guard.sql",
+  "0046_site_lifecycle_command_distinct_resolver.sql",
+  "0047_site_lifecycle_event_requires_command.sql",
 ].map(name => readFileSync(fileURLToPath(new URL(name, migrationDir)), "utf8"));
 
 const tenant = "tenant-command-test";
@@ -87,6 +90,18 @@ const prepareInput = (overrides = {}) => ({
   tenant, site, actorSubject: owner, idempotencyKey: "retry-command-001",
   requestId: "request-prepare-001", body: { action: "deactivate", reason: "Scheduled maintenance" },
   now, ...overrides,
+});
+
+test("legacy site lifecycle mutation route is retired while event history remains readable", () => {
+  assert.equal(matchTenantSiteLifecycleRoute(
+    "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-actions", "POST"), null);
+  assert.equal(matchTenantSiteLifecycleRoute(
+    "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-actions", "GET"), null);
+  assert.deepEqual(matchTenantSiteLifecycleRoute(
+    "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-events", "GET"),
+    { tenant: "t1", site: "s1", action: "read" });
+  assert.equal(matchTenantSiteLifecycleRoute(
+    "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-events", "POST"), null);
 });
 
 test("route matcher exposes only exact method/path combinations", () => {
