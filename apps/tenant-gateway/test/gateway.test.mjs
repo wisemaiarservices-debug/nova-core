@@ -1089,9 +1089,17 @@ test("routes durable site lifecycle command prepare, recover, apply and reject t
     "/internal/v1/tenants/tenant-a/sites/site-a/lifecycle-commands/command-001/reject");
   assert.equal(await forwarded[3].text(), rejectPayload);
 
+  const recoveredAfterReload = await gateway.fetch(new Request(base, {
+    method: "GET", headers: { "Cf-Access-Jwt-Assertion": "valid" },
+  }), env);
+  assert.equal(recoveredAfterReload.status, 200);
+  assert.equal(new URL(forwarded[4].url).pathname,
+    "/internal/v1/tenants/tenant-a/sites/site-a/lifecycle-commands");
+  assert.equal(forwarded[4].method, "GET");
+
   const wrongMethod = await gateway.fetch(new Request(base + "/command-001/apply", {
     method: "GET", headers: { "Cf-Access-Jwt-Assertion": "valid" },
   }), env);
   assert.equal(wrongMethod.status, 404);
-  assert.equal(forwarded.length, 4);
+  assert.equal(forwarded.length, 5);
 });
