@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = [
     ROOT / "migrations" / "0040_site_lifecycle_governance.sql",
     ROOT / "migrations" / "0042_site_lifecycle_command_recovery.sql",
+    ROOT / "migrations" / "0043_site_lifecycle_command_resolver.sql",
 ]
 
 
@@ -150,6 +151,103 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
         self.assertEqual(
             self.db.execute("SELECT event_type,rejection_code FROM tenant_site_lifecycle_command_events WHERE command_id='command-1' ORDER BY rowid DESC LIMIT 1").fetchone(),
             ("rejected", "site_status_changed"),
+        )
+
+
+    def test_abandoned_command_rejection_preserves_original_actor_and_records_resolver(self):
+        self.command(actor="owner")
+        self.db.execute(
+            "UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='tenant-a' AND subject='owner'"
+        )
+        self.db.execute(
+            """UPDATE tenant_site_lifecycle_commands
+               SET status='rejected',rejection_code='original_actor_revoked',
+                   resolved_by_subject='admin',updated_at='2026-11-19T12:02:00.000Z'
+               WHERE id='command-1'"""
+        )
+        command = self.db.execute(
+            "SELECT actor_subject,resolved_by_subject,status FROM tenant_site_lifecycle_commands WHERE id='command-1'"
+        ).fetchone()
+        self.assertEqual(command, ("owner", "admin", "rejected"))
+        event = self.db.execute(
+            """SELECT actor_subject,performed_by_subject,event_type,rejection_code
+               FROM tenant_site_lifecycle_command_events
+               WHERE command_id='command-1' AND event_type='rejected'"""
+        ).fetchone()
+        self.assertEqual(event, ("owner", "admin", "rejected", "original_actor_revoked"))
+        self.assertEqual(
+            self.db.execute("SELECT status FROM sites WHERE id='site-active'").fetchone()[0],
+            "active",
+        )
+
+    def test_admin_cannot_reject_a_still_valid_pending_command(self):
+        self.command(actor="owner")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
+            self.db.execute(
+                """UPDATE tenant_site_lifecycle_commands
+                   SET status='rejected',rejection_code='operator_requested',
+                       resolved_by_subject='admin',updated_at='2026-11-19T12:02:00.000Z'
+                   WHERE id='command-1'"""
+            )
+        self.assertEqual(
+            self.db.execute("SELECT status FROM tenant_site_lifecycle_commands WHERE id='command-1'").fetchone()[0],
+            "pending",
+        )
+
+    def test_only_active_admin_with_exact_site_grant_can_resolve_abandoned_command(self):
+        self.command(actor="owner")
+        self.db.execute(
+            "UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='tenant-a' AND subject='owner'"
+        )
+        for resolver in ("operator", "revoked-admin", "missing-grant"):
+            if resolver == "missing-grant":
+                self.db.execute(
+                    "DELETE FROM tenant_resource_grants WHERE tenant_id='tenant-a' AND subject='admin' AND resource_type='site' AND resource_id='site-active'"
+                )
+                resolver_subject = "admin"
+            else:
+                resolver_subject = resolver
+            with self.subTest(resolver=resolver), self.assertRaisesRegex(
+                sqlite3.IntegrityError, "not eligible for resolution"
+            ):
+                self.db.execute(
+                    """UPDATE tenant_site_lifecycle_commands
+                       SET status='rejected',rejection_code='original_actor_revoked',
+                           resolved_by_subject=?,updated_at='2026-11-19T12:02:00.000Z'
+                       WHERE id='command-1'""",
+                    (resolver_subject,),
+                )
+            if resolver == "missing-grant":
+                self.db.execute(
+                    "INSERT INTO tenant_resource_grants VALUES('tenant-a','admin','site','site-active','read')"
+                )
+
+    def test_site_state_change_allows_audited_rejection_without_changing_site_again(self):
+        self.command(actor="owner")
+        self.db.execute(
+            """INSERT INTO tenant_site_lifecycle_events
+               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
+                reason,idempotency_key,request_digest,request_id,occurred_at)
+               VALUES('legacy-event','tenant-a','site-active','admin','deactivated',
+                'active','inactive','separate governed transition','legacy-key',?,
+                'legacy-request','2026-11-19T12:01:00.000Z')""",
+            ("c" * 64,),
+        )
+        self.db.execute(
+            """UPDATE tenant_site_lifecycle_commands
+               SET status='rejected',rejection_code='site_status_changed',
+                   resolved_by_subject='admin',updated_at='2026-11-19T12:02:00.000Z'
+               WHERE id='command-1'"""
+        )
+        self.assertEqual(
+            self.db.execute("SELECT status FROM sites WHERE id='site-active'").fetchone()[0],
+            "inactive",
+        )
+        self.assertEqual(
+            self.db.execute(
+                "SELECT performed_by_subject FROM tenant_site_lifecycle_command_events WHERE command_id='command-1' AND event_type='rejected'"
+            ).fetchone()[0],
+            "admin",
         )
 
     def test_terminal_commands_and_command_history_are_immutable(self):
