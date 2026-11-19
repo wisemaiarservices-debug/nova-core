@@ -23,7 +23,7 @@ async function sha256(value) {
 function publicCommand(row, events = []) {
   return {
     id: row.id, tenant_id: row.tenant_id, site_id: row.site_id,
-    action: row.action, expected_status: row.expected_status,
+    action: row.action, expected_status: row.expected_status, reason: row.reason,
     status: row.status, event_id: row.event_id ?? null,
     rejection_code: row.rejection_code ?? null,
     created_at: row.created_at, updated_at: row.updated_at, events,
