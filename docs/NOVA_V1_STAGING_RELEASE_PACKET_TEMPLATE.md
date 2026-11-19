@@ -198,7 +198,6 @@ This follow-up changes the Core private authorization HTTP response handling onl
 
 These results establish source-branch automated validation only. They do not establish independent security approval, a live OS↔Core staging handshake, deployed secret/key custody, production readiness, or permission to stage. The full staging E2E matrix, independent security review, rollback/recovery rehearsal, pilot/data-rights approval and explicit staging authorization remain outstanding. No production release is authorized.
 
-
 ## 10. Cross-repository authorization contract review
 
 Static source audit completed against Core #229 head `8063ad968f6af50874b733186385fc7493b2cbfd` and OS #57/#60/#61 heads `110116d844ed73e46ee85d3508c4bac740cd6230`, `17f6c9dc590693e53bd534849192b0daf71aa030`, and `2b6da562cdb1df354e04d6969ca2d54b646914e3`.
@@ -662,6 +661,8 @@ The following SHAs and exact-head workflow conclusions were re-fetched from the 
 | Core #274 | Private Worker + signed gateway | `bee2cfa56f0327dc8518bc9056f98e8d48aea471` | [44534356078](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44534356078), success |
 | NOVA OS #66 | Durable lifecycle browser workflow | `f6f3fac6eeef77194975b6b462b499413c36fe1c` | [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857), success |
 | Core #267 | This documentation handoff | `21487321ee762c25285ff65448dbab4976fe2781` | [44561864602](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44561864602), success |
+| NOVA OS #67 | Original-actor revocation Chromium scenario (test-only) | `71669c2481496d24f4f3a61e0c0ab2103c6dd25e` | [44566307214](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44566307214), success |
+| Core #275 | Original-actor revocation plus resolver reauthorization regression (test-only) | `17271e9d4d76af33e2a15ba2a195dad564540d5c` | [44572507610](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44572507610), success |
 
 Core #270 is a parallel documentation branch, not a runtime dependency in the #271–#274 chain. Core #274 is the integrated runtime candidate; OS #66 is its draft browser client. Every listed PR remains open/draft/unmerged. The OS browser gateway uses synthetic identifiers and a simulated gateway; no live staging or production Access validation is claimed.
 
