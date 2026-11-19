@@ -57,7 +57,7 @@ async function commandEvents(db, commandId) {
   return await rows(db.prepare(
     `SELECT event_type,occurred_at,rejection_code,performed_by_subject
        FROM tenant_site_lifecycle_command_events
-      WHERE command_id=? ORDER BY occurred_at,id LIMIT 20`
+      WHERE command_id=? ORDER BY occurred_at,CASE event_type WHEN 'prepared' THEN 0 ELSE 1 END,id LIMIT 20`
   ).bind(commandId));
 }
 async function responseFor(db, command, status = 200) {
@@ -136,6 +136,22 @@ export async function prepareTenantSiteLifecycleCommand(db, {
     if (raced) return raced;
     return { error: "site_lifecycle_command_conflict", status: 409 };
   }
+}
+
+export async function recoverTenantSiteLifecycleCommand(db, { tenant, site, actorSubject }) {
+  if (!validId(tenant, 120) || !validId(site) || !validText(actorSubject, 200)) {
+    return { error: "site_lifecycle_command_request_invalid", status: 400 };
+  }
+  if (!(await authorize(db, tenant, site, actorSubject))) return { error: "site_not_found", status: 404 };
+  const command = await one(db.prepare(
+    `SELECT id,tenant_id,site_id,actor_subject,action,expected_status,reason,
+            request_digest,status,event_id,rejection_code,resolved_by_subject,
+            idempotency_key,created_at,updated_at
+       FROM tenant_site_lifecycle_commands
+      WHERE tenant_id=? AND site_id=? AND (status='pending' OR actor_subject=?)
+      ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,updated_at DESC,id DESC LIMIT 2`
+  ).bind(tenant, site, actorSubject));
+  return command ? await responseFor(db, command) : { data: null, status: 200 };
 }
 
 export async function readTenantSiteLifecycleCommand(db, { tenant, site, actorSubject, commandId }) {
