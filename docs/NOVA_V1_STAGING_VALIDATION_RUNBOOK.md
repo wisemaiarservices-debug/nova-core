@@ -858,3 +858,44 @@ This section is a reviewer handoff, not a claim that an independent review has o
 - No independent reviewer sign-off, live staging validation, production secret/config review, production migration, deployment or customer-data operation has occurred.
 
 Reviewer outcome must record the exact SHAs reviewed, commands/tests independently rerun, findings, severity, remediation commit SHAs, and explicit pass/fail for every mandatory item. A green repository CI result is not a substitute for this sign-off.
+
+
+## 42. Durable site lifecycle command recovery — Core #269–#274 and OS #66
+
+**Purpose:** record the next cross-repository candidate stack for independent review. This section is a handoff only; it is not approval to merge, stage or deploy.
+
+### Exact implementation candidates
+
+- Core schema foundation #269: durable command ledger, pending-per-site uniqueness and atomic event/application linkage.
+- Core resolver foundation #271: preserves original actor identity and separately attributes an authorized resolver.
+- Core retry-key foundation #272: durable idempotency key scoped to tenant/site/original actor; immutable and unique.
+- Core command service #273: prepare/recover/read/apply/reject service, strict request validation and SQLite service tests.
+- Core private Worker + signed gateway routes #274: exact GET/POST routes, server-derived Access actor, authorization rechecks, reload collection recovery and end-to-end disposable D1 HTTP integration.
+- Core #274 exact head `bee2cfa56f0327dc8518bc9056f98e8d48aea471`; exact-head CI [44534356078](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44534356078) passed all 3 jobs: API/security, tenant Worker + ordered D1 migrations + full gateway/private Worker integration, research raster.
+- NOVA OS #66 adds the browser prepare → apply flow, durable recovery after reload, original-actor-only resume and separately confirmed administrator resolver actions. Exact head `af8df15b091095f262215f357402f69bdeecf0b8`; exact-head CI [44534466001](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44534466001) passed tenant-resource tests, TypeScript and production build.
+
+### Command contract and adversarial coverage
+
+- [x] Prepare persists immutable tenant/site/original-actor/action/reason intent and binds it to a durable retry key.
+- [x] Collection GET recovers the pending command after reload even when the original response and in-memory retry key were lost; it also recovers the current actor's latest terminal command or a command this actor resolved.
+- [x] Read-by-command, apply and reject have exact method/path matching and bounded request bodies.
+- [x] Apply is restricted to the original actor; a different administrator with exact site read access receives a not-found response and cannot take over.
+- [x] Resolver identity is separately attributed; rejection does not alter site status or create a lifecycle application.
+- [x] Resolver reason `original_actor_revoked` is accepted only when the original actor has lost active owner/admin membership or exact site read grant.
+- [x] Resolver reason `site_status_changed` is accepted only when current site status differs from the command's expected status. Null, generic or mismatched reasons are rejected by the database.
+- [x] Disposable-D1 HTTP integration exercises prepare/replay, reload recovery, command read, wrong-actor apply denial, original-actor apply/replay, terminal recovery, stale-site resolver rejection and proof that rejection itself leaves site status unchanged.
+- [x] OS requires fresh exact-site status/history review acknowledgement before resume or resolver action; acknowledgement resets on reload and tenant/site change.
+
+### Mandatory independent review and staging gates
+
+- [ ] Reviewer verifies migration ancestry 0042–0045 against 0040/0041 and all trigger definitions on a clean disposable D1.
+- [ ] Reviewer independently verifies prepare/replay under concurrency, pending-per-site uniqueness, lost response, reload recovery, terminal recovery by original actor and resolver.
+- [ ] Reviewer verifies both resolver reason/code directions, original actor membership revocation, site-grant revocation, stale site state, invalid reason, no-admin-remains and no status mutation on rejection.
+- [ ] Reviewer verifies HMAC canonicalization, Access subject/issuer/audience, one-use transport request ID, request digest and body/path/method binding on every new route.
+- [ ] In explicitly authorized isolated staging, test browser lost prepare/apply/reject responses, reload, second device, stale site state and resolver audit event.
+- [ ] Confirm legacy lifecycle action remains separate until coordinated cross-repository cutover is reviewed and approved; no endpoint removal or migration rollback is implied.
+- [ ] Record exact Core/OS SHAs, reviewer identity, independently rerun tests, findings/severity, remediation commits and written pass/fail.
+
+### Current boundary
+
+Core PRs #269–#274 and NOVA OS PR #66 remain draft/unmerged. Core #274 is stacked on the service candidate #273; OS #66 is stacked on OS #65. Repository CI is not live browser-to-staging E2E, independent security review, production Access/configuration review or operational readiness evidence. No independent reviewer has signed off. No staging/production migration, deployment, tenant/site provisioning or customer-data operation has occurred. Production remains unauthorized.
