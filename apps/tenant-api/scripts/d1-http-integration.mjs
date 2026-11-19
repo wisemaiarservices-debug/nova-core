@@ -1456,6 +1456,45 @@ try {
     { "content-type": "application/json" }, "POST", "{}");
   assert.equal(conflictingRaceRestoreApply.response.status, 200, JSON.stringify(conflictingRaceRestoreApply.body));
 
+  // Concurrent retries of one pending command's apply endpoint must converge
+  // on a single lifecycle event and one immutable terminal command.
+  const concurrentApplyKey = "site-command-concurrent-apply-" + randomUUID();
+  const concurrentApplyPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": concurrentApplyKey },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI concurrent apply convergence" }));
+  assert.equal([200, 201].includes(concurrentApplyPrepare.response.status), true,
+    JSON.stringify(concurrentApplyPrepare.body));
+  const concurrentApplyId = concurrentApplyPrepare.body.data.id;
+  const concurrentApplyPath = commandCollectionPath + "/" + concurrentApplyId + "/apply";
+  const concurrentApplyResults = await Promise.all([1, 2].map(() => throughGateway(
+    concurrentApplyPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", "{}")));
+  assert.deepEqual(concurrentApplyResults.map(result => result.response.status).sort(), [200, 200],
+    JSON.stringify(concurrentApplyResults.map(result => ({ status: result.response.status, body: result.body }))));
+  const concurrentAppliedEventIds = concurrentApplyResults.map(result => result.body.data.event_id);
+  assert.ok(concurrentAppliedEventIds[0]);
+  assert.equal(concurrentAppliedEventIds[1], concurrentAppliedEventIds[0]);
+  assert.equal(concurrentApplyResults.every(result => result.body.data.status === "applied"), true);
+  const concurrentApplyRead = await throughGateway(commandCollectionPath + "/" + concurrentApplyId,
+    accessToken("ci-human-subject"));
+  assert.equal(concurrentApplyRead.response.status, 200, JSON.stringify(concurrentApplyRead.body));
+  assert.equal(concurrentApplyRead.body.data.status, "applied");
+  assert.equal(concurrentApplyRead.body.data.events.filter(event => event.event_type === "applied").length, 1);
+  const concurrentApplySite = await throughGateway(sitePath, accessToken("ci-human-subject"));
+  assert.equal(concurrentApplySite.response.status, 200, JSON.stringify(concurrentApplySite.body));
+  assert.equal(concurrentApplySite.body.data.status, "inactive");
+  const concurrentApplyRestore = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-command-concurrent-apply-restore-" + randomUUID() },
+    "POST", JSON.stringify({ action: "reactivate", reason: "CI restore after concurrent apply" }));
+  assert.equal([200, 201].includes(concurrentApplyRestore.response.status), true,
+    JSON.stringify(concurrentApplyRestore.body));
+  const concurrentApplyRestoreResult = await throughGateway(commandCollectionPath + "/" +
+    concurrentApplyRestore.body.data.id + "/apply", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(concurrentApplyRestoreResult.response.status, 200,
+    JSON.stringify(concurrentApplyRestoreResult.body));
+  assert.equal(concurrentApplyRestoreResult.body.data.status, "applied");
+
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
