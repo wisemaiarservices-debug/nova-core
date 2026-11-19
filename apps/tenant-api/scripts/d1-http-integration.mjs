@@ -1302,15 +1302,15 @@ try {
   assert.equal(abandonedPrepare.response.status, 201, JSON.stringify(abandonedPrepare.body));
   const abandonedId = abandonedPrepare.body.data.id;
 
-  const revokeOriginalActorGrant = await siteGrant("ci-command-resolver", {
-    action: "revoke", subject: "ci-human-subject", site_id: "site-http-a",
-    grant_action: "read", reason: "CI revoke original command actor authority",
-  });
-  assert.equal(revokeOriginalActorGrant.response.status, 200, JSON.stringify(revokeOriginalActorGrant.body));
+  const staleSiteTransition = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-command-stale-site-" + randomUUID() },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI stale pending command state change" }));
+  assert.equal(staleSiteTransition.response.status, 201, JSON.stringify(staleSiteTransition.body));
+  assert.equal(staleSiteTransition.body.data.new_status, "inactive");
 
   const resolverReject = await throughGateway(commandCollectionPath + "/" + abandonedId + "/reject",
     accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ rejection_code: "original_actor_revoked" }));
+    JSON.stringify({ rejection_code: "site_state_changed" }));
   assert.equal(resolverReject.response.status, 200, JSON.stringify(resolverReject.body));
   assert.equal(resolverReject.body.data.status, "rejected");
   assert.equal(resolverReject.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
@@ -1321,7 +1321,7 @@ try {
   assert.equal(resolverRead.body.data.status, "rejected");
   const siteAfterResolverReject = await throughGateway(sitePath, accessToken("ci-command-resolver"));
   assert.equal(siteAfterResolverReject.response.status, 200, JSON.stringify(siteAfterResolverReject.body));
-  assert.equal(siteAfterResolverReject.body.data.status, "active");
+  assert.equal(siteAfterResolverReject.body.data.status, "inactive");\n\n  const restoreAfterResolver = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),\n    { "content-type": "application/json", "Idempotency-Key": "site-command-resolver-restore-" + randomUUID() },\n    "POST", JSON.stringify({ action: "reactivate", reason: "CI restore site after resolver test" }));\n  assert.equal(restoreAfterResolver.response.status, 201, JSON.stringify(restoreAfterResolver.body));\n  assert.equal(restoreAfterResolver.body.data.new_status, "active");
 
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
