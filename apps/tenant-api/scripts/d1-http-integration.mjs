@@ -1380,6 +1380,49 @@ try {
     accessToken("ci-http-admin"), { "content-type": "application/json" }, "POST", "{}");
   assert.equal(revokedActorCannotApply.response.status, 404);
 
+  // Race durable command preparation through the signed gateway and local D1.
+  // Identical retries must converge on one immutable command; competing intents
+  // must not occupy the site's single pending-command slot.
+  const prepareRaceKey = "site-command-prepare-race-" + randomUUID();
+  const prepareRacePayload = { action: "deactivate", reason: "CI concurrent identical prepare" };
+  const prepareRace = await Promise.all([1, 2].map(() => throughGateway(
+    commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": prepareRaceKey },
+    "POST", JSON.stringify(prepareRacePayload))));
+  assert.deepEqual(prepareRace.map(result => result.response.status).sort(), [200, 200],
+    JSON.stringify(prepareRace.map(result => ({ status: result.response.status, body: result.body }))));
+  const racedCommandId = prepareRace[0].body.data.id;
+  assert.ok(racedCommandId);
+  assert.equal(prepareRace[1].body.data.id, racedCommandId);
+  assert.equal(prepareRace.every(result => result.body.data.status === "pending"), true);
+  assert.equal(prepareRace.every(result => result.body.data.events.filter(event =>
+    event.event_type === "prepared").length === 1), true);
+
+  const competingPrepareRace = await Promise.all([1, 2].map(index => throughGateway(
+    commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-command-competing-" + index + "-" + randomUUID() },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI competing pending intent " + index }))));
+  assert.deepEqual(competingPrepareRace.map(result => result.response.status).sort(), [409, 409],
+    JSON.stringify(competingPrepareRace.map(result => ({ status: result.response.status, body: result.body }))));
+  const racedCommandRecovery = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"));
+  assert.equal(racedCommandRecovery.response.status, 200, JSON.stringify(racedCommandRecovery.body));
+  assert.equal(racedCommandRecovery.body.data.id, racedCommandId);
+  assert.equal(racedCommandRecovery.body.data.status, "pending");
+
+  const racedCommandApply = await throughGateway(commandCollectionPath + "/" + racedCommandId + "/apply",
+    accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(racedCommandApply.response.status, 200, JSON.stringify(racedCommandApply.body));
+  assert.equal(racedCommandApply.body.data.status, "applied");
+  const raceRestorePrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-command-race-restore-" + randomUUID() },
+    "POST", JSON.stringify({ action: "reactivate", reason: "CI restore after prepare race" }));
+  assert.equal([200, 201].includes(raceRestorePrepare.response.status), true,
+    JSON.stringify(raceRestorePrepare.body));
+  const raceRestoreApply = await throughGateway(commandCollectionPath + "/" + raceRestorePrepare.body.data.id + "/apply",
+    accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(raceRestoreApply.response.status, 200, JSON.stringify(raceRestoreApply.body));
+  assert.equal(raceRestoreApply.body.data.status, "applied");
+
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
