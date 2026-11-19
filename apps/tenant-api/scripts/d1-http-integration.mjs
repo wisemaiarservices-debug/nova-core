@@ -1310,7 +1310,7 @@ try {
 
   const resolverReject = await throughGateway(commandCollectionPath + "/" + abandonedId + "/reject",
     accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
-    JSON.stringify({ rejection_code: "site_state_changed" }));
+    JSON.stringify({ rejection_code: "site_status_changed" }));
   assert.equal(resolverReject.response.status, 200, JSON.stringify(resolverReject.body));
   assert.equal(resolverReject.body.data.status, "rejected");
   assert.equal(resolverReject.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
