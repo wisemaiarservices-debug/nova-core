@@ -311,15 +311,7 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
 
     def test_site_state_change_allows_audited_rejection_without_changing_site_again(self):
         self.command(actor="owner")
-        self.db.execute(
-            """INSERT INTO tenant_site_lifecycle_events
-               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
-                reason,idempotency_key,request_digest,request_id,occurred_at)
-               VALUES('legacy-event','tenant-a','site-active','admin','deactivated',
-                'active','inactive','separate governed transition','legacy-key',?,
-                'legacy-request','2026-11-19T12:01:00.000Z')""",
-            ("c" * 64,),
-        )
+        self.simulate_pre_cutover_legacy_transition()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
             self.db.execute(
                 """UPDATE tenant_site_lifecycle_commands
@@ -346,15 +338,7 @@ class SiteLifecycleCommandMigrationTests(unittest.TestCase):
 
     def test_original_actor_cannot_resolve_own_stale_command(self):
         self.command(actor="owner")
-        self.db.execute(
-            """INSERT INTO tenant_site_lifecycle_events
-               (id,tenant_id,site_id,actor_subject,event_type,previous_status,new_status,
-                reason,idempotency_key,request_digest,request_id,occurred_at)
-               VALUES('legacy-event','tenant-a','site-active','admin','deactivated',
-                'active','inactive','separate governed transition','legacy-key',?,
-                'legacy-request','2026-11-19T12:01:00.000Z')""",
-            ("c" * 64,),
-        )
+        self.simulate_pre_cutover_legacy_transition()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "not eligible for resolution"):
             self.db.execute(
                 """UPDATE tenant_site_lifecycle_commands
