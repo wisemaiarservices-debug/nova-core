@@ -628,3 +628,21 @@ Production release remains separately gated. This packet does not authorize prod
 - [ ] Record exact SHAs, test evidence, reviewer identity, findings/remediation and explicit release decision.
 
 **Decision: PENDING INDEPENDENT REVIEW AND AUTHORIZED STAGING.** These PRs are not merged or deployed. This packet does not authorize staging or production migrations, deployments, tenant/site provisioning or customer-data operations.
+
+
+## 35. NOVA OS #66 site-lifecycle Chromium validation — exact head 2026-11-19
+
+**Automated evidence**
+- OS PR #66 exact head: `f6f3fac6eeef77194975b6b462b499413c36fe1c`.
+- Exact-head CI [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857) passed both jobs: `site-lifecycle-browser` (real Chromium) and `web-build` (tenant resource tests, TypeScript and production build).
+- Browser scenarios: lost prepare response followed by reload recovery and original-actor apply; pending command after an apply transport failure; stale-site resolver rejection with no site-status mutation and no lifecycle application.
+- Browser test uses a simulated gateway and synthetic tenant/site values. It is not live Core staging, production Access authentication, independent security review or customer-data validation.
+- Dependency vulnerability inventory is diagnostic/non-blocking and is not a security audit.
+
+**Release gates remain open**
+- [ ] Independent reviewer validates Core #269–#274 migrations 0042–0045, trigger semantics, HMAC/Access actor binding, route allowlists and command recovery.
+- [ ] Independent reviewer reruns Core disposable-D1 integration and OS browser tests against exact recorded SHAs.
+- [ ] Explicitly authorized isolated staging E2E covers lost prepare/apply/reject responses, full reload, second device, original-actor revocation, stale site state and resolver attribution.
+- [ ] Record reviewer identity, exact SHAs, findings/remediation and written pass/fail.
+
+**Decision: PENDING INDEPENDENT REVIEW AND AUTHORIZED STAGING.** OS #66 remains draft/unmerged. This CI result does not authorize merge, staging or production deployment, migrations, tenant/site provisioning or customer-data operations.
