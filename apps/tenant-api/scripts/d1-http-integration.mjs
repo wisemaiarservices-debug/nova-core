@@ -1259,7 +1259,7 @@ try {
   assert.equal(commandRead.response.status, 200, JSON.stringify(commandRead.body));
   assert.equal(commandRead.body.data.id, commandId);
 
-  const wrongActorApply = await throughGateway(commandPath + "/apply", accessToken("ci-http-admin"),
+  const wrongActorApply = await throughGateway(commandPath + "/apply", accessToken("ci-command-resolver"),
     { "content-type": "application/json" }, "POST", "{}");
   assert.equal(wrongActorApply.response.status, 404, JSON.stringify(wrongActorApply.body));
 
