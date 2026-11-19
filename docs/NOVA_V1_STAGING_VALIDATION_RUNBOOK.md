@@ -910,3 +910,25 @@ Core PRs #269–#274 and NOVA OS PR #66 remain draft/unmerged. Core #274 is stac
 - The same workflow passed tenant resource validation, TypeScript and production build. Dependency vulnerability inventory is diagnostic/non-blocking and must not be represented as a security audit.
 - The prior browser-test failure was corrected by modeling a transport failure before the simulated apply endpoint receives the request; the pending command is then available for stale-state resolver coverage.
 - PR #66 remains draft/unmerged. Independent security review, exact Core/OS route and migration review, and explicitly authorized staging browser E2E remain mandatory. No staging/production migration, deployment, tenant/site provisioning or customer-data operation is authorized.
+
+
+## 44. Exact Core/OS command-recovery candidate matrix (2026-11-19)
+
+This is an evidence index for the independent reviewer, not an approval. PR metadata and workflow status were re-fetched at this checkpoint.
+
+| PR | Scope | Exact head | Exact-head CI |
+|---|---|---|---|
+| Core #269 | Durable command ledger | `024c416fcd1b3eafeb4972ae4da221a8825ab162` | [44419113035](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44419113035), success |
+| Core #270 | Parallel API-contract docs | `5f5ff725fee5f6102831aa2aba784305100d5789` | [44423114799](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44423114799), success |
+| Core #271 | Resolver safeguards | `4b8408a2588d2983d1d26c59d4e850a189436b8e` | [44429015759](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44429015759), success |
+| Core #272 | Durable retry keys | `03258be130caa4692bc419a60a1eeaa7bf5c81ec` | [44435163843](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44435163843), success |
+| Core #273 | Command service | `77f9e5d8192c5070246f6b25468c6421a1270ff6` | [44528863233](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44528863233), success |
+| Core #274 | Private Worker + signed gateway | `bee2cfa56f0327dc8518bc9056f98e8d48aea471` | [44534356078](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44534356078), success |
+| NOVA OS #66 | Durable lifecycle browser workflow | `f6f3fac6eeef77194975b6b462b499413c36fe1c` | [44561011857](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44561011857), success |
+| Core #267 | Documentation handoff | `21487321ee762c25285ff65448dbab4976fe2781` | [44561864602](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44561864602), success |
+
+Core #270 is a parallel API-contract documentation branch; it is not part of the runtime dependency chain #271–#274. #274 is the integrated Core runtime candidate and OS #66 is the draft browser client. All are open/draft/unmerged. The OS browser gateway is simulated with synthetic tenant/site identifiers and does not validate production Access or live staging.
+
+Reviewer must independently inspect exact SHAs and ancestry, verify migrations 0042–0045 and triggers, rerun the integrated Core disposable-D1 HTTP suite and OS Chromium/build jobs, and record test commands, findings/severity, remediation SHAs and explicit pass/fail. Repository CI is not independent security approval.
+
+**Release boundary:** independent security review and explicitly authorized staging E2E remain mandatory. No staging/production migration, deployment, tenant/site provisioning or customer-data operation is authorized.
