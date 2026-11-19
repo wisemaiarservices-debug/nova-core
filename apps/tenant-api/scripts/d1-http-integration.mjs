@@ -1423,6 +1423,39 @@ try {
   assert.equal(raceRestoreApply.response.status, 200, JSON.stringify(raceRestoreApply.body));
   assert.equal(raceRestoreApply.body.data.status, "applied");
 
+  // Reusing one idempotency key for two different concurrent intents must not
+  // silently replay or overwrite either intent: exactly one digest wins.
+  const conflictingRaceKey = "site-command-conflicting-digest-" + randomUUID();
+  const conflictingDigestRace = await Promise.all([
+    { action: "deactivate", reason: "CI conflicting digest race A" },
+    { action: "deactivate", reason: "CI conflicting digest race B" },
+  ].map(payload => throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": conflictingRaceKey },
+    "POST", JSON.stringify(payload))));
+  const conflictingRaceStatuses = conflictingDigestRace.map(result => result.response.status).sort();
+  assert.deepEqual(conflictingRaceStatuses, [200, 409],
+    JSON.stringify(conflictingDigestRace.map(result => ({ status: result.response.status, body: result.body }))));
+  const winningConflictingRace = conflictingDigestRace.find(result => result.response.status === 200);
+  assert.ok(winningConflictingRace?.body?.data?.id);
+  const conflictingRaceRecovery = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"));
+  assert.equal(conflictingRaceRecovery.response.status, 200, JSON.stringify(conflictingRaceRecovery.body));
+  assert.equal(conflictingRaceRecovery.body.data.id, winningConflictingRace.body.data.id);
+  assert.ok(["CI conflicting digest race A", "CI conflicting digest race B"].includes(
+    conflictingRaceRecovery.body.data.reason));
+  const conflictingRaceApply = await throughGateway(commandCollectionPath + "/" +
+    conflictingRaceRecovery.body.data.id + "/apply", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(conflictingRaceApply.response.status, 200, JSON.stringify(conflictingRaceApply.body));
+  const conflictingRaceRestore = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-command-conflicting-race-restore-" + randomUUID() },
+    "POST", JSON.stringify({ action: "reactivate", reason: "CI restore after conflicting digest race" }));
+  assert.equal([200, 201].includes(conflictingRaceRestore.response.status), true,
+    JSON.stringify(conflictingRaceRestore.body));
+  const conflictingRaceRestoreApply = await throughGateway(commandCollectionPath + "/" +
+    conflictingRaceRestore.body.data.id + "/apply", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(conflictingRaceRestoreApply.response.status, 200, JSON.stringify(conflictingRaceRestoreApply.body));
+
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
