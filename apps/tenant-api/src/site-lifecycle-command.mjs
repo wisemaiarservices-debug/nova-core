@@ -23,7 +23,7 @@ async function sha256(value) {
 function publicCommand(row, events = []) {
   return {
     id: row.id, tenant_id: row.tenant_id, site_id: row.site_id,
-    action: row.action, expected_status: row.expected_status,
+    action: row.action, expected_status: row.expected_status, reason: row.reason,
     status: row.status, event_id: row.event_id ?? null,
     rejection_code: row.rejection_code ?? null,
     created_at: row.created_at, updated_at: row.updated_at, events,
@@ -57,7 +57,7 @@ async function commandEvents(db, commandId) {
   return await rows(db.prepare(
     `SELECT event_type,occurred_at,rejection_code,performed_by_subject
        FROM tenant_site_lifecycle_command_events
-      WHERE command_id=? ORDER BY occurred_at,id LIMIT 20`
+      WHERE command_id=? ORDER BY occurred_at,CASE event_type WHEN 'prepared' THEN 0 ELSE 1 END,id LIMIT 20`
   ).bind(commandId));
 }
 async function responseFor(db, command, status = 200) {
@@ -68,8 +68,8 @@ export function matchTenantSiteLifecycleCommandRoute(url, method) {
   const parsed = url instanceof URL ? url : new URL(url);
   if (parsed.search || parsed.hash) return null;
   let match = parsed.pathname.match(new RegExp("^/internal/v1/tenants/([^/]+)/sites/([^/]+)/lifecycle-commands$"));
-  if (match && method === "POST" && validId(match[1], 120) && validId(match[2])) {
-    return { tenant: match[1], site: match[2], action: "prepare" };
+  if (match && (method === "POST" || method === "GET") && validId(match[1], 120) && validId(match[2])) {
+    return { tenant: match[1], site: match[2], action: method === "POST" ? "prepare" : "recover" };
   }
   match = parsed.pathname.match(new RegExp("^/internal/v1/tenants/([^/]+)/sites/([^/]+)/lifecycle-commands/([^/]+)(?:/(apply|reject))?$"));
   if (!match || !validId(match[1], 120) || !validId(match[2]) || !validId(match[3], 151)) return null;
@@ -138,6 +138,26 @@ export async function prepareTenantSiteLifecycleCommand(db, {
   }
 }
 
+export async function recoverTenantSiteLifecycleCommand(db, { tenant, site, actorSubject }) {
+  if (!validId(tenant, 120) || !validId(site) || !validText(actorSubject, 200)) {
+    return { error: "site_lifecycle_command_request_invalid", status: 400 };
+  }
+  if (!(await authorize(db, tenant, site, actorSubject))) return { error: "site_not_found", status: 404 };
+  const command = await one(db.prepare(
+    `SELECT id,tenant_id,site_id,actor_subject,action,expected_status,reason,
+            request_digest,status,event_id,rejection_code,resolved_by_subject,
+            idempotency_key,created_at,updated_at
+       FROM tenant_site_lifecycle_commands
+      WHERE tenant_id=? AND site_id=? AND (status='pending' OR actor_subject=? OR EXISTS (
+        SELECT 1 FROM tenant_site_lifecycle_command_events performed
+         WHERE performed.command_id=tenant_site_lifecycle_commands.id
+           AND performed.performed_by_subject=?
+      ))
+      ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,updated_at DESC,id DESC LIMIT 1`
+  ).bind(tenant, site, actorSubject, actorSubject));
+  return command ? await responseFor(db, command) : { error: "site_lifecycle_command_not_found", status: 404 };
+}
+
 export async function readTenantSiteLifecycleCommand(db, { tenant, site, actorSubject, commandId }) {
   if (!validId(tenant, 120) || !validId(site) || !validText(actorSubject, 200) ||
       !validId(commandId, 151)) return { error: "site_lifecycle_command_request_invalid", status: 400 };
@@ -198,7 +218,7 @@ export async function rejectTenantSiteLifecycleCommand(db, {
   tenant, site, actorSubject, commandId, rejectionCode, now,
 }) {
   if (!validId(tenant, 120) || !validId(site) || !validText(actorSubject, 200) ||
-      !validId(commandId, 151) || !validId(rejectionCode, 120) ||
+      !validId(commandId, 151) || !["original_actor_revoked", "site_status_changed"].includes(rejectionCode) ||
       typeof now !== "string" || !Number.isFinite(Date.parse(now)) ||
       new Date(now).toISOString() !== now) {
     return { error: "site_lifecycle_command_request_invalid", status: 400 };

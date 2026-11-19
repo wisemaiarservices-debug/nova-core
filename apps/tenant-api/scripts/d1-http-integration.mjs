@@ -1229,6 +1229,106 @@ try {
   assert.equal(siteHistoryReactivated.body.data.events.length, 2);
   assert.equal(siteHistoryReactivated.body.data.events.some(event => event.event_type === "deactivated"), true);
   assert.equal(siteHistoryReactivated.body.data.events.some(event => event.event_type === "reactivated"), true);
+  // Exercise the durable site lifecycle command API through the public Access
+  // gateway, signed private Worker envelope, and disposable D1. This verifies
+  // prepare/replay, reload recovery, actor fencing, atomic apply and resolver
+  // attribution end-to-end rather than only through service-level tests.
+  const commandCollectionPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/lifecycle-commands";
+  const commandApplyKey = "site-command-apply-" + randomUUID();
+  const commandPayload = { action: "deactivate", reason: "CI durable command atomic apply" };
+  const commandPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": commandApplyKey },
+    "POST", JSON.stringify(commandPayload));
+  assert.equal([200, 201].includes(commandPrepare.response.status), true, JSON.stringify(commandPrepare.body));
+  assert.equal(commandPrepare.body.data.status, "pending");
+  assert.equal(commandPrepare.body.data.reason, commandPayload.reason);
+  const commandId = commandPrepare.body.data.id;
+  const commandPath = commandCollectionPath + "/" + commandId;
+
+  const commandReloadRecovery = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"));
+  assert.equal(commandReloadRecovery.response.status, 200, JSON.stringify(commandReloadRecovery.body));
+  assert.equal(commandReloadRecovery.body.data.id, commandId);
+  assert.equal(commandReloadRecovery.body.data.status, "pending");
+
+  const commandPrepareReplay = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": commandApplyKey },
+    "POST", JSON.stringify(commandPayload));
+  assert.equal(commandPrepareReplay.response.status, 200, JSON.stringify(commandPrepareReplay.body));
+  assert.equal(commandPrepareReplay.body.data.id, commandId);
+
+  const commandRead = await throughGateway(commandPath, accessToken("ci-human-subject"));
+  assert.equal(commandRead.response.status, 200, JSON.stringify(commandRead.body));
+  assert.equal(commandRead.body.data.id, commandId);
+
+  const wrongActorApply = await throughGateway(commandPath + "/apply", accessToken("ci-command-resolver"),
+    { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(wrongActorApply.response.status, 404, JSON.stringify(wrongActorApply.body));
+
+  const commandApply = await throughGateway(commandPath + "/apply", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(commandApply.response.status, 200, JSON.stringify(commandApply.body));
+  assert.equal(commandApply.body.data.status, "applied");
+  assert.ok(commandApply.body.data.event_id);
+
+  const commandApplyReplay = await throughGateway(commandPath + "/apply", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(commandApplyReplay.response.status, 200, JSON.stringify(commandApplyReplay.body));
+  assert.equal(commandApplyReplay.body.data.event_id, commandApply.body.data.event_id);
+
+  const commandAppliedRecovery = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"));
+  assert.equal(commandAppliedRecovery.response.status, 200, JSON.stringify(commandAppliedRecovery.body));
+  assert.equal(commandAppliedRecovery.body.data.status, "applied");
+  assert.equal(commandAppliedRecovery.body.data.id, commandId);
+
+  const commandSiteAfterApply = await throughGateway(sitePath, accessToken("ci-human-subject"));
+  assert.equal(commandSiteAfterApply.response.status, 200, JSON.stringify(commandSiteAfterApply.body));
+  assert.equal(commandSiteAfterApply.body.data.status, "inactive");
+
+  const reactivateKey = "site-command-reactivate-" + randomUUID();
+  const reactivatePayload = { action: "reactivate", reason: "CI durable command restore site" };
+  const reactivatePrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": reactivateKey },
+    "POST", JSON.stringify(reactivatePayload));
+  assert.equal([200, 201].includes(reactivatePrepare.response.status), true, JSON.stringify(reactivatePrepare.body));
+  const reactivateApply = await throughGateway(commandCollectionPath + "/" + reactivatePrepare.body.data.id + "/apply",
+    accessToken("ci-human-subject"), { "content-type": "application/json" }, "POST", "{}");
+  assert.equal(reactivateApply.response.status, 200, JSON.stringify(reactivateApply.body));
+  assert.equal(reactivateApply.body.data.status, "applied");
+
+  const abandonedKey = "site-command-abandoned-" + randomUUID();
+  const abandonedPrepare = await throughGateway(commandCollectionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": abandonedKey },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI abandoned command resolver" }));
+  assert.equal([200, 201].includes(abandonedPrepare.response.status), true, JSON.stringify(abandonedPrepare.body));
+  const abandonedId = abandonedPrepare.body.data.id;
+
+  const staleSiteTransition = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-command-stale-site-" + randomUUID() },
+    "POST", JSON.stringify({ action: "deactivate", reason: "CI stale pending command state change" }));
+  assert.equal(staleSiteTransition.response.status, 201, JSON.stringify(staleSiteTransition.body));
+  assert.equal(staleSiteTransition.body.data.new_status, "inactive");
+
+  const resolverReject = await throughGateway(commandCollectionPath + "/" + abandonedId + "/reject",
+    accessToken("ci-command-resolver"), { "content-type": "application/json" }, "POST",
+    JSON.stringify({ rejection_code: "site_status_changed" }));
+  assert.equal(resolverReject.response.status, 200, JSON.stringify(resolverReject.body));
+  assert.equal(resolverReject.body.data.status, "rejected");
+  assert.equal(resolverReject.body.data.events.at(-1).performed_by_subject, "ci-command-resolver");
+
+  const resolverRead = await throughGateway(commandCollectionPath + "/" + abandonedId,
+    accessToken("ci-command-resolver"));
+  assert.equal(resolverRead.response.status, 200, JSON.stringify(resolverRead.body));
+  assert.equal(resolverRead.body.data.status, "rejected");
+  const siteAfterResolverReject = await throughGateway(sitePath, accessToken("ci-command-resolver"));
+  assert.equal(siteAfterResolverReject.response.status, 200, JSON.stringify(siteAfterResolverReject.body));
+  assert.equal(siteAfterResolverReject.body.data.status, "inactive");
+
+  const restoreAfterResolver = await throughGateway(siteLifecycleActionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json", "Idempotency-Key": "site-command-resolver-restore-" + randomUUID() },
+    "POST", JSON.stringify({ action: "reactivate", reason: "CI restore site after resolver test" }));
+  assert.equal(restoreAfterResolver.response.status, 201, JSON.stringify(restoreAfterResolver.body));
+  assert.equal(restoreAfterResolver.body.data.new_status, "active");
+
 
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");

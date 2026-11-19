@@ -7,6 +7,7 @@ import {
   matchTenantSiteLifecycleCommandRoute,
   prepareTenantSiteLifecycleCommand,
   readTenantSiteLifecycleCommand,
+  recoverTenantSiteLifecycleCommand,
   applyTenantSiteLifecycleCommand,
   rejectTenantSiteLifecycleCommand,
 } from "../src/site-lifecycle-command.mjs";
@@ -17,6 +18,7 @@ const migrations = [
   "0042_site_lifecycle_command_recovery.sql",
   "0043_site_lifecycle_command_resolver.sql",
   "0044_site_lifecycle_command_idempotency.sql",
+  "0045_site_lifecycle_command_resolver_reason_guard.sql",
 ].map(name => readFileSync(fileURLToPath(new URL(name, migrationDir)), "utf8"));
 
 const tenant = "tenant-command-test";
@@ -96,8 +98,9 @@ test("route matcher exposes only exact method/path combinations", () => {
     { tenant: "t1", site: "s1", commandId: "c1", action: "apply" });
   assert.equal(matchTenantSiteLifecycleCommandRoute(
     "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-commands/c1/apply?x=1", "POST"), null);
-  assert.equal(matchTenantSiteLifecycleCommandRoute(
-    "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-commands", "GET"), null);
+  assert.deepEqual(matchTenantSiteLifecycleCommandRoute(
+    "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-commands", "GET"),
+    { tenant: "t1", site: "s1", action: "recover" });
   assert.equal(matchTenantSiteLifecycleCommandRoute(
     "https://internal.test/internal/v1/tenants/t1/sites/s1/lifecycle-commands/c1/reject", "GET"), null);
 });
@@ -155,6 +158,9 @@ test("resolver rejection is separately attributed and cannot change site status"
   assert.equal(rejected.status, 200);
   assert.equal(rejected.data.status, "rejected");
   assert.equal(rejected.data.events.at(-1).performed_by_subject, resolver);
+  const resolverReload = await recoverTenantSiteLifecycleCommand(db, { tenant, site, actorSubject: resolver });
+  assert.equal(resolverReload.data.id, prepared.data.id);
+  assert.equal(resolverReload.data.status, "rejected");
   assert.equal(sqlite.prepare("SELECT status FROM sites WHERE id=?").get(site).status, "active");
   assert.equal(sqlite.prepare("SELECT count(*) AS n FROM tenant_site_lifecycle_applications").get().n, 0);
   assert.equal(sqlite.prepare("SELECT actor_subject FROM tenant_site_lifecycle_commands WHERE id=?")
