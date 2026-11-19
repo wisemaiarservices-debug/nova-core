@@ -8,7 +8,6 @@ WHEN NEW.id IS NOT OLD.id OR NEW.tenant_id IS NOT OLD.tenant_id OR
      NEW.site_id IS NOT OLD.site_id OR NEW.actor_subject IS NOT OLD.actor_subject OR
      NEW.action IS NOT OLD.action OR NEW.expected_status IS NOT OLD.expected_status OR
      NEW.reason IS NOT OLD.reason OR NEW.request_digest IS NOT OLD.request_digest OR
-     NEW.idempotency_key IS NOT OLD.idempotency_key OR
      NEW.created_at IS NOT OLD.created_at OR OLD.status<>'pending' OR
      NEW.status NOT IN ('applied','rejected') OR
      OLD.resolved_by_subject IS NOT NULL OR
