@@ -1284,11 +1284,14 @@ export default {
         } else if (siteLifecycleCommandRoute.action === "read") {
           result = await readTenantSiteLifecycleCommand(env.DB, input);
         } else if (siteLifecycleCommandRoute.action === "apply") {
+          if (Object.keys(draftBody ?? {}).length !== 0) return error("invalid_request_body", 400);
           result = await applyTenantSiteLifecycleCommand(env.DB, input);
         } else {
+          if (Object.keys(draftBody ?? {}).some(key => key !== "rejection_code") ||
+              typeof draftBody?.rejection_code !== "string") return error("invalid_request_body", 400);
           result = await rejectTenantSiteLifecycleCommand(env.DB, {
             ...input,
-            rejectionCode: draftBody?.rejection_code,
+            rejectionCode: draftBody.rejection_code,
           });
         }
         return result.error
