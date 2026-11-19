@@ -603,3 +603,28 @@ Production release remains separately gated. This packet does not authorize prod
 - [ ] Independent reviewer verifies the complete Core #266 + OS #63/#64 stack.
 - [ ] Isolated staging browser test: lost reserve/claim/complete response, reload, second device, explicit successor, site deactivation and stale lease.
 - [ ] Confirm separate Site Lifecycle reload/manual-recovery behavior; do not treat assessment operation recovery as site-lifecycle recovery.
+
+
+## 34. Durable site lifecycle command recovery — review status
+
+**Candidate stack (all draft/unmerged):**
+- Core #269–#274: durable site lifecycle command ledger, attributed resolver, immutable retry key, private service and signed gateway routes.
+- Core #274 exact head `bee2cfa56f0327dc8518bc9056f98e8d48aea471`; exact CI [44534356078](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44534356078) passed 3/3, including the complete disposable-D1 gateway/private-Worker HTTP integration.
+- NOVA OS #66 exact head `af8df15b091095f262215f357402f69bdeecf0b8`; exact CI [44534466001](https://github.com/wisemaiarservices-debug/NovaOS/actions/runs/44534466001) passed tenant-resource tests, TypeScript and production build.
+
+**Implemented and CI-validated:**
+- [x] Prepare/replay, read, apply, reject and collection recovery after full reload.
+- [x] Original-actor-only apply; no cross-admin takeover.
+- [x] Separate resolver attribution; rejection does not mutate site status.
+- [x] Database verifies `original_actor_revoked` and `site_status_changed` against actual membership/grant/site state; generic or mismatched reasons are denied.
+- [x] Browser requires exact-site status/history review before resume or resolution.
+- [x] Resolver can recover its terminal decision after reload from its own append-only command event.
+
+**Still mandatory before any release:**
+- [ ] Independent security reviewer signs off on Core migrations 0042–0045, trigger conditions, route/HMAC/Access identity binding, actor fencing and recovery semantics.
+- [ ] Independent reviewer reruns the complete HTTP/D1 integration and concurrency/replay cases.
+- [ ] Explicitly authorized isolated staging browser E2E covers lost prepare/apply/reject responses, full reload, second device, original actor revocation, stale site state and resolver attribution.
+- [ ] Coordinated Core/OS dependency cutover and legacy-route retention/removal plan is reviewed; no route is removed by these PRs.
+- [ ] Record exact SHAs, test evidence, reviewer identity, findings/remediation and explicit release decision.
+
+**Decision: PENDING INDEPENDENT REVIEW AND AUTHORIZED STAGING.** These PRs are not merged or deployed. This packet does not authorize staging or production migrations, deployments, tenant/site provisioning or customer-data operations.
