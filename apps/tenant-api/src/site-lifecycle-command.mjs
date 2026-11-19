@@ -214,7 +214,7 @@ export async function rejectTenantSiteLifecycleCommand(db, {
   tenant, site, actorSubject, commandId, rejectionCode, now,
 }) {
   if (!validId(tenant, 120) || !validId(site) || !validText(actorSubject, 200) ||
-      !validId(commandId, 151) || !validId(rejectionCode, 120) ||
+      !validId(commandId, 151) || !["original_actor_revoked", "site_status_changed"].includes(rejectionCode) ||
       typeof now !== "string" || !Number.isFinite(Date.parse(now)) ||
       new Date(now).toISOString() !== now) {
     return { error: "site_lifecycle_command_request_invalid", status: 400 };
