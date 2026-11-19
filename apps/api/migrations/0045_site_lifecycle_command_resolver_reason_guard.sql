@@ -64,3 +64,13 @@ WHEN NEW.id IS NOT OLD.id OR NEW.tenant_id IS NOT OLD.tenant_id OR
 BEGIN
  SELECT RAISE(ABORT,'site lifecycle command terminal transition is unauthorized or not eligible for resolution');
 END;
+
+-- Keep the dedicated immutable-key guard newest so its precise failure remains
+-- observable before the broader command state-machine guard.
+DROP TRIGGER tenant_site_lifecycle_command_idempotency_immutable;
+CREATE TRIGGER tenant_site_lifecycle_command_idempotency_immutable
+BEFORE UPDATE ON tenant_site_lifecycle_commands
+WHEN NEW.idempotency_key IS NOT OLD.idempotency_key
+BEGIN
+ SELECT RAISE(ABORT,'site lifecycle command idempotency key is immutable');
+END;
