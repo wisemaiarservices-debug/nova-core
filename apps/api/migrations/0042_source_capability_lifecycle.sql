@@ -158,10 +158,11 @@ BEGIN
   SELECT RAISE(ABORT, 'source capabilities are retained');
 END;
 
-CREATE TRIGGER source_capability_event_guard
+CREATE TRIGGER source_capability_event_scope_guard
 BEFORE INSERT ON source_capability_events
 WHEN NOT EXISTS (
-  SELECT 1 FROM source_capabilities c
+  SELECT 1
+  FROM source_capabilities c
   JOIN sources src ON src.id=c.source_id AND src.tenant_id=c.tenant_id
     AND src.site_id=c.site_id AND src.module=c.module
   JOIN tenants t ON t.id=c.tenant_id AND t.status='active'
@@ -170,35 +171,45 @@ WHEN NOT EXISTS (
     AND c.site_id=NEW.site_id AND c.source_id=NEW.source_id
     AND (NEW.event_type='revoked' OR src.verification_status='verified')
 )
-OR (
-  NEW.event_type='submitted' AND NOT EXISTS (
-    SELECT 1 FROM source_capabilities c
-    JOIN tenant_memberships m ON m.tenant_id=c.tenant_id
-      AND m.subject=c.created_by_subject AND m.status='active'
-    WHERE c.id=NEW.capability_id AND c.status='pending'
-      AND c.created_by_subject=NEW.actor_subject
-  )
-)
-OR (
-  NEW.event_type IN ('approved','rejected','revoked') AND NOT EXISTS (
-    SELECT 1 FROM source_capabilities c
-    JOIN tenant_source_reviewers r ON r.tenant_id=c.tenant_id
-      AND r.site_id=c.site_id AND r.reviewer_subject=NEW.actor_subject
-      AND r.status='active'
-    JOIN tenant_memberships m ON m.tenant_id=r.tenant_id
-      AND m.subject=r.reviewer_subject AND m.status='active'
-    WHERE c.id=NEW.capability_id
-      AND c.created_by_subject<>NEW.actor_subject
-      AND (
-        (NEW.event_type IN ('approved','rejected') AND c.status='pending'
-          AND EXISTS (SELECT 1 FROM source_capability_events submitted
-            WHERE submitted.capability_id=c.id AND submitted.event_type='submitted'))
-        OR (NEW.event_type='revoked' AND c.status='approved')
-      )
-  )
+BEGIN
+  SELECT RAISE(ABORT, 'source capability event scope or source verification is invalid');
+END;
+
+CREATE TRIGGER source_capability_submission_guard
+BEFORE INSERT ON source_capability_events
+WHEN NEW.event_type='submitted' AND NOT EXISTS (
+  SELECT 1
+  FROM source_capabilities c
+  JOIN tenant_memberships m ON m.tenant_id=c.tenant_id
+    AND m.subject=c.created_by_subject AND m.status='active'
+  WHERE c.id=NEW.capability_id AND c.status='pending'
+    AND c.created_by_subject=NEW.actor_subject
 )
 BEGIN
-  SELECT RAISE(ABORT, 'source capability event violates scope, reviewer authority or lifecycle');
+  SELECT RAISE(ABORT, 'capability submission requires its active creator');
+END;
+
+CREATE TRIGGER source_capability_review_guard
+BEFORE INSERT ON source_capability_events
+WHEN NEW.event_type IN ('approved','rejected','revoked') AND NOT EXISTS (
+  SELECT 1
+  FROM source_capabilities c
+  JOIN tenant_source_reviewers r ON r.tenant_id=c.tenant_id
+    AND r.site_id=c.site_id AND r.reviewer_subject=NEW.actor_subject
+    AND r.status='active'
+  JOIN tenant_memberships m ON m.tenant_id=r.tenant_id
+    AND m.subject=r.reviewer_subject AND m.status='active'
+  WHERE c.id=NEW.capability_id
+    AND c.created_by_subject<>NEW.actor_subject
+    AND (
+      (NEW.event_type IN ('approved','rejected') AND c.status='pending'
+        AND EXISTS (SELECT 1 FROM source_capability_events submitted
+          WHERE submitted.capability_id=c.id AND submitted.event_type='submitted'))
+      OR (NEW.event_type='revoked' AND c.status='approved')
+    )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'capability review requires an independent active reviewer and valid lifecycle');
 END;
 
 CREATE TRIGGER source_capability_event_apply_status
