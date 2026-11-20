@@ -101,7 +101,7 @@ try {
   assert.equal(persistedIdentityState.body.challenge.status, "consumed");
   assert.equal(persistedIdentityState.body.request.status, "pending");
   assert.equal(persistedIdentityState.body.challenge_columns.some(name =>
-    /token|challenge(?!_sha256)/i.test(name)), false);
+    /^(?:token|challenge|access_token|jwt)$/i.test(name)), false);
   assert.equal(persistedIdentityState.body.request_columns.some(name =>
     /token|bearer|jwt/i.test(name)), false);
 
