@@ -90,6 +90,32 @@ try {
   assert.equal(concurrentState.observation.tenant_id, "tenant-http-a");
   assert.equal(concurrentState.audit.length, 1, "concurrent retries must create one audit event");
 
+  // Different payloads racing for one idempotency identity must not both
+  // be accepted. Exactly one wins; the other receives a conflict.
+  const competingA = observation({
+    value: 0.31,
+    idempotency_key: "ci-real-d1-concurrent-conflict-001",
+  });
+  const competingB = observation({
+    value: 0.32,
+    idempotency_key: "ci-real-d1-concurrent-conflict-001",
+  });
+  const competing = await Promise.all([
+    submit(competingA, "req-competing-a"),
+    submit(competingB, "req-competing-b"),
+  ]);
+  assert.deepEqual(
+    competing.map(({ response }) => response.status).sort(),
+    [201, 409],
+    "concurrent different payloads must yield one acceptance and one conflict",
+  );
+  const competingState = await state(
+    competingA.source_id,
+    competingA.idempotency_key,
+  );
+  assert.ok([0.31, 0.32].includes(competingState.observation.value));
+  assert.equal(competingState.audit.length, 1, "conflicting race must create one audit event");
+
   const conflictPayload = observation({ value: 0.25 });
   const conflict = await submit(conflictPayload);
   assert.equal(conflict.response.status, 409, JSON.stringify(conflict.body));
