@@ -1,17 +1,21 @@
 import { createTenantApi } from "./index.mjs";
 import { verifyIdentityLinkIdentityPair } from "./identity-link-dual-verification.mjs";
+import { verifySupabaseAccessToken } from "./supabase-access-auth.mjs";
 import { createSiteConfiguration } from "./configuration-write-persistence.mjs";
 
 let supabaseJwksDocument = null;
+async function fetchLocalSupabaseJwks(url) {
+  if (!supabaseJwksDocument || url !== "https://supabase-ci.example.test/auth/v1/.well-known/jwks.json") {
+    return new Response("unavailable", { status: 503 });
+  }
+  return new Response(JSON.stringify(supabaseJwksDocument), {
+    status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
+}
 const worker = createTenantApi({
-  verifyIdentityPair: input => verifyIdentityLinkIdentityPair(input, async url => {
-    if (!supabaseJwksDocument || url !== input.supabaseIssuer + "/.well-known/jwks.json") {
-      return new Response("unavailable", { status: 503 });
-    }
-    return new Response(JSON.stringify(supabaseJwksDocument), {
-      status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" },
-    });
-  }),
+  verifyIdentityPair: input => verifyIdentityLinkIdentityPair(input, fetchLocalSupabaseJwks),
+  verifySupabaseToken: (token, config) => verifySupabaseAccessToken(token, config,
+    undefined, fetchLocalSupabaseJwks),
 });
 
 function response(body, status = 200) {
