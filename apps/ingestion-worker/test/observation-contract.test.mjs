@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { validateObservationPayload } from "../src/observation-contract.mjs";
 
 const now = Date.parse("2026-11-10T15:00:00.000Z");
@@ -58,4 +61,30 @@ test("allows optional asset and quality flags to be omitted", () => {
   const result = validateObservationPayload(payload, now);
   assert.equal(result.asset_id, undefined);
   assert.deepEqual(result.quality_flags, []);
+});
+
+
+test("matches the canonical NOVA Core v1 fixture matrix", () => {
+  const fixturePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../api/tests/fixtures/nova-core-observation-v1.json");
+  const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+
+  function buildPayload(entry) {
+    const payload = structuredClone(fixture.base_payload);
+    if (entry) {
+      const keys = entry.path ?? entry.delete;
+      let parent = payload;
+      for (const key of keys.slice(0, -1)) parent = parent[key];
+      if (entry.delete) delete parent[keys.at(-1)];
+      else parent[keys.at(-1)] = entry.value;
+    }
+    return payload;
+  }
+
+  validateObservationPayload(buildPayload(), Date.parse(fixture.fixed_now));
+  for (const entry of fixture.accepted) {
+    assert.doesNotThrow(() => validateObservationPayload(buildPayload(entry), Date.parse(fixture.fixed_now)), entry.id);
+  }
+  for (const entry of fixture.rejected) {
+    assert.throws(() => validateObservationPayload(buildPayload(entry), Date.parse(fixture.fixed_now)), entry.id);
+  }
 });
