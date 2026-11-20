@@ -64,6 +64,31 @@ try {
     { "content-type": "application/json" }, "POST", JSON.stringify({ keys: [supabaseJwk] }));
   assert.equal(jwksReady.response.status, 200, JSON.stringify(jwksReady.body));
 
+  // Concurrent consumption of one challenge must produce one request and one event.
+  const concurrentChallengePair = {
+    cloudflareSubject: "ci-concurrent-cloudflare-reviewer",
+    supabaseSubject: "supabase-ci-concurrent-user",
+  };
+  const concurrentBearer = { authorization: "Bearer " + supabaseToken(concurrentChallengePair.supabaseSubject),
+    "content-type": "application/json" };
+  const concurrentChallenge = await throughGateway("/api/v1/identity-links/challenges",
+    accessToken(concurrentChallengePair.cloudflareSubject), concurrentBearer, "POST", "{}");
+  assert.equal(concurrentChallenge.response.status, 201, JSON.stringify(concurrentChallenge.body));
+  const concurrentConsume = await Promise.all([1, 2].map(() => throughGateway(
+    "/api/v1/identity-links/challenges/" + concurrentChallenge.body.data.challenge_id + "/consume",
+    accessToken(concurrentChallengePair.cloudflareSubject), concurrentBearer, "POST",
+    JSON.stringify({ challenge: concurrentChallenge.body.data.challenge }))));
+  assert.deepEqual(concurrentConsume.map(item => item.response.status).sort(), [201, 409],
+    JSON.stringify(concurrentConsume.map(item => ({ status: item.response.status, body: item.body }))));
+  const concurrentWinner = concurrentConsume.find(item => item.response.status === 201);
+  assert.ok(concurrentWinner?.body.data.link_request_id);
+  const concurrentState = await throughGateway(
+    "/__ci/identity-link-state?challenge_id=" + encodeURIComponent(concurrentChallenge.body.data.challenge_id) +
+      "&request_id=" + encodeURIComponent(concurrentWinner.body.data.link_request_id));
+  assert.equal(concurrentState.response.status, 200, JSON.stringify(concurrentState.body));
+  assert.equal(concurrentState.body.challenge.status, "consumed");
+  assert.equal(concurrentState.body.request.status, "pending");
+
   const linkedCloudflareSubject = "ci-measurement-reviewer";
   const bearer = { authorization: "Bearer " + supabaseToken(),
     "content-type": "application/json" };
