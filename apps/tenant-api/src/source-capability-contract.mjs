@@ -7,6 +7,9 @@ const text = (value, max) => typeof value === "string" && value.length > 0 &&
   value.length <= max && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 const id = (value, max = 160) => text(value, max) &&
   /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+const reference = (value, max = 500) => text(value, max) &&
+  /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value) &&
+  !value.split("/").some(segment => segment === "." || segment === "..");
 const exactKeys = (value, keys) => isRecord(value) && Object.keys(value).every(key => keys.includes(key));
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 
@@ -110,7 +113,7 @@ export function validateSourceCapabilityDraft(draft, source) {
     if (typeof draft.calibration.required !== "boolean") {
       fail("capability.calibration_required_invalid", "$.calibration.required");
     }
-    if (draft.calibration.required && !id(draft.calibration.profile_ref, 500)) {
+    if (draft.calibration.required && !reference(draft.calibration.profile_ref, 500)) {
       fail("capability.calibration_profile_required", "$.calibration.profile_ref");
     }
     if (!draft.calibration.required && draft.calibration.profile_ref !== undefined &&
@@ -119,8 +122,8 @@ export function validateSourceCapabilityDraft(draft, source) {
     }
   }
 
-  if (!id(draft.data_rights_ref, 500)) fail("capability.data_rights_ref_invalid", "$.data_rights_ref");
-  if (!id(draft.evidence_ref, 500)) fail("capability.evidence_ref_invalid", "$.evidence_ref");
+  if (!reference(draft.data_rights_ref, 500)) fail("capability.data_rights_ref_invalid", "$.data_rights_ref");
+  if (!reference(draft.evidence_ref, 500)) fail("capability.evidence_ref_invalid", "$.evidence_ref");
 
   return { valid: errors.length === 0, errors };
 }
