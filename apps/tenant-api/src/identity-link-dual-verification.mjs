@@ -25,7 +25,7 @@ function validIdentity(identity) {
 export async function verifyIdentityLinkIdentityPair({
   supabaseToken, cloudflareIdentity, accessIssuer, accessAudience,
   supabaseIssuer, supabaseAudience,
-}) {
+}, jwksFetcher = fetch) {
   if (typeof supabaseToken !== "string" || supabaseToken.length < 16 ||
       supabaseToken.length > 16384 || !validIdentity(cloudflareIdentity) ||
       typeof accessIssuer !== "string" || !accessIssuer ||
@@ -41,7 +41,7 @@ export async function verifyIdentityLinkIdentityPair({
   const supabaseIdentity = await verifySupabaseAccessToken(supabaseToken, {
     issuer: supabaseIssuer,
     audience: supabaseAudience,
-  });
+  }, undefined, jwksFetcher);
   if (!validIdentity(supabaseIdentity) ||
       supabaseIdentity.issuer !== supabaseIssuer ||
       supabaseIdentity.audience !== supabaseAudience ||
