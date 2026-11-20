@@ -39,7 +39,7 @@ function makeAccessFixture(issuer) {
 
 function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceTenantId = "tenant-a",
   sourceModule = "neoagro", sourceStatus = "verified", assetSiteId = "site-001",
-  assetTenantId = "tenant-a", assetStatus = "active" } = {}) {
+  assetTenantId = "tenant-a", assetStatus = "active", batchError = null } = {}) {
   const state = { observation: null, audit: [] };
   return {
     state,
@@ -64,6 +64,7 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceT
     },
     async batch(statements) {
       assert.equal(statements.length, 2);
+      if (batchError) throw batchError;
       const v = statements[0].values;
       let inserted = false;
       if (!state.observation) {
@@ -421,4 +422,30 @@ test("source and asset ownership invariants are independently enforced before pe
     assert.equal(db.state.observation, null, label + " must not persist an observation");
     assert.equal(db.state.audit.length, 0, label + " must not persist an audit event");
   }
+});
+
+
+test("D1 batch failure returns no acceptance and leaves no mock state behind", async () => {
+  const issuer = "https://persistence-failure.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const db = ownershipDb({ batchError: new Error("simulated atomic D1 batch failure") });
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify({
+      site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+      source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+      unit: "degC", observed_at: new Date().toISOString(),
+      idempotency_key: "test-observation-persistence-failure-001",
+      provenance: { provider: "test station", acquisition_method: "sensor" },
+    }),
+  }), { ...envFor(issuer, fixture.audience), DB: db });
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "storage_unavailable", accepted: false });
+  assert.equal(db.state.observation, null);
+  assert.equal(db.state.audit.length, 0);
 });
