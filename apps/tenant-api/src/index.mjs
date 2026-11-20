@@ -1099,7 +1099,8 @@ async function createTenantForProvisioning(
     authorization_permit_jti: row.nova_os_authorization_permit_jti, created: false }, status: 200 };
 }
 
-export default {
+export function createTenantApi({ verifyIdentityPair = verifyIdentityLinkIdentityPair } = {}) {
+  return {
   async fetch(request, env) {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
     const url = new URL(request.url);
@@ -1302,7 +1303,7 @@ export default {
             return error("invalid_request_body", 400);
           }
           // Verify both independent identities before charging either bucket.
-          const pair = await verifyIdentityLinkIdentityPair(input);
+          const pair = await verifyIdentityPair(input);
           const operation = identityLinkChallengeCreate ? "challenge_create" : "challenge_consume";
           const rate = await consumeIdentityLinkRateLimit(env.DB,
             [pair.supabase, pair.cloudflare], operation, input.now, env.INTERNAL_AUTH_SECRET);
@@ -1849,4 +1850,7 @@ export default {
       return error("storage_unavailable", 503);
     }
   },
-};
+  };
+}
+
+export default createTenantApi();
