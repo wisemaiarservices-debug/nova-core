@@ -185,8 +185,12 @@ OR (
       AND m.subject=r.reviewer_subject AND m.status='active'
     WHERE c.id=NEW.capability_id
       AND c.created_by_subject<>NEW.actor_subject
-      AND ((NEW.event_type IN ('approved','rejected') AND c.status='pending')
-        OR (NEW.event_type='revoked' AND c.status='approved'))
+      AND (
+        (NEW.event_type IN ('approved','rejected') AND c.status='pending'
+          AND EXISTS (SELECT 1 FROM source_capability_events submitted
+            WHERE submitted.capability_id=c.id AND submitted.event_type='submitted'))
+        OR (NEW.event_type='revoked' AND c.status='approved')
+      )
   )
 )
 BEGIN
