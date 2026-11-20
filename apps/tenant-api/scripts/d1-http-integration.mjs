@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
-import { createHash, createHmac, createPrivateKey, randomUUID, sign } from "node:crypto";
+import { createHash, createHmac, createPrivateKey, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const base = "http://127.0.0.1:8787";
 const secret = "local-ci-only-secret-not-for-any-deployment";
 const issuer = "https://nova-ci.cloudflareaccess.com";
 const audience = "nova-ci-test-audience";
+const supabaseIssuer = "https://supabase-ci.example.test/auth/v1";
+const supabaseAudience = "authenticated";
+const supabaseKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const supabaseJwk = { ...supabaseKeys.publicKey.export({ format: "jwk" }),
+  kid: "supabase-local-ephemeral", alg: "RS256", use: "sig", key_ops: ["verify"] };
 const privateKey = createPrivateKey(await readFile("../tenant-gateway/test/fixtures/nova-local-ci-private.pem"));
 const child = spawn("npx", ["--yes", "wrangler@4.13.2", "dev", "--local",
   "-c", "../tenant-gateway/wrangler.local-test.toml",
@@ -23,6 +28,14 @@ function accessToken(subject = "ci-human-subject") {
   const claims = b64url(JSON.stringify({ iss: issuer, aud: [audience], sub: subject, iat: now - 2, exp: now + 300 }));
   const input = head + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
+}
+function supabaseToken(subject = "supabase-ci-user", overrides = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64url(JSON.stringify({ alg: "RS256", typ: "JWT", kid: supabaseJwk.kid }));
+  const claims = b64url(JSON.stringify({ iss: supabaseIssuer, aud: supabaseAudience,
+    sub: subject, role: "authenticated", iat: now - 2, exp: now + 300, ...overrides }));
+  const input = head + "." + claims;
+  return input + "." + sign("RSA-SHA256", Buffer.from(input), supabaseKeys.privateKey).toString("base64url");
 }
 async function throughGateway(path, token = accessToken(), extraHeaders = {}, method = "GET", body = undefined) {
   const response = await fetch(base + path, {
