@@ -1,5 +1,18 @@
-import worker from "./index.mjs";
+import { createTenantApi } from "./index.mjs";
+import { verifyIdentityLinkIdentityPair } from "./identity-link-dual-verification.mjs";
 import { createSiteConfiguration } from "./configuration-write-persistence.mjs";
+
+let supabaseJwksDocument = null;
+const worker = createTenantApi({
+  verifyIdentityPair: input => verifyIdentityLinkIdentityPair(input, async url => {
+    if (!supabaseJwksDocument || url !== input.supabaseIssuer + "/.well-known/jwks.json") {
+      return new Response("unavailable", { status: 503 });
+    }
+    return new Response(JSON.stringify(supabaseJwksDocument), {
+      status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }),
+});
 
 function response(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -12,6 +25,25 @@ function response(body, status = 200) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/__ci/supabase-jwks") {
+      if (env.CI_TEST_SUPABASE_JWKS !== "true" || request.method !== "POST") {
+        return response({ error: "not_found" }, 404);
+      }
+      let body;
+      try {
+        const bytes = await request.arrayBuffer();
+        if (bytes.byteLength > 8192) return response({ error: "request_too_large" }, 413);
+        body = JSON.parse(new TextDecoder().decode(bytes));
+      } catch { return response({ error: "invalid_jwks_fixture" }, 400); }
+      if (!body || Array.isArray(body) || !Array.isArray(body.keys) || body.keys.length !== 1 ||
+          !body.keys[0] || body.keys[0].kty !== "RSA" || typeof body.keys[0].kid !== "string" ||
+          typeof body.keys[0].n !== "string" || typeof body.keys[0].e !== "string" ||
+          body.keys[0].alg !== "RS256" || body.keys[0].use !== "sig") {
+        return response({ error: "invalid_jwks_fixture" }, 400);
+      }
+      supabaseJwksDocument = body;
+      return response({ data: { configured: true } });
+    }
     if (url.pathname === "/__ci/configuration-write") {
       if (env.CI_TEST_CONFIGURATION_WRITES !== "true" || request.method !== "POST" || !env.DB) {
         return response({ error: "not_found" }, 404);
