@@ -115,11 +115,11 @@ try {
   const decisionPath = "/api/v1/tenants/tenant-http-a/identity-links/" + linkRequestId + "/decision";
   const approvalBody = { decision: "approve", reason: "CI dual identity approval",
     idempotency_key: "ci-dual-identity-approve-1" };
-  const auditFailure = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+  const identityLinkAuditFailure = await throughGateway(decisionPath, accessToken("ci-human-subject"),
     { "content-type": "application/json" }, "POST",
     JSON.stringify({ decision: "approve", reason: "CI injected identity-link audit failure",
       idempotency_key: "ci-dual-identity-audit-failure" }));
-  assert.equal(auditFailure.response.status, 503, JSON.stringify(auditFailure.body));
+  assert.equal(identityLinkAuditFailure.response.status, 503, JSON.stringify(identityLinkAuditFailure.body));
   const pendingAfterAuditFailure = await throughGateway(
     "/api/v1/tenants/tenant-http-a/identity-links/pending", accessToken("ci-human-subject"));
   assert.equal(pendingAfterAuditFailure.response.status, 200, JSON.stringify(pendingAfterAuditFailure.body));
