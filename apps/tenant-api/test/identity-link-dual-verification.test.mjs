@@ -179,3 +179,93 @@ test("verified challenge orchestration never persists a pair with a shared issue
     assert.equal(db.row, null);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+function signedToken(claimOverrides = {}, signingKey = privateKey, keyId = jwk.kid) {
+  const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: keyId }));
+  const claims = b64(JSON.stringify({
+    iss: SUPABASE_ISSUER, aud: SUPABASE_AUDIENCE, sub: "supabase-user",
+    role: "authenticated", iat: now - 5, exp: now + 300, ...claimOverrides,
+  }));
+  const input = header + "." + claims;
+  return input + "." + sign("RSA-SHA256", Buffer.from(input), signingKey).toString("base64url");
+}
+
+async function withJwks(document, callback) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(String(url), SUPABASE_ISSUER + "/.well-known/jwks.json");
+    assert.equal(options.redirect, "error");
+    return new Response(JSON.stringify(document), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try { return await callback(); }
+  finally { globalThis.fetch = originalFetch; }
+}
+
+test("fails closed for expired, future-issued, wrong-issuer, wrong-audience and wrong-role Supabase JWTs", async () => {
+  const invalidClaims = [
+    [{ exp: now - 120 }, /supabase_token_expired/],
+    [{ iat: now + 120 }, /supabase_token_issue_time_invalid/],
+    [{ iss: "https://attacker.example/auth/v1" }, /unexpected_supabase_issuer/],
+    [{ aud: "other-audience" }, /unexpected_supabase_audience/],
+    [{ role: "anon" }, /supabase_authenticated_role_required/],
+  ];
+  await withJwks({ keys: [jwk] }, async () => {
+    for (const [claims, expected] of invalidClaims) {
+      await assert.rejects(() => verifyIdentityLinkIdentityPair({
+        supabaseToken: signedToken(claims), cloudflareIdentity: accessIdentity, ...config,
+      }), expected);
+    }
+  });
+});
+
+test("rejects a JWT signed by a different private key even when the configured JWKS is valid", async () => {
+  const other = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  await withJwks({ keys: [jwk] }, async () => {
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: signedToken({}, other.privateKey), cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_signature_invalid/);
+  });
+});
+
+test("fails closed when the signing key id is absent from the configured JWKS", async () => {
+  await withJwks({ keys: [jwk] }, async () => {
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: signedToken({}, privateKey, "unknown-key-id"),
+      cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_signing_key_not_found/);
+  });
+});
+
+test("rejects duplicate JWKS key ids before selecting a signing key", async () => {
+  await withJwks({ keys: [jwk, jwk] }, async () => {
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: tokenFor(), cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_jwks_invalid/);
+  });
+});
+
+test("fails closed when the Supabase JWKS endpoint is unavailable", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("synthetic network failure"); };
+  try {
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: tokenFor(), cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_jwks_unavailable/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("rejects invalid issuer configuration before making a JWKS request", async () => {
+  let fetched = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { fetched = true; throw new Error("must not fetch"); };
+  try {
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: tokenFor(), cloudflareIdentity: accessIdentity, ...config,
+      supabaseIssuer: "http://project.example.test/auth/v1",
+    }), /invalid_supabase_issuer_configuration/);
+    assert.equal(fetched, false);
+  } finally { globalThis.fetch = originalFetch; }
+});
