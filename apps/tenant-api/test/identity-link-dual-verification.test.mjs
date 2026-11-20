@@ -269,3 +269,61 @@ test("rejects invalid issuer configuration before making a JWKS request", async 
     assert.equal(fetched, false);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("rejects not-before claims that are future-dated or malformed", async () => {
+  await withJwks({ keys: [jwk] }, async () => {
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: signedToken({ nbf: now + 120 }),
+      cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_token_not_yet_valid/);
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: signedToken({ nbf: "tomorrow" }),
+      cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_token_not_yet_valid/);
+  });
+});
+
+test("rejects unsupported JWT algorithms before fetching JWKS", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetched = false;
+  globalThis.fetch = async () => { fetched = true; throw new Error("must not fetch"); };
+  const header = b64(JSON.stringify({ alg: "HS256", typ: "JWT", kid: jwk.kid }));
+  const claims = b64(JSON.stringify({ iss: SUPABASE_ISSUER, aud: SUPABASE_AUDIENCE,
+    sub: "supabase-user", role: "authenticated", iat: now - 5, exp: now + 300 }));
+  try {
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: header + "." + claims + ".signature",
+      cloudflareIdentity: accessIdentity, ...config,
+    }), /unsupported_supabase_token_algorithm/);
+    assert.equal(fetched, false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("rejects malformed and oversized JWKS responses", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response("{not-json", {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: tokenFor(), cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_jwks_invalid/);
+
+    globalThis.fetch = async () => new Response("{}", {
+      status: 200, headers: { "content-type": "application/json", "content-length": "70000" },
+    });
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: tokenFor(), cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_jwks_invalid/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("rejects JWKS entries that do not advertise an acceptable RSA signing key", async () => {
+  const invalid = { ...jwk, use: "enc" };
+  await withJwks({ keys: [invalid] }, async () => {
+    await assert.rejects(() => verifyIdentityLinkIdentityPair({
+      supabaseToken: tokenFor(), cloudflareIdentity: accessIdentity, ...config,
+    }), /supabase_signing_key_not_found/);
+  });
+});
