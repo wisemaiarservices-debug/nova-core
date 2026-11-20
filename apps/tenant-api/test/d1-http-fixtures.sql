@@ -198,3 +198,13 @@ VALUES
 ('obs-http-governance-revocation','site-http-a','tenant-http-a','asset-http-grant','source-http-a',
  'neoagro','ec',1.5,'dS/m','2026-05-10T10:00:00Z','ci-governance-revocation-observation',
  'verified','{"provider":"CI fixture provider","acquisition_method":"manual"}','[]');
+
+
+-- Local D1-only fault injection: an owner decision must roll back both the
+-- immutable identity-link event and request status when audit persistence fails.
+CREATE TRIGGER ci_reject_identity_link_event
+BEFORE INSERT ON tenant_identity_link_events
+WHEN NEW.reason = 'CI injected identity-link audit failure'
+BEGIN
+  SELECT RAISE(ABORT, 'ci_identity_link_audit_failure');
+END;
