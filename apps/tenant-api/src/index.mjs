@@ -1099,7 +1099,10 @@ async function createTenantForProvisioning(
     authorization_permit_jti: row.nova_os_authorization_permit_jti, created: false }, status: 200 };
 }
 
-export function createTenantApi({ verifyIdentityPair = verifyIdentityLinkIdentityPair } = {}) {
+export function createTenantApi({
+  verifyIdentityPair = verifyIdentityLinkIdentityPair,
+  verifySupabaseToken = verifySupabaseAccessToken,
+} = {}) {
   return {
   async fetch(request, env) {
     if (request.method !== "GET" && request.method !== "POST") return error("not_found", 404);
@@ -1202,7 +1205,7 @@ export function createTenantApi({ verifyIdentityPair = verifyIdentityLinkIdentit
       // below. Avoid fetching the same JWKS twice for one request.
       if (!identityLinkChallengeCreate && !identityLinkChallengeConsume) {
         try {
-          verifiedSupabaseIdentity = await verifySupabaseAccessToken(supabaseToken, {
+          verifiedSupabaseIdentity = await verifySupabaseToken(supabaseToken, {
             issuer: env.SUPABASE_AUTH_ISSUER,
             audience: env.SUPABASE_AUTH_AUDIENCE,
           });
