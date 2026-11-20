@@ -41,7 +41,7 @@ Official references:
 - Expected workers.dev hostname: `nova-core-ingest-api.neohaven.workers.dev` (verify the actual hostname after deployment)
 - Public read-only API remains: `nova-core-api.neohaven.workers.dev`
 - D1 binding name expected by the Worker: `DB`
-- Migration: `apps/api/migrations/0001_initial.sql`
+- Schema source: the complete ordered migration chain in `apps/api/migrations/` at the exact reviewed release commit (currently through migration `0041` on the implementation branch). The initial schema file alone is not sufficient for the tenant-scoped Worker.
 
 The dedicated ingestion hostname is separate so Access can require Service Auth without blocking browser-facing read endpoints.
 
@@ -85,18 +85,20 @@ The Client Secret belongs only in the trusted calling module backend, where it i
 
 1. Create one D1 database for the shared NOVA Core registry; do not create separate databases per module.
 2. Bind it to the ingestion Worker as `DB`.
-3. Apply `apps/api/migrations/0001_initial.sql` to that database.
-4. Verify all five required tables and indexes exist.
-5. Check database size and usage immediately after migration.
-6. Do not seed fictitious sites, coordinates, assets, sources, or observations. Register only real, approved records.
+3. Review the complete ordered migration chain in `apps/api/migrations/` at the exact release SHA, then apply every migration in order using the supported D1 migration mechanism. Do not apply only `0001_initial.sql`, skip migrations, or mix migration versions from different commits. The tenant-scoped Worker depends on later tenant, membership, site, asset, source-registry, observation, audit, and lifecycle schema.
+4. Verify the D1 migration ledger matches the release chain and inspect the resulting tenant/site/asset/source/observation/audit tables, foreign keys, unique constraints, indexes, and source-verification write guard.
+5. Confirm the deployed Worker’s parameterized ownership queries and persistence adapter match that exact schema before binding production-like traffic.
+6. Check database size and usage immediately after migration.
+7. Do not seed fictitious tenants, sites, coordinates, assets, sources, or observations. Register only real, approved records through the governed lifecycle.
 
 ### Gate 5 — live integration tests before enabling module callers
 
 - No Access credentials: Access denies before Worker execution.
 - Wrong JWT issuer, audience, signature, expiry, or service-token claims: rejected.
 - Authenticated service with wrong module/source grant: HTTP 403.
-- Unknown/inactive site, disabled/mismatched source, or cross-site asset: HTTP 403.
-- Valid authorized observation: HTTP 201, persisted once with `verification_status=unverified` and a service-attributed audit event.
+- Unknown/inactive tenant or site, unverified/rejected/revoked/disabled or mismatched source, or cross-tenant/cross-site asset: HTTP 403.
+- A newly registered source remains `unverified` and cannot ingest until an independently assigned reviewer records the governed verification event. The service-token grant alone must never verify a source.
+- Valid observation from an active site and independently verified, correctly scoped source: HTTP 201, persisted once with `verification_status=unverified` and a service-attributed audit event.
 - Identical retry with same source/idempotency key: HTTP 200 and original observation returned, no duplicate audit.
 - Reuse of idempotency key with changed payload: HTTP 409.
 - D1 outage/quota exhaustion: generic HTTP 503; no false success.
