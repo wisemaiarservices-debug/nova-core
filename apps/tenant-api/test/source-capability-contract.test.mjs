@@ -73,6 +73,7 @@ test("rejects unbounded, fractional and malformed sampling policy", () => {
     { ...draft.sampling, interval_seconds: 0 },
     { ...draft.sampling, interval_seconds: 1.5 },
     { ...draft.sampling, max_age_seconds: 0 },
+    { ...draft.sampling, interval_seconds: 300, max_age_seconds: 299 },
     { ...draft.sampling, mode: "poll-whenever" },
   ];
   for (const sampling of candidates) {
@@ -91,6 +92,7 @@ test("requires explicit timezone and bounded future clock skew", () => {
   assert.equal(validateSourceCapabilityDraft({ ...draft, timestamp: { timezone: "UTC", max_future_skew_seconds: 0 } }, source).valid, true);
   for (const timestamp of [
     { timezone: "local", max_future_skew_seconds: 10 },
+    { timezone: "Europe/NotARealZone", max_future_skew_seconds: 10 },
     { timezone: "UTC", max_future_skew_seconds: -1 },
     { timezone: "UTC", max_future_skew_seconds: 86401 },
   ]) {
@@ -108,6 +110,8 @@ test("requires unique bounded quality flags and a calibration reference when req
 test("requires evidence and data-rights references", () => {
   assert.equal(validateSourceCapabilityDraft({ ...draft, evidence_ref: "" }, source).valid, false);
   assert.equal(validateSourceCapabilityDraft({ ...draft, data_rights_ref: "" }, source).valid, false);
+  assert.equal(validateSourceCapabilityDraft({ ...draft, evidence_ref: "evidence/../private" }, source).valid, false);
+  assert.equal(validateSourceCapabilityDraft({ ...draft, data_rights_ref: "rights/./scope" }, source).valid, false);
 });
 
 test("does not treat a valid draft as approval or persistence authority", () => {
