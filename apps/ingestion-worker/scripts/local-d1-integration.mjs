@@ -103,7 +103,12 @@ try {
   // The same production handler verifies RS256/JWKS, issuer, audience,
   // service identity and exact source grant before touching the real local D1.
   const firstPayload = observation();
-  const first = await submit(firstPayload, {\n    "x-tenant-id": "tenant-http-b",\n    "x-service-id": "untrusted-caller-service",\n    "x-authenticated-subject": "spoofed-subject",\n    cookie: "session=untrusted-caller-cookie",\n  });
+  const first = await submit(firstPayload, {
+    "x-tenant-id": "tenant-http-b",
+    "x-service-id": "untrusted-caller-service",
+    "x-authenticated-subject": "spoofed-subject",
+    cookie: "session=untrusted-caller-cookie",
+  });
   assert.equal(first.response.status, 201, JSON.stringify(first.body));
   assert.equal(first.body.status, "accepted");
   assert.equal(first.body.accepted, true);
@@ -133,7 +138,18 @@ try {
   assert.equal(afterConflict.observation.value, 0.24);
   assert.equal(afterConflict.audit.length, 1);
 
-  const invalidSignaturePayload = observation({\n    idempotency_key: "ci-authenticated-local-d1-invalid-signature-001",\n  });\n  const tokenParts = fixture.token.split(".");\n  tokenParts[2] = (tokenParts[2][0] === "A" ? "B" : "A") + tokenParts[2].slice(1);\n  const invalidSignature = await submit(invalidSignaturePayload, {\n    "Cf-Access-Jwt-Assertion": tokenParts.join("."),\n  });\n  assert.equal(invalidSignature.response.status, 401);\n  assert.equal((await state(invalidSignaturePayload.source_id, invalidSignaturePayload.idempotency_key)).observation, null);\n\n  const deniedGrantPayload = observation({
+  const invalidSignaturePayload = observation({
+    idempotency_key: "ci-authenticated-local-d1-invalid-signature-001",
+  });
+  const tokenParts = fixture.token.split(".");
+  tokenParts[2] = (tokenParts[2][0] === "A" ? "B" : "A") + tokenParts[2].slice(1);
+  const invalidSignature = await submit(invalidSignaturePayload, {
+    "Cf-Access-Jwt-Assertion": tokenParts.join("."),
+  });
+  assert.equal(invalidSignature.response.status, 401);
+  assert.equal((await state(invalidSignaturePayload.source_id, invalidSignaturePayload.idempotency_key)).observation, null);
+
+  const deniedGrantPayload = observation({
     source_id: "source-http-a",
     idempotency_key: "ci-authenticated-local-d1-wrong-grant-001",
   });
@@ -166,7 +182,9 @@ try {
   assert.equal(auditFailure.body.accepted, false);
   const rolledBack = await state(auditFailurePayload.source_id, auditFailurePayload.idempotency_key);
   assert.equal(rolledBack.observation, null, "failed audit must roll back the observation insert");
-  assert.equal(rolledBack.audit.length, 0);\n\n  console.log("Authenticated ingestion-to-local-D1 integration passed: RS256/JWKS, exact service grant, spoofed-header isolation, tenant ownership, acceptance, retry, conflict and audit rollback");
+  assert.equal(rolledBack.audit.length, 0);
+
+  console.log("Authenticated ingestion-to-local-D1 integration passed: RS256/JWKS, exact service grant, spoofed-header isolation, tenant ownership, acceptance, retry, conflict and audit rollback");
 } finally {
   if (child.exitCode === null) {
     child.kill("SIGTERM");
