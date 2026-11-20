@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta, timezone
+import copy
+import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -94,3 +97,28 @@ def test_provenance_does_not_claim_verification():
     result = validate_observation_payload(valid_payload())
     assert not hasattr(result, "verification_status")
     assert not hasattr(result, "actor_id")
+
+
+def test_shared_v1_fixture_matrix_matches_core_api_contract():
+    fixture_path = Path(__file__).parent / "fixtures" / "nova-core-observation-v1.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    def build_payload(case=None):
+        payload = copy.deepcopy(fixture["base_payload"])
+        if case is not None:
+            path = case.get("path", case.get("delete"))
+            parent = payload
+            for key in path[:-1]:
+                parent = parent[key]
+            if "delete" in case:
+                del parent[path[-1]]
+            else:
+                parent[path[-1]] = case["value"]
+        return payload
+
+    validate_observation_payload(build_payload())
+    for case in fixture["accepted"]:
+        validate_observation_payload(build_payload(case))
+    for case in fixture["rejected"]:
+        with pytest.raises(ValidationError):
+            validate_observation_payload(build_payload(case))
