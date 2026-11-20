@@ -135,6 +135,10 @@ try {
   assert.equal(approvalRetry.response.status, 200, JSON.stringify(approvalRetry.body));
   assert.equal(approvalRetry.body.data.status, "approved");
 
+  const crossTenantAfterApproval = await throughGateway("/api/v1/tenants/tenant-http-b/sites",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(crossTenantAfterApproval.response.status, 404);
+
   const linkedSiteList = await throughGateway("/api/v1/tenants/tenant-http-a/sites",
     accessToken(linkedCloudflareSubject), bearer);
   assert.equal(linkedSiteList.response.status, 200, JSON.stringify(linkedSiteList.body));
@@ -156,10 +160,6 @@ try {
   const deniedAfterRevoke = await throughGateway("/api/v1/tenants/tenant-http-a/sites",
     accessToken(linkedCloudflareSubject), bearer);
   assert.equal(deniedAfterRevoke.response.status, 404, JSON.stringify(deniedAfterRevoke.body));
-
-  const crossTenantAfterApproval = await throughGateway("/api/v1/tenants/tenant-http-b/sites",
-    accessToken(linkedCloudflareSubject), bearer);
-  assert.equal(crossTenantAfterApproval.response.status, 404);
 
 
   const sitePath = "/api/v1/tenants/tenant-http-a/sites/site-http-a";
