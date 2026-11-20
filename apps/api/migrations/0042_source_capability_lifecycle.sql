@@ -101,7 +101,7 @@ WHEN NEW.status <> 'pending'
     JOIN sites s ON s.id=NEW.site_id AND s.tenant_id=NEW.tenant_id AND s.status='active'
     WHERE src.id=NEW.source_id AND src.tenant_id=NEW.tenant_id
       AND src.site_id=NEW.site_id AND src.module=NEW.module
-      AND (NEW.event_type='revoked' OR src.verification_status='verified')
+      AND src.verification_status='verified'
   )
   OR NOT EXISTS (
     SELECT 1 FROM tenant_memberships m
@@ -168,7 +168,7 @@ WHEN NOT EXISTS (
   JOIN sites s ON s.id=c.site_id AND s.tenant_id=c.tenant_id AND s.status='active'
   WHERE c.id=NEW.capability_id AND c.tenant_id=NEW.tenant_id
     AND c.site_id=NEW.site_id AND c.source_id=NEW.source_id
-    AND src.verification_status='verified'
+    AND (NEW.event_type='revoked' OR src.verification_status='verified')
 )
 OR (
   NEW.event_type='submitted' AND NOT EXISTS (
