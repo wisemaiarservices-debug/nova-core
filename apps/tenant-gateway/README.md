@@ -9,6 +9,8 @@ route is attached. The Worker independently verifies the human
 
 - `ACCESS_ISSUER`: exact HTTPS Cloudflare Access team issuer origin.
 - `ACCESS_AUDIENCE`: exact audience for the human Access application.
+- `CORS_ALLOWED_ORIGINS`: comma-separated exact browser origins; see
+  `docs/NOVA_TENANT_GATEWAY_CORS.md`.
 - `TENANT_API`: Service Binding to `nova-core-tenant-api`.
 - `INTERNAL_AUTH_SECRET`: independently provisioned Worker secret (minimum 32 characters), identical on gateway and private API; never commit it or put it in Wrangler vars.
 
@@ -36,15 +38,21 @@ are not forwarded.
 3. Deploy the private tenant API first with no public hostname or route.
 4. Prove the private Worker is unreachable from the public Internet and only
    callable through this gateway's Service Binding.
-5. Deploy this gateway with the binding and Access settings, then attach the
-   exact Access-protected hostname.
+5. Provision `CORS_ALLOWED_ORIGINS` with exact approved origins, deploy this
+   gateway with the binding and Access settings, then attach the exact
+   Access-protected hostname.
 6. Run cross-tenant, identity, route allowlist, request-ID replay, migration
    and outage tests against a disposable D1 database before any customer
    onboarding. SQLite contract tests alone do not establish D1 compatibility.
 
+The repository's current Cloudflare deployment workflow deploys the separate
+Python Core API Worker; it does not deploy this tenant gateway or its private
+tenant API. Gateway deployment and Cloudflare Access/hostname configuration
+therefore remain manual platform operations. Do not infer a deployed gateway
+from a successful repository CI run or from the public Core API deployment.
+
 No D1, Access application, secret, custom hostname, route, or deployment is
 created by this repository change.
-
 
 ## Local end-to-end integration (CI only)
 
