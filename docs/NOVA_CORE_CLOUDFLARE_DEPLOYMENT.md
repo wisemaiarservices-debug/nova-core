@@ -40,12 +40,20 @@ GitHub Actions runs a local Worker smoke test for the health route, review-only 
 
 ## Deployment (manual; not yet authorized or executed)
 
-1. Create or select a Cloudflare account and confirm it remains on Workers Free.
-2. Create a scoped API token with permission to deploy Workers scripts to the intended account.
-3. Store the token as a GitHub Actions secret named `CLOUDFLARE_API_TOKEN`; store the account identifier as `CLOUDFLARE_ACCOUNT_ID`. Never paste either value into source code or chat.
-4. From `apps/api`, run `uv run pywrangler deploy` only after reviewing the account's plan and deployment settings.
-5. Add the resulting API base URL to the Engineering Console API registry and verify `/health`.
-6. Keep the exact production client origins in `NOVA_CORE_ALLOWED_ORIGINS`; do not use wildcard CORS.
+1. Confirm the intended Cloudflare account remains on Workers Free and review current quotas.
+2. Create a narrowly scoped deployment token only after explicit authorization; never paste credentials into source code or chat.
+3. Configure `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as GitHub Actions secrets and review the `nova-core-api` GitHub Environment protection rules.
+4. The workflow `.github/workflows/cloudflare-worker-deploy.yml` has both `workflow_dispatch` and a push trigger for the named feature branch. Its job-level condition permits deployment on manual dispatch, or on a matching push whose commit message contains `deploy-nova-core`. A push or PR by itself does not necessarily deploy.
+5. Before a manual dispatch or qualifying push, review the exact commit, environment approvals, account plan and deployment target. Do not use this workflow for the private tenant API or gateway.
+6. After an explicitly approved public API deployment, verify its health endpoint and register its URL only as the public Core API—not as the private tenant gateway.
+
+## Separate private tenant API and gateway
+
+The private Workers are distinct from the public Python Core API. The checked-in workflow above deploys only `apps/api`; it does **not** deploy `apps/tenant-api` or `apps/tenant-gateway`.
+
+The tenant API and gateway Wrangler configs disable `workers_dev` and preview URLs. The tenant API has no public route; the gateway references it only through the `TENANT_API` Service Binding. Their required D1, Access, issuer/audience, HMAC secret and protected hostname configuration is intentionally absent from source. No dedicated deployment workflow or verified remote Cloudflare setup is currently evidenced for those two Workers.
+
+Do not publish a public Worker URL for the private tenant API, attach an unprotected route, reuse the public Python Core API as a gateway, or provision D1/secrets/Access policies without separate review and explicit authorization. The local workerd/Miniflare integration is not remote Cloudflare acceptance.
 
 ## Runtime notes
 
@@ -53,6 +61,3 @@ GitHub Actions runs a local Worker smoke test for the health route, review-only 
 - NASA POWER data remain gridded/model-derived data, not local station telemetry.
 - Health checks prove service reachability only.
 - No training runner, durable site database, autonomous dispatch or critical infrastructure control is included.
-
-
-A manual GitHub Actions workflow is available at `.github/workflows/cloudflare-worker-deploy.yml`. After configuring the two repository secrets and reviewing the `nova-core-api` GitHub Environment protection rules, use **Actions → Deploy NOVA Core API to Cloudflare Workers → Run workflow**. The workflow is manual-only; it is not triggered by pushes or pull requests.
