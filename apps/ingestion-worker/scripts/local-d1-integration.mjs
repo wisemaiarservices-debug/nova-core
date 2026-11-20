@@ -37,7 +37,7 @@ function observation(overrides = {}) {
   return {
     site_id: "site-http-a", asset_id: "asset-http-grant", module: "neoagro",
     source_id: "source-http-grant", metric: "soil_moisture", value: 0.24,
-    unit: "m3/m3", observed_at: "2026-11-20T10:00:00.000Z",
+    unit: "m3/m3", observed_at: "2026-11-19T10:00:00.000Z",
     idempotency_key: "ci-real-d1-ingestion-retry-001",
     provenance: { provider: "CI synthetic station", acquisition_method: "sensor" },
     quality_flags: [],
