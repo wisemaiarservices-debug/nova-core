@@ -68,6 +68,10 @@ class ObservationSubmission(BaseModel):
     def require_numeric_value(cls, value: Any) -> Any:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError("value must be a JSON number")
+        if isinstance(value, int) and abs(value) > 9_007_199_254_740_991:
+            raise ValueError("integer value exceeds the cross-runtime safe range")
+        if isinstance(value, float) and value.is_integer() and abs(value) > 9_007_199_254_740_991:
+            raise ValueError("integer value exceeds the cross-runtime safe range")
         return value
 
     @field_validator("value")
