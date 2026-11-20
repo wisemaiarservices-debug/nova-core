@@ -280,6 +280,36 @@ try {
   assert.equal(invitationAccepted.body.data.subject, "ci-invited-human");
   assert.equal(invitationAccepted.body.data.role, "operator");
 
+  // A consumed invitation is one-time: a replay must not create a second membership.
+  const invitationReplay = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+      invitationCreated.body.data.invitation_id + "/accept", accessToken("ci-invited-human"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ invitation_token: invitationCreated.body.data.invitation_token }));
+  assert.equal(invitationReplay.response.status, 404,
+    "an accepted invitation must not be reusable");
+
+  // Revocation must invalidate a still-pending invitation before acceptance.
+  const revokedInvitation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ role: "viewer", reason: "CI invitation revocation fixture" }));
+  assert.equal(revokedInvitation.response.status, 201, JSON.stringify(revokedInvitation.body));
+  const invitationRevocation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+      revokedInvitation.body.data.invitation_id + "/revoke", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ reason: "CI revoke before acceptance" }));
+  assert.equal(invitationRevocation.response.status, 200, JSON.stringify(invitationRevocation.body));
+  assert.equal(invitationRevocation.body.data.status, "revoked");
+  const revokedInvitationAcceptance = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+      revokedInvitation.body.data.invitation_id + "/accept", accessToken("ci-revoked-invitee"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ invitation_token: revokedInvitation.body.data.invitation_token }));
+  assert.equal(revokedInvitationAcceptance.response.status, 404,
+    "a revoked invitation must not create a membership");
+
   const siteGrantPath = "/api/v1/tenants/tenant-http-a/site-grants";
   async function siteGrant(subject, payload) {
     return throughGateway(siteGrantPath, accessToken(subject),
