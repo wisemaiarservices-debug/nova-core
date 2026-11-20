@@ -16,6 +16,7 @@ INSERT INTO tenant_resource_grants (id, tenant_id, subject, resource_type, resou
   ('grant-http-a-site', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'read'),
   ('grant-http-a-site-create', 'tenant-http-a', 'ci-human-subject', 'site', 'site-http-a', 'create'),
   ('grant-http-a-reviewer-site', 'tenant-http-a', 'ci-measurement-reviewer', 'site', 'site-http-a', 'read'),
+  ('grant-http-a-lifecycle-site', 'tenant-http-a', 'ci-lifecycle-member', 'site', 'site-http-a', 'read'),
   ('grant-http-a-service-subject-site', 'tenant-http-a', 'neoagro-ingestion-service', 'site', 'site-http-a', 'read'),
   ('grant-http-b-owner-site', 'tenant-http-b', 'ci-tenant-b-owner', 'site', 'site-http-b', 'read');
 
@@ -198,3 +199,13 @@ VALUES
 ('obs-http-governance-revocation','site-http-a','tenant-http-a','asset-http-grant','source-http-a',
  'neoagro','ec',1.5,'dS/m','2026-05-10T10:00:00Z','ci-governance-revocation-observation',
  'verified','{"provider":"CI fixture provider","acquisition_method":"manual"}','[]');
+
+
+-- Local D1-only fault injection: an owner decision must roll back both the
+-- immutable identity-link event and request status when audit persistence fails.
+CREATE TRIGGER ci_reject_identity_link_event
+BEFORE INSERT ON tenant_identity_link_events
+WHEN NEW.reason = 'CI injected identity-link audit failure'
+BEGIN
+  SELECT RAISE(ABORT, 'ci_identity_link_audit_failure');
+END;

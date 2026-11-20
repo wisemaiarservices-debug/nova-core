@@ -20,3 +20,7 @@ INTERNAL_AUTH_SECRET = "local-ci-only-secret-not-for-any-deployment"
 
 CI_TEST_CONFIGURATION_WRITES = "true"
 CI_TEST_ASSESSMENT_LEASE_MS = "1000"
+
+CI_TEST_SUPABASE_JWKS = "true"
+SUPABASE_AUTH_ISSUER = "https://supabase-ci.example.test/auth/v1"
+SUPABASE_AUTH_AUDIENCE = "authenticated"

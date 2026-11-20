@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
-import { createHash, createHmac, createPrivateKey, randomUUID, sign } from "node:crypto";
+import { createHash, createHmac, createPrivateKey, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const base = "http://127.0.0.1:8787";
 const secret = "local-ci-only-secret-not-for-any-deployment";
 const issuer = "https://nova-ci.cloudflareaccess.com";
 const audience = "nova-ci-test-audience";
+const supabaseIssuer = "https://supabase-ci.example.test/auth/v1";
+const supabaseAudience = "authenticated";
+const supabaseKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const supabaseJwk = { ...supabaseKeys.publicKey.export({ format: "jwk" }),
+  kid: "supabase-local-ephemeral", alg: "RS256", use: "sig", key_ops: ["verify"] };
 const privateKey = createPrivateKey(await readFile("../tenant-gateway/test/fixtures/nova-local-ci-private.pem"));
 const child = spawn("npx", ["--yes", "wrangler@4.13.2", "dev", "--local",
   "-c", "../tenant-gateway/wrangler.local-test.toml",
@@ -23,6 +28,14 @@ function accessToken(subject = "ci-human-subject") {
   const claims = b64url(JSON.stringify({ iss: issuer, aud: [audience], sub: subject, iat: now - 2, exp: now + 300 }));
   const input = head + "." + claims;
   return input + "." + sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url");
+}
+function supabaseToken(subject = "supabase-ci-user", overrides = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64url(JSON.stringify({ alg: "RS256", typ: "JWT", kid: supabaseJwk.kid }));
+  const claims = b64url(JSON.stringify({ iss: supabaseIssuer, aud: supabaseAudience,
+    sub: subject, role: "authenticated", iat: now - 2, exp: now + 300, ...overrides }));
+  const input = head + "." + claims;
+  return input + "." + sign("RSA-SHA256", Buffer.from(input), supabaseKeys.privateKey).toString("base64url");
 }
 async function throughGateway(path, token = accessToken(), extraHeaders = {}, method = "GET", body = undefined) {
   const response = await fetch(base + path, {
@@ -44,6 +57,136 @@ async function ready() {
 }
 try {
   await ready();
+
+  // Configure the local-only API verifier with an ephemeral public key. The
+  // matching private key remains in this runner process and is never persisted.
+  const jwksReady = await throughGateway("/__ci/supabase-jwks", accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify({ keys: [supabaseJwk] }));
+  assert.equal(jwksReady.response.status, 200, JSON.stringify(jwksReady.body));
+
+  // Concurrent consumption of one challenge must produce one request and one event.
+  const concurrentChallengePair = {
+    cloudflareSubject: "ci-concurrent-cloudflare-reviewer",
+    supabaseSubject: "supabase-ci-concurrent-user",
+  };
+  const concurrentBearer = { authorization: "Bearer " + supabaseToken(concurrentChallengePair.supabaseSubject),
+    "content-type": "application/json" };
+  const concurrentChallenge = await throughGateway("/api/v1/identity-links/challenges",
+    accessToken(concurrentChallengePair.cloudflareSubject), concurrentBearer, "POST", "{}");
+  assert.equal(concurrentChallenge.response.status, 201, JSON.stringify(concurrentChallenge.body));
+  const concurrentConsume = await Promise.all([1, 2].map(() => throughGateway(
+    "/api/v1/identity-links/challenges/" + concurrentChallenge.body.data.challenge_id + "/consume",
+    accessToken(concurrentChallengePair.cloudflareSubject), concurrentBearer, "POST",
+    JSON.stringify({ challenge: concurrentChallenge.body.data.challenge }))));
+  assert.deepEqual(concurrentConsume.map(item => item.response.status).sort(), [201, 409],
+    JSON.stringify(concurrentConsume.map(item => ({ status: item.response.status, body: item.body }))));
+  const concurrentWinner = concurrentConsume.find(item => item.response.status === 201);
+  assert.ok(concurrentWinner?.body.data.link_request_id);
+  const concurrentState = await throughGateway(
+    "/__ci/identity-link-state?challenge_id=" + encodeURIComponent(concurrentChallenge.body.data.challenge_id) +
+      "&request_id=" + encodeURIComponent(concurrentWinner.body.data.link_request_id));
+  assert.equal(concurrentState.response.status, 200, JSON.stringify(concurrentState.body));
+  assert.equal(concurrentState.body.challenge.status, "consumed");
+  assert.equal(concurrentState.body.request.status, "pending");
+
+  const linkedCloudflareSubject = "ci-measurement-reviewer";
+  const bearer = { authorization: "Bearer " + supabaseToken(),
+    "content-type": "application/json" };
+  const challengeCreated = await throughGateway("/api/v1/identity-links/challenges",
+    accessToken(linkedCloudflareSubject), bearer, "POST", "{}");
+  assert.equal(challengeCreated.response.status, 201, JSON.stringify(challengeCreated.body));
+  assert.match(challengeCreated.body.data.challenge, /^[A-Za-z0-9_-]{43}$/);
+
+  const mismatchedIdentity = await throughGateway(
+    "/api/v1/identity-links/challenges/" + challengeCreated.body.data.challenge_id + "/consume",
+    accessToken(linkedCloudflareSubject), {
+      authorization: "Bearer " + supabaseToken("different-supabase-user"),
+      "content-type": "application/json",
+    }, "POST", JSON.stringify({ challenge: challengeCreated.body.data.challenge }));
+  assert.equal(mismatchedIdentity.response.status, 409, JSON.stringify(mismatchedIdentity.body));
+
+  const challengeConsumed = await throughGateway(
+    "/api/v1/identity-links/challenges/" + challengeCreated.body.data.challenge_id + "/consume",
+    accessToken(linkedCloudflareSubject), bearer, "POST",
+    JSON.stringify({ challenge: challengeCreated.body.data.challenge }));
+  assert.equal(challengeConsumed.response.status, 201, JSON.stringify(challengeConsumed.body));
+  const replayedChallenge = await throughGateway(
+    "/api/v1/identity-links/challenges/" + challengeCreated.body.data.challenge_id + "/consume",
+    accessToken(linkedCloudflareSubject), bearer, "POST",
+    JSON.stringify({ challenge: challengeCreated.body.data.challenge }));
+  assert.equal(replayedChallenge.response.status, 409, JSON.stringify(replayedChallenge.body));
+
+  const linkRequestId = challengeConsumed.body.data.link_request_id;
+  const persistedIdentityState = await throughGateway(
+    "/__ci/identity-link-state?challenge_id=" + encodeURIComponent(challengeCreated.body.data.challenge_id) +
+      "&request_id=" + encodeURIComponent(linkRequestId));
+  assert.equal(persistedIdentityState.response.status, 200, JSON.stringify(persistedIdentityState.body));
+  assert.equal(persistedIdentityState.body.challenge.challenge_sha256,
+    createHash("sha256").update(challengeCreated.body.data.challenge).digest("hex"));
+  assert.equal(persistedIdentityState.body.challenge.status, "consumed");
+  assert.equal(persistedIdentityState.body.request.status, "pending");
+  assert.equal(persistedIdentityState.body.challenge_columns.some(name =>
+    /^(?:token|challenge|access_token|jwt)$/i.test(name)), false);
+  assert.equal(persistedIdentityState.body.request_columns.some(name =>
+    /token|bearer|jwt/i.test(name)), false);
+
+  const pendingLinks = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/identity-links/pending", accessToken("ci-human-subject"));
+  assert.equal(pendingLinks.response.status, 200, JSON.stringify(pendingLinks.body));
+  assert.equal(pendingLinks.body.data.some(item => item.id === linkRequestId &&
+    item.supabase_subject === "supabase-ci-user" &&
+    item.cloudflare_subject === linkedCloudflareSubject), true);
+
+  const decisionPath = "/api/v1/tenants/tenant-http-a/identity-links/" + linkRequestId + "/decision";
+  const approvalBody = { decision: "approve", reason: "CI dual identity approval",
+    idempotency_key: "ci-dual-identity-approve-1" };
+  const identityLinkAuditFailure = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "approve", reason: "CI injected identity-link audit failure",
+      idempotency_key: "ci-dual-identity-audit-failure" }));
+  assert.equal(identityLinkAuditFailure.response.status, 503, JSON.stringify(identityLinkAuditFailure.body));
+  const pendingAfterAuditFailure = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/identity-links/pending", accessToken("ci-human-subject"));
+  assert.equal(pendingAfterAuditFailure.response.status, 200, JSON.stringify(pendingAfterAuditFailure.body));
+  assert.equal(pendingAfterAuditFailure.body.data.some(item => item.id === linkRequestId), true);
+
+  const approved = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", JSON.stringify(approvalBody));
+  assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
+  assert.equal(approved.body.data.status, "approved");
+
+  const approvalRetry = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", JSON.stringify(approvalBody));
+  assert.equal(approvalRetry.response.status, 200, JSON.stringify(approvalRetry.body));
+  assert.equal(approvalRetry.body.data.status, "approved");
+
+  const crossTenantAfterApproval = await throughGateway("/api/v1/tenants/tenant-http-b/sites",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(crossTenantAfterApproval.response.status, 404);
+
+  const linkedSiteList = await throughGateway("/api/v1/tenants/tenant-http-a/sites",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(linkedSiteList.response.status, 200, JSON.stringify(linkedSiteList.body));
+  assert.equal(linkedSiteList.body.data.some(site => site.id === "site-http-a"), true);
+
+  const linkedObservations = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a/observations",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(linkedObservations.response.status, 200, JSON.stringify(linkedObservations.body));
+  assert.equal(linkedObservations.body.data.some(item => item.id === "obs-http-verified"), true);
+
+  const revoked = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "revoke", reason: "CI dual identity revocation",
+      idempotency_key: "ci-dual-identity-revoke-1" }));
+  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+  assert.equal(revoked.body.data.status, "revoked");
+
+  const deniedAfterRevoke = await throughGateway("/api/v1/tenants/tenant-http-a/sites",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(deniedAfterRevoke.response.status, 404, JSON.stringify(deniedAfterRevoke.body));
+
+
   const sitePath = "/api/v1/tenants/tenant-http-a/sites/site-http-a";
   const allowed = await throughGateway(sitePath);
   assert.equal(allowed.response.status, 200, JSON.stringify(allowed.body));
@@ -86,6 +229,11 @@ try {
   });
   assert.equal(suspended.response.status, 200, JSON.stringify(suspended.body));
   assert.equal(suspended.body.data.status, "inactive");
+  const suspendedMemberRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a", accessToken("ci-lifecycle-member"));
+  assert.equal(suspendedMemberRead.response.status, 404,
+    "suspended membership must lose access despite its still-active site grant");
+
 
   const reactivated = await membershipAction("ci-human-subject", {
     membership_id: "membership-http-lifecycle", action: "reactivate",
@@ -93,6 +241,11 @@ try {
   });
   assert.equal(reactivated.response.status, 200, JSON.stringify(reactivated.body));
   assert.equal(reactivated.body.data.status, "active");
+  const reactivatedMemberRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a", accessToken("ci-lifecycle-member"));
+  assert.equal(reactivatedMemberRead.response.status, 200,
+    "reactivation restores access only while the exact site grant remains active");
+
 
   const membershipRevoked = await membershipAction("ci-human-subject", {
     membership_id: "membership-http-lifecycle", action: "revoke",
@@ -100,6 +253,11 @@ try {
   });
   assert.equal(membershipRevoked.response.status, 200, JSON.stringify(membershipRevoked.body));
   assert.equal(membershipRevoked.body.data.status, "revoked");
+  const revokedMemberRead = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a", accessToken("ci-lifecycle-member"));
+  assert.equal(revokedMemberRead.response.status, 404,
+    "revoked membership must lose access even though its site grant row remains");
+
 
   const revokedAgain = await membershipAction("ci-human-subject", {
     membership_id: "membership-http-lifecycle", action: "reactivate",
@@ -113,14 +271,53 @@ try {
     JSON.stringify({ role: "operator", reason: "CI invitation acceptance fixture" }));
   assert.equal(invitationCreated.response.status, 201, JSON.stringify(invitationCreated.body));
   assert.match(invitationCreated.body.data.invitation_token, /^[A-Za-z0-9_-]{43}$/);
-  const invitationAccepted = await throughGateway(
+  const invitationAcceptPath = "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+    invitationCreated.body.data.invitation_id + "/accept";
+  const invitationAcceptPayload = JSON.stringify({
+    invitation_token: invitationCreated.body.data.invitation_token,
+  });
+  const invitationAcceptRace = await Promise.all([
+    throughGateway(invitationAcceptPath, accessToken("ci-invited-human"),
+      { "content-type": "application/json" }, "POST", invitationAcceptPayload),
+    throughGateway(invitationAcceptPath, accessToken("ci-invited-human"),
+      { "content-type": "application/json" }, "POST", invitationAcceptPayload),
+  ]);
+  const invitationRaceStatuses = invitationAcceptRace.map(result => result.response.status).sort();
+  assert.deepEqual(invitationRaceStatuses, [201, 404],
+    "concurrent acceptance of one invitation must have exactly one winner and hide the consumed token");
+  const invitationAccepted = invitationAcceptRace.find(result => result.response.status === 201);
+  assert.equal(invitationAccepted.body.data.subject, "ci-invited-human");
+  assert.equal(invitationAccepted.body.data.role, "operator");
+
+  // A consumed invitation is one-time: a replay must not create a second membership.
+  const invitationReplay = await throughGateway(
     "/api/v1/tenants/tenant-http-a/membership-invitations/" +
       invitationCreated.body.data.invitation_id + "/accept", accessToken("ci-invited-human"),
     { "content-type": "application/json" }, "POST",
     JSON.stringify({ invitation_token: invitationCreated.body.data.invitation_token }));
-  assert.equal(invitationAccepted.response.status, 201, JSON.stringify(invitationAccepted.body));
-  assert.equal(invitationAccepted.body.data.subject, "ci-invited-human");
-  assert.equal(invitationAccepted.body.data.role, "operator");
+  assert.equal(invitationReplay.response.status, 404,
+    "an accepted invitation must not be reusable");
+
+  // Revocation must invalidate a still-pending invitation before acceptance.
+  const revokedInvitation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ role: "viewer", reason: "CI invitation revocation fixture" }));
+  assert.equal(revokedInvitation.response.status, 201, JSON.stringify(revokedInvitation.body));
+  const invitationRevocation = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+      revokedInvitation.body.data.invitation_id + "/revoke", accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ reason: "CI revoke before acceptance" }));
+  assert.equal(invitationRevocation.response.status, 200, JSON.stringify(invitationRevocation.body));
+  assert.equal(invitationRevocation.body.data.status, "revoked");
+  const revokedInvitationAcceptance = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+      revokedInvitation.body.data.invitation_id + "/accept", accessToken("ci-revoked-invitee"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ invitation_token: revokedInvitation.body.data.invitation_token }));
+  assert.equal(revokedInvitationAcceptance.response.status, 404,
+    "a revoked invitation must not create a membership");
 
   const siteGrantPath = "/api/v1/tenants/tenant-http-a/site-grants";
   async function siteGrant(subject, payload) {
@@ -501,12 +698,12 @@ try {
   assert.equal(reviewerList.body.data.events.some(row => row.event_type === "assigned" &&
     row.reviewer_subject === reviewer.reviewer_subject), true);
 
-  const revoked = await throughGateway(
+  const reviewerRevoked = await throughGateway(
     "/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers/revoke",
     accessToken(), { "content-type": "application/json" }, "POST",
     JSON.stringify({ ...reviewer, evidence_ref: "fixture:reviewer-revocation", reason: "CI revocation fixture" }));
-  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
-  assert.equal(revoked.body.data.status, "revoked");
+  assert.equal(reviewerRevoked.response.status, 200, JSON.stringify(reviewerRevoked.body));
+  assert.equal(reviewerRevoked.body.data.status, "revoked");
   const reviewerHistory = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers");
   assert.equal(reviewerHistory.response.status, 200);
   assert.equal(reviewerHistory.body.data.reviewers.find(row =>
