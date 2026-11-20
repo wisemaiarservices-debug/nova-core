@@ -13,3 +13,6 @@ migrations_dir = "../api/migrations"
 
 [vars]
 CI_TEST_INGESTION = "true"
+ACCESS_ISSUER = "https://ci-ingestion.cloudflareaccess.com"
+ACCESS_AUDIENCE = "nova-ingestion-local-d1-audience"
+NOVA_SERVICE_GRANTS_JSON = "{\"neoagro-ingestion-service\":{\"neoagro\":[\"source-http-grant\"]}}"
