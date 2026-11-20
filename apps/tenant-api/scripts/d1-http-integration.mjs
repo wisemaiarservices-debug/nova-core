@@ -624,7 +624,7 @@ try {
     accessToken(), { "content-type": "application/json" }, "POST",
     JSON.stringify({ ...reviewer, evidence_ref: "fixture:reviewer-revocation", reason: "CI revocation fixture" }));
   assert.equal(reviewerRevoked.response.status, 200, JSON.stringify(reviewerRevoked.body));
-  assert.equal(reviewerRevoked.body.data.status, "reviewerRevoked");
+  assert.equal(reviewerRevoked.body.data.status, "revoked");
   const reviewerHistory = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers");
   assert.equal(reviewerHistory.response.status, 200);
   assert.equal(reviewerHistory.body.data.reviewers.find(row =>
