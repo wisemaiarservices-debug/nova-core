@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 
 const base = "http://127.0.0.1:8788";
@@ -98,5 +99,8 @@ try {
   assert.equal(rolledBack.observation, null, "failed audit must roll back observation insert");
   assert.equal(rolledBack.audit.length, 0);
 } finally {
-  child.kill("SIGTERM");
+  if (child.exitCode === null) {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+  }
 }
