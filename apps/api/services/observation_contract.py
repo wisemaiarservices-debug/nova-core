@@ -13,6 +13,20 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MODULES = {"nova-core", "neoagro", "neogrid", "neocell"}
+ECMASCRIPT_TRIM_CHARS = (
+    "\\u0009\\u000a\\u000b\\u000c\\u000d\\u0020\\u00a0\\u1680"
+    "\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007"
+    "\\u2008\\u2009\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff"
+)
+
+
+def _validate_required_string(value: Any, maximum: int) -> Any:
+    if not isinstance(value, str):
+        raise ValueError("value must be a string")
+    utf16_length = len(value.encode("utf-16-le", errors="surrogatepass")) // 2
+    if not value or value.strip(ECMASCRIPT_TRIM_CHARS) != value or utf16_length > maximum:
+        raise ValueError("string is blank, trimmed, or exceeds the UTF-16 length limit")
+    return value
 QUALITY_FLAGS = {
     "estimated", "sensor_calibration_due", "sensor_fault",
     "outlier_suspected", "provider_fill_value", "manually_entered",
@@ -23,7 +37,7 @@ UNIT_PATTERN = re.compile(r"^[A-Za-z0-9%°µμ/._ -]{1,48}$")
 
 
 class ObservationProvenance(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid")
 
     provider: str = Field(min_length=1, max_length=120)
     acquisition_method: Literal[
@@ -31,11 +45,21 @@ class ObservationProvenance(BaseModel):
     ]
     source_record_ref: str | None = Field(default=None, max_length=240)
 
+    @field_validator("provider", mode="before")
+    @classmethod
+    def validate_provider_string(cls, value: Any) -> Any:
+        return _validate_required_string(value, 120)
+
+    @field_validator("source_record_ref", mode="before")
+    @classmethod
+    def validate_source_record_ref_string(cls, value: Any) -> Any:
+        return None if value is None else _validate_required_string(value, 240)
+
 
 class ObservationSubmission(BaseModel):
     """Untrusted caller payload; server-owned trust fields are intentionally absent."""
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid")
 
     site_id: str = Field(min_length=1, max_length=120)
     asset_id: str | None = Field(default=None, min_length=1, max_length=120)
@@ -48,6 +72,21 @@ class ObservationSubmission(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=200)
     provenance: ObservationProvenance
     quality_flags: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator("site_id", "source_id", mode="before")
+    @classmethod
+    def validate_required_identifier_strings(cls, value: Any) -> Any:
+        return _validate_required_string(value, 120)
+
+    @field_validator("asset_id", mode="before")
+    @classmethod
+    def validate_optional_asset_id_string(cls, value: Any) -> Any:
+        return None if value is None else _validate_required_string(value, 120)
+
+    @field_validator("idempotency_key", mode="before")
+    @classmethod
+    def validate_idempotency_key_string(cls, value: Any) -> Any:
+        return _validate_required_string(value, 200)
 
     @field_validator("metric")
     @classmethod
