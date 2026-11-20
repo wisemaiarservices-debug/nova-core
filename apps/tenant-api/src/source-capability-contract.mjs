@@ -17,6 +17,15 @@ function issue(code, path) {
   return { code, path };
 }
 
+function isSupportedTimeZone(timezone) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Validate a proposed, not-yet-persisted source capability.
  *
@@ -78,6 +87,12 @@ export function validateSourceCapabilityDraft(draft, source) {
         !integer(draft.sampling.interval_seconds, 1, 31536000)) {
       fail("capability.interval_invalid", "$.sampling.interval_seconds");
     }
+    if (draft.sampling.mode === "interval" &&
+        integer(draft.sampling.interval_seconds, 1, 31536000) &&
+        integer(draft.sampling.max_age_seconds, 1, 31536000) &&
+        draft.sampling.max_age_seconds < draft.sampling.interval_seconds) {
+      fail("capability.max_age_below_sampling_interval", "$.sampling.max_age_seconds");
+    }
     if (draft.sampling.mode === "event" && draft.sampling.interval_seconds !== undefined) {
       fail("capability.event_interval_forbidden", "$.sampling.interval_seconds");
     }
@@ -93,7 +108,8 @@ export function validateSourceCapabilityDraft(draft, source) {
       fail("capability.future_skew_invalid", "$.timestamp.max_future_skew_seconds");
     }
     if (!text(draft.timestamp.timezone, 80) ||
-        !/^(UTC|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)$/.test(draft.timestamp.timezone)) {
+        !/^(UTC|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)$/.test(draft.timestamp.timezone) ||
+        !isSupportedTimeZone(draft.timestamp.timezone)) {
       fail("capability.timezone_invalid", "$.timestamp.timezone");
     }
   }
