@@ -123,3 +123,60 @@ No live D1, Cloudflare, Supabase, staging, production, credentials, connected de
 ## 10. Evidence boundary
 
 This document is a design contract, not an implementation or security certification. It does not claim that current observations are capability-authorized. The current source-capability lifecycle PR #307 validates lifecycle storage and local D1 transition guards only.
+
+
+## 11. Calibration profile relationship — concrete relational design
+
+Read-only review of migrations 0012–0014 establishes three existing records with distinct responsibilities:
+
+- `sensor_source_identity_mappings` binds one tenant/site/asset/source to a sensor identity, parameter and unit. Its mapping row is immutable; its append-only review events establish verified/rejected/revoked lifecycle.
+- `sensor_calibrations` binds a tenant/site/asset/sensor/parameter/unit to an immutable calibration interval and evidence. Registration alone is not verification.
+- `sensor_calibration_verification_events` records independent verified/rejected/revoked decisions. The latest event determines current eligibility; a historical verified event is not sufficient after a later revocation.
+
+The capability's `calibration_profile_ref` must refer to a new immutable profile registry row, not directly to a calibration ID or mapping ID. Proposed additive table:
+
+```sql
+CREATE TABLE source_calibration_profiles (
+  profile_ref TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  mapping_id TEXT NOT NULL,
+  parameter TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  evidence_ref TEXT NOT NULL,
+  created_by_subject TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (mapping_id, tenant_id, site_id, asset_id, source_id)
+    REFERENCES sensor_source_identity_mappings
+      (id, tenant_id, site_id, asset_id, source_id) ON DELETE RESTRICT
+);
+```
+
+The production migration must first confirm that the exact composite parent key is accepted by SQLite/D1 (the mapping table defines this unique key). Add checks for bounded non-empty identifiers and evidence, a lookup index, immutable update/delete triggers, and an insert guard requiring an active tenant/site/asset plus a mapping whose latest review event is `verified`. Profile creation must not itself make a mapping verified or a calibration verified.
+
+A capability with `calibration_required=1` must reference exactly one profile whose tenant/site/source/asset/parameter/unit matches the capability and whose mapping resolves to the same source, asset, metric/parameter and unit. The insert-time observation guard must then:
+
+1. Resolve the profile and exact mapping; require the mapping's latest event (ordered by `occurred_at`, then insertion order) to be `verified`.
+2. Resolve a calibration for the mapped sensor and exact tenant/site/asset/parameter/unit with `calibrated_at <= observed_at < valid_until` (the end boundary is exclusive).
+3. Require that calibration's latest verification event to be `verified`; `registered`, `rejected`, or `revoked` is ineligible.
+4. Require calibration evidence to remain linked to the same tenant/site and reject ambiguous multiple eligible calibrations rather than choosing arbitrarily.
+5. Re-evaluate mapping and calibration lifecycle at the observation INSERT, not only during application preflight.
+
+The profile is a stable identity bridge, not a cache of a calibration decision. It must not store a mutable `verified` boolean or copy a calibration status. A new calibration may satisfy the same profile only when it independently passes the exact scope, validity interval, and latest-event checks.
+
+### Required calibration tests
+
+- Profile insert with verified mapping succeeds; pending/rejected/revoked mapping fails.
+- Cross-tenant, cross-site, cross-asset, cross-source, parameter or unit mismatch fails.
+- Profile rows cannot be updated or deleted.
+- Calibration registered but not reviewed fails.
+- Verified calibration inside its interval succeeds; before calibrated_at or at/after valid_until fails.
+- Later rejection/revocation invalidates the previously verified calibration.
+- Wrong sensor identity, wrong asset, wrong parameter/unit, ambiguous valid calibrations fail closed.
+- Mapping revoked after profile creation invalidates the profile at observation insert.
+- Calibration revoked between preflight and observation INSERT is denied by the database guard.
+- Audit failure rolls back the observation and its audit record.
+
+This is a proposed schema contract only. It is not yet a migration and does not claim that calibration-required observations are currently enforceable.
