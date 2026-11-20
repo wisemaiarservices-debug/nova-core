@@ -85,6 +85,12 @@ test("matches the canonical NOVA Core v1 fixture matrix", () => {
     assert.doesNotThrow(() => validateObservationPayload(buildPayload(entry), Date.parse(fixture.fixed_now)), entry.id);
   }
   for (const entry of fixture.rejected) {
-    assert.throws(() => validateObservationPayload(buildPayload(entry), Date.parse(fixture.fixed_now)));
+    let rejected = false;
+    try {
+      validateObservationPayload(buildPayload(entry), Date.parse(fixture.fixed_now));
+    } catch {
+      rejected = true;
+    }
+    assert.equal(rejected, true, "expected rejection for fixture: " + entry.id);
   }
 });
