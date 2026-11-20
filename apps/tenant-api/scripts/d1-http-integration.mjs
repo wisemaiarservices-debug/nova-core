@@ -283,8 +283,8 @@ try {
       { "content-type": "application/json" }, "POST", invitationAcceptPayload),
   ]);
   const invitationRaceStatuses = invitationAcceptRace.map(result => result.response.status).sort();
-  assert.deepEqual(invitationRaceStatuses, [201, 409],
-    "concurrent acceptance of one invitation must have exactly one winner");
+  assert.deepEqual(invitationRaceStatuses, [201, 404],
+    "concurrent acceptance of one invitation must have exactly one winner and hide the consumed token");
   const invitationAccepted = invitationAcceptRace.find(result => result.response.status === 201);
   assert.equal(invitationAccepted.body.data.subject, "ci-invited-human");
   assert.equal(invitationAccepted.body.data.role, "operator");
