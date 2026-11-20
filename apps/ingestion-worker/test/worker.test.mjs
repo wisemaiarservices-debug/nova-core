@@ -37,8 +37,9 @@ function makeAccessFixture(issuer) {
 }
 
 
-function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceModule = "neoagro",
-  sourceStatus = "verified", assetSiteId = "site-001", assetStatus = "active" } = {}) {
+function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceTenantId = "tenant-a",
+  sourceModule = "neoagro", sourceStatus = "verified", assetSiteId = "site-001",
+  assetTenantId = "tenant-a", assetStatus = "active" } = {}) {
   const state = { observation: null, audit: [] };
   return {
     state,
@@ -50,11 +51,11 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
         async first() {
           if (sql.includes("FROM sites")) return { id: this.values[0], tenant_id: "tenant-a", status: siteStatus };
           if (sql.includes("FROM sources")) return {
-            id: this.values[0], tenant_id: "tenant-a", site_id: sourceSiteId, module: sourceModule,
+            id: this.values[0], tenant_id: sourceTenantId, site_id: sourceSiteId, module: sourceModule,
             verification_status: sourceStatus,
           };
           if (sql.includes("FROM assets")) return {
-            id: this.values[0], tenant_id: "tenant-a", site_id: assetSiteId, status: assetStatus,
+            id: this.values[0], tenant_id: assetTenantId, site_id: assetSiteId, status: assetStatus,
           };
           if (sql.includes("FROM observations WHERE source_id")) return state.observation;
           throw new Error("unexpected_query");
@@ -347,4 +348,77 @@ test("authenticated Worker retry preserves one tenant-owned observation and one 
   assert.equal(retryBody.observation_id, firstBody.observation_id);
   assert.equal(db.state.observation.tenant_id, "tenant-a");
   assert.equal(db.state.audit.length, 1, "an exact retry must not duplicate the tenant audit event");
+});
+
+
+test("idempotency key reuse with changed payload conflicts without adding a second audit event", async () => {
+  const issuer = "https://idempotency-conflict.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const db = ownershipDb();
+  const payload = {
+    site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+    source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+    unit: "degC", observed_at: new Date().toISOString(),
+    idempotency_key: "test-observation-conflict-001",
+    provenance: { provider: "test station", acquisition_method: "sensor" },
+    quality_flags: [],
+  };
+  const send = () => worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  }), { ...envFor(issuer, fixture.audience), DB: db });
+
+  const accepted = await send();
+  assert.equal(accepted.status, 201);
+  const acceptedBody = await accepted.json();
+  payload.value = 19.25;
+
+  const conflict = await send();
+  assert.equal(conflict.status, 409);
+  assert.deepEqual(await conflict.json(), { error: "idempotency_key_conflict", accepted: false });
+  assert.equal(db.state.observation.value, 18.5);
+  assert.equal(db.state.audit.length, 1);
+  assert.equal(acceptedBody.observation_id, db.state.observation.id);
+});
+
+test("source and asset ownership invariants are independently enforced before persistence", async () => {
+  const issuer = "https://ownership-matrix.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const cases = [
+    ["source belongs to another tenant", { sourceTenantId: "tenant-b" }],
+    ["source is attached to another site", { sourceSiteId: "site-b" }],
+    ["source module does not match", { sourceModule: "neogrid" }],
+    ["source is not verified", { sourceStatus: "pending" }],
+    ["asset belongs to another tenant", { assetTenantId: "tenant-b" }],
+    ["asset is attached to another site", { assetSiteId: "site-b" }],
+    ["asset is inactive", { assetStatus: "inactive" }],
+    ["site is inactive", { siteStatus: "inactive" }],
+  ];
+
+  for (const [label, options] of cases) {
+    const db = ownershipDb(options);
+    const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+      method: "POST",
+      headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+      body: JSON.stringify({
+        site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+        source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+        unit: "degC", observed_at: new Date().toISOString(),
+        idempotency_key: "test-observation-ownership-" + label.replace(/[^a-z]+/gi, "-"),
+        provenance: { provider: "test station", acquisition_method: "sensor" },
+      }),
+    }), { ...envFor(issuer, fixture.audience), DB: db });
+
+    assert.equal(response.status, 403, label);
+    assert.deepEqual(await response.json(), { error: "request_not_authorized" }, label);
+    assert.equal(db.state.observation, null, label + " must not persist an observation");
+    assert.equal(db.state.audit.length, 0, label + " must not persist an audit event");
+  }
 });
