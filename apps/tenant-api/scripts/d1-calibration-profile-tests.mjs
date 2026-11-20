@@ -52,4 +52,40 @@ expectRejected(
   "source calibration profiles cannot be deleted",
 );
 
+
+function execute(label, sql) {
+  const result = spawnSync("npx", [...args, sql], { encoding: "utf8" });
+  const output = (result.stdout || "") + "\\n" + (result.stderr || "");
+  assert.equal(result.status, 0, label + " failed\\n" + output);
+  console.log("Passed: " + label);
+}
+
+const capabilityInsert = (id, metric, unit, profileRef, version) =>
+  "INSERT INTO source_capabilities " +
+  "(id,tenant_id,site_id,source_id,asset_id,module,metric,unit,measurement_kind," +
+  "quantity_semantics,acquisition_protocol,protocol_version,sampling_mode,interval_seconds," +
+  "max_age_seconds,max_future_skew_seconds,timezone,allowed_quality_flags_json," +
+  "calibration_required,calibration_profile_ref,data_rights_ref,evidence_ref,version,status,created_by_subject) VALUES (" +
+  "'" + id + "','tenant-http-a','site-http-a','source-http-a','asset-http-grant','neoagro','" +
+  metric + "','" + unit + "','measured','CI calibration capability','manual-lab','1.0'," +
+  "'interval',3600,7200,300,'Africa/Tunis','[]',1,'" + profileRef +
+  "','fixture:rights','fixture:evidence'," + version + ",'pending','ci-human-subject')";
+
+execute(
+  "calibration-required capability accepts exact registered profile",
+  capabilityInsert("capability-http-calibrated", "ec", "dS/m", "profile-http-calibration", 2),
+);
+
+expectRejected(
+  "calibration-required capability without a profile is denied",
+  capabilityInsert("capability-http-no-profile", "ec", "dS/m", "missing-profile", 3),
+  "calibration-required capability must reference an exact tenant/site/asset/source/metric/unit profile",
+);
+
+expectRejected(
+  "calibration-required capability with metric mismatch is denied",
+  capabilityInsert("capability-http-metric-mismatch", "temperature", "dS/m", "profile-http-calibration", 4),
+  "calibration-required capability must reference an exact tenant/site/asset/source/metric/unit profile",
+);
+
 console.log("Source calibration profile registry D1 tests passed");
