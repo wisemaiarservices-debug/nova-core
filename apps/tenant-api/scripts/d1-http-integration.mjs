@@ -619,12 +619,12 @@ try {
   assert.equal(reviewerList.body.data.events.some(row => row.event_type === "assigned" &&
     row.reviewer_subject === reviewer.reviewer_subject), true);
 
-  const revoked = await throughGateway(
+  const reviewerRevoked = await throughGateway(
     "/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers/revoke",
     accessToken(), { "content-type": "application/json" }, "POST",
     JSON.stringify({ ...reviewer, evidence_ref: "fixture:reviewer-revocation", reason: "CI revocation fixture" }));
-  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
-  assert.equal(revoked.body.data.status, "revoked");
+  assert.equal(reviewerRevoked.response.status, 200, JSON.stringify(reviewerRevoked.body));
+  assert.equal(reviewerRevoked.body.data.status, "reviewerRevoked");
   const reviewerHistory = await throughGateway("/api/v1/tenants/tenant-http-a/water-quality-criteria/reviewers");
   assert.equal(reviewerHistory.response.status, 200);
   assert.equal(reviewerHistory.body.data.reviewers.find(row =>
