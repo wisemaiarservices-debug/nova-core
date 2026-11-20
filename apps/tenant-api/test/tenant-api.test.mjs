@@ -3242,3 +3242,18 @@ test("legacy measurement-quality writer remains hidden without the exact site re
   assert.equal(response.status, 404);
   assert.equal(db.calls.some(call => call.sql.includes("SELECT site_id FROM observations")), true);
 });
+
+
+test("production Worker entrypoint does not expose local CI identity fixture or state endpoints", async () => {
+  const fixture = await worker.fetch(await request({
+    "content-type": "application/json",
+  }, "https://private.internal/__ci/supabase-jwks", "POST",
+  JSON.stringify({ keys: [] })), env(new DB()));
+  assert.equal(fixture.status, 404);
+  assert.equal((await fixture.json()).error, "not_found");
+
+  const state = await worker.fetch(await request({},
+    "https://private.internal/__ci/identity-link-state?challenge_id=ci&request_id=ci"), env(new DB()));
+  assert.equal(state.status, 404);
+  assert.equal((await state.json()).error, "not_found");
+});
