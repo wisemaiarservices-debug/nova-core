@@ -43,8 +43,8 @@ GitHub Actions runs a local Worker smoke test for the health route, review-only 
 1. Confirm the intended Cloudflare account remains on Workers Free and review current quotas.
 2. Create a narrowly scoped deployment token only after explicit authorization; never paste credentials into source code or chat.
 3. Configure `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as GitHub Actions secrets and review the `nova-core-api` GitHub Environment protection rules.
-4. The workflow `.github/workflows/cloudflare-worker-deploy.yml` has both `workflow_dispatch` and a push trigger for the named feature branch. Its job-level condition permits deployment on manual dispatch, or on a matching push whose commit message contains `deploy-nova-core`. A push or PR by itself does not necessarily deploy.
-5. Before a manual dispatch or qualifying push, review the exact commit, environment approvals, account plan and deployment target. Do not use this workflow for the private tenant API or gateway.
+4. The workflow `.github/workflows/cloudflare-worker-deploy.yml` is manual-only. It accepts dispatch only from `feat/nova-core-v1-provenance-and-honest-impact` and requires the explicit `confirm_deploy=true` input. Ordinary pushes and pull requests cannot deploy.
+5. Before dispatch, review the exact selected commit, the `nova-core-api` GitHub Environment protection rules and approvals, account plan, quotas and deployment target. The workflow checks out the selected `github.sha`. Do not use this workflow for the private tenant API or gateway.
 6. After an explicitly approved public API deployment, verify its health endpoint and register its URL only as the public Core API—not as the private tenant gateway.
 
 ## Separate private tenant API and gateway
