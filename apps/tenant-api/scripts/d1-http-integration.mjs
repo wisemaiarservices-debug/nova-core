@@ -57,6 +57,75 @@ async function ready() {
 }
 try {
   await ready();
+
+  // Configure the local-only API verifier with an ephemeral public key. The
+  // matching private key remains in this runner process and is never persisted.
+  const jwksReady = await throughGateway("/__ci/supabase-jwks", accessToken(),
+    { "content-type": "application/json" }, "POST", JSON.stringify({ keys: [supabaseJwk] }));
+  assert.equal(jwksReady.response.status, 200, JSON.stringify(jwksReady.body));
+
+  const linkedCloudflareSubject = "ci-measurement-reviewer";
+  const bearer = { authorization: "Bearer " + supabaseToken(),
+    "content-type": "application/json" };
+  const challengeCreated = await throughGateway("/api/v1/identity-links/challenges",
+    accessToken(linkedCloudflareSubject), bearer, "POST", "{}");
+  assert.equal(challengeCreated.response.status, 201, JSON.stringify(challengeCreated.body));
+  assert.match(challengeCreated.body.data.challenge, /^[A-Za-z0-9_-]{43}$/);
+
+  const challengeConsumed = await throughGateway(
+    "/api/v1/identity-links/challenges/" + challengeCreated.body.data.challenge_id + "/consume",
+    accessToken(linkedCloudflareSubject), bearer, "POST",
+    JSON.stringify({ challenge: challengeCreated.body.data.challenge }));
+  assert.equal(challengeConsumed.response.status, 201, JSON.stringify(challengeConsumed.body));
+  const linkRequestId = challengeConsumed.body.data.link_request_id;
+
+  const pendingLinks = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/identity-links/pending", accessToken("ci-human-subject"));
+  assert.equal(pendingLinks.response.status, 200, JSON.stringify(pendingLinks.body));
+  assert.equal(pendingLinks.body.data.some(item => item.id === linkRequestId &&
+    item.supabase_subject === "supabase-ci-user" &&
+    item.cloudflare_subject === linkedCloudflareSubject), true);
+
+  const decisionPath = "/api/v1/tenants/tenant-http-a/identity-links/" + linkRequestId + "/decision";
+  const approvalBody = { decision: "approve", reason: "CI dual identity approval",
+    idempotency_key: "ci-dual-identity-approve-1" };
+  const approved = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", JSON.stringify(approvalBody));
+  assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
+  assert.equal(approved.body.data.status, "approved");
+
+  const approvalRetry = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST", JSON.stringify(approvalBody));
+  assert.equal(approvalRetry.response.status, 200, JSON.stringify(approvalRetry.body));
+  assert.equal(approvalRetry.body.data.status, "approved");
+
+  const linkedSiteList = await throughGateway("/api/v1/tenants/tenant-http-a/sites",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(linkedSiteList.response.status, 200, JSON.stringify(linkedSiteList.body));
+  assert.equal(linkedSiteList.body.data.some(site => site.id === "site-http-a"), true);
+
+  const linkedObservations = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/sites/site-http-a/observations",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(linkedObservations.response.status, 200, JSON.stringify(linkedObservations.body));
+  assert.equal(linkedObservations.body.data.some(item => item.id === "obs-http-verified"), true);
+
+  const revoked = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "revoke", reason: "CI dual identity revocation",
+      idempotency_key: "ci-dual-identity-revoke-1" }));
+  assert.equal(revoked.response.status, 200, JSON.stringify(revoked.body));
+  assert.equal(revoked.body.data.status, "revoked");
+
+  const deniedAfterRevoke = await throughGateway("/api/v1/tenants/tenant-http-a/sites",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(deniedAfterRevoke.response.status, 404, JSON.stringify(deniedAfterRevoke.body));
+
+  const crossTenantAfterApproval = await throughGateway("/api/v1/tenants/tenant-http-b/sites",
+    accessToken(linkedCloudflareSubject), bearer);
+  assert.equal(crossTenantAfterApproval.response.status, 404);
+
+
   const sitePath = "/api/v1/tenants/tenant-http-a/sites/site-http-a";
   const allowed = await throughGateway(sitePath);
   assert.equal(allowed.response.status, 200, JSON.stringify(allowed.body));
