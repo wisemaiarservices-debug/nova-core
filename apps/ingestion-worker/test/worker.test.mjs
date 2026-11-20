@@ -311,3 +311,40 @@ test("valid service token with malformed JSON is rejected before storage", async
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid_json" });
 });
+
+test("authenticated Worker retry preserves one tenant-owned observation and one audit event", async () => {
+  const issuer = "https://idempotent-retry.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const db = ownershipDb();
+  const payload = {
+    site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+    source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+    unit: "degC", observed_at: new Date().toISOString(),
+    idempotency_key: "test-observation-idempotent-retry-001",
+    provenance: { provider: "test station", acquisition_method: "sensor" },
+    quality_flags: [],
+  };
+  const send = () => worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  }), { ...envFor(issuer, fixture.audience), DB: db });
+
+  const first = await send();
+  assert.equal(first.status, 201);
+  const firstBody = await first.json();
+  assert.equal(firstBody.status, "accepted");
+  assert.equal(firstBody.idempotent, false);
+
+  const retry = await send();
+  assert.equal(retry.status, 200);
+  const retryBody = await retry.json();
+  assert.equal(retryBody.status, "already_accepted");
+  assert.equal(retryBody.idempotent, true);
+  assert.equal(retryBody.observation_id, firstBody.observation_id);
+  assert.equal(db.state.observation.tenant_id, "tenant-a");
+  assert.equal(db.state.audit.length, 1, "an exact retry must not duplicate the tenant audit event");
+});
