@@ -72,12 +72,38 @@ try {
   assert.equal(challengeCreated.response.status, 201, JSON.stringify(challengeCreated.body));
   assert.match(challengeCreated.body.data.challenge, /^[A-Za-z0-9_-]{43}$/);
 
+  const mismatchedIdentity = await throughGateway(
+    "/api/v1/identity-links/challenges/" + challengeCreated.body.data.challenge_id + "/consume",
+    accessToken(linkedCloudflareSubject), {
+      authorization: "Bearer " + supabaseToken("different-supabase-user"),
+      "content-type": "application/json",
+    }, "POST", JSON.stringify({ challenge: challengeCreated.body.data.challenge }));
+  assert.equal(mismatchedIdentity.response.status, 409, JSON.stringify(mismatchedIdentity.body));
+
   const challengeConsumed = await throughGateway(
     "/api/v1/identity-links/challenges/" + challengeCreated.body.data.challenge_id + "/consume",
     accessToken(linkedCloudflareSubject), bearer, "POST",
     JSON.stringify({ challenge: challengeCreated.body.data.challenge }));
   assert.equal(challengeConsumed.response.status, 201, JSON.stringify(challengeConsumed.body));
+  const replayedChallenge = await throughGateway(
+    "/api/v1/identity-links/challenges/" + challengeCreated.body.data.challenge_id + "/consume",
+    accessToken(linkedCloudflareSubject), bearer, "POST",
+    JSON.stringify({ challenge: challengeCreated.body.data.challenge }));
+  assert.equal(replayedChallenge.response.status, 409, JSON.stringify(replayedChallenge.body));
+
   const linkRequestId = challengeConsumed.body.data.link_request_id;
+  const persistedIdentityState = await throughGateway(
+    "/__ci/identity-link-state?challenge_id=" + encodeURIComponent(challengeCreated.body.data.challenge_id) +
+      "&request_id=" + encodeURIComponent(linkRequestId));
+  assert.equal(persistedIdentityState.response.status, 200, JSON.stringify(persistedIdentityState.body));
+  assert.equal(persistedIdentityState.body.challenge.challenge_sha256,
+    createHash("sha256").update(challengeCreated.body.data.challenge).digest("hex"));
+  assert.equal(persistedIdentityState.body.challenge.status, "consumed");
+  assert.equal(persistedIdentityState.body.request.status, "pending");
+  assert.equal(persistedIdentityState.body.challenge_columns.some(name =>
+    /token|challenge(?!_sha256)/i.test(name)), false);
+  assert.equal(persistedIdentityState.body.request_columns.some(name =>
+    /token|bearer|jwt/i.test(name)), false);
 
   const pendingLinks = await throughGateway(
     "/api/v1/tenants/tenant-http-a/identity-links/pending", accessToken("ci-human-subject"));
@@ -89,6 +115,16 @@ try {
   const decisionPath = "/api/v1/tenants/tenant-http-a/identity-links/" + linkRequestId + "/decision";
   const approvalBody = { decision: "approve", reason: "CI dual identity approval",
     idempotency_key: "ci-dual-identity-approve-1" };
+  const auditFailure = await throughGateway(decisionPath, accessToken("ci-human-subject"),
+    { "content-type": "application/json" }, "POST",
+    JSON.stringify({ decision: "approve", reason: "CI injected identity-link audit failure",
+      idempotency_key: "ci-dual-identity-audit-failure" }));
+  assert.equal(auditFailure.response.status, 503, JSON.stringify(auditFailure.body));
+  const pendingAfterAuditFailure = await throughGateway(
+    "/api/v1/tenants/tenant-http-a/identity-links/pending", accessToken("ci-human-subject"));
+  assert.equal(pendingAfterAuditFailure.response.status, 200, JSON.stringify(pendingAfterAuditFailure.body));
+  assert.equal(pendingAfterAuditFailure.body.data.some(item => item.id === linkRequestId), true);
+
   const approved = await throughGateway(decisionPath, accessToken("ci-human-subject"),
     { "content-type": "application/json" }, "POST", JSON.stringify(approvalBody));
   assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
