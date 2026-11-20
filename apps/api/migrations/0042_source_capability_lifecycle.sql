@@ -97,7 +97,7 @@ WHEN NEW.status <> 'pending'
     JOIN sites s ON s.id=NEW.site_id AND s.tenant_id=NEW.tenant_id AND s.status='active'
     WHERE src.id=NEW.source_id AND src.tenant_id=NEW.tenant_id
       AND src.site_id=NEW.site_id AND src.module=NEW.module
-      AND src.verification_status='verified'
+      AND (NEW.event_type='revoked' OR src.verification_status='verified')
   )
   OR NOT EXISTS (
     SELECT 1 FROM tenant_memberships m
@@ -134,11 +134,18 @@ END;
 CREATE TRIGGER source_capability_status_guard
 BEFORE UPDATE OF status ON source_capabilities
 WHEN NOT (
-  (OLD.status='pending' AND NEW.status IN ('approved','rejected'))
-  OR (OLD.status='approved' AND NEW.status='revoked')
+  (OLD.status='pending' AND NEW.status='approved'
+    AND EXISTS (SELECT 1 FROM source_capability_events e
+      WHERE e.capability_id=OLD.id AND e.event_type='approved'))
+  OR (OLD.status='pending' AND NEW.status='rejected'
+    AND EXISTS (SELECT 1 FROM source_capability_events e
+      WHERE e.capability_id=OLD.id AND e.event_type='rejected'))
+  OR (OLD.status='approved' AND NEW.status='revoked'
+    AND EXISTS (SELECT 1 FROM source_capability_events e
+      WHERE e.capability_id=OLD.id AND e.event_type='revoked'))
 )
 BEGIN
-  SELECT RAISE(ABORT, 'source capability status transition requires a valid review event');
+  SELECT RAISE(ABORT, 'source capability status transition requires its matching review event');
 END;
 
 CREATE TRIGGER source_capability_no_delete
