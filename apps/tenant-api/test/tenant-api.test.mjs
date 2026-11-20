@@ -3257,3 +3257,25 @@ test("production Worker entrypoint does not expose local CI identity fixture or 
   assert.equal(state.status, 404);
   assert.equal((await state.json()).error, "not_found");
 });
+
+
+test("expired membership invitation is rejected and expiration is recorded atomically", async () => {
+  const db = new MembershipInvitationDB({
+    invitationRows: [{ id: "invite-expired", tenant_id: "tenant-a", role: "viewer",
+      status: "pending", reason: "Expired access request",
+      expires_at: "2000-01-01T00:00:00.000Z" }],
+    batchResult: [{ meta: { changes: 1 } }, { meta: { changes: 1 } }],
+  });
+  const response = await worker.fetch(await request({ "x-nova-request-id": "invitation-expired-001" },
+    "https://private.internal/internal/v1/tenants/tenant-a/membership-invitations/invite-expired/accept",
+    "POST", JSON.stringify({ invitation_token: "A".repeat(43) })), env(db));
+  assert.equal(response.status, 410);
+  assert.equal((await response.json()).error, "membership_invitation_expired");
+  assert.equal(db.batchCalls.length, 1);
+  assert.equal(db.batchCalls[0].length, 2);
+  assert.match(db.batchCalls[0][0].sql,
+    /UPDATE tenant_membership_invitations SET status = 'expired'.*expires_at <= \?/);
+  assert.match(db.batchCalls[0][1].sql,
+    /INSERT INTO tenant_membership_invitation_events.*'expired'.*WHERE changes\(\) = 1/);
+  assert.equal(db.batchCalls[0][1].args[3], "operator@example.test");
+});
