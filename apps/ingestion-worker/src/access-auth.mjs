@@ -7,7 +7,7 @@ function decodeBase64Url(segment) {
   const normalized = segment.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
   const binary = atob(padded);
-  return Uint8Array.from((character) => character.charCodeAt(0));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function decodeJsonSegment(segment) {
