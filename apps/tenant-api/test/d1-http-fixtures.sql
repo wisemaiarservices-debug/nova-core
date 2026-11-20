@@ -157,6 +157,24 @@ VALUES
  'mapping-http-revocation','ci-measurement-reviewer','verified',
  'fixture:mapping-http-revocation-verification',NULL,'ci-mapping-http-revocation-verified');
 
+-- A profile is a stable reference to the exact verified source/sensor mapping.
+-- It does not assert that a calibration record is currently valid.
+INSERT INTO source_calibration_profiles
+(profile_ref,tenant_id,site_id,asset_id,source_id,mapping_id,parameter,unit,evidence_ref,created_by_subject)
+VALUES
+('profile-http-calibration','tenant-http-a','site-http-a','asset-http-grant','source-http-a',
+ 'mapping-http-revocation','ec','dS/m','fixture:calibration-profile','ci-human-subject');
+
+-- A separate mapping with no review event is used to prove pending mappings
+-- cannot be promoted into a calibration profile.
+INSERT INTO sensor_source_identity_mappings
+(id,tenant_id,site_id,asset_id,source_id,sensor_id,parameter,unit,effective_from,effective_to,
+ mapping_method,evidence_ref,registered_by_subject)
+VALUES
+('mapping-http-pending','tenant-http-a','site-http-a','asset-http-grant','source-http-a',
+ 'sensor-http-pending','ec','dS/m','2026-01-01T00:00:00Z',NULL,
+ 'CI pending mapping fixture','fixture:mapping-http-pending','ci-human-subject');
+
 INSERT INTO sensor_calibration_reviewers
 (tenant_id,site_id,reviewer_subject,reviewer_role,status,assigned_by_subject,assignment_evidence_ref)
 VALUES
