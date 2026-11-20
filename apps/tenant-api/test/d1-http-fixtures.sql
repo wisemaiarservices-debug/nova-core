@@ -198,3 +198,41 @@ VALUES
 ('obs-http-governance-revocation','site-http-a','tenant-http-a','asset-http-grant','source-http-a',
  'neoagro','ec',1.5,'dS/m','2026-05-10T10:00:00Z','ci-governance-revocation-observation',
  'verified','{"provider":"CI fixture provider","acquisition_method":"manual"}','[]');
+
+-- Synthetic source-capability lifecycle happy path. This proves that a capability
+-- starts pending, requires creator submission, and becomes approved only after an
+-- independently assigned active reviewer records the approval event.
+INSERT INTO source_capabilities
+(id,tenant_id,site_id,source_id,asset_id,module,metric,unit,measurement_kind,
+ quantity_semantics,acquisition_protocol,protocol_version,sampling_mode,interval_seconds,
+ max_age_seconds,max_future_skew_seconds,timezone,allowed_quality_flags_json,
+ calibration_required,calibration_profile_ref,data_rights_ref,evidence_ref,version,status,
+ created_by_subject)
+VALUES
+('capability-http-a','tenant-http-a','site-http-a','source-http-a',NULL,'neoagro','ec','dS/m',
+ 'measured','Electrical conductivity of irrigation water','manual-lab','1.0','interval',3600,
+ 7200,300,'Africa/Tunis','["estimated","suspect"]',0,NULL,
+ 'fixture:data-rights','fixture:capability-evidence',1,'pending','ci-human-subject');
+
+INSERT INTO source_capability_events
+(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
+VALUES
+('capability-http-a-submitted','capability-http-a','tenant-http-a','site-http-a','source-http-a',
+ 'ci-human-subject','submitted','fixture:capability-submission',NULL,'ci-capability-submit');
+
+INSERT INTO source_capability_events
+(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
+VALUES
+('capability-http-a-approved','capability-http-a','tenant-http-a','site-http-a','source-http-a',
+ 'ci-measurement-reviewer','approved','fixture:capability-review',NULL,'ci-capability-approve');
+
+CREATE TEMP TABLE ci_source_capability_assertions (
+  assertion TEXT PRIMARY KEY,
+  ok INTEGER NOT NULL CHECK (ok=1)
+);
+INSERT INTO ci_source_capability_assertions
+SELECT 'approved status', CASE WHEN status='approved' THEN 1 ELSE 0 END
+FROM source_capabilities WHERE id='capability-http-a';
+INSERT INTO ci_source_capability_assertions
+SELECT 'submission and approval events', CASE WHEN COUNT(*)=2 THEN 1 ELSE 0 END
+FROM source_capability_events WHERE capability_id='capability-http-a';
