@@ -133,7 +133,7 @@ export function validateSourceCapabilityDraft(draft, source) {
       fail("capability.calibration_profile_required", "$.calibration.profile_ref");
     }
     if (!draft.calibration.required && draft.calibration.profile_ref !== undefined &&
-        draft.calibration.profile_ref !== null && !id(draft.calibration.profile_ref, 500)) {
+        draft.calibration.profile_ref !== null && !reference(draft.calibration.profile_ref, 500)) {
       fail("capability.calibration_profile_invalid", "$.calibration.profile_ref");
     }
   }
