@@ -271,12 +271,21 @@ try {
     JSON.stringify({ role: "operator", reason: "CI invitation acceptance fixture" }));
   assert.equal(invitationCreated.response.status, 201, JSON.stringify(invitationCreated.body));
   assert.match(invitationCreated.body.data.invitation_token, /^[A-Za-z0-9_-]{43}$/);
-  const invitationAccepted = await throughGateway(
-    "/api/v1/tenants/tenant-http-a/membership-invitations/" +
-      invitationCreated.body.data.invitation_id + "/accept", accessToken("ci-invited-human"),
-    { "content-type": "application/json" }, "POST",
-    JSON.stringify({ invitation_token: invitationCreated.body.data.invitation_token }));
-  assert.equal(invitationAccepted.response.status, 201, JSON.stringify(invitationAccepted.body));
+  const invitationAcceptPath = "/api/v1/tenants/tenant-http-a/membership-invitations/" +
+    invitationCreated.body.data.invitation_id + "/accept";
+  const invitationAcceptPayload = JSON.stringify({
+    invitation_token: invitationCreated.body.data.invitation_token,
+  });
+  const invitationAcceptRace = await Promise.all([
+    throughGateway(invitationAcceptPath, accessToken("ci-invited-human"),
+      { "content-type": "application/json" }, "POST", invitationAcceptPayload),
+    throughGateway(invitationAcceptPath, accessToken("ci-invited-human"),
+      { "content-type": "application/json" }, "POST", invitationAcceptPayload),
+  ]);
+  const invitationRaceStatuses = invitationAcceptRace.map(result => result.response.status).sort();
+  assert.deepEqual(invitationRaceStatuses, [201, 409],
+    "concurrent acceptance of one invitation must have exactly one winner");
+  const invitationAccepted = invitationAcceptRace.find(result => result.response.status === 201);
   assert.equal(invitationAccepted.body.data.subject, "ci-invited-human");
   assert.equal(invitationAccepted.body.data.role, "operator");
 
