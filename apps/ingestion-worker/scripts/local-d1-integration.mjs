@@ -66,6 +66,30 @@ try {
   assert.equal(persisted.audit.length, 1);
   assert.equal(persisted.audit[0].tenant_id, "tenant-http-a");
 
+  // Race two identical submissions against the same disposable D1. The
+  // unique idempotency identity must yield one new acceptance and one replay.
+  const concurrentPayload = observation({
+    idempotency_key: "ci-real-d1-concurrent-retry-001",
+  });
+  const concurrent = await Promise.all([
+    submit(concurrentPayload, "req-concurrent-a"),
+    submit(concurrentPayload, "req-concurrent-b"),
+  ]);
+  assert.deepEqual(
+    concurrent.map(({ response }) => response.status).sort(),
+    [200, 201],
+    "concurrent identical submissions must produce one creation and one replay",
+  );
+  const concurrentIds = concurrent.map(({ body }) => body.observation_id);
+  assert.equal(new Set(concurrentIds).size, 1, "concurrent retries must resolve to one observation");
+  const concurrentState = await state(
+    concurrentPayload.source_id,
+    concurrentPayload.idempotency_key,
+  );
+  assert.equal(concurrentState.observation.id, concurrentIds[0]);
+  assert.equal(concurrentState.observation.tenant_id, "tenant-http-a");
+  assert.equal(concurrentState.audit.length, 1, "concurrent retries must create one audit event");
+
   const conflictPayload = observation({ value: 0.25 });
   const conflict = await submit(conflictPayload);
   assert.equal(conflict.response.status, 409, JSON.stringify(conflict.body));
