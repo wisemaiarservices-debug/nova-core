@@ -20,7 +20,9 @@ CREATE TABLE source_capabilities (
     AND metric GLOB '[a-z]*'
     AND metric NOT GLOB '*[^a-z0-9._-]*'
   ),
-  unit TEXT NOT NULL CHECK (length(trim(unit)) BETWEEN 1 AND 32\n    AND instr(unit,' ')=0 AND instr(unit,char(9))=0\n    AND instr(unit,char(10))=0 AND instr(unit,char(13))=0),
+  unit TEXT NOT NULL CHECK (length(trim(unit)) BETWEEN 1 AND 32
+    AND instr(unit,' ')=0 AND instr(unit,char(9))=0
+    AND instr(unit,char(10))=0 AND instr(unit,char(13))=0),
   measurement_kind TEXT NOT NULL CHECK (measurement_kind IN ('measured','derived')),
   quantity_semantics TEXT NOT NULL CHECK (length(trim(quantity_semantics)) BETWEEN 1 AND 500),
   acquisition_protocol TEXT NOT NULL CHECK (length(trim(acquisition_protocol)) BETWEEN 1 AND 80),
@@ -85,7 +87,9 @@ CREATE TABLE source_capability_events (
     OR (event_type IN ('rejected','revoked') AND length(trim(reason)) BETWEEN 1 AND 2000)
   )
 );
-CREATE UNIQUE INDEX source_capability_event_once\n  ON source_capability_events(capability_id, event_type);\nCREATE INDEX source_capability_events_timeline
+CREATE UNIQUE INDEX source_capability_event_once
+  ON source_capability_events(capability_id, event_type);
+CREATE INDEX source_capability_events_timeline
   ON source_capability_events(tenant_id, capability_id, occurred_at DESC, id);
 
 CREATE TRIGGER source_capability_insert_guard
