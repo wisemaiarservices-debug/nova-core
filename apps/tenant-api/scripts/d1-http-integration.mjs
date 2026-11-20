@@ -231,7 +231,7 @@ try {
   assert.equal(suspended.body.data.status, "inactive");
   const suspendedMemberRead = await throughGateway(
     "/api/v1/tenants/tenant-http-a/sites/site-http-a", accessToken("ci-lifecycle-member"));
-  assert.equal(suspendedMemberRead.response.status, 401,
+  assert.equal(suspendedMemberRead.response.status, 404,
     "suspended membership must lose access despite its still-active site grant");
 
 
@@ -255,7 +255,7 @@ try {
   assert.equal(membershipRevoked.body.data.status, "revoked");
   const revokedMemberRead = await throughGateway(
     "/api/v1/tenants/tenant-http-a/sites/site-http-a", accessToken("ci-lifecycle-member"));
-  assert.equal(revokedMemberRead.response.status, 401,
+  assert.equal(revokedMemberRead.response.status, 404,
     "revoked membership must lose access even though its site grant row remains");
 
 
