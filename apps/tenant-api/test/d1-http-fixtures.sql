@@ -226,13 +226,6 @@ VALUES
 ('capability-http-a-approved','capability-http-a','tenant-http-a','site-http-a','source-http-a',
  'ci-measurement-reviewer','approved','fixture:capability-review',NULL,'ci-capability-approve');
 
-CREATE TEMP TABLE ci_source_capability_assertions (
-  assertion TEXT PRIMARY KEY,
-  ok INTEGER NOT NULL CHECK (ok=1)
-);
-INSERT INTO ci_source_capability_assertions
-SELECT 'approved status', CASE WHEN status='approved' THEN 1 ELSE 0 END
-FROM source_capabilities WHERE id='capability-http-a';
-INSERT INTO ci_source_capability_assertions
-SELECT 'submission and approval events', CASE WHEN COUNT(*)=2 THEN 1 ELSE 0 END
-FROM source_capability_events WHERE capability_id='capability-http-a';
+-- The approved status is applied by the event trigger; the unique event index
+-- and review guards make duplicate, out-of-order, or self-approved events fail.
+-- Keep this fixture D1-compatible: no temporary tables or test-only schema objects.
