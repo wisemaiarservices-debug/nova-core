@@ -36,6 +36,8 @@ for (const [name, mutate] of [
   ["unsupported measurement kind", (p) => { p.measurement_kind = "assumed"; }],
   ["invalid protocol identifier", (p) => { p.acquisition_protocol = "Manual Lab"; }],
   ["blank protocol version", (p) => { p.protocol_version = " "; }],
+  ["protocol version with embedded NUL", (p) => { p.protocol_version = "2.1\\u0000vendor"; }],
+  ["protocol version with embedded newline", (p) => { p.protocol_version = "2.1\\nvendor"; }],
   ["unsupported sampling mode", (p) => { p.sampling_mode = "continuous"; }],
   ["missing interval seconds", (p) => { delete p.sampling_interval_seconds; }],
   ["event mode with interval seconds", (p) => { p.sampling_mode = "event"; p.sampling_interval_seconds = 1; }],
