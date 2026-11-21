@@ -73,7 +73,7 @@ async function persistLifecycleEvent({
   db, tenantId, siteId, entityId, sourceId, actor, eventType, reason,
   reviewedDigest, reviewedEvidenceDigest, idempotencyKey, requestId,
   entityKind, prefix, allowedEvents, currentState, eligibleStates,
-  excludedSubjects, cryptoProvider,
+  excludedSubjects, cryptoProvider, supportingEvidenceState,
 }) {
   const table = entityKind === "evidence" ? "source_evidence_event_requests" : "source_data_rights_event_requests";
   const eventTable = entityKind === "evidence" ? "source_evidence_events" : "source_data_rights_events";
@@ -89,6 +89,9 @@ async function persistLifecycleEvent({
   const digest = await sha256Hex(canonical.canonicalJson, cryptoProvider);
   const replay = replayOrConflict(prior, digest, prefix);
   if (replay) return replay;
+  if (entityKind === "rights" && eventType !== "revoked" && supportingEvidenceState !== "verified") {
+    throw new Error(prefix + "_supporting_evidence_unverified");
+  }
   if (!eligibleStates.includes(currentState)) throw new Error(prefix + "_lifecycle_conflict");
   if (excludedSubjects.includes(actor)) throw new Error(prefix + "_independent_review_required");
 
@@ -201,7 +204,6 @@ export async function recordSourceDataRightsEvent({
     "WHERE d.id=? AND d.tenant_id=? AND d.site_id=? LIMIT 2"
   ).bind(declarationId, tenantId, siteId));
   if (!entity) throw new Error("source_rights_not_found");
-  if (entity.evidence_state !== "verified") throw new Error("source_rights_supporting_evidence_unverified");
   const eligible = eventType === "revoked" ? ["approved"] : ["declared"];
   return persistLifecycleEvent({
     db, tenantId, siteId, entityId: declarationId, sourceId: entity.source_id,
@@ -213,6 +215,7 @@ export async function recordSourceDataRightsEvent({
     currentState: entity.current_state, eligibleStates: eligible,
     excludedSubjects: [entity.declared_by_subject, entity.uploaded_by_subject,
       entity.registered_by_subject].filter(Boolean),
+    supportingEvidenceState: entity.evidence_state,
     cryptoProvider,
   });
 }
