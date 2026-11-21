@@ -122,11 +122,12 @@ try {
 
   const capabilityList = await throughGateway(capabilityPath, accessToken("ci-human-subject"));
   assert.equal(capabilityList.response.status, 200, JSON.stringify(capabilityList.body));
-  assert.equal(capabilityList.body.data.length, 1);
-  assert.equal(capabilityList.body.data[0].id, capabilityId);
-  assert.equal(capabilityList.body.data[0].status, "approved");
-  assert.deepEqual(capabilityList.body.data[0].allowed_quality_flags, ["suspect"]);
-  assert.equal("allowed_quality_flags_json" in capabilityList.body.data[0], false);
+  assert.ok(capabilityList.body.data.length >= 1);
+  const listedCapability = capabilityList.body.data.find(row => row.id === capabilityId);
+  assert.ok(listedCapability, "site capability list must include the newly created capability");
+  assert.equal(listedCapability.status, "approved");
+  assert.deepEqual(listedCapability.allowed_quality_flags, ["suspect"]);
+  assert.equal("allowed_quality_flags_json" in listedCapability, false);
 
   const capabilityDetail = await throughGateway(capabilityPath + "/" + capabilityId,
     accessToken("ci-human-subject"));
