@@ -98,6 +98,9 @@ rejectContract("digit-leading acquisition protocol is rejected",
 rejectContract("colon in acquisition protocol is rejected",
   insertCapability("quality-flags-ci-protocol-colon", 133, "'[]'")
     .replace("'manual-lab'", "'manual:lab'"));
+rejectContract("protocol version cannot exceed 80 characters",
+  insertCapability("quality-flags-ci-protocol-version-length", 139, "'[]'")
+    .replace("'1.0'", "'" + "v".repeat(81) + "'"));
 rejectContract("protocol version cannot contain NUL",
   insertCapability("quality-flags-ci-protocol-version-nul", 136, "'[]'")
     .replace("'1.0'", "CAST('1.0' || char(0) AS TEXT)"));
