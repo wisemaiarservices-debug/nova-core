@@ -55,6 +55,9 @@ jobs:
       - name: Seed isolated local D1 HTTP fixtures
         working-directory: apps/tenant-api
         run: npx --yes wrangler@4.13.2 d1 execute DB --local --config wrangler.d1-test.toml --persist-to ./.wrangler-d1-test --file ./test/d1-http-fixtures.sql
+      - name: Execute read-only source rights impact inventory against disposable local D1
+        working-directory: apps/tenant-api
+        run: npx --yes wrangler@4.13.2 d1 execute DB --local --config wrangler.d1-test.toml --persist-to ./.wrangler-d1-test --file ./scripts/read-only-source-rights-impact-inventory.sql
       - name: Test source evidence and data-rights governance against local D1
         working-directory: apps/tenant-api
         run: node ./scripts/d1-source-evidence-rights-tests.mjs
