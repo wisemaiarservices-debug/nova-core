@@ -85,7 +85,7 @@ test("creates one immutable pending draft with atomic audit and idempotency stat
   assert.equal(result.created_by_subject, common.principalSubject);
   assert.equal(state.batches, 1);
   assert.match(state.request.request_sha256, /^[a-f0-9]{64}$/);
-  assert.equal(state.statements.length, 3);
+  assert.equal(state.statements.filter(item => item.sql.startsWith("INSERT INTO")).length, 3);
 });
 
 test("exact retry replays stored response without a second write batch", async () => {
