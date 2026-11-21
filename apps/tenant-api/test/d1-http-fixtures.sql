@@ -81,7 +81,7 @@ INSERT INTO source_capabilities
 VALUES
 ('capability-http-a','tenant-http-a','site-http-a','source-http-a',NULL,'neoagro','ec','dS/m',
  'measured','Electrical conductivity of irrigation water','manual-lab','1.0','interval',3600,
- 7200,300,'Africa/Tunis','["estimated","suspect"]',0,NULL,
+ 31536000,300,'Africa/Tunis','["estimated","suspect"]',0,NULL,
  'fixture:data-rights','fixture:capability-evidence',1,'pending','ci-human-subject');
 
 INSERT INTO source_capability_events
