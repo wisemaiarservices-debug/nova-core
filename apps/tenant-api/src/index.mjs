@@ -1613,11 +1613,6 @@ export default {
             return error("not_found", 404);
           }
           const siteId = sourceCapabilityList ? sourceCapabilityList[2] : sourceCapabilityDetail[2];
-          const statusFilter = url.searchParams.get("status");
-          if (statusFilter !== null &&
-              !["pending", "approved", "rejected", "revoked"].includes(statusFilter)) {
-            return error("source_capability_status_filter_invalid", 400);
-          }
           const site = await rows(env.DB.prepare(
             "SELECT s.id FROM sites s JOIN tenants t ON t.id=s.tenant_id " +
             "WHERE s.id=? AND s.tenant_id=? AND s.status='active' AND t.status='active' LIMIT 2"
@@ -1636,19 +1631,14 @@ export default {
             calibration_required: row.calibration_required === 1,
           });
           if (sourceCapabilityList) {
-            const limitRaw = url.searchParams.get("limit");
-            const limit = limitRaw === null ? 100 : Number(limitRaw);
-            if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-              return error("source_capability_limit_invalid", 400);
-            }
-            const sql = selectCapability +
+            const limit = 100;
+            const records = await rows(env.DB.prepare(
+              selectCapability +
               "JOIN sites s ON s.id=c.site_id AND s.tenant_id=c.tenant_id " +
               "JOIN tenants t ON t.id=c.tenant_id " +
               "WHERE c.tenant_id=? AND c.site_id=? AND s.status='active' AND t.status='active' " +
-              (statusFilter === null ? "" : "AND c.status=? ") +
-              "ORDER BY c.created_at DESC,c.id DESC LIMIT ?";
-            const bindings = statusFilter === null ? [tenant, siteId, limit] : [tenant, siteId, statusFilter, limit];
-            const records = await rows(env.DB.prepare(sql).bind(...bindings));
+              "ORDER BY c.created_at DESC,c.id DESC LIMIT ?"
+            ).bind(tenant, siteId, limit));
             return json({ data: records.map(normalize), limit, request_id: requestId });
           }
           const capabilityId = sourceCapabilityDetail[3];
