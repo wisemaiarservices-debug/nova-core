@@ -395,4 +395,4 @@ INSERT INTO source_data_rights_events
 VALUES
 ('event-http-rights-declared','source-rights:ci-route-rights','tenant-http-a','site-http-a',
  'source-http-a','ci-human-subject','declared',lower(hex(zeroblob(32))),
- lower(hex(zeroblob(32))),'req-http-rights-event-declared');
+ '1111111111111111111111111111111111111111111111111111111111111111','req-http-rights-event-declared');
