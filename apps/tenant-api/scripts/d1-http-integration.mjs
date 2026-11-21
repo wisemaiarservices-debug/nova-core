@@ -1353,6 +1353,65 @@ try {
   assert.equal(siteHistoryReactivated.body.data.events.some(event => event.event_type === "deactivated"), true);
   assert.equal(siteHistoryReactivated.body.data.events.some(event => event.event_type === "reactivated"), true);
 
+  // Exercise the new source evidence and data-rights review commands through
+  // the real signed Access gateway, private Tenant API Worker and local D1.
+  const evidenceRoutePath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/" +
+    "source-evidence/source-evidence:ci-route-evidence/verify";
+  const evidenceReviewBody = JSON.stringify({});
+  const evidenceReviewHeaders = {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-source-evidence-verify-route",
+    "x-nova-body-sha256": createHash("sha256").update(evidenceReviewBody).digest("hex"),
+  };
+  const evidenceVerified = await throughGateway(evidenceRoutePath,
+    accessToken("ci-measurement-reviewer"), evidenceReviewHeaders, "POST", evidenceReviewBody);
+  assert.equal(evidenceVerified.response.status, 201, JSON.stringify(evidenceVerified.body));
+  assert.equal(evidenceVerified.body.data.status, "verified");
+  assert.equal(evidenceVerified.body.replayed, false);
+  const evidenceVerifyReplay = await throughGateway(evidenceRoutePath,
+    accessToken("ci-measurement-reviewer"), evidenceReviewHeaders, "POST", evidenceReviewBody);
+  assert.equal(evidenceVerifyReplay.response.status, 200, JSON.stringify(evidenceVerifyReplay.body));
+  assert.equal(evidenceVerifyReplay.body.replayed, true);
+  assert.equal(evidenceVerifyReplay.body.data.event_id, evidenceVerified.body.data.event_id);
+
+  const evidenceConflictBody = JSON.stringify({ reason: "Changed intent must conflict" });
+  const evidenceConflictPath = evidenceRoutePath.replace("/verify", "/reject");
+  const evidenceConflict = await throughGateway(evidenceConflictPath,
+    accessToken("ci-measurement-reviewer"), {
+      ...evidenceReviewHeaders,
+      "x-nova-body-sha256": createHash("sha256").update(evidenceConflictBody).digest("hex"),
+    }, "POST", evidenceConflictBody);
+  assert.equal(evidenceConflict.response.status, 409, JSON.stringify(evidenceConflict.body));
+
+  const rightsRoutePath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/" +
+    "source-data-rights/source-rights:ci-route-rights/approve";
+  const rightsReviewBody = JSON.stringify({});
+  const rightsReviewHeaders = {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-source-rights-approve-route",
+    "x-nova-body-sha256": createHash("sha256").update(rightsReviewBody).digest("hex"),
+  };
+  const rightsApproved = await throughGateway(rightsRoutePath,
+    accessToken("ci-measurement-reviewer"), rightsReviewHeaders, "POST", rightsReviewBody);
+  assert.equal(rightsApproved.response.status, 201, JSON.stringify(rightsApproved.body));
+  assert.equal(rightsApproved.body.data.status, "approved");
+  const rightsApproveReplay = await throughGateway(rightsRoutePath,
+    accessToken("ci-measurement-reviewer"), rightsReviewHeaders, "POST", rightsReviewBody);
+  assert.equal(rightsApproveReplay.response.status, 200, JSON.stringify(rightsApproveReplay.body));
+  assert.equal(rightsApproveReplay.body.replayed, true);
+  assert.equal(rightsApproveReplay.body.data.event_id, rightsApproved.body.data.event_id);
+
+  const rightsRevokePath = rightsRoutePath.replace("/approve", "/revoke");
+  const rightsRevokeBody = JSON.stringify({ reason: "CI-only rights withdrawal test" });
+  const rightsRevoked = await throughGateway(rightsRevokePath,
+    accessToken("ci-measurement-reviewer"), {
+      "content-type": "application/json",
+      "Idempotency-Key": "ci-source-rights-revoke-route",
+      "x-nova-body-sha256": createHash("sha256").update(rightsRevokeBody).digest("hex"),
+    }, "POST", rightsRevokeBody);
+  assert.equal(rightsRevoked.response.status, 201, JSON.stringify(rightsRevoked.body));
+  assert.equal(rightsRevoked.body.data.status, "revoked");
+
   console.log("Local D1 configuration persistence integration passed: transactional authorization, v1–v5 sequencing under concurrent distinct keys, exact replay, concurrent idempotency race, conflicting-key rejection, audit/review consistency and late-statement rollback");
   console.log("Wrangler multi-Worker Service Binding + local D1 integration passed: signed RS256 JWT via test-only JWKS fixture, actual gateway-to-private-Worker Service Binding, authorized resource read, tenant-scoped criteria list/version reads, tenant-admin draft create, reviewer assignment/revocation, site-scoped human observation verification, independent ingestion-actor checks, auditable verification revocation and persisted registry resolution and sample comparison, cross-tenant denial, missing grant, invalid JWT rejection, caller trust-header/cookie isolation");
 } finally {
