@@ -11,7 +11,11 @@ function validId(value, max = 160) {
   return typeof value === "string" && value.length > 0 && value.length <= max &&
     value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
-function validSubject(value) {\n  return typeof value === "string" && value.length > 0 && value.length <= 200 &&\n    value.trim() === value && !/[\\u0000-\\u001f\\u007f]/.test(value);\n}\nfunction assertBatch(results) {
+function validSubject(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 200 &&
+    value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
+}
+function assertBatch(results) {
   if (!Array.isArray(results) || results.length !== 3 ||
       results.some(result => !result || result.success === false ||
         !result.meta || result.meta.changes !== 1)) {
