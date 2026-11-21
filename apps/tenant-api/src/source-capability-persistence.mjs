@@ -201,6 +201,17 @@ const CAPABILITY_EVENT_TYPES = new Set(["submitted", "approved", "rejected", "re
 const EVENT_STATUS = Object.freeze({
   submitted: "pending", approved: "approved", rejected: "rejected", revoked: "revoked",
 });
+function assertEventBatch(results) {
+  // The lifecycle event INSERT fires an AFTER INSERT status-transition trigger;
+  // D1 may include that trigger's UPDATE in the first statement's change count.
+  if (!Array.isArray(results) || results.length !== 3 ||
+      results.some(result => !result || result.success === false ||
+        !result.meta || !Number.isInteger(result.meta.changes)) ||
+      results[0].meta.changes < 1 ||
+      results[1].meta.changes !== 1 || results[2].meta.changes !== 1) {
+    throw new Error("source_capability_event_atomic_write_failed");
+  }
+}
 
 /** Append one governed lifecycle event with exact retry semantics. */
 export async function recordSourceCapabilityEvent({
@@ -320,7 +331,7 @@ export async function recordSourceCapabilityEvent({
       idempotencyKey, requestSha256, eventId, eventType, requestId, responseJson),
   ];
   try {
-    assertBatch(await db.batch(statements));
+    assertEventBatch(await db.batch(statements));
   } catch (error) {
     const raced = replay(await readPrior());
     if (raced) return raced;
