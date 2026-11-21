@@ -344,7 +344,7 @@ INSERT INTO source_evidence_events
 (id,evidence_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_sha256,request_id)
 VALUES
 ('event-http-evidence-route-registered','source-evidence:ci-route-evidence','tenant-http-a',
- 'site-http-a','source-http-a','ci-human-subject','registered',lower(hex(zeroblob(32))),
+ 'site-http-a','source-http-a','ci-human-subject','registered','2222222222222222222222222222222222222222222222222222222222222222',
  'req-http-evidence-route-registered'),
 ('event-http-rights-evidence-registered','source-evidence:ci-rights-evidence','tenant-http-a',
  'site-http-a','source-http-a','ci-human-subject','registered','1111111111111111111111111111111111111111111111111111111111111111',
