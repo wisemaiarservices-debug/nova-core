@@ -98,6 +98,15 @@ rejectContract("digit-leading acquisition protocol is rejected",
 rejectContract("colon in acquisition protocol is rejected",
   insertCapability("quality-flags-ci-protocol-colon", 133, "'[]'")
     .replace("'manual-lab'", "'manual:lab'"));
+rejectContract("protocol version cannot contain NUL",
+  insertCapability("quality-flags-ci-protocol-version-nul", 136, "'[]'")
+    .replace("'1.0'", "CAST('1.0' || char(0) AS TEXT)"));
+rejectContract("protocol version cannot contain ASCII controls",
+  insertCapability("quality-flags-ci-protocol-version-control", 137, "'[]'")
+    .replace("'1.0'", "CAST('1.0' || char(1) AS TEXT)"));
+rejectContract("protocol version cannot have Unicode boundary whitespace",
+  insertCapability("quality-flags-ci-protocol-version-bom", 138, "'[]'")
+    .replace("'1.0'", "CAST(char(65279) || '1.0' AS TEXT)"));
 rejectContract("timezone must have canonical IANA-style structure",
   insertCapability("quality-flags-ci-bad-timezone", 113, "'[]'")
     .replace("'Africa/Tunis'", "'/Africa/Tunis'"));
