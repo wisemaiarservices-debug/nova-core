@@ -102,4 +102,33 @@ rejectContract("unit cannot contain Unicode whitespace",
   insertCapability("quality-flags-ci-unicode-space-unit", 117, "'[]'")
     .replace("'dS/m'", "'dS/ｍ　m'"));
 
+
+rejectContract("metric longer than 120 characters is rejected",
+  insertCapability("quality-flags-ci-metric-too-long", 118, "'[]'")
+    .replace("'ec'", "'" + "a".repeat(121) + "'"));
+rejectContract("unit longer than 32 characters is rejected",
+  insertCapability("quality-flags-ci-unit-too-long", 119, "'[]'")
+    .replace("'dS/m'", "'" + "u".repeat(33) + "'"));
+rejectContract("quantity semantics longer than 500 characters is rejected",
+  insertCapability("quality-flags-ci-semantics-too-long", 120, "'[]'")
+    .replace("'CI quality flags guard'", "'" + "s".repeat(501) + "'"));
+rejectContract("protocol longer than 80 characters is rejected",
+  insertCapability("quality-flags-ci-protocol-too-long", 121, "'[]'")
+    .replace("'manual-lab'", "'" + "p".repeat(81) + "'"));
+rejectContract("timezone longer than 80 characters is rejected",
+  insertCapability("quality-flags-ci-timezone-too-long", 122, "'[]'")
+    .replace("'Africa/Tunis'", "'" + "A".repeat(81) + "'"));
+rejectContract("data-rights reference longer than 500 characters is rejected",
+  insertCapability("quality-flags-ci-rights-too-long", 123, "'[]'")
+    .replace("'fixture:rights'", "'" + "r".repeat(501) + "'"));
+rejectContract("evidence reference longer than 500 characters is rejected",
+  insertCapability("quality-flags-ci-evidence-too-long", 124, "'[]'")
+    .replace("'fixture:quality-flags'", "'" + "e".repeat(501) + "'"));
+rejectContract("unit cannot contain ASCII control characters",
+  insertCapability("quality-flags-ci-unit-control", 125, "'[]'")
+    .replace("'dS/m'", "CAST('dS' || char(1) || '/m' AS TEXT)"));
+rejectContract("unit cannot contain a byte-order mark",
+  insertCapability("quality-flags-ci-unit-bom", 126, "'[]'")
+    .replace("'dS/m'", "CAST('dS' || char(65279) || '/m' AS TEXT)"));
+
 console.log("Source capability quality-flag and capability contract D1 tests passed");
