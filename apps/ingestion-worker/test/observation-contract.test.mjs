@@ -32,6 +32,14 @@ test("accepts a complete scalar observation and normalizes its timestamp", () =>
 
 for (const [name, mutate] of [
   ["unknown top-level field", (p) => { p.verified = true; }],
+  ["missing capability id", (p) => { delete p.source_capability_id; }],
+  ["unsupported measurement kind", (p) => { p.measurement_kind = "assumed"; }],
+  ["invalid protocol identifier", (p) => { p.acquisition_protocol = "Manual Lab"; }],
+  ["blank protocol version", (p) => { p.protocol_version = " "; }],
+  ["unsupported sampling mode", (p) => { p.sampling_mode = "continuous"; }],
+  ["missing interval seconds", (p) => { delete p.sampling_interval_seconds; }],
+  ["event mode with interval seconds", (p) => { p.sampling_mode = "event"; p.sampling_interval_seconds = 1; }],
+  ["interval mode with fractional seconds", (p) => { p.sampling_interval_seconds = 1.5; }],
   ["unknown provenance field", (p) => { p.provenance.actor = "caller"; }],
   ["unsupported module", (p) => { p.module = "unknown"; }],
   ["blank site", (p) => { p.site_id = " "; }],
