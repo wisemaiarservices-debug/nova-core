@@ -41,7 +41,7 @@ function observation(id, key, capability, extra = {}) {
      sampling_mode,sampling_interval_seconds)
     VALUES ('${id}','site-http-a','tenant-http-a',${values.asset},'${values.source || "source-http-a"}',
       'neoagro','${values.metric || "ec"}',1.5,'${values.unit || "dS/m"}',${values.observed},
-      '${key}','unverified','{}',${values.flags},'${capability}','${values.kind}',
+      '${key}','unverified','{}',${values.flags},${capabilityValue},'${values.kind}',
       '${values.protocol}','${values.version}',${values.mode},${values.interval})`;
 }
 
