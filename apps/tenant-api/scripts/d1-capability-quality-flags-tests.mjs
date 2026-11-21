@@ -147,6 +147,12 @@ rejectContract("unit cannot contain a byte-order mark",
 rejectContract("quantity semantics cannot have surrounding whitespace",
   insertCapability("quality-flags-ci-semantics-padding", 127, "'[]'")
     .replace("'CI quality flags guard'", "' CI quality flags guard '"));
+rejectContract("quantity semantics cannot have leading or trailing non-breaking space",
+  insertCapability("quality-flags-ci-semantics-nbsp", 134, "'[]'")
+    .replace("'CI quality flags guard'", "CAST(char(160) || 'CI quality flags guard' AS TEXT)"));
+rejectContract("quantity semantics cannot have trailing byte-order mark",
+  insertCapability("quality-flags-ci-semantics-bom", 135, "'[]'")
+    .replace("'CI quality flags guard'", "CAST('CI quality flags guard' || char(65279) AS TEXT)"));
 rejectContract("quantity semantics cannot contain NUL",
   insertCapability("quality-flags-ci-semantics-nul", 128, "'[]'")
     .replace("'CI quality flags guard'", "CAST('invalid' || char(0) AS TEXT)"));
