@@ -25,7 +25,7 @@ function hasOnlyKeys(value, allowed) {
 }
 
 function requiredString(value, max, field) {
-  if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > max) {
+  if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > max || /[\u0000-\u001f\u007f]/.test(value)) {
     throw new Error("invalid_" + field);
   }
 }
