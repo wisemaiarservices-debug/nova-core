@@ -128,19 +128,19 @@ execute("approved asset capability accepts an exact current observation",
 expectRejected("missing capability identity",
   observation("obs-capability-guard-no-id","ci-capability-guard-no-id",null));
 expectRejected("protocol mismatch",
-  observation("obs-capability-guard-protocol","ci-capability-guard-protocol","capability-http-a",
+  observation("obs-capability-guard-protocol","ci-capability-guard-protocol","capability-http-guard-site",
     { protocol: "other-protocol" }));
 expectRejected("disallowed quality flag",
-  observation("obs-capability-guard-quality","ci-capability-guard-quality","capability-http-a",
+  observation("obs-capability-guard-quality","ci-capability-guard-quality","capability-http-guard-site",
     { flags: "json_array('trusted')" }));
 expectRejected("site capability cannot inherit to an asset",
-  observation("obs-capability-guard-asset-scope","ci-capability-guard-asset-scope","capability-http-a",
+  observation("obs-capability-guard-asset-scope","ci-capability-guard-asset-scope","capability-http-guard-site",
     { asset: "'asset-http-grant" }));
 expectRejected("stale observation is denied",
-  observation("obs-capability-guard-stale","ci-capability-guard-stale","capability-http-a",
+  observation("obs-capability-guard-stale","ci-capability-guard-stale","capability-http-guard-site",
     { observed: "strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 years')" }));
 expectRejected("future observation outside approved skew is denied",
-  observation("obs-capability-guard-future","ci-capability-guard-future","capability-http-a",
+  observation("obs-capability-guard-future","ci-capability-guard-future","capability-http-guard-site",
     { observed: "strftime('%Y-%m-%dT%H:%M:%fZ','now','+1 day')" }));
 
 execute("calibration revocation event is appended",
@@ -151,16 +151,16 @@ execute("calibration revocation event is appended",
       'cal-http-guard','ci-measurement-reviewer','calibration_reviewer','revoked',
       'fixture:calibration-revocation', 'CI revocation test','ci-calibration-revoke-after-positive')`);
 expectRejected("revoked calibration cannot authorize a new observation",
-  observation("obs-capability-guard-revoked-cal","ci-capability-guard-revoked-cal","capability-http-governance",
+  observation("obs-capability-guard-revoked-cal","ci-capability-guard-revoked-cal","capability-http-guard-cal",
     { asset: "'asset-http-grant" }));
 
 execute("capability revocation event is appended",
   `INSERT INTO source_capability_events
     (id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
-    VALUES ('capability-http-guard-site-revoked-ci','capability-http-guard-site','tenant-http-a','site-http-a','source-http-a',
+    VALUES ('capability-http-guard-site-revoked-ci','capability-http-guard-site','tenant-http-a','site-http-a','source-http-grant',
       'ci-measurement-reviewer','revoked','fixture:capability-revocation','CI revocation test',
       'ci-capability-guard-revoke-after-positive')`);
 expectRejected("revoked capability cannot authorize a new observation",
-  observation("obs-capability-guard-revoked-cap","ci-capability-guard-revoked-cap","capability-http-a"));
+  observation("obs-capability-guard-revoked-cap","ci-capability-guard-revoked-cap","capability-http-guard-site"));
 
 console.log("Observation capability commit-time D1 tests passed");
