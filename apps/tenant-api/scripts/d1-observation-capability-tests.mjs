@@ -123,7 +123,7 @@ execute("approved site capability accepts an exact current observation",
   observation("obs-capability-guard-positive","ci-capability-guard-positive","capability-http-guard-site"));
 execute("approved asset capability accepts an exact current observation",
   observation("obs-capability-guard-calibrated","ci-capability-guard-calibrated","capability-http-guard-cal",
-    { asset: "'asset-http-grant" }));
+    { asset: "'asset-http-grant'" }));
 
 expectRejected("missing capability identity",
   observation("obs-capability-guard-no-id","ci-capability-guard-no-id",null));
@@ -135,7 +135,7 @@ expectRejected("disallowed quality flag",
     { flags: "json_array('trusted')" }));
 expectRejected("site capability cannot inherit to an asset",
   observation("obs-capability-guard-asset-scope","ci-capability-guard-asset-scope","capability-http-guard-site",
-    { asset: "'asset-http-grant" }));
+    { asset: "'asset-http-grant'" }));
 expectRejected("stale observation is denied",
   observation("obs-capability-guard-stale","ci-capability-guard-stale","capability-http-guard-site",
     { observed: "strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 years')" }));
@@ -152,7 +152,7 @@ execute("calibration revocation event is appended",
       'fixture:calibration-revocation', 'CI revocation test','ci-calibration-revoke-after-positive')`);
 expectRejected("revoked calibration cannot authorize a new observation",
   observation("obs-capability-guard-revoked-cal","ci-capability-guard-revoked-cal","capability-http-guard-cal",
-    { asset: "'asset-http-grant" }));
+    { asset: "'asset-http-grant'" }));
 
 execute("capability revocation event is appended",
   `INSERT INTO source_capability_events
