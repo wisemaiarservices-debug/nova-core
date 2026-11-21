@@ -322,7 +322,7 @@ INSERT INTO source_evidence_documents
  uploaded_by_subject,request_id)
 VALUES
 ('source-evidence:ci-route-evidence','tenant-http-a','site-http-a','source-http-a',
- 'data_license','route-evidence.pdf','application/pdf',5,lower(hex(zeroblob(32))),X'255044462D',
+ 'data_license','route-evidence.pdf','application/pdf',5,'2222222222222222222222222222222222222222222222222222222222222222',X'255044462D',
  'CI route provider','CI-ROUTE-EVIDENCE','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',
  '2027-01-01T00:00:00Z','ci-human-subject','req-http-evidence-route-create'),
 ('source-evidence:ci-rights-evidence','tenant-http-a','site-http-a','source-http-a',
