@@ -2038,7 +2038,13 @@ export default {
       const type = routeType === "audit-events" ? "audit_event" : routeType.slice(0, -1);
       const record = await readResource(env.DB, subject, tenant, type, resourceId);
       return record ? json({ data: record, request_id: requestId }) : error("not_found", 404);
-    } catch {
+    } catch (cause) {
+      if (/^\/internal\/v1\/tenants\/[^/]+\/sites\/[^/]+\/(?:source-evidence|source-data-rights)\//.test(new URL(request.url).pathname)) {
+        // Diagnostic is deliberately code-only; never log tenant payloads or SQL details.
+        console.error("source governance route failed outside lifecycle handler", {
+          error_name: cause instanceof Error ? cause.name : "unknown",
+        });
+      }
       return error("storage_unavailable", 503);
     }
   },
