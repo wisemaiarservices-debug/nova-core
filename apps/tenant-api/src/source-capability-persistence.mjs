@@ -150,7 +150,7 @@ export async function createSourceCapabilityDraft({
       "calibration_profile_ref,data_rights_ref,evidence_ref,version,status,created_by_subject) " +
       "SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending',? " +
       "WHERE EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id=m.tenant_id " +
-      "JOIN sites s ON s.id=t.id OR (s.tenant_id=t.id AND s.id=?) " +
+      "JOIN sites s ON s.tenant_id=t.id AND s.id=? " +
       "WHERE m.tenant_id=? AND m.subject=? AND m.status='active' AND t.status='active' " +
       "AND s.status='active' AND m.role IN ('tenant_owner','tenant_admin')) " +
       "AND EXISTS (SELECT 1 FROM tenant_resource_grants WHERE tenant_id=? AND subject=? " +
