@@ -148,7 +148,7 @@ export async function createSourceCapabilityDraft({
       "acquisition_protocol,protocol_version,sampling_mode,interval_seconds,max_age_seconds," +
       "max_future_skew_seconds,timezone,allowed_quality_flags_json,calibration_required," +
       "calibration_profile_ref,data_rights_ref,evidence_ref,version,status,created_by_subject) " +
-      "SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending',? " +
+      "SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',? " +
       "WHERE EXISTS (SELECT 1 FROM tenant_memberships m JOIN tenants t ON t.id=m.tenant_id " +
       "JOIN sites s ON s.tenant_id=t.id AND s.id=? " +
       "WHERE m.tenant_id=? AND m.subject=? AND m.status='active' AND t.status='active' " +
