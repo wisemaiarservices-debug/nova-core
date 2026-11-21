@@ -326,7 +326,7 @@ VALUES
  'CI route provider','CI-ROUTE-EVIDENCE','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',
  '2027-01-01T00:00:00Z','ci-human-subject','req-http-evidence-route-create'),
 ('source-evidence:ci-rights-evidence','tenant-http-a','site-http-a','source-http-a',
- 'data_license','rights-evidence.pdf','application/pdf',5,lower(hex(zeroblob(32))),X'255044462D',
+ 'data_license','rights-evidence.pdf','application/pdf',5,'1111111111111111111111111111111111111111111111111111111111111111',X'255044462D',
  'CI rights provider','CI-RIGHTS-EVIDENCE','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',
  '2027-01-01T00:00:00Z','ci-human-subject','req-http-rights-evidence-create');
 
@@ -347,7 +347,7 @@ VALUES
  'site-http-a','source-http-a','ci-human-subject','registered',lower(hex(zeroblob(32))),
  'req-http-evidence-route-registered'),
 ('event-http-rights-evidence-registered','source-evidence:ci-rights-evidence','tenant-http-a',
- 'site-http-a','source-http-a','ci-human-subject','registered',lower(hex(zeroblob(32))),
+ 'site-http-a','source-http-a','ci-human-subject','registered','1111111111111111111111111111111111111111111111111111111111111111',
  'req-http-rights-evidence-registered');
 
 INSERT INTO audit_events
@@ -361,7 +361,7 @@ INSERT INTO source_evidence_events
 (id,evidence_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_sha256,request_id)
 VALUES
 ('event-http-rights-evidence-verified','source-evidence:ci-rights-evidence','tenant-http-a',
- 'site-http-a','source-http-a','ci-measurement-reviewer','verified',lower(hex(zeroblob(32))),
+ 'site-http-a','source-http-a','ci-measurement-reviewer','verified','1111111111111111111111111111111111111111111111111111111111111111',
  'req-http-rights-evidence-verified');
 
 INSERT INTO audit_events
@@ -377,7 +377,7 @@ INSERT INTO source_data_rights_declarations
  restrictions_json,effective_from,effective_to,declaration_sha256,declared_by_subject,request_id)
 VALUES
 ('source-rights:ci-route-rights','tenant-http-a','site-http-a','source-http-a',
- 'source-evidence:ci-rights-evidence',lower(hex(zeroblob(32))),
+ 'source-evidence:ci-rights-evidence','1111111111111111111111111111111111111111111111111111111111111111',
  'CI rights provider','CI tenant controller','license','CI-ROUTE-RIGHTS',
  '["measurement_ingestion","analytics"]','[]','2026-01-01T00:00:00Z','2027-01-01T00:00:00Z',
  lower(hex(zeroblob(32))),'ci-human-subject','req-http-rights-declared');
