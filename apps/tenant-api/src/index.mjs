@@ -1123,6 +1123,7 @@ export default {
     const siteList = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites$/);
     const assetCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets$/);
     const sourceRegister = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources$/);
+    const sourceCapabilityCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-capabilities$/);
     const sourceReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/assign$/);
     const sourceReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/revoke$/);
     const sourceVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/verification$/);
