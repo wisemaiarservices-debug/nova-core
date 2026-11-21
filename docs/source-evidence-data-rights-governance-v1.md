@@ -110,3 +110,26 @@ Responses must not disclose whether another tenant's document or declaration exi
 ## Immediate implementation boundary
 
 The first code slice should be the schema + D1 guards + disposable D1 tests. Do not wire API routes, modify the observation trigger, backfill records, change remote D1, Cloudflare settings, deployments, secrets, production data or paid resources in the same step. Do not merge or deploy without explicit authorization and release-gate evidence.
+
+## Implementation status — migration 0060
+
+Implemented in `apps/api/migrations/0060_source_evidence_and_data_rights_governance.sql`:
+
+- Immutable tenant/site/source-scoped PDF evidence documents, including bounded original bytes, SHA-256 field, issuer/reference metadata and effective dates.
+- Append-only evidence events: registered, verified, rejected and revoked. Review decisions must match the stored digest and require an active assigned reviewer distinct from the uploader and source registrant.
+- Immutable source data-rights declarations tied by composite scope and exact supporting-evidence digest.
+- Append-only rights events: declared, approved, rejected and revoked. Approval requires the exact declaration/evidence digests, independent active reviewer authority and a currently effective declaration.
+- Controlled permitted-purpose vocabulary: measurement ingestion, storage, quality assessment, analytics, model training, sharing and publication. Model-training permission must be explicitly listed; it is never implied by analytics.
+- Append-only and audit-linked insert guards; cross-scope references fail closed.
+
+Local D1 regression coverage is in `apps/tenant-api/scripts/d1-source-evidence-rights-tests.mjs`, added to `.github/workflows/ci.yml`. Exact-head CI run `44955053933` for commit `6d3e18760cea7d85bf35ed8e151f837b8fef967c` passed all three jobs: API tests, research/raster tests and Tenant Worker tests. The Tenant Worker job applied the full ordered migration chain through 0060 and passed the new evidence/rights tests plus all existing capability, gateway, observation and quality-flag D1 suites.
+
+### Explicit limits of this slice
+
+- No evidence upload/read/review or rights declaration/review API routes have been added.
+- No capability approval trigger or observation commit trigger consumes these new registries yet. Existing capability and observation paths are unchanged; the new tables are not yet a production enforcement gate.
+- SHA-256 is stored and reviewer decisions are bound to the declared digest. The future upload/read application layer must calculate and verify SHA-256 against the actual PDF bytes; SQLite does not calculate the document digest.
+- No idempotency ledger has yet been added for evidence or rights create/review commands; request IDs are unique, but they are not a substitute for retry-safe idempotency keys.
+- No automatic legal interpretation, issuer authenticity verification, AI approval, public URL dereferencing, or customer-data backfill is implemented.
+
+Next safe step: add scoped idempotency ledgers and pure persistence/validation functions, then private Tenant API routes. Only after those are tested should a separate migration re-check evidence and rights state at capability approval and observation commit. A read-only inventory of existing approved capabilities is required before any enforcement cutover.
