@@ -129,7 +129,25 @@ Local D1 regression coverage is in `apps/tenant-api/scripts/d1-source-evidence-r
 - No evidence upload/read/review or rights declaration/review API routes have been added.
 - No capability approval trigger or observation commit trigger consumes these new registries yet. Existing capability and observation paths are unchanged; the new tables are not yet a production enforcement gate.
 - SHA-256 is stored and reviewer decisions are bound to the declared digest. The future upload/read application layer must calculate and verify SHA-256 against the actual PDF bytes; SQLite does not calculate the document digest.
-- No idempotency ledger has yet been added for evidence or rights create/review commands; request IDs are unique, but they are not a substitute for retry-safe idempotency keys.
+- Scoped idempotency ledgers have now been added for evidence and rights create/event commands. Application persistence must still implement canonical request hashing, replay responses and 409 conflict behavior against these ledgers.
 - No automatic legal interpretation, issuer authenticity verification, AI approval, public URL dereferencing, or customer-data backfill is implemented.
 
 Next safe step: add scoped idempotency ledgers and pure persistence/validation functions, then private Tenant API routes. Only after those are tested should a separate migration re-check evidence and rights state at capability approval and observation commit. A read-only inventory of existing approved capabilities is required before any enforcement cutover.
+
+## Implementation status — migration 0061 idempotency
+
+Implemented in `apps/api/migrations/0061_source_evidence_rights_idempotency.sql`:
+
+- Separate immutable request ledgers for evidence document creation, evidence lifecycle events, rights declaration creation and rights lifecycle events.
+- Idempotency keys are unique within tenant/site/source-or-record/actor scope.
+- Each ledger row stores a canonical request SHA-256 supplied by the application, exact entity/event ID, unique request ID and stable JSON response.
+- D1 insert guards bind each ledger row to the matching immutable entity/event and corresponding audit record; composite foreign keys prevent scope substitution.
+- Update/delete is denied for all ledger records.
+
+The D1 test suite now exercises creation/event ledger persistence, duplicate scoped key rejection, immutable ledgers and the existing evidence/rights lifecycle constraints.
+
+Exact-head CI run `44955507211` for `0f57f3c361fe9b0047d304a593c67b5ebd83b10a` passed all three jobs: API, research/raster and Tenant Worker. The Worker job applied ordered migrations through 0061 and passed the evidence/rights suite, capability lifecycle/idempotency, calibration, gateway integration, observation commit and quality-flag suites.
+
+### Remaining implementation work
+
+The ledgers are schema-only. Application persistence must still calculate canonical payload hashes, implement same-key/same-payload replay, reject same-key/different-payload requests, and handle concurrent insert races atomically. Evidence bytes must be SHA-256 hashed and verified by the application. Private API routes, capability approval enforcement, observation-time rights rechecks and operator UI remain unimplemented. No live enforcement claim is made.
