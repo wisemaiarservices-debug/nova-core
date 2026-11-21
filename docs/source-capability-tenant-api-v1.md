@@ -89,3 +89,15 @@ The API should return a conflict for invalid transitions. It must not invent a r
 - No live device, sensor or telemetry registration claim.
 - No automatic AI approval, actuation or infrastructure action.
 - No remote D1, Cloudflare, secret, customer-data or paid-resource changes.
+
+## Draft-creation persistence implementation (0058)
+
+A first bounded persistence slice is now present on the PR branch:
+
+- Migration `0058_source_capability_creation_idempotency.sql` adds an immutable creation-request ledger scoped by tenant, site, actor and idempotency key.
+- The D1 insert guard requires the exact pending capability draft, active tenant/site, active owner/admin membership, exact site read grant, and matching `source_capability.created` audit event.
+- The ledger stores a lowercase SHA-256 request digest, capability ID, request ID and canonical response. Updates/deletes are denied.
+- `source-capability-persistence.mjs` provides a persistence function that derives tenant/site/actor from trusted handler inputs, resolves a verified site-bound source, checks owner/admin and site grant, validates the draft, hashes canonical input, and atomically batches capability + audit + idempotency rows. Exact replay returns the stored response; same key with a different digest conflicts.
+- `d1-source-capability-idempotency-tests.mjs` covers valid persistence rows, duplicate scoped keys, cross-tenant mismatch, missing matching audit, invalid digest, and immutable ledger behavior. CI now invokes this test after applying ordered migrations and seeding disposable local D1.
+
+The function is not yet routed from `index.mjs`; it is not an exposed API. Submission/review/revocation endpoints, route-level authorization tests, and request/event idempotency remain future work. The code path must pass exact-head CI before it is treated as validated. No remote D1 or deployment action is authorized.
