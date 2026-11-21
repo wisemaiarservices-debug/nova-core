@@ -101,3 +101,13 @@ A first bounded persistence slice is now present on the PR branch:
 - `d1-source-capability-idempotency-tests.mjs` covers valid persistence rows, duplicate scoped keys, cross-tenant mismatch, missing matching audit, invalid digest, and immutable ledger behavior. CI now invokes this test after applying ordered migrations and seeding disposable local D1.
 
 The function is not yet routed from `index.mjs`; it is not an exposed API. Submission/review/revocation endpoints, route-level authorization tests, and request/event idempotency remain future work. The code path must pass exact-head CI before it is treated as validated. No remote D1 or deployment action is authorized.
+
+## Private Tenant API draft-create route
+
+The first write route is now exposed behind the existing authenticated private Tenant API gateway:
+
+`POST /internal/v1/tenants/{tenant}/sites/{site}/source-capabilities`
+
+It accepts only the capability draft contract (no caller-supplied tenant/site/creator/status), requires the existing active owner/admin membership and exact site read grant, and delegates to the atomic persistence helper. It requires `x-nova-idempotency-key`; the gateway-verified request digest and request ID are passed through the existing private request envelope. A successful first create returns 201, an exact replay returns 200, and a same-key/different-payload conflict returns 409. Unknown source, unauthorized actor, or mismatched tenant/site remain non-enumerating 404 responses.
+
+The local gateway + private Worker integration suite now exercises create, exact replay, changed-payload conflict, cross-tenant source mismatch, and reviewer-role denial. This does not yet implement capability listing/detail, submission, approval, rejection, or revocation. The API remains incomplete and the PR remains draft.
