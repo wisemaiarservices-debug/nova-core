@@ -45,6 +45,12 @@ function observation(id, key, capability, extra = {}) {
       '${values.protocol}','${values.version}',${values.mode},${values.interval})`;
 }
 
+
+const diagnostic = spawnSync("npx", [...args,
+  "SELECT c.id,c.status,c.tenant_id,c.site_id,c.source_id,c.asset_id,c.module,c.metric,c.unit,c.measurement_kind,c.acquisition_protocol,c.protocol_version,c.sampling_mode,c.interval_seconds,c.max_age_seconds,c.max_future_skew_seconds,src.site_id AS source_site,src.verification_status,t.status AS tenant_status,s.status AS site_status,(SELECT e.event_type FROM source_capability_events e WHERE e.capability_id=c.id ORDER BY e.rowid DESC LIMIT 1) AS latest_event FROM source_capabilities c JOIN sources src ON src.id=c.source_id JOIN tenants t ON t.id=c.tenant_id JOIN sites s ON s.id=c.site_id WHERE c.id='capability-http-a'"], { encoding: "utf8" });
+assert.equal(diagnostic.status, 0, diagnostic.stderr || "capability diagnostic failed");
+console.log("Capability fixture diagnostic: " + diagnostic.stdout);
+
 execute("approved site capability accepts an exact current observation",
   observation("obs-capability-guard-positive","ci-capability-guard-positive","capability-http-a"));
 execute("approved asset capability accepts an exact current observation",
