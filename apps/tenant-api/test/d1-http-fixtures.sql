@@ -301,3 +301,98 @@ VALUES
  'verified','{"provider":"CI fixture provider","acquisition_method":"manual"}','[]',
  'capability-http-governance','measured','manual-lab','1.0','interval',3600);
 
+
+
+-- Evidence and rights fixtures for the authenticated lifecycle routes. The
+-- first document remains registered/pending review; the second is independently
+-- verified and supports the pending rights declaration.
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-evidence-route-create','tenant-http-a','operator','ci-human-subject',
+ 'source_evidence.registered','source_evidence_document','source-evidence:ci-route-evidence',
+ 'req-http-evidence-route-create','{}'),
+('audit-http-rights-evidence-create','tenant-http-a','operator','ci-human-subject',
+ 'source_evidence.registered','source_evidence_document','source-evidence:ci-rights-evidence',
+ 'req-http-rights-evidence-create','{}');
+
+INSERT INTO source_evidence_documents
+(id,tenant_id,site_id,source_id,document_type,file_name,media_type,byte_length,sha256,
+ document_bytes,issuer_name,document_reference,issued_at,effective_from,effective_to,
+ uploaded_by_subject,request_id)
+VALUES
+('source-evidence:ci-route-evidence','tenant-http-a','site-http-a','source-http-a',
+ 'data_license','route-evidence.pdf','application/pdf',5,lower(hex(zeroblob(32))),X'255044462D',
+ 'CI route provider','CI-ROUTE-EVIDENCE','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',
+ '2027-01-01T00:00:00Z','ci-human-subject','req-http-evidence-route-create'),
+('source-evidence:ci-rights-evidence','tenant-http-a','site-http-a','source-http-a',
+ 'data_license','rights-evidence.pdf','application/pdf',5,lower(hex(zeroblob(32))),X'255044462D',
+ 'CI rights provider','CI-RIGHTS-EVIDENCE','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',
+ '2027-01-01T00:00:00Z','ci-human-subject','req-http-rights-evidence-create');
+
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-evidence-route-registered','tenant-http-a','operator','ci-human-subject',
+ 'source_evidence.registered','source_evidence_document','source-evidence:ci-route-evidence',
+ 'req-http-evidence-route-registered','{}'),
+('audit-http-rights-evidence-registered','tenant-http-a','operator','ci-human-subject',
+ 'source_evidence.registered','source_evidence_document','source-evidence:ci-rights-evidence',
+ 'req-http-rights-evidence-registered','{}');
+
+INSERT INTO source_evidence_events
+(id,evidence_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_sha256,request_id)
+VALUES
+('event-http-evidence-route-registered','source-evidence:ci-route-evidence','tenant-http-a',
+ 'site-http-a','source-http-a','ci-human-subject','registered',lower(hex(zeroblob(32))),
+ 'req-http-evidence-route-registered'),
+('event-http-rights-evidence-registered','source-evidence:ci-rights-evidence','tenant-http-a',
+ 'site-http-a','source-http-a','ci-human-subject','registered',lower(hex(zeroblob(32))),
+ 'req-http-rights-evidence-registered');
+
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-rights-evidence-verified','tenant-http-a','operator','ci-measurement-reviewer',
+ 'source_evidence.verified','source_evidence_document','source-evidence:ci-rights-evidence',
+ 'req-http-rights-evidence-verified','{}');
+
+INSERT INTO source_evidence_events
+(id,evidence_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_sha256,request_id)
+VALUES
+('event-http-rights-evidence-verified','source-evidence:ci-rights-evidence','tenant-http-a',
+ 'site-http-a','source-http-a','ci-measurement-reviewer','verified',lower(hex(zeroblob(32))),
+ 'req-http-rights-evidence-verified');
+
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-rights-declared','tenant-http-a','operator','ci-human-subject',
+ 'source_data_rights.declared','source_data_rights_declaration','source-rights:ci-route-rights',
+ 'req-http-rights-declared','{}');
+
+INSERT INTO source_data_rights_declarations
+(id,tenant_id,site_id,source_id,supporting_evidence_id,supporting_evidence_sha256,
+ provider_name,controller_name,basis_type,instrument_reference,permitted_purposes_json,
+ restrictions_json,effective_from,effective_to,declaration_sha256,declared_by_subject,request_id)
+VALUES
+('source-rights:ci-route-rights','tenant-http-a','site-http-a','source-http-a',
+ 'source-evidence:ci-rights-evidence',lower(hex(zeroblob(32))),
+ 'CI rights provider','CI tenant controller','license','CI-ROUTE-RIGHTS',
+ '["measurement_ingestion","analytics"]','[]','2026-01-01T00:00:00Z','2027-01-01T00:00:00Z',
+ lower(hex(zeroblob(32))),'ci-human-subject','req-http-rights-declared');
+
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-rights-event-declared','tenant-http-a','operator','ci-human-subject',
+ 'source_data_rights.declared','source_data_rights_declaration','source-rights:ci-route-rights',
+ 'req-http-rights-event-declared','{}');
+
+INSERT INTO source_data_rights_events
+(id,declaration_id,tenant_id,site_id,source_id,actor_subject,event_type,
+ reviewed_declaration_sha256,reviewed_evidence_sha256,request_id)
+VALUES
+('event-http-rights-declared','source-rights:ci-route-rights','tenant-http-a','site-http-a',
+ 'source-http-a','ci-human-subject','declared',lower(hex(zeroblob(32))),
+ lower(hex(zeroblob(32))),'req-http-rights-event-declared');
