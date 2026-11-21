@@ -28,8 +28,30 @@ WHEN
   OR NEW.evidence_ref GLOB '*[^A-Za-z0-9._:/-]*'
   OR instr('/' || NEW.evidence_ref || '/', '/../') > 0
   OR instr('/' || NEW.evidence_ref || '/', '/./') > 0
-  OR NEW.unit GLOB '*[ ' || char(9) || char(10) || char(11) || char(12) || char(13) ||
-       '                 　]*'
+  OR instr(NEW.unit, char(9)) > 0
+  OR instr(NEW.unit, char(10)) > 0
+  OR instr(NEW.unit, char(11)) > 0
+  OR instr(NEW.unit, char(12)) > 0
+  OR instr(NEW.unit, char(13)) > 0
+  OR instr(NEW.unit, char(32)) > 0
+  OR instr(NEW.unit, char(160)) > 0
+  OR instr(NEW.unit, char(5760)) > 0
+  OR instr(NEW.unit, char(8192)) > 0
+  OR instr(NEW.unit, char(8193)) > 0
+  OR instr(NEW.unit, char(8194)) > 0
+  OR instr(NEW.unit, char(8195)) > 0
+  OR instr(NEW.unit, char(8196)) > 0
+  OR instr(NEW.unit, char(8197)) > 0
+  OR instr(NEW.unit, char(8198)) > 0
+  OR instr(NEW.unit, char(8199)) > 0
+  OR instr(NEW.unit, char(8200)) > 0
+  OR instr(NEW.unit, char(8201)) > 0
+  OR instr(NEW.unit, char(8202)) > 0
+  OR instr(NEW.unit, char(8232)) > 0
+  OR instr(NEW.unit, char(8233)) > 0
+  OR instr(NEW.unit, char(8239)) > 0
+  OR instr(NEW.unit, char(8287)) > 0
+  OR instr(NEW.unit, char(12288)) > 0
 BEGIN
   SELECT RAISE(ABORT, 'source capability fields violate the canonical draft contract');
 END;
