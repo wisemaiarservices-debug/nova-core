@@ -300,7 +300,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
         "accept": "application/json",
       });
       try {
-        if ((siteList || assetCreate || sourceRegister || sourceCapabilityCreate || sourceCapabilityEvent || siteLifecycleAction) && request.method === "POST") {
+        if ((siteList || assetCreate || sourceRegister || sourceCapabilityCreate || sourceCapabilityEvent || sourceEvidenceEvent || sourceDataRightsEvent || siteLifecycleAction) && request.method === "POST") {
           const idempotencyKey = request.headers.get("Idempotency-Key");
           if (!validPathId(idempotencyKey, 160)) return error("invalid_idempotency_key", 400);
           headers.set("x-nova-idempotency-key", idempotencyKey);
