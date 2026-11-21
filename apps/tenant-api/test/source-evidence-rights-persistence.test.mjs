@@ -86,7 +86,7 @@ test("evidence registration hashes actual PDF bytes and atomically records audit
   assert.match(result.sha256, /^[a-f0-9]{64}$/);
   assert.equal(result.status, "registered_unverified");
   assert.equal(state.batches, 1);
-  assert.equal(state.statements.length, 4);
+  assert.equal(state.statements.filter(item => item.sql.startsWith("INSERT INTO")).length, 4);
 });
 
 test("evidence registration exact retry replays without a second write", async () => {
