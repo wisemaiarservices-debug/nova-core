@@ -17,6 +17,8 @@ WHEN
   OR NEW.metric GLOB '*[^a-z0-9._-]*'
   OR NEW.metric GLOB '*[._-]'
   OR NEW.metric GLOB '*[._-][._-]*'
+  OR trim(NEW.quantity_semantics) <> NEW.quantity_semantics
+  OR instr(NEW.quantity_semantics, char(0)) > 0
   OR NEW.quantity_semantics GLOB '*[' || char(1) || '-' || char(31) || char(127) || ']*'
   OR NEW.acquisition_protocol NOT GLOB '[A-Za-z0-9]*'
   OR NEW.acquisition_protocol GLOB '*[^A-Za-z0-9._:-]*'
@@ -35,6 +37,7 @@ WHEN
   OR NEW.evidence_ref GLOB '*[^A-Za-z0-9._:/-]*'
   OR instr('/' || NEW.evidence_ref || '/', '/../') > 0
   OR instr('/' || NEW.evidence_ref || '/', '/./') > 0
+  OR instr(NEW.unit, char(0)) > 0
   OR instr(NEW.unit, char(1)) > 0
   OR instr(NEW.unit, char(2)) > 0
   OR instr(NEW.unit, char(3)) > 0
