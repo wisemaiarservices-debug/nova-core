@@ -58,8 +58,10 @@ test("evidence draft rejects non-PDF bytes and documents above the one-MiB bound
   assert.equal(validateSourceEvidenceDocumentDraft(evidenceDraft({
     document_bytes: new TextEncoder().encode("not a pdf"),
   })).valid, false);
+  const oversizedPdf = new Uint8Array(1024 * 1024 + 1);
+  oversizedPdf.set([0x25, 0x50, 0x44, 0x46]);
   assert.equal(validateSourceEvidenceDocumentDraft(evidenceDraft({
-    document_bytes: new Uint8Array(1024 * 1024 + 1),
+    document_bytes: oversizedPdf,
   })).valid, false);
 });
 
