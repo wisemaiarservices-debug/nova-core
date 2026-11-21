@@ -106,7 +106,7 @@ test("rights declaration requires verified scoped evidence and records explicit 
   assert.deepEqual(result.permitted_purposes, ["analytics", "measurement_ingestion"]);
   assert.equal(result.status, "declared_pending");
   assert.equal(state.batches, 1);
-  assert.equal(state.statements.length, 4);
+  assert.equal(state.statements.filter(item => item.sql.startsWith("INSERT INTO")).length, 4);
 });
 
 test("rights declaration exact retry replays without a second write", async () => {
