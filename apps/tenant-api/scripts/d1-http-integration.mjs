@@ -113,7 +113,7 @@ try {
   });
   const reviewed = await throughGateway(reviewPath, accessToken("ci-measurement-reviewer"), {
     "content-type": "application/json",
-    "Idempotency-Key": "ci-capability-approve-route",
+    "Idempotency-Key": "ci-capability-approve-route-" + capabilityId,
     "x-nova-body-sha256": createHash("sha256").update(reviewBody).digest("hex"),
   }, "POST", reviewBody);
   assert.equal(reviewed.response.status, 201, JSON.stringify(reviewed.body));
