@@ -213,6 +213,56 @@ execute("rights declaration rejects a mismatched supporting evidence digest", [
       ${q(uploader)},'req-ci-rights-evidence-mismatch')`,
 ], "data rights declaration requires verified scoped evidence, active authority and explicit valid purposes");
 
+execute("persist evidence document idempotency ledger", [
+  `INSERT INTO source_evidence_document_requests
+    (id,tenant_id,site_id,source_id,actor_subject,idempotency_key,request_sha256,evidence_id,request_id,response_json)
+    VALUES ('ledger-ci-evidence-create','tenant-http-a','site-http-a','source-http-a',${q(uploader)},
+      'ci-evidence-create-key',${q("1".repeat(64))},${q(evidenceId)},'req-ci-evidence-create',
+      '{"evidence_id":"source-evidence:ci-doc-verified","status":"registered_unverified"}')`,
+]);
+execute("evidence document idempotency key is unique within actor and source scope", [
+  `INSERT INTO source_evidence_document_requests
+    (id,tenant_id,site_id,source_id,actor_subject,idempotency_key,request_sha256,evidence_id,request_id,response_json)
+    VALUES ('ledger-ci-evidence-create-duplicate','tenant-http-a','site-http-a','source-http-a',${q(uploader)},
+      'ci-evidence-create-key',${q("2".repeat(64))},${q(evidenceId)},'req-ci-evidence-create',
+      '{"evidence_id":"source-evidence:ci-doc-verified"}')`,
+], "UNIQUE constraint failed");
+execute("persist evidence event idempotency ledger", [
+  `INSERT INTO source_evidence_event_requests
+    (id,tenant_id,site_id,source_id,evidence_id,actor_subject,idempotency_key,request_sha256,
+     event_id,event_type,request_id,response_json)
+    VALUES ('ledger-ci-evidence-verified','tenant-http-a','site-http-a','source-http-a',${q(evidenceId)},
+      ${q(reviewer)},'ci-evidence-verify-key',${q("3".repeat(64))},
+      'event-ci-evidence-verified','verified','req-ci-evidence-verified',
+      '{"event_id":"event-ci-evidence-verified","status":"verified"}')`,
+]);
+execute("evidence event idempotency ledger cannot be rewritten", [
+  "UPDATE source_evidence_event_requests SET response_json='{}' WHERE id='ledger-ci-evidence-verified'",
+], "evidence event requests are immutable");
+execute("persist rights declaration idempotency ledger", [
+  `INSERT INTO source_data_rights_declaration_requests
+    (id,tenant_id,site_id,source_id,actor_subject,idempotency_key,request_sha256,
+     declaration_id,request_id,response_json)
+    VALUES ('ledger-ci-rights-create','tenant-http-a','site-http-a','source-http-a',${q(uploader)},
+      'ci-rights-create-key',${q("4".repeat(64))},${q(declarationId)},'req-ci-rights-create',
+      '{"declaration_id":"source-rights:ci-rights-approved","status":"declared_pending"}')`,
+]);
+execute("persist rights event idempotency ledger", [
+  `INSERT INTO source_data_rights_event_requests
+    (id,tenant_id,site_id,source_id,declaration_id,actor_subject,idempotency_key,
+     request_sha256,event_id,event_type,request_id,response_json)
+    VALUES ('ledger-ci-rights-approved','tenant-http-a','site-http-a','source-http-a',
+      ${q(declarationId)},${q(reviewer)},'ci-rights-approve-key',${q("5".repeat(64))},
+      'event-ci-rights-approved','approved','req-ci-rights-approved',
+      '{"event_id":"event-ci-rights-approved","status":"approved"}')`,
+]);
+execute("rights event idempotency ledger cannot be deleted", [
+  "DELETE FROM source_data_rights_event_requests WHERE id='ledger-ci-rights-approved'",
+], "rights event requests cannot be deleted");
+execute("idempotency ledger scope and event bindings are queryable", [
+  "SELECT evidence_id,idempotency_key FROM source_evidence_document_requests WHERE id='ledger-ci-evidence-create'",
+  "SELECT declaration_id,idempotency_key FROM source_data_rights_declaration_requests WHERE id='ledger-ci-rights-create'",
+]);
 execute("inspect canonical rights purpose scope", [
   "SELECT id,permitted_purposes_json FROM source_data_rights_declarations WHERE id=" + q(declarationId),
 ]);
