@@ -1221,6 +1221,19 @@ try {
   assert.equal(rightsApproveReplay.body.replayed, true);
   assert.equal(rightsApproveReplay.body.data.event_id, rightsApproved.body.data.event_id);
 
+  // Evidence withdrawal must not strand an already-approved rights record:
+  // the independent reviewer must still be able to append a rights revocation.
+  const evidenceRevokePath = evidenceRoutePath.replace("/verify", "/revoke");
+  const evidenceRevokeBody = JSON.stringify({ reason: "CI supporting evidence withdrawal" });
+  const evidenceRevoked = await throughGateway(evidenceRevokePath,
+    accessToken("ci-measurement-reviewer"), {
+      "content-type": "application/json",
+      "Idempotency-Key": "ci-source-evidence-revoke-route",
+      "x-nova-body-sha256": createHash("sha256").update(evidenceRevokeBody).digest("hex"),
+    }, "POST", evidenceRevokeBody);
+  assert.equal(evidenceRevoked.response.status, 201, JSON.stringify(evidenceRevoked.body));
+  assert.equal(evidenceRevoked.body.data.status, "revoked");
+
   const rightsRevokePath = rightsRoutePath.replace("/approve", "/revoke");
   const rightsRevokeBody = JSON.stringify({ reason: "CI-only rights withdrawal test" });
   const rightsRevoked = await throughGateway(rightsRevokePath,
