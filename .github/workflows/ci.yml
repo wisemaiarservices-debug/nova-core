@@ -61,6 +61,9 @@ jobs:
       - name: Test source capability creation idempotency against local D1
         working-directory: apps/tenant-api
         run: node ./scripts/d1-source-capability-idempotency-tests.mjs
+      - name: Test source capability event idempotency against local D1
+        working-directory: apps/tenant-api
+        run: node ./scripts/d1-source-capability-event-idempotency-tests.mjs
       - name: Test source calibration profile registry guards against local D1
         working-directory: apps/tenant-api
         run: node ./scripts/d1-calibration-profile-tests.mjs
