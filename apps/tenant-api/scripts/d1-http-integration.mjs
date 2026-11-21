@@ -88,7 +88,7 @@ try {
     "Idempotency-Key": "ci-capability-submit-route",
     "x-nova-body-sha256": createHash("sha256").update(submitBody).digest("hex"),
   };
-  const submitted = await throughGateway(submitPath, accessToken("ci-human-subject"),
+  const capabilitySubmitted = await throughGateway(submitPath, accessToken("ci-human-subject"),
     submitHeaders, "POST", submitBody);
   assert.equal(capabilitySubmitted.response.status, 201, JSON.stringify(capabilitySubmitted.body));
   assert.equal(capabilitySubmitted.body.data.event_type, "submitted");
