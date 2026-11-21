@@ -86,6 +86,18 @@ rejectContract("metric separators must be canonical",
 rejectContract("acquisition protocol must be an identifier",
   insertCapability("quality-flags-ci-bad-protocol", 112, "'[]'")
     .replace("'manual-lab'", "'manual lab'"));
+run("lowercase acquisition protocol identifier is accepted",
+  insertCapability("quality-flags-ci-protocol-lowercase", 130, "'[]'")
+    .replace("'manual-lab'", "'manual-lab.v1'"));
+rejectContract("uppercase acquisition protocol is rejected",
+  insertCapability("quality-flags-ci-protocol-uppercase", 131, "'[]'")
+    .replace("'manual-lab'", "'Manual-lab'"));
+rejectContract("digit-leading acquisition protocol is rejected",
+  insertCapability("quality-flags-ci-protocol-digit", 132, "'[]'")
+    .replace("'manual-lab'", "'1manual-lab'"));
+rejectContract("colon in acquisition protocol is rejected",
+  insertCapability("quality-flags-ci-protocol-colon", 133, "'[]'")
+    .replace("'manual-lab'", "'manual:lab'"));
 rejectContract("timezone must have canonical IANA-style structure",
   insertCapability("quality-flags-ci-bad-timezone", 113, "'[]'")
     .replace("'Africa/Tunis'", "'/Africa/Tunis'"));
