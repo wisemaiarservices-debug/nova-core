@@ -105,9 +105,19 @@ export async function persistObservation(database, observation, principal, reque
     "(id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json) " +
     "SELECT ?, ?, 'service', ?, 'observation.accepted', 'observation', ?, " +
     "strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ? " +
-    "WHERE EXISTS (SELECT 1 FROM observations WHERE id = ? AND tenant_id = ?)",
+    "WHERE EXISTS (SELECT 1 FROM observations WHERE id = ? AND tenant_id = ? " +
+    "AND site_id = ? AND asset_id IS ? AND source_id = ? AND module = ? AND metric = ? " +
+    "AND value = ? AND unit = ? AND observed_at = ? AND idempotency_key = ? " +
+    "AND provenance_json = ? AND quality_flags_json = ? AND source_capability_id = ? " +
+    "AND measurement_kind = ? AND acquisition_protocol = ? AND protocol_version = ? " +
+    "AND sampling_mode = ? AND sampling_interval_seconds IS ?)",
   ).bind(auditId, tenantId, principal.serviceId, observationId, requestId,
-    detailsJson, observationId, tenantId);
+    detailsJson, observationId, tenantId, observation.site_id, observation.asset_id ?? null,
+    observation.source_id, observation.module, observation.metric, observation.value,
+    observation.unit, observation.observed_at, observation.idempotency_key, provenanceJson,
+    qualityFlagsJson, observation.source_capability_id, observation.measurement_kind,
+    observation.acquisition_protocol, observation.protocol_version, observation.sampling_mode,
+    observation.sampling_interval_seconds ?? null);
 
   const batchResults = await database.batch([insertObservation, insertAudit]);
   const inserted = Number(batchResults?.[0]?.meta?.changes ?? 0) > 0;
