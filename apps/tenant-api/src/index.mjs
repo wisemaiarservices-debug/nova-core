@@ -1128,8 +1128,8 @@ export default {
     const sourceCapabilityCreate = request.method === "POST" ? url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-capabilities$/) : null;
     const sourceCapabilityDetail = request.method === "GET" ? url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-capabilities\/([^/]+)$/) : null;
     const sourceCapabilityEvent = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-capabilities\/([^/]+)\/(submit|review|revoke)$/);
-    const sourceEvidenceEvent = request.method === "POST" ? url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-evidence\/([^/]+)\/(verify|reject|revoke)$/) : null;
-    const sourceDataRightsEvent = request.method === "POST" ? url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-data-rights\/([^/]+)\/(approve|reject|revoke)$/) : null;
+    const sourceEvidenceEvent = request.method === "POST" ? url.pathname.match(/^[/]internal[/]v1[/]tenants[/]([^/]+)[/]sites[/]([^/]+)[/]source-evidence[/]([^/]+)[/](verify|reject|revoke)$/) : null;
+    const sourceDataRightsEvent = request.method === "POST" ? url.pathname.match(/^[/]internal[/]v1[/]tenants[/]([^/]+)[/]sites[/]([^/]+)[/]source-data-rights[/]([^/]+)[/](approve|reject|revoke)$/) : null;
     const sourceReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/assign$/);
     const sourceReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/revoke$/);
     const sourceVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/verification$/);
@@ -1684,7 +1684,7 @@ export default {
           const reason = draftBody?.reason;
           const validReason = typeof reason === "string" && reason.length >= 1 &&
             reason.length <= 2000 && reason.trim() === reason &&
-            !/[\u0000-\u001f\u007f]/.test(reason);
+            !Array.from(reason).some(character => { const code = character.charCodeAt(0); return code <= 31 || code === 127; });
           if (!onlyKeys(draftBody, requiresReason ? ["reason"] : []) ||
               (requiresReason && !validReason)) {
             return error(evidenceRoute ? "source_evidence_event_request_invalid" :
