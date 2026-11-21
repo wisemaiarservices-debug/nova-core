@@ -131,4 +131,15 @@ rejectContract("unit cannot contain a byte-order mark",
   insertCapability("quality-flags-ci-unit-bom", 126, "'[]'")
     .replace("'dS/m'", "CAST('dS' || char(65279) || '/m' AS TEXT)"));
 
+
+rejectContract("quantity semantics cannot have surrounding whitespace",
+  insertCapability("quality-flags-ci-semantics-padding", 127, "'[]'")
+    .replace("'CI quality flags guard'", "' CI quality flags guard '"));
+rejectContract("quantity semantics cannot contain NUL",
+  insertCapability("quality-flags-ci-semantics-nul", 128, "'[]'")
+    .replace("'CI quality flags guard'", "CAST('invalid' || char(0) AS TEXT)"));
+rejectContract("unit cannot contain NUL",
+  insertCapability("quality-flags-ci-unit-nul", 129, "'[]'")
+    .replace("'dS/m'", "CAST('dS' || char(0) || '/m' AS TEXT)"));
+
 console.log("Source capability quality-flag and capability contract D1 tests passed");
