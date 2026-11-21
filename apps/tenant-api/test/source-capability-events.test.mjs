@@ -38,7 +38,7 @@ function fixtureDb({ reviewer = false } = {}) {
         request_sha256: args[6], event_id: args[7], request_id: args[9],
         response_json: args[10],
       };
-      return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      return statements.map((_, index) => ({ success: true, meta: { changes: reviewer && index === 0 ? 2 : 1 } }));
     },
   };
   return { db, state };
