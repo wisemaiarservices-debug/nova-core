@@ -50,6 +50,8 @@ for (const [name, mutate] of [
   ["infinite value", (p) => { p.value = 1e400; }],
   ["invalid metric", (p) => { p.metric = "Air Temperature"; }],
   ["invalid unit", (p) => { p.unit = ""; }],
+  ["unit containing whitespace", (p) => { p.unit = "deg C"; }],
+  ["unit exceeding capability length", (p) => { p.unit = "u".repeat(33); }],
   ["timezone-free timestamp", (p) => { p.observed_at = "2026-11-10T14:55:00"; }],
   ["invalid timestamp", (p) => { p.observed_at = "not-a-date"; }],
   ["impossible calendar date", (p) => { p.observed_at = "2026-02-31T14:55:00Z"; }],
