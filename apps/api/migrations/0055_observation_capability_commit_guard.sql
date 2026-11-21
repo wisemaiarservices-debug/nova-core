@@ -30,6 +30,9 @@ WHEN NEW.source_capability_id IS NULL
   OR NEW.sampling_mode IS NULL
   OR (NEW.sampling_mode='interval' AND NEW.sampling_interval_seconds IS NULL)
   OR (NEW.sampling_mode='event' AND NEW.sampling_interval_seconds IS NOT NULL)
+  OR json_type(NEW.quality_flags_json) <> 'array'
+  OR json_array_length(NEW.quality_flags_json) > 16
+  OR EXISTS (SELECT submitted.value FROM json_each(NEW.quality_flags_json) submitted GROUP BY submitted.value HAVING COUNT(*) > 1)
   OR (
     SELECT CASE WHEN COUNT(*)=1 AND SUM(CASE WHEN c.id=NEW.source_capability_id THEN 1 ELSE 0 END)=1 THEN 1 ELSE 0 END
     FROM source_capabilities c
@@ -73,8 +76,8 @@ WHEN NEW.source_capability_id IS NULL
           WHERE allowed.value=submitted.value
         )
       )
-      AND (c.calibration_required=0 OR EXISTS (
-        SELECT 1
+      AND (c.calibration_required=0 OR (
+        SELECT COUNT(*)
         FROM source_calibration_profiles p
         JOIN sensor_source_identity_mappings m
           ON m.id=p.mapping_id AND m.tenant_id=p.tenant_id
@@ -111,7 +114,7 @@ WHEN NEW.source_capability_id IS NULL
                 WHERE latest.tenant_id=cal.tenant_id AND latest.calibration_id=cal.id
                 ORDER BY julianday(latest.occurred_at) DESC,latest.rowid DESC LIMIT 1)
           )
-      ))
+      ) = 1)
   ) <> 1
 BEGIN
   SELECT RAISE(ABORT, 'observation requires exactly one current approved capability and valid calibration evidence');
