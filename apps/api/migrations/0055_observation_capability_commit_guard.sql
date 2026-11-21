@@ -40,6 +40,10 @@ WHEN NEW.source_capability_id IS NULL
     WHERE c.status='approved'
       AND c.tenant_id=NEW.tenant_id
       AND c.site_id=NEW.site_id
+      AND (NEW.asset_id IS NULL OR EXISTS (
+        SELECT 1 FROM assets a WHERE a.id=NEW.asset_id AND a.tenant_id=NEW.tenant_id
+          AND a.site_id=NEW.site_id AND a.status='active'
+      ))
       AND c.source_id=NEW.source_id
       AND c.module=NEW.module
       AND c.metric=NEW.metric
