@@ -216,7 +216,7 @@ export async function recordSourceCapabilityEvent({
       !CAPABILITY_EVENT_TYPES.has(eventType) || !validId(evidenceRef, 500) ||
       (reason !== null && (typeof reason !== "string" || reason.length < 1 ||
         reason.length > 2000 || reason.trim() !== reason ||
-        /[\\u0000-\\u001f\\u007f]/.test(reason))) ||
+        /[\u0000-\u001f\u007f]/.test(reason))) ||
       ((eventType === "rejected" || eventType === "revoked") && reason === null) ||
       ((eventType === "submitted" || eventType === "approved") && reason !== null)) {
     throw new Error("source_capability_event_request_invalid");
