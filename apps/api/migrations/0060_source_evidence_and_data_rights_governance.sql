@@ -6,7 +6,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE source_evidence_documents (
   id TEXT PRIMARY KEY CHECK (
-    length(id) BETWEEN 17 AND 176 AND substr(id,1,15)='source-evidence:'
+    length(id) BETWEEN 17 AND 176 AND substr(id,1,16)='source-evidence:'
   ),
   tenant_id TEXT NOT NULL,
   site_id TEXT NOT NULL,
@@ -40,6 +40,7 @@ CREATE TABLE source_evidence_documents (
   uploaded_by_subject TEXT NOT NULL CHECK (length(trim(uploaded_by_subject)) BETWEEN 1 AND 200),
   request_id TEXT NOT NULL UNIQUE CHECK (length(trim(request_id)) BETWEEN 1 AND 160),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (id,tenant_id,site_id,source_id),
   UNIQUE (id,tenant_id,site_id,source_id,sha256),
   UNIQUE (tenant_id,site_id,source_id,sha256),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
@@ -80,7 +81,7 @@ CREATE INDEX source_evidence_events_history
 
 CREATE TABLE source_data_rights_declarations (
   id TEXT PRIMARY KEY CHECK (
-    length(id) BETWEEN 14 AND 173 AND substr(id,1,12)='source-rights:'
+    length(id) BETWEEN 15 AND 174 AND substr(id,1,14)='source-rights:'
   ),
   tenant_id TEXT NOT NULL,
   site_id TEXT NOT NULL,
@@ -123,6 +124,7 @@ CREATE TABLE source_data_rights_declarations (
   declared_by_subject TEXT NOT NULL CHECK (length(trim(declared_by_subject)) BETWEEN 1 AND 200),
   request_id TEXT NOT NULL UNIQUE CHECK (length(trim(request_id)) BETWEEN 1 AND 160),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (id,tenant_id,site_id,source_id),
   UNIQUE (id,tenant_id,site_id,source_id,declaration_sha256),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
   FOREIGN KEY (site_id,tenant_id) REFERENCES sites(id,tenant_id) ON DELETE RESTRICT,
