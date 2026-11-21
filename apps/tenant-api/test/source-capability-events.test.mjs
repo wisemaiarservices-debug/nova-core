@@ -106,3 +106,15 @@ test("reviewer approval is accepted by the persistence contract when assigned", 
   assert.equal(result.status, "approved");
   assert.equal(state.batches, 1);
 });
+
+test("review rejection preserves a bounded reason and terminal status", async () => {
+  const { db, state } = fixtureDb({ reviewer: true });
+  const result = await recordSourceCapabilityEvent({
+    ...common, db, eventType: "rejected", evidenceRef: "fixture:rejection",
+    reason: "Source contract evidence is incomplete",
+    principalSubject: "reviewer|opaque",
+  });
+  assert.equal(result.event_type, "rejected");
+  assert.equal(result.status, "rejected");
+  assert.equal(state.batches, 1);
+});
