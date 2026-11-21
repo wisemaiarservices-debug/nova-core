@@ -129,11 +129,11 @@ export function validateSourceCapabilityDraft(draft, source) {
     if (typeof draft.calibration.required !== "boolean") {
       fail("capability.calibration_required_invalid", "$.calibration.required");
     }
-    if (draft.calibration.required && !reference(draft.calibration.profile_ref, 500)) {
+    if (draft.calibration.required && !reference(draft.calibration.profile_ref, 160)) {
       fail("capability.calibration_profile_required", "$.calibration.profile_ref");
     }
     if (!draft.calibration.required && draft.calibration.profile_ref !== undefined &&
-        draft.calibration.profile_ref !== null && !reference(draft.calibration.profile_ref, 500)) {
+        draft.calibration.profile_ref !== null && !reference(draft.calibration.profile_ref, 160)) {
       fail("capability.calibration_profile_invalid", "$.calibration.profile_ref");
     }
   }
