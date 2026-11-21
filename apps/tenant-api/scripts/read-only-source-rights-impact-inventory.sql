@@ -34,10 +34,16 @@ ORDER BY status, rights_ref_class;
 -- 2. Rights/evidence state and permitted-purpose coverage for resolved references.
 WITH capability_refs AS (
   SELECT c.id, c.status, c.tenant_id, c.site_id, c.source_id, c.data_rights_ref,
-         d.id AS declaration_id, d.supporting_evidence_id, d.supporting_evidence_sha256,
-         d.permitted_purposes_json, d.effective_from, d.effective_to
+         d.id AS declaration_id, d.tenant_id AS rights_tenant_id,
+         d.site_id AS rights_site_id, d.source_id AS rights_source_id,
+         d.supporting_evidence_id, d.supporting_evidence_sha256,
+         d.permitted_purposes_json, d.effective_from, d.effective_to,
+         doc.tenant_id AS evidence_tenant_id, doc.site_id AS evidence_site_id,
+         doc.source_id AS evidence_source_id, doc.effective_from AS evidence_effective_from,
+         doc.effective_to AS evidence_effective_to
   FROM source_capabilities c
   LEFT JOIN source_data_rights_declarations d ON d.id = c.data_rights_ref
+  LEFT JOIN source_evidence_documents doc ON doc.id=d.supporting_evidence_id
 ),
 states AS (
   SELECT cr.*,
@@ -51,9 +57,16 @@ SELECT
   status,
   CASE
     WHEN declaration_id IS NULL THEN 'unresolved'
+    WHEN rights_tenant_id <> tenant_id OR rights_site_id <> site_id OR rights_source_id <> source_id
+      THEN 'rights_scope_mismatch'
+    WHEN evidence_tenant_id <> tenant_id OR evidence_site_id <> site_id OR evidence_source_id <> source_id
+      THEN 'evidence_scope_mismatch'
     WHEN latest_rights_event IS NULL THEN 'no_rights_event'
     WHEN latest_rights_event <> 'approved' THEN 'rights_not_approved'
     WHEN latest_evidence_event IS NULL OR latest_evidence_event <> 'verified' THEN 'evidence_not_verified'
+    WHEN (evidence_effective_from IS NOT NULL AND evidence_effective_from > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      OR (evidence_effective_to IS NOT NULL AND evidence_effective_to <= strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      THEN 'supporting_evidence_outside_effective_window'
     ELSE 'approved_and_evidence_verified'
   END AS governance_state,
   CASE WHEN declaration_id IS NOT NULL AND EXISTS (
@@ -122,10 +135,16 @@ ORDER BY capability_status, observation_time_band;
 -- insufficient explicit ingestion/storage purpose, or expired effective window.
 WITH approved AS (
   SELECT c.id, c.tenant_id, c.site_id, c.source_id, c.data_rights_ref,
-         d.id AS declaration_id, d.supporting_evidence_id, d.permitted_purposes_json,
-         d.effective_from, d.effective_to
+         d.id AS declaration_id, d.tenant_id AS rights_tenant_id,
+         d.site_id AS rights_site_id, d.source_id AS rights_source_id,
+         d.supporting_evidence_id, d.permitted_purposes_json,
+         d.effective_from, d.effective_to,
+         doc.tenant_id AS evidence_tenant_id, doc.site_id AS evidence_site_id,
+         doc.source_id AS evidence_source_id, doc.effective_from AS evidence_effective_from,
+         doc.effective_to AS evidence_effective_to
   FROM source_capabilities c
   LEFT JOIN source_data_rights_declarations d ON d.id=c.data_rights_ref
+  LEFT JOIN source_evidence_documents doc ON doc.id=d.supporting_evidence_id
   WHERE c.status='approved'
 ),
 evaluated AS (
@@ -139,8 +158,15 @@ evaluated AS (
 SELECT
   CASE
     WHEN declaration_id IS NULL THEN 'no_resolvable_rights_declaration'
+    WHEN rights_tenant_id <> tenant_id OR rights_site_id <> site_id OR rights_source_id <> source_id
+      THEN 'rights_scope_mismatch'
+    WHEN evidence_tenant_id <> tenant_id OR evidence_site_id <> site_id OR evidence_source_id <> source_id
+      THEN 'evidence_scope_mismatch'
     WHEN rights_state <> 'approved' OR rights_state IS NULL THEN 'rights_not_currently_approved'
     WHEN evidence_state <> 'verified' OR evidence_state IS NULL THEN 'supporting_evidence_not_verified'
+    WHEN (evidence_effective_from IS NOT NULL AND evidence_effective_from > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      OR (evidence_effective_to IS NOT NULL AND evidence_effective_to <= strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      THEN 'supporting_evidence_outside_effective_window'
     WHEN NOT EXISTS (SELECT 1 FROM json_each(permitted_purposes_json) p WHERE p.value='measurement_ingestion')
       THEN 'missing_measurement_ingestion_purpose'
     WHEN NOT EXISTS (SELECT 1 FROM json_each(permitted_purposes_json) p WHERE p.value='storage')
