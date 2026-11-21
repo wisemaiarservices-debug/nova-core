@@ -151,3 +151,19 @@ Exact-head CI run `44955507211` for `0f57f3c361fe9b0047d304a593c67b5ebd83b10a` p
 ### Remaining implementation work
 
 The ledgers are schema-only. Application persistence must still calculate canonical payload hashes, implement same-key/same-payload replay, reject same-key/different-payload requests, and handle concurrent insert races atomically. Evidence bytes must be SHA-256 hashed and verified by the application. Private API routes, capability approval enforcement, observation-time rights rechecks and operator UI remain unimplemented. No live enforcement claim is made.
+
+## Input contract implementation
+
+Added `apps/tenant-api/src/source-evidence-rights-contract.mjs` and
+`apps/tenant-api/test/source-evidence-rights-contract.test.mjs`.
+
+The pure contract layer now:
+- Validates document type, safe PDF filename/media type, issuer/reference metadata, strict UTC timestamps, effective windows and the one-MiB PDF byte bound.
+- Calculates SHA-256 from the actual PDF byte array; it does not accept a caller-supplied digest.
+- Validates rights basis, provider/controller, opaque evidence ID, explicit permitted-purpose allowlist, restrictions and effective dates.
+- Canonicalizes rights declaration content and computes a digest bound to tenant/site/source, actor and the supporting evidence digest.
+- Sorts purpose/restriction arrays for stable canonical hashing. Model-training remains a separate explicit purpose.
+
+Exact-head CI run `44955917326` for commit `c21d020a16da6777e462675c6e1594bdd2b3a161` passed all 3 jobs, including the new Node contract tests and the full ordered local D1 suite through migration 0061.
+
+Still not implemented: persistence functions that consume these contracts and idempotency ledgers, private API routes, byte retrieval/read verification routes, capability approval enforcement, observation-time rights rechecks or operator UI.
