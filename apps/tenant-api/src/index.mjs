@@ -1706,6 +1706,11 @@ export default {
               recorded.replayed ? 200 : 201);
           } catch (cause) {
             const message = cause instanceof Error ? cause.message : "";
+            if (message.startsWith("source_evidence_") || message.startsWith("source_rights_")) {
+              console.error("source governance lifecycle operation failed", { code: message });
+            } else {
+              console.error("source governance lifecycle storage operation failed");
+            }
             const prefix = evidenceRoute ? "source_evidence" : "source_rights";
             if (message === prefix + "_idempotency_conflict") return error(message, 409);
             if ([prefix + "_authorization_denied", prefix + "_review_denied",
