@@ -131,6 +131,34 @@ test("rights event exact retry replays without a second write", async () => {
   assert.equal(state.batches, 1);
 });
 
+test("rights approval exact retry replays after supporting evidence is revoked", async () => {
+  const { db, state } = fixtureDb("rights");
+  const args = { ...common, db, declarationId: "source-rights:declaration-test", eventType: "approved" };
+  const first = await recordSourceDataRightsEvent(args);
+  state.rights.evidence_state = "revoked";
+  const second = await recordSourceDataRightsEvent(args);
+  assert.equal(second.replayed, true);
+  assert.equal(second.event_id, first.event_id);
+  assert.equal(state.batches, 1);
+});
+
+test("rights revocation remains possible after supporting evidence is revoked", async () => {
+  const { db, state } = fixtureDb("rights", { rights: {
+    id: "source-rights:declaration-test", tenant_id: common.tenantId, site_id: common.siteId,
+    source_id: "source-test", declaration_sha256: "b".repeat(64),
+    supporting_evidence_sha256: "a".repeat(64), declared_by_subject: "declarant-subject",
+    uploaded_by_subject: "uploader-subject", registered_by_subject: "registrar-subject",
+    current_state: "approved", evidence_state: "revoked",
+  } });
+  const result = await recordSourceDataRightsEvent({
+    ...common, db, declarationId: "source-rights:declaration-test",
+    eventType: "revoked", reason: "supporting evidence withdrawn",
+  });
+  assert.equal(result.status, "revoked");
+  assert.equal(result.replayed, false);
+  assert.equal(state.batches, 1);
+});
+
 test("rights declarant, evidence uploader and source registrar cannot approve their own declaration", async () => {
   for (const principalSubject of ["declarant-subject", "uploader-subject", "registrar-subject"]) {
     const { db, state } = fixtureDb("rights");
