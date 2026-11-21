@@ -63,7 +63,7 @@ function fixtureDb(kind) {
       state.batches += 1;
       assert.equal(statements.length, 4);
       for (const statement of statements) {
-        assert.equal((statement.sql.match(/\\?/g) || []).length, statement.args.length,
+        assert.equal((statement.sql.split("?").slice(1) || []).length, statement.args.length,
           "SQL placeholder count must match bound arguments");
       }
       const args = statements[3].args;
