@@ -10,6 +10,7 @@ WHEN
   OR length(NEW.unit) NOT BETWEEN 1 AND 32
   OR length(NEW.quantity_semantics) NOT BETWEEN 1 AND 500
   OR length(NEW.acquisition_protocol) NOT BETWEEN 1 AND 80
+  OR length(NEW.protocol_version) NOT BETWEEN 1 AND 80
   OR length(NEW.timezone) NOT BETWEEN 1 AND 80
   OR length(NEW.data_rights_ref) NOT BETWEEN 1 AND 500
   OR length(NEW.evidence_ref) NOT BETWEEN 1 AND 500
