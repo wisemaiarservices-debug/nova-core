@@ -1239,6 +1239,7 @@ export default {
       } catch { return error("invalid_request_body", 400); }
       if (draftBody === null || typeof draftBody !== "object" || Array.isArray(draftBody)) return error("invalid_request_body", 400);
     }
+    if (sourceCapabilityList) return error("capability_list_passed_outer_guards", 418);
     let verifiedNovaOsOwnerAssertion = null;
     if (tenantProvision) {
       if (!verifiedSupabaseIdentity) return error("supabase_identity_required", 401);
