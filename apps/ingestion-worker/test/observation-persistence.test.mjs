@@ -4,6 +4,9 @@ import { persistObservation } from "../src/observation-persistence.mjs";
 
 const observation = {
   site_id: "site-001", asset_id: "asset-001", source_id: "source-001",
+  source_capability_id: "capability-001", measurement_kind: "measured",
+  acquisition_protocol: "field-gateway", protocol_version: "1.0",
+  sampling_mode: "interval", sampling_interval_seconds: 900,
   module: "neoagro", metric: "soil_moisture", value: 28.5, unit: "%",
   observed_at: "2026-11-10T10:00:00.000Z",
   idempotency_key: "neoagro-gateway-1:reading-0001",
@@ -49,7 +52,9 @@ function mockD1(existing = null) {
           module: v[5], metric: v[6], value: v[7], unit: v[8],
           observed_at: v[9], idempotency_key: v[10],
           verification_status: "unverified", provenance_json: v[11],
-          quality_flags_json: v[12],
+          quality_flags_json: v[12], source_capability_id: v[13],
+          measurement_kind: v[14], acquisition_protocol: v[15], protocol_version: v[16],
+          sampling_mode: v[17], sampling_interval_seconds: v[18],
         };
         state.audit.push({ id: audit.values[0], tenant_id: audit.values[1], actor_id: audit.values[2] });
         inserted = true;
