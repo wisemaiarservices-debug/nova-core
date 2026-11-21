@@ -95,6 +95,9 @@ test("rejects reuse of an idempotency key for different measurement content", as
   const db = mockD1();
   await persistObservation(db, observation, principal, null, tenantId);
   const changed = { ...observation, value: 99 };
+  const metadataChanged = { ...observation, protocol_version: "2.0" };
+  const metadataResult = await persistObservation(db, metadataChanged, principal, null, tenantId);
+  assert.deepEqual(metadataResult, { status: "idempotency_conflict", accepted: false });
   const result = await persistObservation(db, changed, principal, null, tenantId);
   assert.deepEqual(result, { status: "idempotency_conflict", accepted: false });
 });
