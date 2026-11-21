@@ -4,9 +4,16 @@ function validId(value, max = 176) {
   return typeof value === "string" && value.length > 0 && value.length <= max &&
     value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
+function hasControlCharacters(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 31 || code === 127) return true;
+  }
+  return false;
+}
 function validSubject(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 200 &&
-    value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
+    value.trim() === value && !hasControlCharacters(value);
 }
 function requireDb(db) {
   if (!db || typeof db.prepare !== "function" || typeof db.batch !== "function") {
@@ -38,7 +45,7 @@ function validateEvent(eventType, reason, allowed, prefix) {
   if (!allowed.has(eventType) ||
       (eventType === "rejected" || eventType === "revoked"
         ? typeof reason !== "string" || reason.length < 1 || reason.length > 2000 ||
-          reason.trim() !== reason || /[\\u0000-\\u001f\\u007f]/.test(reason)
+          reason.trim() !== reason || hasControlCharacters(reason)
         : reason !== null)) throw new Error(prefix + "_event_request_invalid");
 }
 async function requireReviewer(db, tenantId, siteId, actor, prefix) {
@@ -142,7 +149,7 @@ export async function recordSourceEvidenceEvent({
 }) {
   requireDb(db);
   if (!validId(tenantId, 120) || !validId(siteId) || !validId(evidenceId) ||
-      !validSubject(principalSubject) || !validId(idempotencyKey) || !validId(requestId)) {
+      !validSubject(principalSubject) || !validId(idempotencyKey, 160) || !validId(requestId, 160)) {
     throw new Error("source_evidence_event_request_invalid");
   }
   const prefix = "source_evidence";
