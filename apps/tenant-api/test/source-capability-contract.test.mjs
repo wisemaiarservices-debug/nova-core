@@ -20,6 +20,7 @@ const draft = {
   measurement_kind: "measured",
   quantity_semantics: "Volumetric water content as a ratio of water volume to bulk soil volume",
   acquisition_protocol: "modbus_tcp_v1",
+  protocol_version: "1.0+vendor",
   sampling: { mode: "interval", interval_seconds: 300, max_age_seconds: 900 },
   timestamp: { max_future_skew_seconds: 60, timezone: "UTC" },
   quality: { allowed_flags: ["sensor_warmup", "estimated_clock"] },
@@ -105,6 +106,41 @@ test("requires unique bounded quality flags and a calibration reference when req
   assert.equal(validateSourceCapabilityDraft({ ...draft, quality: { allowed_flags: ["offline", "offline"] } }, source).valid, false);
   assert.equal(validateSourceCapabilityDraft({ ...draft, calibration: { required: true } }, source).valid, false);
   assert.equal(validateSourceCapabilityDraft({ ...draft, calibration: { required: false } }, source).valid, true);
+});
+
+test("calibration profile references match the registry's 160-character limit", () => {
+  const atLimit = "p".repeat(160);
+  const tooLong = "p".repeat(161);
+  assert.equal(validateSourceCapabilityDraft({
+    ...draft,
+    calibration: { required: true, profile_ref: atLimit },
+  }, source).valid, true);
+  const rejected = validateSourceCapabilityDraft({
+    ...draft,
+    calibration: { required: true, profile_ref: tooLong },
+  }, source);
+  assert.equal(rejected.valid, false);
+  assert.ok(rejected.errors.some(error =>
+    error.code === "capability.calibration_profile_required" &&
+    error.path === "$.calibration.profile_ref"));
+});
+
+test("requires a bounded, trimmed protocol version without control characters", () => {
+  assert.equal(validateSourceCapabilityDraft({ ...draft, protocol_version: "2.1+vendor-build" }, source).valid, true);
+  for (const protocol_version of ["", " ", "2.1\u0000vendor", "2.1\nvendor", "v".repeat(81)]) {
+    const result = validateSourceCapabilityDraft({ ...draft, protocol_version }, source);
+    assert.equal(result.valid, false, JSON.stringify(protocol_version));
+    assert.ok(result.errors.some(error => error.code === "capability.protocol_version_invalid"));
+  }
+});
+
+test("requires acquisition protocols to use the ingestion canonical lowercase identifier", () => {
+  assert.equal(validateSourceCapabilityDraft({ ...draft, acquisition_protocol: "manual-lab_v1" }, source).valid, true);
+  for (const acquisition_protocol of ["Manual-lab", "1manual-lab", "manual:lab", "manual lab", ""]) {
+    const result = validateSourceCapabilityDraft({ ...draft, acquisition_protocol }, source);
+    assert.equal(result.valid, false, acquisition_protocol);
+    assert.ok(result.errors.some(error => error.code === "capability.acquisition_protocol_invalid"));
+  }
 });
 
 test("requires evidence and data-rights references", () => {

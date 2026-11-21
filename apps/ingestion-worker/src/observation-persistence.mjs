@@ -24,6 +24,12 @@ function sameAcceptedPayload(row, observation, tenantId) {
     row.site_id === observation.site_id &&
     (row.asset_id ?? null) === (observation.asset_id ?? null) &&
     row.module === observation.module &&
+    row.source_capability_id === observation.source_capability_id &&
+    row.measurement_kind === observation.measurement_kind &&
+    row.acquisition_protocol === observation.acquisition_protocol &&
+    row.protocol_version === observation.protocol_version &&
+    row.sampling_mode === observation.sampling_mode &&
+    (row.sampling_interval_seconds ?? null) === (observation.sampling_interval_seconds ?? null) &&
     row.metric === observation.metric &&
     Number(row.value) === observation.value &&
     row.unit === observation.unit &&
@@ -57,14 +63,21 @@ export async function persistObservation(database, observation, principal, reque
     source_id: observation.source_id,
     metric: observation.metric,
     verification_status: "unverified",
+    source_capability_id: observation.source_capability_id,
+    measurement_kind: observation.measurement_kind,
+    acquisition_protocol: observation.acquisition_protocol,
+    protocol_version: observation.protocol_version,
+    sampling_mode: observation.sampling_mode,
+    sampling_interval_seconds: observation.sampling_interval_seconds,
     idempotency_key: observation.idempotency_key,
   });
 
   const insertObservation = database.prepare(
     "INSERT OR IGNORE INTO observations " +
     "(id, site_id, tenant_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
-    "idempotency_key, verification_status, provenance_json, quality_flags_json) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?)",
+    "idempotency_key, verification_status, provenance_json, quality_flags_json, source_capability_id, " +
+    "measurement_kind, acquisition_protocol, protocol_version, sampling_mode, sampling_interval_seconds) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?, ?, ?, ?, ?, ?, ?)",
   ).bind(
     observationId,
     observation.site_id,
@@ -79,6 +92,12 @@ export async function persistObservation(database, observation, principal, reque
     observation.idempotency_key,
     provenanceJson,
     qualityFlagsJson,
+    observation.source_capability_id,
+    observation.measurement_kind,
+    observation.acquisition_protocol,
+    observation.protocol_version,
+    observation.sampling_mode,
+    observation.sampling_interval_seconds,
   );
 
   const insertAudit = database.prepare(
@@ -86,16 +105,27 @@ export async function persistObservation(database, observation, principal, reque
     "(id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, occurred_at, request_id, details_json) " +
     "SELECT ?, ?, 'service', ?, 'observation.accepted', 'observation', ?, " +
     "strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ? " +
-    "WHERE EXISTS (SELECT 1 FROM observations WHERE id = ? AND tenant_id = ?)",
+    "WHERE EXISTS (SELECT 1 FROM observations WHERE id = ? AND tenant_id = ? " +
+    "AND site_id = ? AND asset_id IS ? AND source_id = ? AND module = ? AND metric = ? " +
+    "AND value = ? AND unit = ? AND observed_at = ? AND idempotency_key = ? " +
+    "AND provenance_json = ? AND quality_flags_json = ? AND source_capability_id = ? " +
+    "AND measurement_kind = ? AND acquisition_protocol = ? AND protocol_version = ? " +
+    "AND sampling_mode = ? AND sampling_interval_seconds IS ?)",
   ).bind(auditId, tenantId, principal.serviceId, observationId, requestId,
-    detailsJson, observationId, tenantId);
+    detailsJson, observationId, tenantId, observation.site_id, observation.asset_id ?? null,
+    observation.source_id, observation.module, observation.metric, observation.value,
+    observation.unit, observation.observed_at, observation.idempotency_key, provenanceJson,
+    qualityFlagsJson, observation.source_capability_id, observation.measurement_kind,
+    observation.acquisition_protocol, observation.protocol_version, observation.sampling_mode,
+    observation.sampling_interval_seconds ?? null);
 
   const batchResults = await database.batch([insertObservation, insertAudit]);
   const inserted = Number(batchResults?.[0]?.meta?.changes ?? 0) > 0;
 
   const existing = await database.prepare(
     "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
-    "idempotency_key, verification_status, provenance_json, quality_flags_json " +
+    "idempotency_key, verification_status, provenance_json, quality_flags_json, source_capability_id, " +
+    "measurement_kind, acquisition_protocol, protocol_version, sampling_mode, sampling_interval_seconds " +
     "FROM observations WHERE source_id = ? AND idempotency_key = ? LIMIT 1",
   ).bind(observation.source_id, observation.idempotency_key).first();
 
