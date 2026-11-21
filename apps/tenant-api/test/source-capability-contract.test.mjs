@@ -107,6 +107,23 @@ test("requires unique bounded quality flags and a calibration reference when req
   assert.equal(validateSourceCapabilityDraft({ ...draft, calibration: { required: false } }, source).valid, true);
 });
 
+test("calibration profile references match the registry's 160-character limit", () => {
+  const atLimit = "p".repeat(160);
+  const tooLong = "p".repeat(161);
+  assert.equal(validateSourceCapabilityDraft({
+    ...draft,
+    calibration: { required: true, profile_ref: atLimit },
+  }, source).valid, true);
+  const rejected = validateSourceCapabilityDraft({
+    ...draft,
+    calibration: { required: true, profile_ref: tooLong },
+  }, source);
+  assert.equal(rejected.valid, false);
+  assert.ok(rejected.errors.some(error =>
+    error.code === "capability.calibration_profile_required" &&
+    error.path === "$.calibration.profile_ref"));
+});
+
 test("requires evidence and data-rights references", () => {
   assert.equal(validateSourceCapabilityDraft({ ...draft, evidence_ref: "" }, source).valid, false);
   assert.equal(validateSourceCapabilityDraft({ ...draft, data_rights_ref: "" }, source).valid, false);
