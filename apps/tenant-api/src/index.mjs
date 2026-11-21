@@ -1606,11 +1606,11 @@ export default {
             : json({ data: assigned.data, request_id: requestId }, assigned.status);
         }
         if (sourceCapabilityList || sourceCapabilityDetail) {
-          if (request.method !== "GET" ||
-              !ROLE_ACTIONS[membership[0].role]?.has("read") ||
-              !await hasSiteReadGrant(env.DB, tenant, subject,
-                sourceCapabilityList ? sourceCapabilityList[2] : sourceCapabilityDetail[2])) {
-            return error("not_found", 404);
+          if (request.method !== "GET") return error("capability_read_method_denied", 404);
+          if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("capability_read_role_denied", 404);
+          if (!await hasSiteReadGrant(env.DB, tenant, subject,
+            sourceCapabilityList ? sourceCapabilityList[2] : sourceCapabilityDetail[2])) {
+            return error("capability_read_grant_denied", 404);
           }
           const siteId = sourceCapabilityList ? sourceCapabilityList[2] : sourceCapabilityDetail[2];
           const site = await rows(env.DB.prepare(
