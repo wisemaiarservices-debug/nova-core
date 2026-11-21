@@ -61,7 +61,7 @@ WHEN NEW.source_capability_id IS NULL
         WHERE ce.capability_id=c.id AND ce.event_type='approved'
           AND ce.id=(SELECT latest.id FROM source_capability_events latest
             WHERE latest.capability_id=c.id
-            ORDER BY julianday(latest.occurred_at) DESC,latest.rowid DESC LIMIT 1)
+            ORDER BY latest.rowid DESC LIMIT 1)
       )
       AND julianday(NEW.observed_at) IS NOT NULL
       AND julianday(NEW.observed_at) >= julianday('now') - (c.max_age_seconds / 86400.0)
