@@ -11,7 +11,7 @@ function validId(value, max = 160) {
   return typeof value === "string" && value.length > 0 && value.length <= max &&
     value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
-function assertBatch(results) {
+function validSubject(value) {\n  return typeof value === "string" && value.length > 0 && value.length <= 200 &&\n    value.trim() === value && !/[\\u0000-\\u001f\\u007f]/.test(value);\n}\nfunction assertBatch(results) {
   if (!Array.isArray(results) || results.length !== 3 ||
       results.some(result => !result || result.success === false ||
         !result.meta || result.meta.changes !== 1)) {
@@ -61,7 +61,7 @@ export async function createSourceCapabilityDraft({
   if (!db || typeof db.prepare !== "function" || typeof db.batch !== "function") {
     throw new Error("source_capability_storage_unavailable");
   }
-  if (!validId(tenantId, 120) || !validId(siteId) || !validId(principalSubject, 200) ||
+  if (!validId(tenantId, 120) || !validId(siteId) || !validSubject(principalSubject) ||
       !validId(idempotencyKey) || !validId(requestId)) {
     throw new Error("source_capability_request_invalid");
   }
