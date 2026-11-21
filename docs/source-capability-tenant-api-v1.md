@@ -111,3 +111,17 @@ The first write route is now exposed behind the existing authenticated private T
 It accepts only the capability draft contract (no caller-supplied tenant/site/creator/status), requires the existing active owner/admin membership and exact site read grant, and delegates to the atomic persistence helper. It requires `x-nova-idempotency-key`; the gateway-verified request digest and request ID are passed through the existing private request envelope. A successful first create returns 201, an exact replay returns 200, and a same-key/different-payload conflict returns 409. Unknown source, unauthorized actor, or mismatched tenant/site remain non-enumerating 404 responses.
 
 The local gateway + private Worker integration suite now exercises create, exact replay, changed-payload conflict, cross-tenant source mismatch, and reviewer-role denial. This does not yet implement capability listing/detail, submission, approval, rejection, or revocation. The API remains incomplete and the PR remains draft.
+
+## Governed capability lifecycle event routes
+
+The following private Tenant API routes are now implemented behind the authenticated gateway:
+
+- `POST /api/v1/tenants/{tenant}/sites/{site}/source-capabilities/{capability}/submit`
+- `POST /api/v1/tenants/{tenant}/sites/{site}/source-capabilities/{capability}/review` with `decision: approve|reject`
+- `POST /api/v1/tenants/{tenant}/sites/{site}/source-capabilities/{capability}/revoke`
+
+The gateway maps these paths to the private Worker and requires `Idempotency-Key`. The Tenant API derives the actor from the verified gateway envelope, requires an active membership and exact site read grant, and delegates the state transition to D1 lifecycle guards. Submission is creator-only; terminal decisions require an active independent source reviewer. The database remains authoritative for current lifecycle state, source verification and site status.
+
+Migration `0059_source_capability_event_idempotency.sql` adds an immutable, scope-bound request ledger for lifecycle events. `recordSourceCapabilityEvent` atomically appends the event, audit record and request ledger row. Exact retries replay; changed payloads with the same scoped key conflict. D1 tests cover event/audit binding, tenant mismatch, duplicate keys, digest shape and immutable records. Unit tests cover submission, reviewer approval/rejection, exact replay, changed evidence conflicts and reviewer assignment denial. The gateway/Worker integration test covers creator submission, exact replay, changed-payload conflict and independent reviewer approval.
+
+Still not implemented: capability list/detail reads, reviewer assignment management specific to capabilities (the existing source reviewer assignment is reused), richer evidence/data-rights verification, and any operator UI. No AI approval or device actuation is introduced.
