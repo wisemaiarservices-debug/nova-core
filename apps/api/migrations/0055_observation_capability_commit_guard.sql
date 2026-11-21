@@ -100,7 +100,7 @@ WHEN NEW.source_capability_id IS NULL
               AND me.event_type='verified'
               AND me.id=(SELECT latest.id FROM sensor_source_mapping_events latest
                 WHERE latest.tenant_id=m.tenant_id AND latest.mapping_id=m.id
-                ORDER BY julianday(latest.occurred_at) DESC,latest.rowid DESC LIMIT 1)
+                ORDER BY latest.rowid DESC LIMIT 1)
           )
           AND julianday(cal.calibrated_at) IS NOT NULL
           AND julianday(cal.valid_until) IS NOT NULL
@@ -118,6 +118,26 @@ WHEN NEW.source_capability_id IS NULL
   ) <> 1
 BEGIN
   SELECT RAISE(ABORT, 'observation requires exactly one current approved capability and valid calibration evidence');
+END;
+
+
+CREATE TRIGGER observations_measurement_evidence_immutable
+BEFORE UPDATE OF site_id,tenant_id,asset_id,source_id,module,metric,value,unit,
+  observed_at,idempotency_key,provenance_json,quality_flags_json ON observations
+WHEN NEW.site_id IS NOT OLD.site_id
+  OR NEW.tenant_id IS NOT OLD.tenant_id
+  OR NEW.asset_id IS NOT OLD.asset_id
+  OR NEW.source_id IS NOT OLD.source_id
+  OR NEW.module IS NOT OLD.module
+  OR NEW.metric IS NOT OLD.metric
+  OR NEW.value IS NOT OLD.value
+  OR NEW.unit IS NOT OLD.unit
+  OR NEW.observed_at IS NOT OLD.observed_at
+  OR NEW.idempotency_key IS NOT OLD.idempotency_key
+  OR NEW.provenance_json IS NOT OLD.provenance_json
+  OR NEW.quality_flags_json IS NOT OLD.quality_flags_json
+BEGIN
+  SELECT RAISE(ABORT, 'observation measurement evidence is immutable');
 END;
 
 CREATE TRIGGER observations_capability_metadata_immutable
