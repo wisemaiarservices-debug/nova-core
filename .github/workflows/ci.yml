@@ -67,6 +67,9 @@ jobs:
       - name: Test observation capability commit guard against local D1
         working-directory: apps/tenant-api
         run: node ./scripts/d1-observation-capability-tests.mjs
+      - name: Test overlapping approved observation capabilities against local D1
+        working-directory: apps/tenant-api
+        run: node ./scripts/d1-observation-capability-overlap-tests.mjs
 
   research-raster-tests:
     runs-on: ubuntu-latest
