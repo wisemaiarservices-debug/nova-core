@@ -69,7 +69,7 @@ function fixtureDb() {
 }
 
 const common = {
-  principalSubject: "ci-owner",
+  principalSubject: "https://issuer.example|opaque-subject:123",
   tenantId: "tenant-unit-test",
   siteId: "site-unit-test",
   idempotencyKey: "unit-test-key",
