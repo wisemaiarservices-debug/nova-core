@@ -20,8 +20,8 @@ WHEN
   OR trim(NEW.quantity_semantics) <> NEW.quantity_semantics
   OR instr(NEW.quantity_semantics, char(0)) > 0
   OR NEW.quantity_semantics GLOB '*[' || char(1) || '-' || char(31) || char(127) || ']*'
-  OR NEW.acquisition_protocol NOT GLOB '[A-Za-z0-9]*'
-  OR NEW.acquisition_protocol GLOB '*[^A-Za-z0-9._:-]*'
+  OR NEW.acquisition_protocol NOT GLOB '[a-z]*'
+  OR NEW.acquisition_protocol GLOB '*[^a-z0-9._-]*'
   OR NEW.timezone NOT IN ('UTC')
      AND (
        NEW.timezone NOT GLOB '[A-Za-z_]*/*'
