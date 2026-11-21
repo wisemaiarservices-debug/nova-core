@@ -214,7 +214,10 @@ test("D1 ownership mismatch is denied without revealing which record failed", as
     headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
     body: JSON.stringify({
       site_id: "site-001", asset_id: "asset-001", module: "neoagro",
-      source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+      source_id: "source-weather-01", source_capability_id: "capability-weather-01",
+      measurement_kind: "measured", acquisition_protocol: "station-v2", protocol_version: "2.1",
+      sampling_mode: "interval", sampling_interval_seconds: 300,
+      metric: "air_temperature", value: 18.5,
       unit: "degC", observed_at: new Date().toISOString(),
       idempotency_key: "test-observation-owned-002",
       provenance: { provider: "test station", acquisition_method: "sensor" },
@@ -237,6 +240,9 @@ test("valid service identity cannot submit a source outside its exact grant", as
     headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
     body: JSON.stringify({
       site_id: "site-001", module: "neoagro", source_id: "source-unapproved",
+      source_capability_id: "capability-unapproved", measurement_kind: "measured",
+      acquisition_protocol: "station-v2", protocol_version: "2.1",
+      sampling_mode: "interval", sampling_interval_seconds: 300,
       metric: "air_temperature", value: 18.5, unit: "degC",
       observed_at: new Date().toISOString(), idempotency_key: "test-observation-002",
       provenance: { provider: "test station", acquisition_method: "sensor" },
