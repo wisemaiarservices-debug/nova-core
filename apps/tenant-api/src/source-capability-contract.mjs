@@ -46,7 +46,7 @@ export function validateSourceCapabilityDraft(draft, source) {
 
   if (!exactKeys(draft, [
     "source_id", "tenant_id", "site_id", "asset_id", "module", "metric", "unit",
-    "measurement_kind", "quantity_semantics", "acquisition_protocol",
+    "measurement_kind", "quantity_semantics", "acquisition_protocol", "protocol_version",
     "sampling", "timestamp", "quality", "calibration", "data_rights_ref",
     "evidence_ref", "version",
   ])) {
@@ -72,6 +72,9 @@ export function validateSourceCapabilityDraft(draft, source) {
   }
   if (!text(draft.quantity_semantics, 500)) {
     fail("capability.quantity_semantics_invalid", "$.quantity_semantics");
+  }
+  if (!text(draft.protocol_version, 80)) {
+    fail("capability.protocol_version_invalid", "$.protocol_version");
   }
   if (typeof draft.acquisition_protocol !== "string" || !PROTOCOL_PATTERN.test(draft.acquisition_protocol)) {
     fail("capability.acquisition_protocol_invalid", "$.acquisition_protocol");
