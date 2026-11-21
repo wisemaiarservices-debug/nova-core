@@ -121,6 +121,24 @@ console.log("Capability fixture diagnostic: " + diagnostic.stdout);
 
 execute("approved site capability accepts an exact current observation",
   observation("obs-capability-guard-positive","ci-capability-guard-positive","capability-http-guard-site"));
+
+function expectUpdateRejected(label, sql, expectedMessage) {
+  const result = spawnSync("npx", [...args, sql], { encoding: "utf8" });
+  const output = (result.stdout || "") + "\\n" + (result.stderr || "");
+  assert.notEqual(result.status, 0, label + " unexpectedly succeeded\\n" + output);
+  assert.match(output, new RegExp(expectedMessage), label + " failed for an unexpected reason\\n" + output);
+  console.log("Rejected as expected: " + label);
+}
+
+expectUpdateRejected("measurement value cannot be changed after insertion",
+  "UPDATE observations SET value=99 WHERE id='obs-capability-guard-positive'",
+  "observation measurement evidence is immutable");
+expectUpdateRejected("capability identity cannot be changed after insertion",
+  "UPDATE observations SET source_capability_id='capability-http-guard-cal' WHERE id='obs-capability-guard-positive'",
+  "observation capability metadata is immutable");
+expectUpdateRejected("measurement protocol metadata cannot be changed after insertion",
+  "UPDATE observations SET acquisition_protocol='replacement-protocol' WHERE id='obs-capability-guard-positive'",
+  "observation capability metadata is immutable");
 execute("approved asset capability accepts an exact current observation",
   observation("obs-capability-guard-calibrated","ci-capability-guard-calibrated","capability-http-guard-cal",
     { asset: "'asset-http-grant'" }));
