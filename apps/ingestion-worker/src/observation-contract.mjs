@@ -13,7 +13,7 @@ const TOP_LEVEL_KEYS = new Set([
 ]);
 const PROVENANCE_KEYS = new Set(["provider", "acquisition_method", "source_record_ref"]);
 const METRIC_PATTERN = /^[a-z][a-z0-9_.-]{0,119}$/;
-const UNIT_PATTERN = /^[A-Za-z0-9%°µμ/._ -]{1,48}$/;
+const UNIT_PATTERN = /^[A-Za-z0-9%°µμ/._-]{1,32}$/;
 const RFC3339_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function isRecord(value) {
