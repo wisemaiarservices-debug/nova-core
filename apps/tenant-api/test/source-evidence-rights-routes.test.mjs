@@ -118,7 +118,7 @@ async function signedRequest(path, body, requestId, idempotencyKey = "governance
     "x-nova-verified-audience": "aud",
     "x-nova-gateway-issued-at": String(Math.floor(Date.now() / 1000)),
     "x-nova-request-id": requestId,
-    "x-nova-idempotency-key": idempotencyKey,
+    ...(idempotencyKey === null ? {} : { "x-nova-idempotency-key": idempotencyKey }),
     "x-nova-body-sha256": createHash("sha256").update(bodyText).digest("hex"),
   });
   const canonical = JSON.stringify([method, path, SUBJECT, ISSUER, "aud",
@@ -165,12 +165,14 @@ test("rights approval route records exact declaration and evidence review", asyn
 });
 
 test("rejection and revocation routes require a bounded reason", async () => {
+  let sequence = 0;
   for (const [path, expected] of [
     [evidencePath("reject"), "source_evidence_event_request_invalid"],
     [rightsPath("revoke"), "source_rights_event_request_invalid"],
   ]) {
     const db = new RouteDB();
-    const response = await worker.fetch(await signedRequest(path, {}, "request-invalid-" + path), env(db));
+    sequence += 1;
+    const response = await worker.fetch(await signedRequest(path, {}, "request-invalid-" + sequence), env(db));
     assert.equal(response.status, 422);
     assert.equal((await response.json()).error, expected);
     assert.equal(db.batches.length, 0);
