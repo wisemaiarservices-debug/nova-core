@@ -49,6 +49,67 @@ try {
   assert.equal(allowed.body.data.id, "site-http-a");
   assert.equal(allowed.body.data.tenant_id, "tenant-http-a");
 
+  const capabilityPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/source-capabilities";
+  const capabilityDraft = {
+    source_id: "source-http-a",
+    module: "neoagro",
+    metric: "api_created_ec",
+    unit: "dS/m",
+    measurement_kind: "measured",
+    quantity_semantics: "EC measured by a field acquisition protocol",
+    acquisition_protocol: "manual-lab",
+    protocol_version: "1.0",
+    sampling: { mode: "interval", interval_seconds: 3600, max_age_seconds: 86400 },
+    timestamp: { max_future_skew_seconds: 300, timezone: "Africa/Tunis" },
+    quality: { allowed_flags: ["suspect"] },
+    calibration: { required: false, profile_ref: null },
+    data_rights_ref: "fixture:capability-rights",
+    evidence_ref: "fixture:capability-evidence",
+    version: 1,
+  };
+  const capabilityBody = JSON.stringify(capabilityDraft);
+  const capabilityHeaders = {
+    "content-type": "application/json",
+    "x-nova-idempotency-key": "ci-capability-create-route",
+    "x-nova-body-sha256": createHash("sha256").update(capabilityBody).digest("hex"),
+  };
+  const capabilityCreated = await throughGateway(capabilityPath, accessToken("ci-human-subject"),
+    capabilityHeaders, "POST", capabilityBody);
+  assert.equal(capabilityCreated.response.status, 201, JSON.stringify(capabilityCreated.body));
+  assert.equal(capabilityCreated.body.data.status, "pending");
+  assert.equal(capabilityCreated.body.data.created_by_subject, "ci-human-subject");
+  assert.equal(capabilityCreated.body.replayed, false);
+
+  const capabilityReplay = await throughGateway(capabilityPath, accessToken("ci-human-subject"),
+    capabilityHeaders, "POST", capabilityBody);
+  assert.equal(capabilityReplay.response.status, 200, JSON.stringify(capabilityReplay.body));
+  assert.equal(capabilityReplay.body.replayed, true);
+  assert.equal(capabilityReplay.body.data.capability_id, capabilityCreated.body.data.capability_id);
+
+  const conflictingCapabilityDraft = {
+    ...capabilityDraft,
+    quantity_semantics: "Different meaning must conflict under the same idempotency key",
+  };
+  const conflictingCapabilityBody = JSON.stringify(conflictingCapabilityDraft);
+  const conflictingCapability = await throughGateway(capabilityPath, accessToken("ci-human-subject"), {
+    ...capabilityHeaders,
+    "x-nova-body-sha256": createHash("sha256").update(conflictingCapabilityBody).digest("hex"),
+  }, "POST", conflictingCapabilityBody);
+  assert.equal(conflictingCapability.response.status, 409, JSON.stringify(conflictingCapability.body));
+
+  const crossTenantCapability = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b/source-capabilities",
+    accessToken("ci-tenant-b-owner"), {
+      "content-type": "application/json",
+      "x-nova-idempotency-key": "ci-cross-tenant-capability",
+      "x-nova-body-sha256": createHash("sha256").update(capabilityBody).digest("hex"),
+    }, "POST", capabilityBody);
+  assert.equal(crossTenantCapability.response.status, 404);
+
+  const deniedReviewerCapability = await throughGateway(capabilityPath,
+    accessToken("ci-measurement-reviewer"), capabilityHeaders, "POST", capabilityBody);
+  assert.equal(deniedReviewerCapability.response.status, 404);
+
   const deniedGrant = await throughGateway("/api/v1/tenants/tenant-http-a/sites/site-http-b");
   assert.equal(deniedGrant.response.status, 404);
 
