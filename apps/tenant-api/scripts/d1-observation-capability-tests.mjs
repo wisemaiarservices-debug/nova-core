@@ -33,6 +33,7 @@ function observation(id, key, capability, extra = {}) {
     observed: "strftime('%Y-%m-%dT%H:%M:%fZ','now')",
     ...extra,
   };
+  const capabilityValue = capability === null ? "NULL" : "'" + capability + "'";
   return `INSERT INTO observations
     (id,site_id,tenant_id,asset_id,source_id,module,metric,value,unit,observed_at,
      idempotency_key,verification_status,provenance_json,quality_flags_json,
