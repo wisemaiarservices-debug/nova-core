@@ -125,3 +125,21 @@ The gateway maps these paths to the private Worker and requires `Idempotency-Key
 Migration `0059_source_capability_event_idempotency.sql` adds an immutable, scope-bound request ledger for lifecycle events. `recordSourceCapabilityEvent` atomically appends the event, audit record and request ledger row. Exact retries replay; changed payloads with the same scoped key conflict. D1 tests cover event/audit binding, tenant mismatch, duplicate keys, digest shape and immutable records. Unit tests cover submission, reviewer approval/rejection, exact replay, changed evidence conflicts and reviewer assignment denial. The gateway/Worker integration test covers creator submission, exact replay, changed-payload conflict and independent reviewer approval.
 
 Still not implemented: capability list/detail reads, reviewer assignment management specific to capabilities (the existing source reviewer assignment is reused), richer evidence/data-rights verification, and any operator UI. No AI approval or device actuation is introduced.
+
+## Site-scoped capability read routes — implemented
+
+The authenticated gateway and private Tenant API now expose:
+
+- `GET /api/v1/tenants/{tenant}/sites/{site}/source-capabilities` — returns up to 100 site-scoped capability records, newest first.
+- `GET /api/v1/tenants/{tenant}/sites/{site}/source-capabilities/{capability}` — returns the capability definition and its lifecycle event history.
+
+Both reads require an active tenant membership with read permission, an exact site read grant, and an active tenant/site. The detail query binds capability ID, tenant ID and site ID together; unknown or cross-tenant resources return a non-enumerating 404. The list omits raw JSON storage fields and returns the allowed quality flags as an array. Query-string filters and pagination are not exposed; the response is bounded to 100 records.
+
+The local gateway/private-Worker D1 integration now verifies list visibility of the newly created capability, parsed quality flags, detail/event history in lifecycle order, and cross-tenant detail denial. The test intentionally does not assume an empty D1 fixture because the local persistence directory can retain earlier fixture capabilities.
+
+Exact-head CI run `44942347892` for commit `9fca866c8d08c34baa7870fe0c7ad05f37167de2` passed all three jobs:
+- API tests — passed
+- Research/raster tests — passed
+- Tenant Worker tests — passed, including ordered local-D1 migrations through 0059 and gateway/private-Worker integration for capability create, submit, approve, list and detail.
+
+Still not implemented: capability-specific reviewer assignment management (the existing source reviewer assignments are reused), richer evidence/data-rights verification, cursor pagination/filtering, and an operator UI. No AI approval or device actuation is introduced. No remote D1, Cloudflare configuration, deployment, merge or paid resource was changed.
