@@ -70,7 +70,7 @@ try {
   const capabilityBody = JSON.stringify(capabilityDraft);
   const capabilityHeaders = {
     "content-type": "application/json",
-    "x-nova-idempotency-key": "ci-capability-create-route",
+    "Idempotency-Key": "ci-capability-create-route",
     "x-nova-body-sha256": createHash("sha256").update(capabilityBody).digest("hex"),
   };
   const capabilityCreated = await throughGateway(capabilityPath, accessToken("ci-human-subject"),
@@ -101,7 +101,7 @@ try {
     "/api/v1/tenants/tenant-http-b/sites/site-http-b/source-capabilities",
     accessToken("ci-tenant-b-owner"), {
       "content-type": "application/json",
-      "x-nova-idempotency-key": "ci-cross-tenant-capability",
+      "Idempotency-Key": "ci-cross-tenant-capability",
       "x-nova-body-sha256": createHash("sha256").update(capabilityBody).digest("hex"),
     }, "POST", capabilityBody);
   assert.equal(crossTenantCapability.response.status, 404);
