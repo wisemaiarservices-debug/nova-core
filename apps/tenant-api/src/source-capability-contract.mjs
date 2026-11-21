@@ -1,6 +1,7 @@
 const MODULES = new Set(["neoagro", "neogrid", "neocell", "nova-core"]);
 const MEASUREMENT_KINDS = new Set(["measured", "derived"]);
 const SAMPLING_MODES = new Set(["interval", "event"]);
+const PROTOCOL_PATTERN = /^[a-z][a-z0-9._-]{0,79}$/;
 
 const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const text = (value, max) => typeof value === "string" && value.length > 0 &&
@@ -72,7 +73,7 @@ export function validateSourceCapabilityDraft(draft, source) {
   if (!text(draft.quantity_semantics, 500)) {
     fail("capability.quantity_semantics_invalid", "$.quantity_semantics");
   }
-  if (!id(draft.acquisition_protocol, 80)) {
+  if (typeof draft.acquisition_protocol !== "string" || !PROTOCOL_PATTERN.test(draft.acquisition_protocol)) {
     fail("capability.acquisition_protocol_invalid", "$.acquisition_protocol");
   }
   if (!integer(draft.version, 1, 1000000)) {
