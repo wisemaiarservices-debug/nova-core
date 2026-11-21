@@ -20,6 +20,7 @@ const draft = {
   measurement_kind: "measured",
   quantity_semantics: "Volumetric water content as a ratio of water volume to bulk soil volume",
   acquisition_protocol: "modbus_tcp_v1",
+  protocol_version: "1.0+vendor",
   sampling: { mode: "interval", interval_seconds: 300, max_age_seconds: 900 },
   timestamp: { max_future_skew_seconds: 60, timezone: "UTC" },
   quality: { allowed_flags: ["sensor_warmup", "estimated_clock"] },
@@ -122,6 +123,15 @@ test("calibration profile references match the registry's 160-character limit", 
   assert.ok(rejected.errors.some(error =>
     error.code === "capability.calibration_profile_required" &&
     error.path === "$.calibration.profile_ref"));
+});
+
+test("requires a bounded, trimmed protocol version without control characters", () => {
+  assert.equal(validateSourceCapabilityDraft({ ...draft, protocol_version: "2.1+vendor-build" }, source).valid, true);
+  for (const protocol_version of ["", " ", "2.1\\u0000vendor", "2.1\\nvendor", "v".repeat(81)]) {
+    const result = validateSourceCapabilityDraft({ ...draft, protocol_version }, source);
+    assert.equal(result.valid, false, JSON.stringify(protocol_version));
+    assert.ok(result.errors.some(error => error.code === "capability.protocol_version_invalid"));
+  }
 });
 
 test("requires acquisition protocols to use the ingestion canonical lowercase identifier", () => {
