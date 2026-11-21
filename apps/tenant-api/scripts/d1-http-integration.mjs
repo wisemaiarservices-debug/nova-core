@@ -120,6 +120,27 @@ try {
   assert.equal(reviewed.body.data.event_type, "approved");
   assert.equal(reviewed.body.data.status, "approved");
 
+  const capabilityList = await throughGateway(capabilityPath, accessToken("ci-human-subject"));
+  assert.equal(capabilityList.response.status, 200, JSON.stringify(capabilityList.body));
+  assert.equal(capabilityList.body.data.length, 1);
+  assert.equal(capabilityList.body.data[0].id, capabilityId);
+  assert.equal(capabilityList.body.data[0].status, "approved");
+  assert.deepEqual(capabilityList.body.data[0].allowed_quality_flags, ["suspect"]);
+  assert.equal("allowed_quality_flags_json" in capabilityList.body.data[0], false);
+
+  const capabilityDetail = await throughGateway(capabilityPath + "/" + capabilityId,
+    accessToken("ci-human-subject"));
+  assert.equal(capabilityDetail.response.status, 200, JSON.stringify(capabilityDetail.body));
+  assert.equal(capabilityDetail.body.data.capability.id, capabilityId);
+  assert.deepEqual(capabilityDetail.body.data.events.map(event => event.event_type),
+    ["submitted", "approved"]);
+  assert.equal(capabilityDetail.body.data.events[1].actor_subject, "ci-measurement-reviewer");
+
+  const crossTenantCapabilityDetail = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b/source-capabilities/" + capabilityId,
+    accessToken("ci-tenant-b-owner"));
+  assert.equal(crossTenantCapabilityDetail.response.status, 404);
+
   const capabilityReplay = await throughGateway(capabilityPath, accessToken("ci-human-subject"),
     capabilityHeaders, "POST", capabilityBody);
   assert.equal(capabilityReplay.response.status, 200, JSON.stringify(capabilityReplay.body));
