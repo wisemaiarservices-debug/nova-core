@@ -2,7 +2,7 @@ import { canonicalizeConfiguration, sha256Hex, equalDigest } from "./configurati
 
 function validId(value, max = 176) {
   return typeof value === "string" && value.length > 0 && value.length <= max &&
-    value.trim() === value && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+    value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
 function validSubject(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 200 &&
