@@ -20,7 +20,7 @@ import { consumeIdentityLinkRateLimit } from "./identity-link-rate-limit.mjs";
 import { listPendingIdentityLinkRequests, listApprovedIdentityLinkRequests, decideIdentityLinkRequest } from "./identity-link-review.mjs";
 import { createTenantSite } from "./site-creation.mjs";
 import { createTenantAsset } from "./asset-registration.mjs";
-import { createSourceCapabilityDraft } from "./source-capability-persistence.mjs";
+import { createSourceCapabilityDraft, recordSourceCapabilityEvent } from "./source-capability-persistence.mjs";
 import { registerTenantSource, assignTenantSourceReviewer, reviewTenantSource } from "./source-registry.mjs";
 
 const ROLE_ACTIONS = {
@@ -1124,6 +1124,7 @@ export default {
     const assetCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/assets$/);
     const sourceRegister = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources$/);
     const sourceCapabilityCreate = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-capabilities$/);
+    const sourceCapabilityEvent = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-capabilities\/([^/]+)\/(submit|review|revoke)$/);
     const sourceReviewerAssign = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/assign$/);
     const sourceReviewerRevoke = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/source-reviewers\/revoke$/);
     const sourceVerification = url.pathname.match(/^\/internal\/v1\/tenants\/([^/]+)\/sites\/([^/]+)\/sources\/([^/]+)\/verification$/);
@@ -1160,11 +1161,11 @@ export default {
     if ((tenantProvision && request.method !== "POST") || ((identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision) && request.method !== "POST") || ((identityLinkPending || identityLinkApproved) && request.method !== "GET") || ((membershipInvitationCreate || membershipInvitationAccept || membershipInvitationRevoke || membershipChange || siteGrantChange || resourceGrantChange || ownershipTransfer || tenantLifecycle) && request.method !== "POST") || (tenantLifecycleEvents && request.method !== "GET") || (membershipEvents && request.method !== "GET") || (!tenantProvision && !siteList && !assetCreate && !sourceRegister && !sourceCapabilityCreate && !sourceReviewerAssign && !sourceReviewerRevoke && !sourceVerification && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkPending && !identityLinkApproved && !identityLinkDecision && !siteObservationList && !membershipEvents && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle && !tenantLifecycleEvents && !match && !criteriaCreate && !criteriaDetail && !reviewerAssign && !reviewerRevoke && !reviewerList && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !assessmentOperationRoute && !siteLifecycleRoute && !labReportUpload && !labReportDetail) || url.search || url.hash ||
         (request.method === "POST" && (!identityLinkChallengeCreate && !identityLinkChallengeConsume && !identityLinkDecision && !criteriaCreate && !reviewerAssign && !reviewerRevoke && !criteriaSubmit && !criteriaReview && !criteriaResolve && !criteriaAssess && !observationReviewerAssign && !observationReviewerRevoke && !observationVerification && !calibrationReviewerAssign && !calibrationReviewerRevoke && !calibrationVerification && !calibrationRegister && !sensorMappingRegister && !sensorMappingReview && !sensorMappingReviewerAssign && !sensorMappingReviewerRevoke && !qualityPolicyRegister && !qualityPolicyReview && !qualityAssessment && !assessmentOperationRoute && !siteLifecycleRoute && !labReportUpload && !tenantProvision && !siteList && !assetCreate && !sourceRegister && !sourceCapabilityCreate && !sourceReviewerAssign && !sourceReviewerRevoke && !sourceVerification && !membershipInvitationCreate && !membershipInvitationAccept && !membershipInvitationRevoke && !membershipChange && !siteGrantChange && !resourceGrantChange && !ownershipTransfer && !tenantLifecycle || criteriaDetail || match || labReportDetail)) ||
         (request.method === "GET" && (sourceCapabilityCreate || identityLinkChallengeCreate || identityLinkChallengeConsume || identityLinkDecision || reviewerAssign || reviewerRevoke || criteriaSubmit || criteriaReview || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload || sourceRegister || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification))) return error("not_found", 404);
-    const tenant = siteLifecycleRoute?.tenant ?? assessmentOperationRoute?.tenant ?? sourceRegister?.[1] ?? sourceCapabilityCreate?.[1] ?? sourceReviewerAssign?.[1] ?? sourceReviewerRevoke?.[1] ?? sourceVerification?.[1] ?? assetCreate?.[1] ?? siteList?.[1] ?? siteObservationList?.[1] ?? identityLinkPending?.[1] ?? identityLinkApproved?.[1] ?? identityLinkDecision?.[1] ?? membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? resourceGrantChange?.[1] ?? ownershipTransfer?.[1] ?? tenantLifecycle?.[1] ?? tenantLifecycleEvents?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
+    const tenant = siteLifecycleRoute?.tenant ?? assessmentOperationRoute?.tenant ?? sourceRegister?.[1] ?? sourceCapabilityCreate?.[1] ?? sourceCapabilityEvent?.[1] ?? sourceReviewerAssign?.[1] ?? sourceReviewerRevoke?.[1] ?? sourceVerification?.[1] ?? assetCreate?.[1] ?? siteList?.[1] ?? siteObservationList?.[1] ?? identityLinkPending?.[1] ?? identityLinkApproved?.[1] ?? identityLinkDecision?.[1] ?? membershipInvitationCreate?.[1] ?? membershipInvitationAccept?.[1] ?? membershipInvitationRevoke?.[1] ?? siteGrantChange?.[1] ?? resourceGrantChange?.[1] ?? ownershipTransfer?.[1] ?? tenantLifecycle?.[1] ?? tenantLifecycleEvents?.[1] ?? membershipChange?.[1] ?? membershipEvents?.[1] ?? match?.[1] ?? criteriaCreate?.[1] ?? criteriaDetail?.[1] ?? reviewerAssign?.[1] ?? reviewerRevoke?.[1] ?? reviewerList?.[1] ?? criteriaSubmit?.[1] ?? criteriaReview?.[1] ?? criteriaResolve?.[1] ?? criteriaAssess?.[1] ?? observationReviewerAssign?.[1] ?? observationReviewerRevoke?.[1] ?? observationVerification?.[1] ?? calibrationReviewerAssign?.[1] ?? calibrationReviewerRevoke?.[1] ?? calibrationVerification?.[1] ?? calibrationRegister?.[1] ?? sensorMappingRegister?.[1] ?? sensorMappingReview?.[1] ?? sensorMappingReviewerAssign?.[1] ?? sensorMappingReviewerRevoke?.[1] ?? qualityPolicyRegister?.[1] ?? qualityPolicyReview?.[1] ?? qualityAssessment?.[1] ?? labReportUpload?.[1] ?? labReportDetail?.[1];
     const resourceId = match?.[3];
     const entryId = criteriaDetail?.[2] ?? criteriaSubmit?.[2] ?? criteriaReview?.[2] ?? criteriaResolve?.[2] ?? criteriaAssess?.[2] ?? null;
     const version = criteriaDetail?.[3] ?? criteriaSubmit?.[3] ?? criteriaReview?.[3] ?? criteriaResolve?.[3] ?? criteriaAssess?.[3] ?? null;
-    if ((!tenantProvision && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !validId(tenant, 120)) || (identityLinkChallengeConsume && !validId(identityLinkChallengeConsume[1])) || (identityLinkDecision && !validId(identityLinkDecision[2])) || (resourceId && !validId(resourceId)) || ((sourceRegister || sourceCapabilityCreate || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification) && !validId((sourceRegister || sourceCapabilityCreate || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification)[2])) || (sourceVerification && !validId(sourceVerification[3])) || (assetCreate && !validId(assetCreate[2])) || (siteObservationList && !validId(siteObservationList[2])) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validId((membershipInvitationAccept || membershipInvitationRevoke)[2])) ||
+    if ((!tenantProvision && !identityLinkChallengeCreate && !identityLinkChallengeConsume && !validId(tenant, 120)) || (identityLinkChallengeConsume && !validId(identityLinkChallengeConsume[1])) || (identityLinkDecision && !validId(identityLinkDecision[2])) || (resourceId && !validId(resourceId)) || ((sourceRegister || sourceCapabilityCreate || sourceCapabilityEvent || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification) && !validId((sourceRegister || sourceCapabilityCreate || sourceCapabilityEvent || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification)[2])) || (sourceCapabilityEvent && !validId(sourceCapabilityEvent[3])) || (sourceVerification && !validId(sourceVerification[3])) || (assetCreate && !validId(assetCreate[2])) || (siteObservationList && !validId(siteObservationList[2])) || ((membershipInvitationAccept || membershipInvitationRevoke) && !validId((membershipInvitationAccept || membershipInvitationRevoke)[2])) ||
         (entryId && (!validId(entryId) || !validId(version, 80))) ||
         (observationVerification && !validId(observationVerification[2])) ||
         ((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister) && (!validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[2]) || !validId((calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister)[3]))) || (calibrationVerification && !validId(calibrationVerification[4])) || ((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke) && (!validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[2]) || !validId((sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke)[3]))) || (sensorMappingReview && !validId(sensorMappingReview[4])) || ((qualityPolicyRegister || qualityPolicyReview) && (!validId((qualityPolicyRegister || qualityPolicyReview)[2]) || !validId((qualityPolicyRegister || qualityPolicyReview)[3]))) || (qualityPolicyReview && !validId(qualityPolicyReview[4])) || (qualityAssessment && !validId(qualityAssessment[2])) || ((labReportUpload || labReportDetail) && !validId((labReportUpload ?? labReportDetail)[2])) ||
@@ -1587,7 +1588,7 @@ export default {
           reviewer[0].jurisdiction === data.jurisdiction
           ? json({ data, request_id: requestId }) : error("not_found", 404);
       }
-      if (sourceRegister || sourceCapabilityCreate || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification || criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload || labReportDetail) {
+      if (sourceRegister || sourceCapabilityCreate || sourceCapabilityEvent || sourceReviewerAssign || sourceReviewerRevoke || sourceVerification || criteriaCreate || reviewerAssign || reviewerRevoke || reviewerList || criteriaSubmit || criteriaResolve || criteriaAssess || observationReviewerAssign || observationReviewerRevoke || observationVerification || calibrationReviewerAssign || calibrationReviewerRevoke || calibrationVerification || calibrationRegister || sensorMappingRegister || sensorMappingReview || sensorMappingReviewerAssign || sensorMappingReviewerRevoke || qualityPolicyRegister || qualityPolicyReview || qualityAssessment || labReportUpload || labReportDetail) {
         const membership = await rows(env.DB.prepare(
           "SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status, t.status AS tenant_status FROM tenant_memberships m JOIN tenants t ON t.id = m.tenant_id WHERE m.subject = ? AND m.tenant_id = ? LIMIT 2"
         ).bind(subject, tenant));
@@ -1609,6 +1610,60 @@ export default {
           const digest = request.headers.get("x-nova-body-sha256");
           const registered = await registerTenantSource(env.DB, tenant, sourceRegister[2], subject, requestId, key, digest, draftBody);
           return registered.error ? json({ error: registered.error }, registered.status) : json({ data: registered.data, request_id: requestId, replayed: Boolean(registered.replayed) }, registered.status);
+        }
+        if (sourceCapabilityEvent) {
+          if (request.method !== "POST" ||
+              !await hasSiteReadGrant(env.DB, tenant, subject, sourceCapabilityEvent[2])) return error("not_found", 404);
+          const idempotencyKey = request.headers.get("x-nova-idempotency-key");
+          if (!validId(idempotencyKey)) return error("source_capability_idempotency_key_required", 400);
+          const action = sourceCapabilityEvent[4];
+          let eventType;
+          let evidenceRef;
+          let reason = null;
+          if (action === "submit") {
+            if (!onlyKeys(draftBody, ["evidence_ref"]) || !validId(draftBody.evidence_ref, 500)) {
+              return error("source_capability_event_request_invalid", 422);
+            }
+            eventType = "submitted";
+            evidenceRef = draftBody.evidence_ref;
+          } else if (action === "review") {
+            if (!onlyKeys(draftBody, ["decision", "evidence_ref", "reason"]) ||
+                !["approve", "reject"].includes(draftBody.decision) ||
+                !validId(draftBody.evidence_ref, 500) ||
+                (draftBody.decision === "reject" && !validSubject(draftBody.reason)) ||
+                (draftBody.decision === "approve" && draftBody.reason !== undefined)) {
+              return error("source_capability_event_request_invalid", 422);
+            }
+            eventType = draftBody.decision === "approve" ? "approved" : "rejected";
+            evidenceRef = draftBody.evidence_ref;
+            reason = draftBody.reason ?? null;
+          } else {
+            if (!onlyKeys(draftBody, ["evidence_ref", "reason"]) ||
+                !validId(draftBody.evidence_ref, 500) || !validSubject(draftBody.reason)) {
+              return error("source_capability_event_request_invalid", 422);
+            }
+            eventType = "revoked";
+            evidenceRef = draftBody.evidence_ref;
+            reason = draftBody.reason;
+          }
+          try {
+            const recorded = await recordSourceCapabilityEvent({
+              db: env.DB, principalSubject: subject, tenantId: tenant,
+              siteId: sourceCapabilityEvent[2], capabilityId: sourceCapabilityEvent[3],
+              idempotencyKey, requestId, eventType, evidenceRef, reason,
+            });
+            return json({ data: recorded, request_id: requestId, replayed: Boolean(recorded.replayed) },
+              recorded.replayed ? 200 : 201);
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : "";
+            if (message === "source_capability_event_idempotency_conflict") return error(message, 409);
+            if (message === "source_capability_authorization_denied" ||
+                message === "source_capability_not_found" ||
+                message === "source_capability_submission_denied" ||
+                message === "source_capability_review_denied") return error("not_found", 404);
+            if (message === "source_capability_event_request_invalid") return error(message, 422);
+            return error("storage_unavailable", 503);
+          }
         }
         if (sourceCapabilityCreate) {
           if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
