@@ -80,6 +80,46 @@ try {
   assert.equal(capabilityCreated.body.data.created_by_subject, "ci-human-subject");
   assert.equal(capabilityCreated.body.replayed, false);
 
+  const capabilityId = capabilityCreated.body.data.capability_id;
+  const submitPath = capabilityPath + "/" + capabilityId + "/submit";
+  const submitBody = JSON.stringify({ evidence_ref: "fixture:capability-submission-route" });
+  const submitHeaders = {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-capability-submit-route",
+    "x-nova-body-sha256": createHash("sha256").update(submitBody).digest("hex"),
+  };
+  const submitted = await throughGateway(submitPath, accessToken("ci-human-subject"),
+    submitHeaders, "POST", submitBody);
+  assert.equal(submitted.response.status, 201, JSON.stringify(submitted.body));
+  assert.equal(submitted.body.data.event_type, "submitted");
+  assert.equal(submitted.body.data.status, "pending");
+
+  const submitReplay = await throughGateway(submitPath, accessToken("ci-human-subject"),
+    submitHeaders, "POST", submitBody);
+  assert.equal(submitReplay.response.status, 200, JSON.stringify(submitReplay.body));
+  assert.equal(submitReplay.body.replayed, true);
+  assert.equal(submitReplay.body.data.event_id, submitted.body.data.event_id);
+
+  const changedSubmitBody = JSON.stringify({ evidence_ref: "fixture:changed-submission" });
+  const changedSubmit = await throughGateway(submitPath, accessToken("ci-human-subject"), {
+    ...submitHeaders,
+    "x-nova-body-sha256": createHash("sha256").update(changedSubmitBody).digest("hex"),
+  }, "POST", changedSubmitBody);
+  assert.equal(changedSubmit.response.status, 409, JSON.stringify(changedSubmit.body));
+
+  const reviewPath = capabilityPath + "/" + capabilityId + "/review";
+  const reviewBody = JSON.stringify({
+    decision: "approve", evidence_ref: "fixture:capability-independent-review",
+  });
+  const reviewed = await throughGateway(reviewPath, accessToken("ci-measurement-reviewer"), {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-capability-approve-route",
+    "x-nova-body-sha256": createHash("sha256").update(reviewBody).digest("hex"),
+  }, "POST", reviewBody);
+  assert.equal(reviewed.response.status, 201, JSON.stringify(reviewed.body));
+  assert.equal(reviewed.body.data.event_type, "approved");
+  assert.equal(reviewed.body.data.status, "approved");
+
   const capabilityReplay = await throughGateway(capabilityPath, accessToken("ci-human-subject"),
     capabilityHeaders, "POST", capabilityBody);
   assert.equal(capabilityReplay.response.status, 200, JSON.stringify(capabilityReplay.body));
