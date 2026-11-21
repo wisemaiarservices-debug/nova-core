@@ -237,7 +237,7 @@ execute("cross-tenant/site evidence scope cannot be reused in another tenant dec
       ${q(evidenceId)},${q(evidenceDigest)},'CI provider','CI controller','license','CI-CROSS-SCOPE',
       '["measurement_ingestion"]','[]','2026-01-01T00:00:00Z',${q("a".repeat(64))},
       'ci-tenant-b-owner','req-ci-rights-cross-scope')`,
-], "FOREIGN KEY constraint failed");
+], "data rights declaration requires verified scoped evidence, active authority and explicit valid purposes");
 
 const expiredId = "source-rights:ci-rights-expired";
 const expiredDigest = "d".repeat(64);
