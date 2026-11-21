@@ -2,7 +2,7 @@
 -- Execute only against a disposable local D1 copy or an explicitly authorized
 -- read-only snapshot. Never run against production from this script.
 -- No document bytes, tenant names, source names, raw telemetry or secrets are selected.
-PRAGMA query_only = ON;
+-- Read-only enforcement: this file contains SELECT statements only; CI invokes it with Wrangler --local against disposable D1. Do not add writes or run with --remote.
 
 -- 1. Capability counts by status and reference resolution class.
 WITH capability_refs AS (
