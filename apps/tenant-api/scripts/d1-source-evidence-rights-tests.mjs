@@ -161,6 +161,84 @@ execute("approved rights can be revoked by an independent assigned reviewer", [
     declarationDigest, evidenceDigest, "req-ci-rights-revoked", "Provider revoked the test license"),
 ]);
 
+
+function createEvidenceAndPendingRights(label, evidenceFrom, evidenceTo, evidenceDigestValue, rightsId, rightsDigest) {
+  const docId = "source-evidence:ci-window-" + label;
+  const createRequest = "req-ci-window-" + label + "-create";
+  const registerRequest = "req-ci-window-" + label + "-registered";
+  const verifyRequest = "req-ci-window-" + label + "-verified";
+  const rightsRequest = "req-ci-window-" + label + "-rights";
+  const evidenceSql = [
+    audit("audit-ci-window-" + label + "-create", uploader, "source_evidence.registered",
+      "source_evidence_document", docId, createRequest),
+    `INSERT INTO source_evidence_documents
+      (id,tenant_id,site_id,source_id,document_type,file_name,media_type,byte_length,sha256,
+       document_bytes,issuer_name,document_reference,issued_at,effective_from,effective_to,
+       uploaded_by_subject,request_id)
+      VALUES (${q(docId)},'tenant-http-a','site-http-a','source-http-a','data_license',
+        'window.pdf','application/pdf',5,${q(evidenceDigestValue)},X'255044462D','CI synthetic provider',
+        ${q("CI-WINDOW-" + label)},'2026-01-01T00:00:00Z',${evidenceFrom === null ? "NULL" : q(evidenceFrom)},
+        ${evidenceTo === null ? "NULL" : q(evidenceTo)},${q(uploader)},${q(createRequest)})`,
+    audit("audit-ci-window-" + label + "-registered", uploader, "source_evidence.registered",
+      "source_evidence_document", docId, registerRequest),
+    evidenceEvent("event-ci-window-" + label + "-registered", docId, uploader, "registered",
+      evidenceDigestValue, registerRequest),
+    audit("audit-ci-window-" + label + "-verified", reviewer, "source_evidence.verified",
+      "source_evidence_document", docId, verifyRequest),
+    evidenceEvent("event-ci-window-" + label + "-verified", docId, reviewer, "verified",
+      evidenceDigestValue, verifyRequest),
+    audit("audit-ci-window-" + label + "-rights", uploader, "source_data_rights.declared",
+      "source_data_rights_declaration", rightsId, rightsRequest),
+    `INSERT INTO source_data_rights_declarations
+      (id,tenant_id,site_id,source_id,supporting_evidence_id,supporting_evidence_sha256,
+       provider_name,controller_name,basis_type,instrument_reference,permitted_purposes_json,
+       restrictions_json,effective_from,effective_to,declaration_sha256,declared_by_subject,request_id)
+      VALUES (${q(rightsId)},'tenant-http-a','site-http-a','source-http-a',${q(docId)},
+        ${q(evidenceDigestValue)},'CI synthetic provider','CI tenant controller','license',
+        ${q("CI-RIGHTS-" + label)},'["measurement_ingestion","storage"]','[]',
+        '2026-01-01T00:00:00Z','2027-01-01T00:00:00Z',${q(rightsDigest)},
+        ${q(uploader)},${q(rightsRequest)})`,
+    audit("audit-ci-window-" + label + "-declared", uploader, "source_data_rights.declared",
+      "source_data_rights_declaration", rightsId, rightsRequest + "-event"),
+    rightsEvent("event-ci-window-" + label + "-declared", rightsId, uploader, "declared",
+      rightsDigest, evidenceDigestValue, rightsRequest + "-event"),
+  ];
+  execute("create " + label + " evidence and pending rights fixture", evidenceSql);
+  return { rightsId, rightsDigest, evidenceDigest: evidenceDigestValue, label };
+}
+function attemptRightsApproval(fixture, label) {
+  const requestId = "req-ci-window-" + fixture.label + "-approve";
+  execute(label, [
+    audit("audit-ci-window-" + fixture.label + "-approve", reviewer, "source_data_rights.approved",
+      "source_data_rights_declaration", fixture.rightsId, requestId),
+    rightsEvent("event-ci-window-" + fixture.label + "-approve", fixture.rightsId, reviewer, "approved",
+      fixture.rightsDigest, fixture.evidenceDigest, requestId),
+  ], "data rights event requires exact declaration and evidence digests, valid lifecycle and independent reviewer authority");
+}
+const expiredEvidence = createEvidenceAndPendingRights(
+  "expired-evidence", "2025-01-01T00:00:00Z", "2026-01-01T00:00:00Z",
+  "6".repeat(64), "source-rights:ci-expired-evidence", "7".repeat(64)
+);
+attemptRightsApproval(expiredEvidence, "expired supporting evidence cannot be approved");
+const futureEvidence = createEvidenceAndPendingRights(
+  "future-evidence", "2027-01-01T00:00:00Z", null,
+  "8".repeat(64), "source-rights:ci-future-evidence", "9".repeat(64)
+);
+attemptRightsApproval(futureEvidence, "future-dated supporting evidence cannot be approved");
+
+execute("cross-tenant/site evidence scope cannot be reused in another tenant declaration", [
+  audit("audit-ci-rights-cross-scope", "ci-tenant-b-owner", "source_data_rights.declared",
+    "source_data_rights_declaration", "source-rights:ci-cross-scope", "req-ci-rights-cross-scope"),
+  `INSERT INTO source_data_rights_declarations
+    (id,tenant_id,site_id,source_id,supporting_evidence_id,supporting_evidence_sha256,
+     provider_name,controller_name,basis_type,instrument_reference,permitted_purposes_json,
+     restrictions_json,effective_from,declaration_sha256,declared_by_subject,request_id)
+    VALUES ('source-rights:ci-cross-scope','tenant-http-b','site-http-b','source-http-a',
+      ${q(evidenceId)},${q(evidenceDigest)},'CI provider','CI controller','license','CI-CROSS-SCOPE',
+      '["measurement_ingestion"]','[]','2026-01-01T00:00:00Z',${q("a".repeat(64))},
+      'ci-tenant-b-owner','req-ci-rights-cross-scope')`,
+], "FOREIGN KEY constraint failed");
+
 const expiredId = "source-rights:ci-rights-expired";
 const expiredDigest = "d".repeat(64);
 execute("record historical expired rights declaration", [
