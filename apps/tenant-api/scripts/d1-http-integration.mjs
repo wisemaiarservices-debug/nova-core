@@ -90,15 +90,15 @@ try {
   };
   const submitted = await throughGateway(submitPath, accessToken("ci-human-subject"),
     submitHeaders, "POST", submitBody);
-  assert.equal(submitted.response.status, 201, JSON.stringify(submitted.body));
-  assert.equal(submitted.body.data.event_type, "submitted");
-  assert.equal(submitted.body.data.status, "pending");
+  assert.equal(capabilitySubmitted.response.status, 201, JSON.stringify(capabilitySubmitted.body));
+  assert.equal(capabilitySubmitted.body.data.event_type, "submitted");
+  assert.equal(capabilitySubmitted.body.data.status, "pending");
 
   const submitReplay = await throughGateway(submitPath, accessToken("ci-human-subject"),
     submitHeaders, "POST", submitBody);
   assert.equal(submitReplay.response.status, 200, JSON.stringify(submitReplay.body));
   assert.equal(submitReplay.body.replayed, true);
-  assert.equal(submitReplay.body.data.event_id, submitted.body.data.event_id);
+  assert.equal(submitReplay.body.data.event_id, capabilitySubmitted.body.data.event_id);
 
   const changedSubmitBody = JSON.stringify({ evidence_ref: "fixture:changed-submission" });
   const changedSubmit = await throughGateway(submitPath, accessToken("ci-human-subject"), {
