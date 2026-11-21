@@ -20,6 +20,9 @@ WHEN
   OR trim(NEW.quantity_semantics, char(9) || char(10) || char(11) || char(12) || char(13) || char(32) || char(160) || char(5760) || char(8192) || char(8193) || char(8194) || char(8195) || char(8196) || char(8197) || char(8198) || char(8199) || char(8200) || char(8201) || char(8202) || char(8232) || char(8233) || char(8239) || char(8287) || char(12288) || char(65279)) <> NEW.quantity_semantics
   OR instr(NEW.quantity_semantics, char(0)) > 0
   OR NEW.quantity_semantics GLOB '*[' || char(1) || '-' || char(31) || char(127) || ']*'
+  OR trim(NEW.protocol_version, char(9) || char(10) || char(11) || char(12) || char(13) || char(32) || char(160) || char(5760) || char(8192) || char(8193) || char(8194) || char(8195) || char(8196) || char(8197) || char(8198) || char(8199) || char(8200) || char(8201) || char(8202) || char(8232) || char(8233) || char(8239) || char(8287) || char(12288) || char(65279)) <> NEW.protocol_version
+  OR instr(NEW.protocol_version, char(0)) > 0
+  OR NEW.protocol_version GLOB '*[' || char(1) || '-' || char(31) || char(127) || ']*'
   OR NEW.acquisition_protocol NOT GLOB '[a-z]*'
   OR NEW.acquisition_protocol GLOB '*[^a-z0-9._-]*'
   OR NEW.timezone NOT IN ('UTC')
