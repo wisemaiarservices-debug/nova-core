@@ -124,6 +124,29 @@ execute("independent reviewer approves exact active rights declaration", [
     declarationDigest, evidenceDigest, "req-ci-rights-approved"),
 ]);
 
+const selfReviewId = "source-rights:ci-rights-self-review";
+const selfReviewDigest = "9".repeat(64);
+execute("rights declarant cannot independently approve their own declaration", [
+  audit("audit-ci-rights-self-create", reviewer, "source_data_rights.declared",
+    "source_data_rights_declaration", selfReviewId, "req-ci-rights-self-create"),
+  `INSERT INTO source_data_rights_declarations
+    (id,tenant_id,site_id,source_id,supporting_evidence_id,supporting_evidence_sha256,
+     provider_name,controller_name,basis_type,instrument_reference,permitted_purposes_json,
+     restrictions_json,effective_from,declaration_sha256,declared_by_subject,request_id)
+    VALUES (${q(selfReviewId)},'tenant-http-a','site-http-a','source-http-a',
+      ${q(evidenceId)},${q(evidenceDigest)},'CI provider','CI controller','license','CI-SELF',
+      '["measurement_ingestion"]','[]','2026-01-01T00:00:00Z',${q(selfReviewDigest)},
+      ${q(reviewer)},'req-ci-rights-self-create')`,
+  audit("audit-ci-rights-self-declared", reviewer, "source_data_rights.declared",
+    "source_data_rights_declaration", selfReviewId, "req-ci-rights-self-declared"),
+  rightsEvent("event-ci-rights-self-declared", selfReviewId, reviewer, "declared",
+    selfReviewDigest, evidenceDigest, "req-ci-rights-self-declared"),
+  audit("audit-ci-rights-self-approved", reviewer, "source_data_rights.approved",
+    "source_data_rights_declaration", selfReviewId, "req-ci-rights-self-approved"),
+  rightsEvent("event-ci-rights-self-approved", selfReviewId, reviewer, "approved",
+    selfReviewDigest, evidenceDigest, "req-ci-rights-self-approved"),
+], "data rights event requires exact declaration and evidence digests, valid lifecycle and independent reviewer authority");
+
 execute("rights declaration cannot be edited after review", [
   "UPDATE source_data_rights_declarations SET provider_name='tampered' WHERE id=" + q(declarationId),
 ], "source data rights declarations are immutable");
@@ -188,7 +211,7 @@ execute("rights declaration rejects a mismatched supporting evidence digest", [
       ${q(evidenceId)},${q("f".repeat(64))},'CI provider','CI controller','other','CI-MISMATCH',
       '["measurement_ingestion"]','[]','2026-01-01T00:00:00Z',${q("f".repeat(64))},
       ${q(uploader)},'req-ci-rights-evidence-mismatch')`,
-], "FOREIGN KEY constraint failed");
+], "data rights declaration requires verified scoped evidence, active authority and explicit valid purposes");
 
 execute("inspect canonical rights purpose scope", [
   "SELECT id,permitted_purposes_json FROM source_data_rights_declarations WHERE id=" + q(declarationId),
