@@ -124,6 +124,15 @@ test("calibration profile references match the registry's 160-character limit", 
     error.path === "$.calibration.profile_ref"));
 });
 
+test("requires acquisition protocols to use the ingestion canonical lowercase identifier", () => {
+  assert.equal(validateSourceCapabilityDraft({ ...draft, acquisition_protocol: "manual-lab_v1" }, source).valid, true);
+  for (const acquisition_protocol of ["Manual-lab", "1manual-lab", "manual:lab", "manual lab", ""]) {
+    const result = validateSourceCapabilityDraft({ ...draft, acquisition_protocol }, source);
+    assert.equal(result.valid, false, acquisition_protocol);
+    assert.ok(result.errors.some(error => error.code === "capability.acquisition_protocol_invalid"));
+  }
+});
+
 test("requires evidence and data-rights references", () => {
   assert.equal(validateSourceCapabilityDraft({ ...draft, evidence_ref: "" }, source).valid, false);
   assert.equal(validateSourceCapabilityDraft({ ...draft, data_rights_ref: "" }, source).valid, false);
