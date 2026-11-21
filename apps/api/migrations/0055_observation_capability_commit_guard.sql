@@ -31,12 +31,13 @@ WHEN NEW.source_capability_id IS NULL
   OR (NEW.sampling_mode='interval' AND NEW.sampling_interval_seconds IS NULL)
   OR (NEW.sampling_mode='event' AND NEW.sampling_interval_seconds IS NOT NULL)
   OR (
-    SELECT COUNT(*)
+    SELECT CASE WHEN COUNT(*)=1 AND SUM(CASE WHEN c.id=NEW.source_capability_id THEN 1 ELSE 0 END)=1 THEN 1 ELSE 0 END
     FROM source_capabilities c
     JOIN tenants t ON t.id=c.tenant_id AND t.status='active'
     JOIN sites s ON s.id=c.site_id AND s.tenant_id=c.tenant_id AND s.status='active'
     JOIN sources src ON src.id=c.source_id AND src.tenant_id=c.tenant_id
       AND src.module=c.module AND src.verification_status='verified'
+      AND (src.site_id IS NULL OR src.site_id=NEW.site_id)
     WHERE c.status='approved'
       AND c.tenant_id=NEW.tenant_id
       AND c.site_id=NEW.site_id
