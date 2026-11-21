@@ -71,7 +71,9 @@ function ownershipDb({ siteStatus = "active", sourceSiteId = "site-001", sourceM
           module: v[5], metric: v[6], value: v[7], unit: v[8],
           observed_at: v[9], idempotency_key: v[10],
           verification_status: "unverified", provenance_json: v[11],
-          quality_flags_json: v[12],
+          quality_flags_json: v[12], source_capability_id: v[13],
+          measurement_kind: v[14], acquisition_protocol: v[15], protocol_version: v[16],
+          sampling_mode: v[17], sampling_interval_seconds: v[18],
         };
         state.audit.push({ id: statements[1].values[0], tenant_id: statements[1].values[1], actor_id: statements[1].values[2] });
         inserted = true;
