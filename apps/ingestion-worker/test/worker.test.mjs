@@ -147,6 +147,9 @@ test("valid Access service identity and exact source grant reach the storage gat
     body: JSON.stringify({
       site_id: "site-001",
       asset_id: "asset-001",
+      source_capability_id: "capability-weather-01",
+      measurement_kind: "measured", acquisition_protocol: "station-v2",
+      protocol_version: "2.1", sampling_mode: "interval", sampling_interval_seconds: 300,
       module: "neoagro",
       source_id: "source-weather-01",
       metric: "air_temperature",
@@ -178,7 +181,10 @@ test("valid service identity and D1 ownership checks persist an unverified obser
     method: "POST",
     headers: { "Cf-Access-Jwt-Assertion": fixture.token, "content-type": "application/json" },
     body: JSON.stringify({
-      site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+      site_id: "site-001", asset_id: "asset-001",
+      source_capability_id: "capability-weather-01", measurement_kind: "measured",
+      acquisition_protocol: "station-v2", protocol_version: "2.1",
+      sampling_mode: "interval", sampling_interval_seconds: 300, module: "neoagro",
       source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
       unit: "degC", observed_at: new Date().toISOString(),
       idempotency_key: "test-observation-owned-001",
