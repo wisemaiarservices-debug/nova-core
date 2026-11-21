@@ -1653,7 +1653,8 @@ export default {
             "SELECT id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type," +
             "evidence_ref,reason,request_id,occurred_at FROM source_capability_events " +
             "WHERE capability_id=? AND tenant_id=? AND site_id=? " +
-            "ORDER BY occurred_at ASC,id ASC"
+            "ORDER BY CASE event_type WHEN 'submitted' THEN 0 WHEN 'approved' THEN 1 " +
+            "WHEN 'rejected' THEN 1 WHEN 'revoked' THEN 2 ELSE 3 END,occurred_at ASC,id ASC"
           ).bind(capabilityId, tenant, siteId));
           return json({ data: { capability: normalize(records[0]), events }, request_id: requestId });
         }
