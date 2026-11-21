@@ -67,4 +67,39 @@ reject("identifier must start with an ASCII letter or digit",
 reject("non-array JSON is rejected by the insert guard",
   insertCapability("quality-flags-ci-not-array", 110, "'{}'"));
 
-console.log("Source capability quality-flag D1 tests passed");
+
+function rejectContract(label, sql) {
+  const result = spawnSync("npx", [...wrangler, sql], { encoding: "utf8" });
+  const output = (result.stdout || "") + "\\n" + (result.stderr || "");
+  assert.notEqual(result.status, 0, label + " unexpectedly succeeded\\n" + output);
+  assert.match(
+    output,
+    /source capability fields violate the canonical draft contract/,
+    label + " failed for an unexpected reason\\n" + output,
+  );
+  console.log("Rejected as expected: " + label);
+}
+
+rejectContract("metric separators must be canonical",
+  insertCapability("quality-flags-ci-bad-metric", 111, "'[]'")
+    .replace("'ec'", "'soil..moisture'"));
+rejectContract("acquisition protocol must be an identifier",
+  insertCapability("quality-flags-ci-bad-protocol", 112, "'[]'")
+    .replace("'manual-lab'", "'manual lab'"));
+rejectContract("timezone must have canonical IANA-style structure",
+  insertCapability("quality-flags-ci-bad-timezone", 113, "'[]'")
+    .replace("'Africa/Tunis'", "'/Africa/Tunis'"));
+rejectContract("data-rights reference cannot traverse path segments",
+  insertCapability("quality-flags-ci-bad-rights-ref", 114, "'[]'")
+    .replace("'fixture:rights'", "'../private'"));
+rejectContract("evidence reference cannot traverse path segments",
+  insertCapability("quality-flags-ci-bad-evidence-ref", 115, "'[]'")
+    .replace("'fixture:quality-flags'", "'evidence/../private'"));
+rejectContract("quantity semantics cannot contain control characters",
+  insertCapability("quality-flags-ci-control-semantics", 116, "'[]'")
+    .replace("'CI quality flags guard'", "CAST('invalid' || char(1) AS TEXT)"));
+rejectContract("unit cannot contain Unicode whitespace",
+  insertCapability("quality-flags-ci-unicode-space-unit", 117, "'[]'")
+    .replace("'dS/m'", "'dS/ｍ　m'"));
+
+console.log("Source capability quality-flag and capability contract D1 tests passed");
