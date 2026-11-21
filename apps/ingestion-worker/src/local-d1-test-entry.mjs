@@ -1,6 +1,4 @@
-import { validateObservationPayload } from "./observation-contract.mjs";
-import { resolveObservationOwnership } from "./observation-ownership.mjs";
-import { persistObservation } from "./observation-persistence.mjs";
+import { createIngestionHandler } from "./ingestion-handler.mjs";
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -8,13 +6,15 @@ function json(body, status = 200) {
   });
 }
 
-// CI-only local D1 harness. This entrypoint deliberately bypasses Access JWT
-// verification; auth/grant behavior is covered by worker.test.mjs. It exercises
-// ownership SQL, D1 batch atomicity, idempotency and read-back against real local D1.
+// This local-only entrypoint delegates ingestion requests to the same handler
+// used by the deployed Worker. Only the JWKS document and request ID source
+// are injected; the production RS256, issuer, audience, service-grant,
+// ownership, validation and persistence code all remain in the request path.
 export default {
   async fetch(request, env) {
     if (env.CI_TEST_INGESTION !== "true" || !env.DB) return json({ error: "not_found" }, 404);
     const url = new URL(request.url);
+
     if (request.method === "GET" && url.pathname === "/__ci/ingestion/state") {
       const source = url.searchParams.get("source");
       const key = url.searchParams.get("key");
@@ -24,32 +24,32 @@ export default {
         "FROM observations WHERE source_id = ? AND idempotency_key = ? LIMIT 1",
       ).bind(source, key).first();
       const audit = observation ? await env.DB.prepare(
-        "SELECT id, tenant_id, actor_id, action FROM audit_events WHERE entity_type = 'observation' AND entity_id = ?",
+        "SELECT id, tenant_id, actor_id, action, request_id FROM audit_events " +
+        "WHERE entity_type = 'observation' AND entity_id = ?",
       ).bind(observation.id).all() : { results: [] };
       return json({ observation: observation ?? null, audit: audit.results });
     }
-    if (request.method !== "POST" || url.pathname !== "/__ci/ingestion/accept") {
-      return json({ error: "not_found" }, 404);
+
+    const handler = createIngestionHandler({
+      jwksResolver: async (issuer) => {
+        if (issuer !== env.ACCESS_ISSUER) throw new Error("access_jwks_unavailable");
+        let document;
+        try { document = JSON.parse(env.CI_TEST_JWKS_JSON || ""); }
+        catch { throw new Error("access_jwks_invalid"); }
+        if (!Array.isArray(document.keys) || document.keys.length === 0) {
+          throw new Error("access_jwks_invalid");
+        }
+        return document.keys;
+      },
+      requestIdFactory: (incoming) => incoming.headers.get("x-ci-request-id") || crypto.randomUUID(),
+    });
+
+    if (request.method === "POST" && url.pathname === "/api/v1/observations") {
+      return handler(request, env);
     }
-    let body;
-    try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
-    let observation;
-    try { observation = validateObservationPayload(body.observation); }
-    catch { return json({ error: "invalid_observation_payload" }, 400); }
-    try {
-      const tenantId = await resolveObservationOwnership(env.DB, observation);
-      if (!tenantId) return json({ error: "request_not_authorized" }, 403);
-      const result = await persistObservation(
-        env.DB, observation, { serviceId: "ci-local-ingestor" },
-        typeof body.request_id === "string" ? body.request_id : "ci-local-ingestion",
-        tenantId,
-      );
-      if (result.status === "idempotency_conflict") {
-        return json({ error: "idempotency_key_conflict", accepted: false }, 409);
-      }
-      return json(result, result.idempotent ? 200 : 201);
-    } catch {
-      return json({ error: "storage_unavailable", accepted: false }, 503);
+    if (request.method === "GET" && url.pathname === "/health") {
+      return handler(request, env);
     }
+    return json({ error: "not_found" }, 404);
   },
 };

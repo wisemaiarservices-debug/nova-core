@@ -71,7 +71,9 @@ async function verifySignature(signingInput, signature, jwk) {
   );
 }
 
-export async function verifyAccessServiceToken(token, config, nowSeconds = Math.floor(Date.now() / 1000)) {
+export async function verifyAccessServiceToken(
+  token, config, nowSeconds = Math.floor(Date.now() / 1000), jwksResolver = fetchJwks,
+) {
   if (typeof token !== "string" || token.length > 16_384) throw new Error("missing_or_oversized_access_token");
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("malformed_access_token");
@@ -108,10 +110,10 @@ export async function verifyAccessServiceToken(token, config, nowSeconds = Math.
     throw new Error("access_token_not_yet_valid");
   }
 
-  let keys = await fetchJwks(issuer);
+  let keys = await jwksResolver(issuer);
   let jwk = keys.find((candidate) => isSigningKey(candidate, header.kid));
   if (!jwk) {
-    keys = await fetchJwks(issuer, true);
+    keys = await jwksResolver(issuer, true);
     jwk = keys.find((candidate) => isSigningKey(candidate, header.kid));
   }
   if (!jwk) throw new Error("access_signing_key_not_found");
