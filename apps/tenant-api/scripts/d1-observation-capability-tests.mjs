@@ -58,7 +58,7 @@ expectRejected("protocol mismatch",
     { protocol: "other-protocol" }));
 expectRejected("disallowed quality flag",
   observation("obs-capability-guard-quality","ci-capability-guard-quality","capability-http-a",
-    { flags: "'[\\"trusted\\"]'" }));
+    { flags: "json_array('trusted')" }));
 expectRejected("site capability cannot inherit to an asset",
   observation("obs-capability-guard-asset-scope","ci-capability-guard-asset-scope","capability-http-a",
     { asset: "'asset-http-grant" }));
