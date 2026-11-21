@@ -326,6 +326,7 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
           "https://nova-core-tenant-api.internal" + internalPath,
           { method: request.method, headers, body: forwardedBody },
         ));
+        if (upstream.status === 404) return error("tenant_api_upstream_not_found", 404);
         return await boundedJsonResponse(upstream, requestId, labReportDetail ? 1500000 : undefined);
       } catch {
         return error("tenant_api_unavailable", 503);
