@@ -161,6 +161,31 @@ expectRejected("future observation outside approved skew is denied",
   observation("obs-capability-guard-future","ci-capability-guard-future","capability-http-guard-site",
     { observed: "strftime('%Y-%m-%dT%H:%M:%fZ','now','+1 day')" }));
 
+// calibrated_at is inclusive: an observation exactly at calibration start is valid.
+execute("seed calibration beginning exactly at the observation boundary", `
+  INSERT INTO sensor_calibrations
+  (id,tenant_id,site_id,asset_id,sensor_id,parameter,unit,calibration_method,calibrated_at,valid_until,
+   laboratory_name,certificate_evidence_id,reference_value,as_found_value,as_left_value,uncertainty,
+   notes,registered_by_subject)
+  VALUES ('cal-http-guard-start-boundary','tenant-http-a','site-http-a','asset-http-grant','sensor-http-guard',
+    'ec','dS/m','CI inclusive validity boundary','2026-01-01T00:00:00Z','2027-01-01T00:00:00Z',
+    'CI fixture laboratory','lab-http-calibration',1.5,1.6,1.5,0.01,
+    'Synthetic CI inclusive boundary fixture only','ci-human-subject');
+  INSERT INTO sensor_calibration_events
+  (id,calibration_id,tenant_id,site_id,event_type,actor_subject,request_id)
+  VALUES ('cal-http-guard-start-registered','cal-http-guard-start-boundary','tenant-http-a','site-http-a',
+    'registered','ci-human-subject','ci-calibration-start-registration');
+  INSERT INTO sensor_calibration_verification_events
+  (id,tenant_id,site_id,asset_id,calibration_id,reviewer_subject,reviewer_role,event_type,evidence_ref,reason,request_id)
+  VALUES ('cal-http-guard-start-verified','tenant-http-a','site-http-a','asset-http-grant',
+    'cal-http-guard-start-boundary','ci-measurement-reviewer','calibration_reviewer','verified',
+    'lab-http-calibration',NULL,'ci-calibration-start-verified');
+`);
+execute("calibrated_at is inclusive at the observation instant",
+  observation("obs-capability-guard-cal-start-boundary","ci-capability-guard-cal-start-boundary",
+    "capability-http-guard-cal",
+    { asset: "'asset-http-grant'", observed: "'2026-01-01T00:00:00Z'" }));
+
 execute("calibration revocation event is appended",
   `INSERT INTO sensor_calibration_verification_events
     (id,tenant_id,site_id,asset_id,calibration_id,reviewer_subject,reviewer_role,
