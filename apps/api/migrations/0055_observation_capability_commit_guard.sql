@@ -112,7 +112,7 @@ WHEN NEW.source_capability_id IS NULL
               AND cve.event_type='verified'
               AND cve.id=(SELECT latest.id FROM sensor_calibration_verification_events latest
                 WHERE latest.tenant_id=cal.tenant_id AND latest.calibration_id=cal.id
-                ORDER BY julianday(latest.occurred_at) DESC,latest.rowid DESC LIMIT 1)
+                ORDER BY latest.rowid DESC LIMIT 1)
           )
       ) = 1)
   ) <> 1
