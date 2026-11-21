@@ -127,7 +127,7 @@ test("calibration profile references match the registry's 160-character limit", 
 
 test("requires a bounded, trimmed protocol version without control characters", () => {
   assert.equal(validateSourceCapabilityDraft({ ...draft, protocol_version: "2.1+vendor-build" }, source).valid, true);
-  for (const protocol_version of ["", " ", "2.1\\u0000vendor", "2.1\\nvendor", "v".repeat(81)]) {
+  for (const protocol_version of ["", " ", "2.1\u0000vendor", "2.1\nvendor", "v".repeat(81)]) {
     const result = validateSourceCapabilityDraft({ ...draft, protocol_version }, source);
     assert.equal(result.valid, false, JSON.stringify(protocol_version));
     assert.ok(result.errors.some(error => error.code === "capability.protocol_version_invalid"));
