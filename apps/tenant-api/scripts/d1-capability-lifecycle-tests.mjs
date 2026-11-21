@@ -43,8 +43,6 @@ expectRejected("event mutation",
 expectRejected("event deletion",
   "DELETE FROM source_capability_events WHERE id='capability-http-a-approved'");
 
-console.log("Source capability lifecycle negative D1 tests passed");
-
 // A reviewer assignment is retained after revocation, but must no longer
 // authorize a capability lifecycle decision. Use an isolated reviewer identity
 // and a fresh capability so this regression does not disturb other fixtures.
@@ -70,10 +68,12 @@ runSql("prepare capability and dedicated reviewer revocation fixture", [
   "UPDATE tenant_source_reviewers SET status='revoked' WHERE tenant_id='tenant-http-a' AND site_id='site-http-a' AND reviewer_subject='ci-capability-reviewer-revoked' AND status='active';",
   "INSERT INTO tenant_source_reviewer_events(id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,reason,request_id) VALUES",
   "('cap-reviewer-revoked-event','tenant-http-a','site-http-a','ci-capability-reviewer-revoked','ci-human-subject','revoked','fixture:capability-reviewer-revocation','reviewer assignment revoked for CI regression','ci-cap-reviewer-revoked');"
-].join("\\n"));
+].join("\n"));
 
 expectRejected("revoked reviewer assignment cannot approve capability",
   "INSERT INTO source_capability_events " +
   "(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id) VALUES " +
   "('capability-reviewer-revoked-approval','capability-http-reviewer-revoked','tenant-http-a','site-http-a','source-http-a'," +
   "'ci-capability-reviewer-revoked','approved','fixture:negative-test',NULL,'ci-cap-reviewer-revoked-approval')");
+
+console.log("Source capability lifecycle negative D1 tests passed");
