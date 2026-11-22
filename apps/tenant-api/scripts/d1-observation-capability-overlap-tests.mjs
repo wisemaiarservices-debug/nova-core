@@ -31,7 +31,7 @@ run("register a second independently approved version with overlapping scope", `
   ('capability-http-grant-v2','tenant-http-a','site-http-a','source-http-grant','asset-http-grant',
    'neoagro','soil_moisture','m3/m3','measured','CI overlapping version fixture',
    'manual-lab','1.0','interval',3600,31536000,300,'Africa/Tunis','[]',
-   0,NULL,'source-rights:ci-http-a','source-evidence:ci-http-a',2,'pending','ci-human-subject');
+   0,NULL,'source-rights:ci-http-grant-asset','source-evidence:ci-http-grant-asset',2,'pending','ci-human-subject');
   INSERT INTO source_capability_events
   (id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
   VALUES
