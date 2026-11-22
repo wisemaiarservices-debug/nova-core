@@ -91,6 +91,9 @@ jobs:
       - name: Test source capability quality-flag allow-list guard against local D1
         working-directory: apps/tenant-api
         run: node ./scripts/d1-capability-quality-flags-tests.mjs
+      - name: Test source rights capability approval and observation commit guards
+        working-directory: apps/tenant-api
+        run: node ./scripts/d1-source-rights-enforcement-tests.mjs
 
   research-raster-tests:
     runs-on: ubuntu-latest
