@@ -25,9 +25,9 @@ jobs:
         run: |
           grep -qx 'workers_dev = false' wrangler.toml
           grep -qx 'preview_urls = false' wrangler.toml
-          ! grep -Eq '^\s*(\[\[routes\]\]|\[\[env\..*\.routes\]\]|route\s*=|routes\s*=|workers_dev\s*=\s*true|preview_urls\s*=\s*true)' wrangler.toml
-          ! grep -Eq '^\s*\[\[d1_databases\]\]' wrangler.toml
-          ! grep -Eq '^\s*\[vars\]' wrangler.toml
+          ! grep -Eq '^[[:space:]]*(\[\[routes\]\]|\[\[env\..*\.routes\]\]|route[[:space:]]*=|routes[[:space:]]*=|workers_dev[[:space:]]*=[[:space:]]*true|preview_urls[[:space:]]*=[[:space:]]*true)' wrangler.toml
+          ! grep -Eq '^[[:space:]]*\[\[d1_databases\]\]' wrangler.toml
+          ! grep -Eq '^[[:space:]]*\[vars\]' wrangler.toml
       - name: Bundle production Worker config without deploying
         working-directory: apps/tenant-api
         run: npx --yes wrangler@4.13.2 deploy --dry-run --outdir /tmp/nova-tenant-api-dry-run --config wrangler.toml
@@ -49,8 +49,8 @@ jobs:
           grep -qx 'preview_urls = false' wrangler.toml
           grep -Fqx 'service = "nova-core-tenant-api"' wrangler.toml
           grep -Fqx 'binding = "TENANT_API"' wrangler.toml
-          ! grep -Eq '^\s*(\[\[routes\]\]|\[\[env\..*\.routes\]\]|route\s*=|routes\s*=|workers_dev\s*=\s*true|preview_urls\s*=\s*true)' wrangler.toml
-          ! grep -Eq '^\s*\[vars\]' wrangler.toml
+          ! grep -Eq '^[[:space:]]*(\[\[routes\]\]|\[\[env\..*\.routes\]\]|route[[:space:]]*=|routes[[:space:]]*=|workers_dev[[:space:]]*=[[:space:]]*true|preview_urls[[:space:]]*=[[:space:]]*true)' wrangler.toml
+          ! grep -Eq '^[[:space:]]*\[vars\]' wrangler.toml
       - name: Bundle production Worker config without deploying
         working-directory: apps/tenant-gateway
         run: npx --yes wrangler@4.13.2 deploy --dry-run --outdir /tmp/nova-tenant-gateway-dry-run --config wrangler.toml
