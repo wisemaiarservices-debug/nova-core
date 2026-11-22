@@ -367,7 +367,7 @@ attemptRightsApproval(
 
 const inactiveMembershipReviewer = createEvidenceAndPendingRights(
   "inactive-membership-reviewer", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
-  "1".repeat(64), "source-rights:ci-inactive-membership-reviewer", "2".repeat(64),
+  "3".repeat(64), "source-rights:ci-inactive-membership-reviewer", "2".repeat(64),
   "ci-rights-inactive-reviewer"
 );
 execute("deactivate reviewer membership with append-only membership event", [
