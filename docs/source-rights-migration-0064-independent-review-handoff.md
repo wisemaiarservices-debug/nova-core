@@ -1,6 +1,8 @@
 # Source rights migration 0064 — independent review handoff
 
-**Review target:** `873086ea07779f349d47480847e3962a9ff4f9a0` (PR #311; review again if the head changes).
+**Migration implementation commit:** `873086ea07779f349d47480847e3962a9ff4f9a0`.
+
+**PR head at latest validation:** `c3d90d5a1087babcbe13167e24c19f88dcc38444` (PR #311). Reconfirm the head before review; any later change to migration/runtime code requires review of the new exact commit.
 
 **Scope:** source-level review of migration 0064 and its interactions with migrations 0055, 0060–0063, source-capability lifecycle, observation persistence and idempotency. This is not a request to deploy, migrate a remote database, merge the PR or certify the whole platform.
 
@@ -46,7 +48,7 @@ The reviewer should not be an author of migration 0064 or its tests. The review 
 
 ## Evidence currently available
 
-- Exact-head CI: [44966562811](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44966562811), all three jobs passed on `873086ea07779f349d47480847e3962a9ff4f9a0`.
+- Exact-head CI: [44967375569](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44967375569), all three jobs passed on PR head `c3d90d5a1087babcbe13167e24c19f88dcc38444`. The tenant Worker job applied ordered migrations through 0064 to disposable local D1, ran the expanded read-only inventory, and passed evidence/rights lifecycle, capability, calibration, gateway, observation, quality-flag and source-rights guard tests.
 - Migration under review: `apps/api/migrations/0064_source_data_rights_capability_observation_guards.sql`.
 - Guard tests: `apps/tenant-api/scripts/d1-source-rights-guard-tests.mjs`.
 - Read-only aggregate inventory: `apps/tenant-api/scripts/read-only-source-rights-impact-inventory.sql`.
