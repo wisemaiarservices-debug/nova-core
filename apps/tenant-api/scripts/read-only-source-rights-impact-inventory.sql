@@ -184,8 +184,9 @@ ORDER BY finding_class;
 -- This inventory intentionally does not decide whether historical observations
 -- are retroactively authorized. It emits counts only; policy must decide that.
 
--- 6. Exact migration-0064 parity: approved capabilities classified by every
--- approval-time predicate. Counts only; no identifiers or tenant data are emitted.
+-- 6. Migration-0064 approval predicates: evidence is source-scoped (the
+-- evidence-document schema has no asset_id); asset scope is enforced by the
+-- rights declaration and capability. Counts only; no identifiers are emitted.
 WITH candidates AS (
   SELECT c.id, c.tenant_id, c.site_id, c.source_id, c.asset_id,
          c.data_rights_ref, c.evidence_ref,
@@ -197,7 +198,7 @@ WITH candidates AS (
          rd.effective_to AS rights_effective_to,
          doc.id AS evidence_id, doc.tenant_id AS evidence_tenant_id,
          doc.site_id AS evidence_site_id, doc.source_id AS evidence_source_id,
-         doc.asset_id AS evidence_asset_id, doc.sha256 AS evidence_sha256,
+         doc.sha256 AS evidence_sha256,
          doc.effective_from AS evidence_effective_from,
          doc.effective_to AS evidence_effective_to,
          (SELECT e.event_type FROM source_data_rights_events e
@@ -218,7 +219,7 @@ classified AS (
         THEN 'rights_scope_mismatch'
       WHEN evidence_id IS NULL THEN 'unresolved_supporting_evidence'
       WHEN evidence_tenant_id<>tenant_id OR evidence_site_id<>site_id
-        OR evidence_source_id<>source_id OR evidence_asset_id IS NOT rights_asset_id
+        OR evidence_source_id<>source_id
         THEN 'evidence_scope_mismatch'
       WHEN evidence_sha256<>supporting_evidence_sha256 THEN 'evidence_digest_mismatch'
       WHEN evidence_ref IS NOT evidence_id THEN 'capability_evidence_ref_mismatch'
@@ -263,8 +264,7 @@ WITH evaluated AS (
         THEN 'rights_scope_mismatch'
       WHEN doc.id IS NULL THEN 'unresolved_supporting_evidence'
       WHEN doc.tenant_id<>c.tenant_id OR doc.site_id<>c.site_id
-        OR doc.source_id<>c.source_id OR doc.asset_id IS NOT rd.asset_id
-        OR doc.sha256<>rd.supporting_evidence_sha256
+        OR doc.source_id<>c.source_id OR doc.sha256<>rd.supporting_evidence_sha256
         THEN 'evidence_scope_or_digest_mismatch'
       WHEN c.evidence_ref IS NOT doc.id THEN 'capability_evidence_ref_mismatch'
       WHEN (SELECT e.event_type FROM source_data_rights_events e
@@ -305,6 +305,7 @@ GROUP BY current_rights_chain_class, observation_age_band
 ORDER BY current_rights_chain_class, observation_age_band;
 
 -- Sections 6–7 mirror migration 0064's approval/insert predicates for aggregate impact analysis.
+-- Evidence documents are tenant/site/source scoped; do not infer an evidence asset_id.
 -- Keep these classifications aligned with the trigger whenever migration 0064 changes.
 -- They estimate present-day predicate compatibility only. They do not
 -- establish the legal authorization status at observation time or decide
