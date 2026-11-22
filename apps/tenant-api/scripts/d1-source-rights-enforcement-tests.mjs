@@ -178,7 +178,7 @@ function rightsWindowSetup(id, digest, fromSql, toSql) {
     "VALUES (" + q(id) + ",'tenant-http-a','site-http-a','source-http-grant',NULL," +
     "'source-evidence:ci-http-grant','4318c92710ae19a064071f683dd4dd1fabbb1c67be0cce234302fbf8690a63b5'," +
     "'Synthetic CI provider','CI tenant controller','license'," + q("LIC-"+id) + "," +
-    "'[""measurement_ingestion"",""storage""]','[]'," + fromSql + "," + toSql + "," +
+    "'[\"measurement_ingestion\",\"storage\"]','[]'," + fromSql + "," + toSql + "," +
     q(digest) + ",'ci-human-subject'," + q("req-"+id+"-declared") + ")",
     "INSERT INTO source_data_rights_events " +
     "(id,declaration_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_declaration_sha256," +
