@@ -6,6 +6,13 @@ export const SOURCE_RIGHTS_FIXTURES = Object.freeze({
     declarationId: "source-rights:ci-http-a",
     declarationDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   }),
+  "source-http-a-asset": Object.freeze({
+    sourceId: "source-http-a", assetId: "asset-http-grant",
+    evidenceId: "source-evidence:ci-http-a-asset",
+    evidenceDigest: "bb5b9fc18952747104dadaaf55dd63cb2c0fad40bc4366843aaf1670b5220e82",
+    declarationId: "source-rights:ci-http-a-asset",
+    declarationDigest: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  }),
   "source-http-grant": Object.freeze({
     sourceId: "source-http-grant", assetId: null,
     evidenceId: "source-evidence:ci-http-grant",
