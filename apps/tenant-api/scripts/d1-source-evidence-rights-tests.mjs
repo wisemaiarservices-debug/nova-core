@@ -365,4 +365,24 @@ attemptRightsApproval(
   "revoked reviewer assignment cannot approve pending rights"
 );
 
+const inactiveMembershipReviewer = createEvidenceAndPendingRights(
+  "inactive-membership-reviewer", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
+  "1".repeat(64), "source-rights:ci-inactive-membership-reviewer", "2".repeat(64),
+  "ci-rights-inactive-reviewer"
+);
+execute("deactivate reviewer membership with append-only membership event", [
+  `INSERT INTO tenant_membership_events
+    (id,tenant_id,membership_id,subject,actor_subject,event_type,previous_role,new_role,
+     previous_status,new_status,reason,request_id)
+    VALUES ('event-ci-rights-reviewer-suspended','tenant-http-a',
+      'membership-http-rights-inactive-reviewer','ci-rights-inactive-reviewer',
+      'ci-human-subject','suspended','viewer','viewer','active','inactive',
+      'CI reviewer membership suspension','req-ci-rights-reviewer-suspended')`,
+  "UPDATE tenant_memberships SET status='inactive' WHERE id='membership-http-rights-inactive-reviewer' AND status='active'",
+]);
+attemptRightsApproval(
+  inactiveMembershipReviewer,
+  "active reviewer assignment with inactive tenant membership cannot approve rights"
+);
+
 console.log("Source evidence and data-rights governance D1 tests passed");
