@@ -10,7 +10,7 @@
   },
   "previews": {},
   "python_modules": {
-    "exclude": ["**/*.pyc", "**/*.dist-info/entry_points.txt"]
+    "exclude": ["**/*.pyc", "**/*.dist-info/top_level.txt"]
   },
   "observability": {
     "enabled": true
