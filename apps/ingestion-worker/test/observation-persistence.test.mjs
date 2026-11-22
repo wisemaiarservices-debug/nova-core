@@ -157,3 +157,31 @@ test("requires both a verified service principal and server-resolved tenant", as
     /verified_service_principal_and_tenant_required/,
   );
 });
+
+
+test("resolves a concurrent accepted retry when a later insert guard rejects this request", async () => {
+  const db = mockD1();
+  db.batch = async (statements) => {
+    // Model another identical request committing its observation and audit
+    // after our preflight lookup, followed by this request's guard rejection.
+    const v = statements[0].values;
+    db.state.observation = {
+      id: v[0], site_id: v[1], tenant_id: v[2], asset_id: v[3], source_id: v[4],
+      module: v[5], metric: v[6], value: v[7], unit: v[8],
+      observed_at: v[9], idempotency_key: v[10], verification_status: "unverified",
+      provenance_json: v[11], quality_flags_json: v[12], source_capability_id: v[13],
+      measurement_kind: v[14], acquisition_protocol: v[15], protocol_version: v[16],
+      sampling_mode: v[17], sampling_interval_seconds: v[18],
+    };
+    const a = statements[1].values;
+    db.state.audit.push({ id: a[0], tenant_id: a[1], actor_id: a[2] });
+    throw new Error("current_insert_guard_rejected_after_concurrent_commit");
+  };
+
+  const result = await persistObservation(db, observation, principal, null, tenantId);
+  assert.equal(result.status, "already_accepted");
+  assert.equal(result.accepted, true);
+  assert.equal(result.idempotent, true);
+  assert.equal(result.observation_id, db.state.observation.id);
+  assert.equal(db.state.audit.length, 1);
+});
