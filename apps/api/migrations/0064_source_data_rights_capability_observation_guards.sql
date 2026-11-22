@@ -24,10 +24,10 @@ WHEN NEW.event_type='approved' AND NOT EXISTS (
     AND c.source_id=NEW.source_id
     AND c.evidence_ref=doc.id
     AND rd.id=c.data_rights_ref
-    AND rd.effective_from<=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    AND (rd.effective_to IS NULL OR rd.effective_to>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    AND (doc.effective_from IS NULL OR doc.effective_from<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    AND (doc.effective_to IS NULL OR doc.effective_to>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    AND julianday(rd.effective_from)<=julianday('now')
+    AND (rd.effective_to IS NULL OR julianday(rd.effective_to)>julianday('now'))
+    AND (doc.effective_from IS NULL OR julianday(doc.effective_from)<=julianday('now'))
+    AND (doc.effective_to IS NULL OR julianday(doc.effective_to)>julianday('now'))
     AND EXISTS (
       SELECT 1 FROM source_data_rights_events re
       WHERE re.declaration_id=rd.id AND re.event_type='approved'
@@ -79,10 +79,10 @@ WHEN NEW.source_capability_id IS NOT NULL
     AND c.source_id=NEW.source_id
     AND c.asset_id IS NEW.asset_id
     AND c.evidence_ref=doc.id
-    AND rd.effective_from<=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    AND (rd.effective_to IS NULL OR rd.effective_to>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    AND (doc.effective_from IS NULL OR doc.effective_from<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    AND (doc.effective_to IS NULL OR doc.effective_to>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    AND julianday(rd.effective_from)<=julianday('now')
+    AND (rd.effective_to IS NULL OR julianday(rd.effective_to)>julianday('now'))
+    AND (doc.effective_from IS NULL OR julianday(doc.effective_from)<=julianday('now'))
+    AND (doc.effective_to IS NULL OR julianday(doc.effective_to)>julianday('now'))
     AND EXISTS (
       SELECT 1 FROM source_data_rights_events re
       WHERE re.declaration_id=rd.id AND re.event_type='approved'
