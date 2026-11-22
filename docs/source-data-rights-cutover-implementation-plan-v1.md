@@ -3,8 +3,8 @@
 **Status:** Implementation and exact-head CI complete; reviewer approved continuation to the next controlled engineering stage. Remote staging inventory and any deployment remain gated.
 
 **Current PR:** [NOVA Core #311](https://github.com/wisemaiarservices-debug/nova-core/pull/311)  
-**Reviewed implementation head:** `a43b4b408ce689c8e80b0fb1f1a27bfdaeac9670`  
-**Exact-head CI:** [45047879003](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45047879003) — 4/4 jobs passed.
+**Reviewed implementation head:** `b1100a3081624471cc752ac11fcbbaefc5724f62`  
+**Exact-head CI:** [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553) — 4/4 jobs passed.
 
 ## 1. Verified implementation
 
@@ -18,7 +18,7 @@
 
 ## 2. Exact-head validation
 
-Run 45047879003 passed all four jobs:
+Run 45050072553 passed all four jobs:
 - `api-tests`
 - `research-raster-tests`
 - `tenant-worker-tests`
@@ -45,7 +45,7 @@ The latest timestamp regression includes acceptance of a whole-second `effective
 
 ## 5. Reviewer decision and remaining technical checks
 
-The human reviewer recorded **APPROVED TO CONTINUE** against the exact implementation head `a43b4b408ce689c8e80b0fb1f1a27bfdaeac9670`. This authorizes controlled non-production preparation and verification work. It is not a production approval or merge authorization.
+The human reviewer recorded **APPROVED TO CONTINUE** against the exact implementation head `b1100a3081624471cc752ac11fcbbaefc5724f62`. This authorizes controlled non-production preparation and verification work. It is not a production approval or merge authorization.
 
 The review record identifies these matters for explicit assessment:
 - Lifecycle policy: unique per-record event-type constraints mean revoked evidence or rights declarations cannot simply be re-verified/re-approved in place; replacement records/workflow are required unless policy changes.
@@ -84,3 +84,8 @@ The prior reviewer authorization is limited to this read-only aggregate inventor
 ## 8. Explicit non-actions
 
 No remote D1 migration, remote staging inventory, Worker deployment, PR merge, secret change, customer notification or paid-resource change has been performed by this stage. No production readiness is claimed.
+
+
+## Current-head validation refresh — 22 November 2026
+
+The current PR head `b1100a3081624471cc752ac11fcbbaefc5724f62` passed workflow run [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553), with all four jobs successful. This run validates the current documentation/inventory correction head. It remains disposable-local-D1 and repository CI evidence only; it does not establish a remote staging target or remote inventory execution.
