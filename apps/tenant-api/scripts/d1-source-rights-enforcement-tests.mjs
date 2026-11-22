@@ -210,15 +210,13 @@ execute("accept currently effective rights with whole-second effective_from", [
 ]);
 const expiredSecondsId = "source-rights:ci-expired-seconds";
 const expiredSecondsDigest = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
-execute("create rights declaration expiring at the current whole second", rightsWindowSetup(
+const expiredSecondsSetup = rightsWindowSetup(
   expiredSecondsId, expiredSecondsDigest,
   "'2026-01-01T00:00:00Z'", "strftime('%Y-%m-%dT%H:%M:%SZ','now')",
-));
-execute("reject rights whose whole-second effective_to has already elapsed", [
-  capability("capability-rights-expired-seconds","rights_guard_expired_seconds",
-    expiredSecondsId,"source-evidence:ci-http-grant"),
-  submitted("capability-rights-expired-seconds","event-rights-expired-seconds-submitted","req-rights-expired-seconds-submit"),
-  approval("capability-rights-expired-seconds","event-rights-expired-seconds-approved","req-rights-expired-seconds-approve"),
-], "capability approval requires current exact-scope approved ingestion and storage rights");
+);
+execute("create rights declaration expiring at the current whole second", expiredSecondsSetup.slice(0,4));
+execute("reject approval after a whole-second effective_to has elapsed", [
+  expiredSecondsSetup[4],
+], "source data rights event requires exact declaration and evidence digests, valid lifecycle and independent reviewer authority");
 
 console.log("Source data-rights capability and observation guards passed");
