@@ -46,7 +46,7 @@ CREATE TABLE source_evidence_documents (
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
   FOREIGN KEY (site_id,tenant_id) REFERENCES sites(id,tenant_id) ON DELETE RESTRICT,
   FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE RESTRICT,
-  CHECK (effective_to IS NULL OR effective_from IS NULL OR effective_to>effective_from)
+  CHECK (effective_to IS NULL OR effective_from IS NULL OR julianday(effective_to)>julianday(effective_from))
 );
 
 CREATE INDEX source_evidence_documents_scope_timeline
@@ -132,7 +132,7 @@ CREATE TABLE source_data_rights_declarations (
   FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT,
   FOREIGN KEY (supporting_evidence_id,tenant_id,site_id,source_id,supporting_evidence_sha256)
     REFERENCES source_evidence_documents(id,tenant_id,site_id,source_id,sha256) ON DELETE RESTRICT,
-  CHECK (effective_to IS NULL OR effective_to>effective_from)
+  CHECK (effective_to IS NULL OR julianday(effective_to)>julianday(effective_from))
 );
 CREATE INDEX source_data_rights_scope_timeline
   ON source_data_rights_declarations(tenant_id,site_id,source_id,created_at DESC);
@@ -332,8 +332,8 @@ WHEN NOT EXISTS (
             AND e.id=(SELECT e2.id FROM source_data_rights_events e2
               WHERE e2.declaration_id=d.id ORDER BY e2.rowid DESC LIMIT 1))
         AND (NEW.event_type<>'approved' OR (
-          d.effective_from<=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-          AND (d.effective_to IS NULL OR d.effective_to>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+          julianday(d.effective_from)<=julianday('now')
+          AND (d.effective_to IS NULL OR julianday(d.effective_to)>julianday('now'))
         ))
       )
       OR
