@@ -162,7 +162,7 @@ execute("approved rights can be revoked by an independent assigned reviewer", [
 ]);
 
 
-function createEvidenceAndPendingRights(label, evidenceFrom, evidenceTo, evidenceDigestValue, rightsId, rightsDigest) {
+function createEvidenceAndPendingRights(label, evidenceFrom, evidenceTo, evidenceDigestValue, rightsId, rightsDigest, reviewerSubject = reviewer) {
   const docId = "source-evidence:ci-window-" + label;
   const createRequest = "req-ci-window-" + label + "-create";
   const registerRequest = "req-ci-window-" + label + "-registered";
@@ -183,9 +183,9 @@ function createEvidenceAndPendingRights(label, evidenceFrom, evidenceTo, evidenc
       "source_evidence_document", docId, registerRequest),
     evidenceEvent("event-ci-window-" + label + "-registered", docId, uploader, "registered",
       evidenceDigestValue, registerRequest),
-    audit("audit-ci-window-" + label + "-verified", reviewer, "source_evidence.verified",
+    audit("audit-ci-window-" + label + "-verified", reviewerSubject, "source_evidence.verified",
       "source_evidence_document", docId, verifyRequest),
-    evidenceEvent("event-ci-window-" + label + "-verified", docId, reviewer, "verified",
+    evidenceEvent("event-ci-window-" + label + "-verified", docId, reviewerSubject, "verified",
       evidenceDigestValue, verifyRequest),
     audit("audit-ci-window-" + label + "-rights", uploader, "source_data_rights.declared",
       "source_data_rights_declaration", rightsId, rightsRequest),
@@ -204,14 +204,14 @@ function createEvidenceAndPendingRights(label, evidenceFrom, evidenceTo, evidenc
       rightsDigest, evidenceDigestValue, rightsRequest + "-event"),
   ];
   execute("create " + label + " evidence and pending rights fixture", evidenceSql);
-  return { rightsId, rightsDigest, evidenceDigest: evidenceDigestValue, label };
+  return { rightsId, rightsDigest, evidenceDigest: evidenceDigestValue, label, reviewerSubject };
 }
 function attemptRightsApproval(fixture, label) {
   const requestId = "req-ci-window-" + fixture.label + "-approve";
   execute(label, [
-    audit("audit-ci-window-" + fixture.label + "-approve", reviewer, "source_data_rights.approved",
+    audit("audit-ci-window-" + fixture.label + "-approve", fixture.reviewerSubject || reviewer, "source_data_rights.approved",
       "source_data_rights_declaration", fixture.rightsId, requestId),
-    rightsEvent("event-ci-window-" + fixture.label + "-approve", fixture.rightsId, reviewer, "approved",
+    rightsEvent("event-ci-window-" + fixture.label + "-approve", fixture.rightsId, fixture.reviewerSubject || reviewer, "approved",
       fixture.rightsDigest, fixture.evidenceDigest, requestId),
   ], "data rights event requires exact declaration and evidence digests, valid lifecycle and independent reviewer authority");
 }
@@ -346,16 +346,17 @@ execute("inspect canonical rights purpose scope", [
 ]);
 const revokedReviewer = createEvidenceAndPendingRights(
   "revoked-reviewer", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
-  "f".repeat(64), "source-rights:ci-revoked-reviewer", "e".repeat(64)
+  "f".repeat(64), "source-rights:ci-revoked-reviewer", "e".repeat(64),
+  "ci-rights-revocation-reviewer"
 );
 execute("revoke assigned source reviewer through append-only reviewer event", [
   "UPDATE tenant_source_reviewers SET status='revoked' " +
     "WHERE tenant_id='tenant-http-a' AND site_id='site-http-a' " +
-    "AND reviewer_subject='ci-measurement-reviewer' AND status='active'",
+    "AND reviewer_subject='ci-rights-revocation-reviewer' AND status='active'",
   `INSERT INTO tenant_source_reviewer_events
     (id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,reason,request_id)
     VALUES ('event-ci-source-reviewer-revoked','tenant-http-a','site-http-a',
-      'ci-measurement-reviewer','ci-human-subject','revoked',
+      'ci-rights-revocation-reviewer','ci-human-subject','revoked',
       'fixture:source-reviewer-revocation','CI reviewer authority withdrawal',
       'req-ci-source-reviewer-revoked')`,
 ]);
