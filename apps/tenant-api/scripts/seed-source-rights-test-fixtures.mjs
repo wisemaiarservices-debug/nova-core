@@ -6,7 +6,7 @@ const args = [
   "--config", "wrangler.d1-test.toml", "--persist-to", "./.wrangler-d1-test",
   "--command",
 ];
-for (const sourceId of ["source-http-a", "source-http-grant"]) {
+for (const sourceId of ["source-http-a", "source-http-grant", "source-http-grant-asset"]) {
   const result = spawnSync("npx", [...args, sourceRightsFixtureSql(sourceId)], { encoding: "utf8" });
   const output = (result.stdout || "") + "\n" + (result.stderr || "");
   if (result.status !== 0) throw new Error("Failed to seed synthetic rights fixture for " + sourceId + "\n" + output);
