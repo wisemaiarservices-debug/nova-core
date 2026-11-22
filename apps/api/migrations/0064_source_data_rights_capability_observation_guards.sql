@@ -51,7 +51,7 @@ END;
 
 CREATE TRIGGER observations_source_rights_insert_guard
 BEFORE INSERT ON observations
-WHEN NOT EXISTS (
+WHEN NEW.source_capability_id IS NOT NULL AND NOT EXISTS (
   SELECT 1
   FROM source_capabilities c
   JOIN source_data_rights_declarations rd
