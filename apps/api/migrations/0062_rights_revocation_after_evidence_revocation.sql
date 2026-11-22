@@ -57,8 +57,8 @@ WHEN NOT EXISTS (
             AND e.id=(SELECT e2.id FROM source_data_rights_events e2
               WHERE e2.declaration_id=d.id ORDER BY e2.rowid DESC LIMIT 1))
         AND (NEW.event_type<>'approved' OR (
-          d.effective_from<=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-          AND (d.effective_to IS NULL OR d.effective_to>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+          julianday(d.effective_from)<=julianday('now')
+          AND (d.effective_to IS NULL OR julianday(d.effective_to)>julianday('now'))
         ))
       )
       OR
