@@ -1,9 +1,9 @@
 # Source rights migration 0064 — independent review handoff
 
 **Current PR:** [NOVA Core #311](https://github.com/wisemaiarservices-debug/nova-core/pull/311)  
-**Current implementation head:** `b1100a3081624471cc752ac11fcbbaefc5724f62`  
-**Exact-head CI:** [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553), 4/4 jobs passed.  
-**Human review status:** Approved to continue to the next controlled engineering stage on this exact head.
+**Current implementation head:** `893815e018841cf3ce8665cc55f486f804fd20c6`  
+**Exact-head CI:** [45056048983](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45056048983), 4/4 jobs passed.  
+**Human review status:** Prior continuation approvals apply to earlier commits. Independent technical review of this exact head remains pending.
 
 This handoff records the review scope and known limitations. It is not production certification or deployment authorization.
 
@@ -78,4 +78,8 @@ A future merge decision requires the remaining review and staging gates to be sa
 
 ## Current-head validation refresh — 22 November 2026
 
-The current PR head `b1100a3081624471cc752ac11fcbbaefc5724f62` passed workflow run [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553), with all four jobs successful. This run validates the current documentation/inventory correction head. It remains disposable-local-D1 and repository CI evidence only; it does not establish a remote staging target or remote inventory execution.
+The current PR head `893815e018841cf3ce8665cc55f486f804fd20c6` passed workflow run [45056048983](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45056048983), with all four jobs successful. The Tenant Worker job applied ordered migrations and completed the synthetic-fixture governance suite, including source-rights approval and observation commit guards. It remains disposable-local-D1 and repository CI evidence only; it does not establish a remote staging target or remote inventory execution.
+
+The latest implementation also resolves exact accepted observation retries before current insert guards and rechecks for a concurrently committed matching observation after a failed insert batch. A deterministic mocked regression covers the concurrent retry case; live concurrent D1 stress testing is not claimed.
+
+Prior independent review and continuation records target earlier commits and must not be treated as approval of this exact head. A genuine independent reviewer must inspect `893815e018841cf3ce8665cc55f486f804fd20c6` before final technical approval. PR #311 remains open and Draft; merge, deployment and remote migrations remain blocked pending the review and staging gates above.
