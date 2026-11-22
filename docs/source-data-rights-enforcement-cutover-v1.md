@@ -2,8 +2,8 @@
 
 **Status:** The original design gap described below has been implemented by migration 0064. This document is retained as design history and requirements traceability; it is not the current implementation status or a deployment authorization.
 
-**Current implementation:** NOVA Core PR #311, head `a43b4b408ce689c8e80b0fb1f1a27bfdaeac9670`.  
-**Exact-head CI:** [45047879003](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45047879003), 4/4 jobs passed.
+**Current implementation:** NOVA Core PR #311, head `b1100a3081624471cc752ac11fcbbaefc5724f62`.  
+**Exact-head CI:** [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553), 4/4 jobs passed.
 
 ## 1. Historical finding — superseded
 
@@ -36,7 +36,7 @@ Migration 0064 independently guards new observation insertion, rechecking the cu
 
 ## 4. Current validation evidence
 
-Exact-head workflow [45047879003](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45047879003) passed:
+Exact-head workflow [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553) passed:
 - API tests
 - Research/raster tests
 - Tenant Worker tests
@@ -72,3 +72,8 @@ For any staging inventory:
 The human reviewer approved continuation to the next controlled engineering stage on the current PR head. That approval does not authorize merge, remote migration, Worker deployment or production operations.
 
 **Current disposition:** implementation and exact-head automated validation accepted for continued non-production work; remote staging inventory pending verified target; merge and deployment remain gated by final review and separate operational authorization.
+
+
+## Current-head validation refresh — 22 November 2026
+
+The current PR head `b1100a3081624471cc752ac11fcbbaefc5724f62` passed workflow run [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553), with all four jobs successful. This run validates the current documentation/inventory correction head. It remains disposable-local-D1 and repository CI evidence only; it does not establish a remote staging target or remote inventory execution.
