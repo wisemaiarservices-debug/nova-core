@@ -87,7 +87,7 @@ execute("seed isolated observation capability guard source and calibration fixtu
    calibration_required,calibration_profile_ref,data_rights_ref,evidence_ref,version,status,created_by_subject)
   VALUES ('capability-http-guard-site','tenant-http-a','site-http-a','source-http-grant',NULL,
     'neoagro','ec','dS/m','measured','CI site capability guard','manual-lab','1.0','interval',3600,
-    31536000,300,'Africa/Tunis','[]',0,NULL,'fixture:rights','fixture:capability',1,'pending','ci-human-subject');
+    31536000,300,'Africa/Tunis','[]',0,NULL,'source-rights:ci-http-grant','source-evidence:ci-http-grant',1,'pending','ci-human-subject');
   INSERT INTO source_capability_events
   (id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
   VALUES ('capability-http-guard-site-submitted','capability-http-guard-site','tenant-http-a','site-http-a',
@@ -103,7 +103,7 @@ execute("seed isolated observation capability guard source and calibration fixtu
    calibration_required,calibration_profile_ref,data_rights_ref,evidence_ref,version,status,created_by_subject)
   VALUES ('capability-http-guard-cal','tenant-http-a','site-http-a','source-http-grant','asset-http-grant',
     'neoagro','ec','dS/m','measured','CI calibrated asset capability guard','manual-lab','1.0','interval',3600,
-    31536000,300,'Africa/Tunis','[]',1,'profile-http-guard','fixture:rights','fixture:capability',1,'pending','ci-human-subject');
+    31536000,300,'Africa/Tunis','[]',1,'profile-http-guard','source-rights:ci-http-grant','source-evidence:ci-http-grant',1,'pending','ci-human-subject');
   INSERT INTO source_capability_events
   (id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
   VALUES ('capability-http-guard-cal-submitted','capability-http-guard-cal','tenant-http-a','site-http-a',
