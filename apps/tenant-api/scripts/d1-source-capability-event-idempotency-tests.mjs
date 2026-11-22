@@ -26,7 +26,7 @@ run("create submitted capability event and matching audit/idempotency rows", [
   "version,status,created_by_subject)",
   "VALUES('capability-http-event-idempotency','tenant-http-a','site-http-a','source-http-a',NULL,'neoagro',",
   "'event_idempotency_ec','dS/m','measured','CI lifecycle event idempotency metric','manual-lab','1.0','interval',",
-  "3600,86400,300,'Africa/Tunis','[]',0,NULL,'fixture:rights','fixture:capability-evidence',",
+  "3600,86400,300,'Africa/Tunis','[]',0,NULL,'source-rights:ci-http-a','source-evidence:ci-http-a',",
   "1,'pending','ci-human-subject');",
   "INSERT INTO source_capability_events",
   "(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)",
