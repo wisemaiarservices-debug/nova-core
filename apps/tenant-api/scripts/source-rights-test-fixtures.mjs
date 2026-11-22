@@ -1,15 +1,24 @@
 export const SOURCE_RIGHTS_FIXTURES = Object.freeze({
   "source-http-a": Object.freeze({
+    sourceId: "source-http-a", assetId: null,
     evidenceId: "source-evidence:ci-http-a",
     evidenceDigest: "bb5b9fc18952747104dadaaf55dd63cb2c0fad40bc4366843aaf1670b5220e82",
     declarationId: "source-rights:ci-http-a",
     declarationDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   }),
   "source-http-grant": Object.freeze({
+    sourceId: "source-http-grant", assetId: null,
     evidenceId: "source-evidence:ci-http-grant",
     evidenceDigest: "bb5b9fc18952747104dadaaf55dd63cb2c0fad40bc4366843aaf1670b5220e82",
     declarationId: "source-rights:ci-http-grant",
     declarationDigest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  }),
+  "source-http-grant-asset": Object.freeze({
+    sourceId: "source-http-grant", assetId: "asset-http-grant",
+    evidenceId: "source-evidence:ci-http-grant-asset",
+    evidenceDigest: "bb5b9fc18952747104dadaaf55dd63cb2c0fad40bc4366843aaf1670b5220e82",
+    declarationId: "source-rights:ci-http-grant-asset",
+    declarationDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   }),
 });
 
@@ -19,10 +28,10 @@ const effectiveFrom = "2026-01-01T00:00:00Z";
 const effectiveTo = "2027-01-01T00:00:00Z";
 
 /** Return deterministic, synthetic evidence + independently approved rights SQL for a CI source. */
-export function sourceRightsFixtureSql(sourceId) {
-  const fixture = SOURCE_RIGHTS_FIXTURES[sourceId];
+export function sourceRightsFixtureSql(fixtureKey) {
+  const fixture = SOURCE_RIGHTS_FIXTURES[fixtureKey];
   if (!fixture) throw new Error("unknown_source_rights_fixture");
-  const { evidenceId:e, evidenceDigest:d, declarationId:r, declarationDigest:rd } = fixture;
+  const { sourceId, assetId, evidenceId:e, evidenceDigest:d, declarationId:r, declarationDigest:rd } = fixture;
   const p = "ci-human-subject", reviewer = "ci-measurement-reviewer";
   const evidenceRequest = "req-" + sourceId + "-evidence";
   const evidenceVerifyRequest = "req-" + sourceId + "-evidence-verified";
@@ -38,7 +47,7 @@ export function sourceRightsFixtureSql(sourceId) {
       (id,tenant_id,site_id,source_id,document_type,file_name,media_type,byte_length,sha256,document_bytes,
        issuer_name,document_reference,issued_at,effective_from,effective_to,uploaded_by_subject,request_id)
       VALUES (${q(e)},'tenant-http-a','site-http-a',${q(sourceId)},'data_license','ci-license.pdf',
-       'application/pdf',17,${q(d)},X'${pdfHex}','Synthetic CI provider','CI-LICENSE-'+${q(sourceId)},
+       'application/pdf',17,${q(d)},X'${pdfHex}','Synthetic CI provider',${q('CI-LICENSE-'+sourceId)},
        '2026-01-01T00:00:00Z',${q(effectiveFrom)},${q(effectiveTo)},${q(p)},${q(evidenceRequest)});`,
     audit("audit-"+sourceId+"-evidence-verified",reviewer,"source_evidence.verified","source_evidence_document",e,evidenceVerifyRequest,{evidence_id:e,sha256:d}),
     `INSERT INTO source_evidence_events
@@ -54,8 +63,8 @@ export function sourceRightsFixtureSql(sourceId) {
       (id,tenant_id,site_id,source_id,asset_id,supporting_evidence_id,supporting_evidence_sha256,
        provider_name,controller_name,basis_type,instrument_reference,permitted_purposes_json,restrictions_json,
        effective_from,effective_to,declaration_sha256,declared_by_subject,request_id)
-      VALUES (${q(r)},'tenant-http-a','site-http-a',${q(sourceId)},NULL,${q(e)},${q(d)},
-       'Synthetic CI provider','CI tenant controller','license','CI-LICENSE-'+${q(sourceId)},
+      VALUES (${q(r)},'tenant-http-a','site-http-a',${q(sourceId)},${assetId === null ? 'NULL' : q(assetId)},${q(e)},${q(d)},
+       'Synthetic CI provider','CI tenant controller','license',${q('CI-LICENSE-'+sourceId)},
        '["measurement_ingestion","storage"]','[]',${q(effectiveFrom)},${q(effectiveTo)},${q(rd)},
        ${q(p)},${q(rightsRequest)});`,
     `INSERT INTO source_data_rights_events
