@@ -9,6 +9,7 @@ INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
   ('membership-http-a', 'tenant-http-a', 'ci-human-subject', 'tenant_owner', 'active'),
   ('membership-http-reviewer', 'tenant-http-a', 'ci-measurement-reviewer', 'viewer', 'active'),
   ('membership-http-rights-revocation-reviewer', 'tenant-http-a', 'ci-rights-revocation-reviewer', 'viewer', 'active'),
+  ('membership-http-rights-inactive-reviewer', 'tenant-http-a', 'ci-rights-inactive-reviewer', 'viewer', 'active'),
   ('membership-http-lifecycle', 'tenant-http-a', 'ci-lifecycle-member', 'viewer', 'active'),
   ('membership-http-admin', 'tenant-http-a', 'ci-http-admin', 'tenant_admin', 'active'),
   ('membership-http-service-subject', 'tenant-http-a', 'neoagro-ingestion-service', 'viewer', 'active');
@@ -71,6 +72,16 @@ INSERT INTO tenant_source_reviewer_events
 VALUES ('source-http-a-rights-reviewer-assigned','tenant-http-a','site-http-a',
  'ci-rights-revocation-reviewer','ci-human-subject','assigned',
  'fixture:rights-revocation-reviewer-appointment','ci-rights-reviewer-assigned');
+
+INSERT INTO tenant_source_reviewers
+(tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref)
+VALUES ('tenant-http-a','site-http-a','ci-rights-inactive-reviewer','active','ci-human-subject',
+ 'fixture:rights-inactive-reviewer-appointment');
+INSERT INTO tenant_source_reviewer_events
+(id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,request_id)
+VALUES ('source-http-a-rights-inactive-reviewer-assigned','tenant-http-a','site-http-a',
+ 'ci-rights-inactive-reviewer','ci-human-subject','assigned',
+ 'fixture:rights-inactive-reviewer-appointment','ci-rights-inactive-reviewer-assigned');
 INSERT INTO tenant_source_reviewer_events
 (id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,request_id)
 VALUES ('source-http-a-reviewer-assigned','tenant-http-a','site-http-a','ci-measurement-reviewer',
