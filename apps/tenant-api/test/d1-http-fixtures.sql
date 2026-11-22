@@ -90,35 +90,17 @@ VALUES
 ('capability-http-a-submitted','capability-http-a','tenant-http-a','site-http-a','source-http-a',
  'ci-human-subject','submitted','fixture:capability-submission',NULL,'ci-capability-submit');
 
-INSERT INTO source_capability_events
-(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
-VALUES
-('capability-http-a-approved','capability-http-a','tenant-http-a','site-http-a','source-http-a',
- 'ci-measurement-reviewer','approved','fixture:capability-review',NULL,'ci-capability-approve');
+
 
 -- The approved status is applied by the event trigger; the unique event index
 -- and review guards make duplicate, out-of-order, or self-approved events fail.
 -- Keep this fixture D1-compatible: no temporary tables or test-only schema objects.
 
 
-INSERT INTO observations
-(id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
- idempotency_key, verification_status, provenance_json, quality_flags_json, source_capability_id, measurement_kind, acquisition_protocol, protocol_version, sampling_mode, sampling_interval_seconds)
-VALUES
-('obs-http-source-revocation', 'site-http-a', 'tenant-http-a', 'source-http-a', 'neoagro',
- 'ec', 1.5, 'dS/m', '2026-05-10T10:00:00Z', 'ci-source-revocation-observation',
- 'verified', '{"provider":"CI fixture provider","acquisition_method":"manual"}', '[]',
- 'capability-http-a','measured','manual-lab','1.0','interval',3600);
 
 
-INSERT INTO observations
-(id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
- idempotency_key, verification_status, provenance_json, quality_flags_json, source_capability_id, measurement_kind, acquisition_protocol, protocol_version, sampling_mode, sampling_interval_seconds)
-VALUES
-('obs-http-verified', 'site-http-a', 'tenant-http-a', 'source-http-a', 'neoagro',
- 'ec', 1.5, 'dS/m', '2026-05-10T10:00:00Z', 'ci-observation-1', 'unverified',
- '{"provider":"CI fixture provider","acquisition_method":"manual"}', '[]',
- 'capability-http-a','measured','manual-lab','1.0','interval',3600);
+
+
 
 INSERT INTO audit_events
 (id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, request_id, details_json)
@@ -166,20 +148,9 @@ INSERT INTO source_capability_events
 VALUES
 ('capability-http-grant-submitted','capability-http-grant','tenant-http-a','site-http-a','source-http-grant',
  'ci-human-subject','submitted','fixture:capability-submission',NULL,'ci-capability-grant-submit');
-INSERT INTO source_capability_events
-(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
-VALUES
-('capability-http-grant-approved','capability-http-grant','tenant-http-a','site-http-a','source-http-grant',
- 'ci-measurement-reviewer','approved','fixture:capability-review',NULL,'ci-capability-grant-approve');
 
-INSERT INTO observations
-(id, site_id, tenant_id, asset_id, source_id, module, metric, value, unit, observed_at,
- idempotency_key, verification_status, provenance_json, quality_flags_json, source_capability_id, measurement_kind, acquisition_protocol, protocol_version, sampling_mode, sampling_interval_seconds)
-VALUES
-('obs-http-grant', 'site-http-a', 'tenant-http-a', 'asset-http-grant', 'source-http-grant',
- 'neoagro', 'soil_moisture', 0.24, 'm3/m3', '2026-11-13T10:00:00Z',
- 'ci-resource-grant-observation', 'unverified', '{}', '[]',
- 'capability-http-grant','measured','manual-lab','1.0','interval',3600);
+
+
 
 
 -- Complete, synthetic governance chain for lifecycle revocation during an active
@@ -286,20 +257,9 @@ INSERT INTO source_capability_events
 VALUES
 ('capability-http-governance-submitted','capability-http-governance','tenant-http-a','site-http-a','source-http-a',
  'ci-human-subject','submitted','fixture:capability-submission',NULL,'ci-capability-governance-submit');
-INSERT INTO source_capability_events
-(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
-VALUES
-('capability-http-governance-approved','capability-http-governance','tenant-http-a','site-http-a','source-http-a',
- 'ci-measurement-reviewer','approved','fixture:capability-review',NULL,'ci-capability-governance-approve');
 
-INSERT INTO observations
-(id,site_id,tenant_id,asset_id,source_id,module,metric,value,unit,observed_at,idempotency_key,
- verification_status,provenance_json,quality_flags_json,source_capability_id,measurement_kind,acquisition_protocol,protocol_version,sampling_mode,sampling_interval_seconds)
-VALUES
-('obs-http-governance-revocation','site-http-a','tenant-http-a','asset-http-grant','source-http-a',
- 'neoagro','ec',1.5,'dS/m','2026-05-10T10:00:00Z','ci-governance-revocation-observation',
- 'verified','{"provider":"CI fixture provider","acquisition_method":"manual"}','[]',
- 'capability-http-governance','measured','manual-lab','1.0','interval',3600);
+
+
 
 
 
