@@ -65,6 +65,24 @@ execute("accept observation while exact rights and evidence remain current", [
   observation("obs-rights-guard-positive",positiveId,positiveMetric),
 ]);
 
+// Capability revocation is an independent lifecycle boundary: even while the
+// underlying rights declaration and evidence remain approved, the latest
+// capability event must still be approved for every subsequent observation.
+execute("revoke previously approved source capability", [
+  `INSERT INTO audit_events (id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,occurred_at,request_id,details_json)
+   VALUES ('audit-ci-capability-guard-revoked','tenant-http-a','operator','ci-measurement-reviewer',
+   'source_capability.revoked','source_capability',${q(positiveId)},
+   strftime('%Y-%m-%dT%H:%M:%fZ','now'),'req-ci-capability-guard-revoked','{}')`,
+  `INSERT INTO source_capability_events
+   (id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
+   VALUES ('event-ci-capability-guard-revoked',${q(positiveId)},'tenant-http-a','site-http-a',
+   'source-http-grant','ci-measurement-reviewer','revoked','fixture:rights-guard-revoke',
+   'CI capability withdrawal','req-ci-capability-guard-revoked')`,
+]);
+execute("deny new observation after capability revocation while rights remain approved", [
+  observation("obs-rights-guard-after-capability-revocation",positiveId,positiveMetric),
+], "observation requires exactly one current approved capability and valid calibration evidence");
+
 // Create an independently approved rights declaration which deliberately omits storage.
 // Capability approval must reject it even though measurement_ingestion is present.
 const noStorageId = "source-rights:ci-no-storage";
