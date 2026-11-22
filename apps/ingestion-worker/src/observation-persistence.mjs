@@ -148,7 +148,31 @@ export async function persistObservation(database, observation, principal, reque
     observation.acquisition_protocol, observation.protocol_version, observation.sampling_mode,
     observation.sampling_interval_seconds ?? null);
 
-  const batchResults = await database.batch([insertObservation, insertAudit]);
+  let batchResults;
+  try {
+    batchResults = await database.batch([insertObservation, insertAudit]);
+  } catch (error) {
+    // A concurrent identical request may commit after our preflight lookup.
+    // If current governance changes before this request reaches INSERT, resolve
+    // the conflict against the committed row without masking unrelated errors.
+    let racedExisting;
+    try {
+      racedExisting = await findExistingObservation(database, observation);
+    } catch {
+      throw error;
+    }
+    if (!racedExisting) throw error;
+    if (!sameAcceptedPayload(racedExisting, observation, tenantId)) {
+      return { status: "idempotency_conflict", accepted: false };
+    }
+    return {
+      status: "already_accepted",
+      accepted: true,
+      observation_id: racedExisting.id,
+      verification_status: racedExisting.verification_status,
+      idempotent: true,
+    };
+  }
   const inserted = Number(batchResults?.[0]?.meta?.changes ?? 0) > 0;
 
   const existing = await findExistingObservation(database, observation);
