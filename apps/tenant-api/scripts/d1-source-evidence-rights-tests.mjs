@@ -228,7 +228,7 @@ attemptRightsApproval(futureEvidence, "future-dated supporting evidence cannot b
 
 const revokedReviewer = createEvidenceAndPendingRights(
   "revoked-reviewer", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
-  "a".repeat(64), "source-rights:ci-revoked-reviewer", "b".repeat(64)
+  "f".repeat(64), "source-rights:ci-revoked-reviewer", "e".repeat(64)
 );
 execute("revoke assigned source reviewer through append-only reviewer event", [
   "UPDATE tenant_source_reviewers SET status='revoked' " +
