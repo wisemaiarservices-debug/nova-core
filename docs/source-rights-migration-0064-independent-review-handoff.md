@@ -1,8 +1,8 @@
 # Source rights migration 0064 — independent review handoff
 
 **Current PR:** [NOVA Core #311](https://github.com/wisemaiarservices-debug/nova-core/pull/311)  
-**Current implementation head:** `a43b4b408ce689c8e80b0fb1f1a27bfdaeac9670`  
-**Exact-head CI:** [45047879003](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45047879003), 4/4 jobs passed.  
+**Current implementation head:** `b1100a3081624471cc752ac11fcbbaefc5724f62`  
+**Exact-head CI:** [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553), 4/4 jobs passed.  
 **Human review status:** Approved to continue to the next controlled engineering stage on this exact head.
 
 This handoff records the review scope and known limitations. It is not production certification or deployment authorization.
@@ -26,7 +26,7 @@ Migration 0064 adds database guards at capability approval and observation inser
 
 Migration 0055 continues to enforce capability identity/scope, measurement metadata, quality flags, observation freshness and calibration requirements. Historical observations are not rewritten.
 
-Exact-head CI run 45047879003 passed all four jobs. Tenant Worker tests applied ordered migrations and exercised governance paths against disposable local D1 with synthetic fixtures. Worker package readiness bundled code without deployment.
+Exact-head CI run 45050072553 passed all four jobs. Tenant Worker tests applied ordered migrations and exercised governance paths against disposable local D1 with synthetic fixtures. Worker package readiness bundled code without deployment.
 
 ## 3. Known findings requiring explicit disposition
 
@@ -74,3 +74,8 @@ The human reviewer authorization is limited to this read-only aggregate inventor
 No production database access, remote D1 migration, Worker deployment, PR merge, customer-data export, secret change or paid-resource change is authorized by this handoff.
 
 A future merge decision requires the remaining review and staging gates to be satisfied. Any staging migration or deployment requires separate explicit operational authorization and a reviewed rollback/forward-recovery plan.
+
+
+## Current-head validation refresh — 22 November 2026
+
+The current PR head `b1100a3081624471cc752ac11fcbbaefc5724f62` passed workflow run [45050072553](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45050072553), with all four jobs successful. This run validates the current documentation/inventory correction head. It remains disposable-local-D1 and repository CI evidence only; it does not establish a remote staging target or remote inventory execution.
