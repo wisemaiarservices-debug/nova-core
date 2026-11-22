@@ -64,8 +64,8 @@ SELECT
     WHEN latest_rights_event IS NULL THEN 'no_rights_event'
     WHEN latest_rights_event <> 'approved' THEN 'rights_not_approved'
     WHEN latest_evidence_event IS NULL OR latest_evidence_event <> 'verified' THEN 'evidence_not_verified'
-    WHEN (evidence_effective_from IS NOT NULL AND evidence_effective_from > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-      OR (evidence_effective_to IS NOT NULL AND evidence_effective_to <= strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    WHEN (evidence_effective_from IS NOT NULL AND julianday(evidence_effective_from) > julianday('now'))
+      OR (evidence_effective_to IS NOT NULL AND julianday(evidence_effective_to) <= julianday('now'))
       THEN 'supporting_evidence_outside_effective_window'
     ELSE 'approved_and_evidence_verified'
   END AS governance_state,
@@ -86,8 +86,8 @@ SELECT
     WHERE p.value = 'model_training'
   ) THEN 1 ELSE 0 END AS has_model_training_purpose,
   CASE WHEN declaration_id IS NOT NULL AND (
-    effective_from > strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    OR (effective_to IS NOT NULL AND effective_to <= strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    julianday(effective_from) > julianday('now')
+    OR (effective_to IS NOT NULL AND julianday(effective_to) <= julianday('now'))
   ) THEN 1 ELSE 0 END AS outside_current_effective_window,
   COUNT(*) AS capability_count
 FROM states
@@ -164,15 +164,15 @@ SELECT
       THEN 'evidence_scope_mismatch'
     WHEN rights_state <> 'approved' OR rights_state IS NULL THEN 'rights_not_currently_approved'
     WHEN evidence_state <> 'verified' OR evidence_state IS NULL THEN 'supporting_evidence_not_verified'
-    WHEN (evidence_effective_from IS NOT NULL AND evidence_effective_from > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-      OR (evidence_effective_to IS NOT NULL AND evidence_effective_to <= strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    WHEN (evidence_effective_from IS NOT NULL AND julianday(evidence_effective_from) > julianday('now'))
+      OR (evidence_effective_to IS NOT NULL AND julianday(evidence_effective_to) <= julianday('now'))
       THEN 'supporting_evidence_outside_effective_window'
     WHEN NOT EXISTS (SELECT 1 FROM json_each(permitted_purposes_json) p WHERE p.value='measurement_ingestion')
       THEN 'missing_measurement_ingestion_purpose'
     WHEN NOT EXISTS (SELECT 1 FROM json_each(permitted_purposes_json) p WHERE p.value='storage')
       THEN 'missing_storage_purpose'
-    WHEN effective_from > strftime('%Y-%m-%dT%H:%M:%fZ','now')
-      OR (effective_to IS NOT NULL AND effective_to <= strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    WHEN julianday(effective_from) > julianday('now')
+      OR (effective_to IS NOT NULL AND julianday(effective_to) <= julianday('now'))
       THEN 'outside_current_effective_window'
     ELSE 'currently_satisfies_inventory_checks'
   END AS finding_class,
@@ -225,13 +225,13 @@ classified AS (
       WHEN evidence_ref IS NOT evidence_id THEN 'capability_evidence_ref_mismatch'
       WHEN latest_rights_event IS NOT 'approved' THEN 'rights_not_currently_approved'
       WHEN latest_evidence_event IS NOT 'verified' THEN 'evidence_not_currently_verified'
-      WHEN rights_effective_from>strftime('%Y-%m-%dT%H:%M:%fZ','now')
-        OR (rights_effective_to IS NOT NULL AND rights_effective_to<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      WHEN julianday(rights_effective_from)>julianday('now')
+        OR (rights_effective_to IS NOT NULL AND julianday(rights_effective_to)<=julianday('now'))
         THEN 'rights_outside_effective_window'
       WHEN evidence_effective_from IS NOT NULL
-        AND evidence_effective_from>strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        AND julianday(evidence_effective_from)>julianday('now')
         OR evidence_effective_to IS NOT NULL
-        AND evidence_effective_to<=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        AND julianday(evidence_effective_to)<=julianday('now')
         THEN 'evidence_outside_effective_window'
       WHEN NOT EXISTS (SELECT 1 FROM json_each(permitted_purposes_json) p
         WHERE p.type='text' AND p.value='measurement_ingestion')
@@ -273,11 +273,11 @@ WITH evaluated AS (
       WHEN (SELECT e.event_type FROM source_evidence_events e
         WHERE e.evidence_id=doc.id ORDER BY e.rowid DESC LIMIT 1) IS NOT 'verified'
         THEN 'evidence_not_currently_verified'
-      WHEN rd.effective_from>strftime('%Y-%m-%dT%H:%M:%fZ','now')
-        OR (rd.effective_to IS NOT NULL AND rd.effective_to<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      WHEN julianday(rd.effective_from)>julianday('now')
+        OR (rd.effective_to IS NOT NULL AND julianday(rd.effective_to)<=julianday('now'))
         THEN 'rights_outside_effective_window'
-      WHEN (doc.effective_from IS NOT NULL AND doc.effective_from>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        OR (doc.effective_to IS NOT NULL AND doc.effective_to<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      WHEN (doc.effective_from IS NOT NULL AND julianday(doc.effective_from)>julianday('now'))
+        OR (doc.effective_to IS NOT NULL AND julianday(doc.effective_to)<=julianday('now'))
         THEN 'evidence_outside_effective_window'
       WHEN NOT EXISTS (SELECT 1 FROM json_each(rd.permitted_purposes_json) p
         WHERE p.type='text' AND p.value='measurement_ingestion')
