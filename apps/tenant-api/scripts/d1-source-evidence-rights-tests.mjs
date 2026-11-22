@@ -226,6 +226,27 @@ const futureEvidence = createEvidenceAndPendingRights(
 );
 attemptRightsApproval(futureEvidence, "future-dated supporting evidence cannot be approved");
 
+const revokedReviewer = createEvidenceAndPendingRights(
+  "revoked-reviewer", "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z",
+  "a".repeat(64), "source-rights:ci-revoked-reviewer", "b".repeat(64)
+);
+execute("revoke assigned source reviewer through append-only reviewer event", [
+  "UPDATE tenant_source_reviewers SET status='revoked' " +
+    "WHERE tenant_id='tenant-http-a' AND site_id='site-http-a' " +
+    "AND reviewer_subject='ci-measurement-reviewer' AND status='active'",
+  `INSERT INTO tenant_source_reviewer_events
+    (id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,reason,request_id)
+    VALUES ('event-ci-source-reviewer-revoked','tenant-http-a','site-http-a',
+      'ci-measurement-reviewer','ci-human-subject','revoked',
+      'fixture:source-reviewer-revocation','CI reviewer authority withdrawal',
+      'req-ci-source-reviewer-revoked')`,
+]);
+attemptRightsApproval(
+  revokedReviewer,
+  "revoked reviewer assignment cannot approve pending rights"
+);
+
+
 execute("cross-tenant/site evidence scope cannot be reused in another tenant declaration", [
   audit("audit-ci-rights-cross-scope", "ci-tenant-b-owner", "source_data_rights.declared",
     "source_data_rights_declaration", "source-rights:ci-cross-scope", "req-ci-rights-cross-scope"),
