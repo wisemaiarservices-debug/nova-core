@@ -162,4 +162,63 @@ execute("deny new observation after evidence revocation", [
   observation("obs-rights-guard-after-evidence-revocation","capability-http-grant","soil_moisture","asset-http-grant"),
 ], "observation requires current exact-scope approved ingestion and storage rights");
 
+
+// Effective-date comparisons must be timestamp-based, not lexical string comparisons.
+// The schema accepts both whole-second and millisecond UTC timestamps.
+function rightsWindowSetup(id, digest, fromSql, toSql) {
+  return [
+    "INSERT INTO audit_events (id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,occurred_at,request_id,details_json) " +
+    "VALUES (" + q("audit-"+id+"-declared") + ",'tenant-http-a','operator','ci-human-subject'," +
+    "'source_data_rights.declared','source_data_rights_declaration'," + q(id) + "," +
+    "strftime('%Y-%m-%dT%H:%M:%fZ','now')," + q("req-"+id+"-declared") + ",'{}')",
+    "INSERT INTO source_data_rights_declarations " +
+    "(id,tenant_id,site_id,source_id,asset_id,supporting_evidence_id,supporting_evidence_sha256," +
+    "provider_name,controller_name,basis_type,instrument_reference,permitted_purposes_json," +
+    "restrictions_json,effective_from,effective_to,declaration_sha256,declared_by_subject,request_id) " +
+    "VALUES (" + q(id) + ",'tenant-http-a','site-http-a','source-http-grant',NULL," +
+    "'source-evidence:ci-http-grant','4318c92710ae19a064071f683dd4dd1fabbb1c67be0cce234302fbf8690a63b5'," +
+    "'Synthetic CI provider','CI tenant controller','license'," + q("LIC-"+id) + "," +
+    "'[""measurement_ingestion"",""storage""]','[]'," + fromSql + "," + toSql + "," +
+    q(digest) + ",'ci-human-subject'," + q("req-"+id+"-declared") + ")",
+    "INSERT INTO source_data_rights_events " +
+    "(id,declaration_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_declaration_sha256," +
+    "reviewed_evidence_sha256,reason,request_id) VALUES (" + q("event-"+id+"-declared") + "," +
+    q(id) + ",'tenant-http-a','site-http-a','source-http-grant','ci-human-subject','declared'," +
+    q(digest) + ",'4318c92710ae19a064071f683dd4dd1fabbb1c67be0cce234302fbf8690a63b5',NULL," +
+    q("req-"+id+"-declared") + ")",
+    "INSERT INTO audit_events (id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,occurred_at,request_id,details_json) " +
+    "VALUES (" + q("audit-"+id+"-approved") + ",'tenant-http-a','operator','ci-measurement-reviewer'," +
+    "'source_data_rights.approved','source_data_rights_declaration'," + q(id) + "," +
+    "strftime('%Y-%m-%dT%H:%M:%fZ','now')," + q("req-"+id+"-approved") + ",'{}')",
+    "INSERT INTO source_data_rights_events " +
+    "(id,declaration_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_declaration_sha256," +
+    "reviewed_evidence_sha256,reason,request_id) VALUES (" + q("event-"+id+"-approved") + "," +
+    q(id) + ",'tenant-http-a','site-http-a','source-http-grant','ci-measurement-reviewer','approved'," +
+    q(digest) + ",'4318c92710ae19a064071f683dd4dd1fabbb1c67be0cce234302fbf8690a63b5',NULL," +
+    q("req-"+id+"-approved") + ")",
+  ];
+}
+const secondsPrecisionId = "source-rights:ci-seconds-precision";
+const secondsPrecisionDigest = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+execute("accept currently effective rights with whole-second effective_from", [
+  ...rightsWindowSetup(secondsPrecisionId, secondsPrecisionDigest,
+    "strftime('%Y-%m-%dT%H:%M:%SZ','now')", "'2027-01-01T00:00:00Z'"),
+  capability("capability-rights-seconds-precision","rights_guard_seconds_precision",
+    secondsPrecisionId,"source-evidence:ci-http-grant"),
+  submitted("capability-rights-seconds-precision","event-rights-seconds-precision-submitted","req-rights-seconds-precision-submit"),
+  approval("capability-rights-seconds-precision","event-rights-seconds-precision-approved","req-rights-seconds-precision-approve"),
+]);
+const expiredSecondsId = "source-rights:ci-expired-seconds";
+const expiredSecondsDigest = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+execute("create rights declaration expiring at the current whole second", rightsWindowSetup(
+  expiredSecondsId, expiredSecondsDigest,
+  "'2026-01-01T00:00:00Z'", "strftime('%Y-%m-%dT%H:%M:%SZ','now')",
+));
+execute("reject rights whose whole-second effective_to has already elapsed", [
+  capability("capability-rights-expired-seconds","rights_guard_expired_seconds",
+    expiredSecondsId,"source-evidence:ci-http-grant"),
+  submitted("capability-rights-expired-seconds","event-rights-expired-seconds-submitted","req-rights-expired-seconds-submit"),
+  approval("capability-rights-expired-seconds","event-rights-expired-seconds-approved","req-rights-expired-seconds-approve"),
+], "capability approval requires current exact-scope approved ingestion and storage rights");
+
 console.log("Source data-rights capability and observation guards passed");
