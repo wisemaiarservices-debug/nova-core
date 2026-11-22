@@ -19,6 +19,18 @@ async function stableId(sourceId, idempotencyKey) {
   return hex;
 }
 
+const EXISTING_OBSERVATION_QUERY =
+  "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
+  "idempotency_key, verification_status, provenance_json, quality_flags_json, source_capability_id, " +
+  "measurement_kind, acquisition_protocol, protocol_version, sampling_mode, sampling_interval_seconds " +
+  "FROM observations WHERE source_id = ? AND idempotency_key = ? LIMIT 1";
+
+async function findExistingObservation(database, observation) {
+  return database.prepare(EXISTING_OBSERVATION_QUERY)
+    .bind(observation.source_id, observation.idempotency_key)
+    .first();
+}
+
 function sameAcceptedPayload(row, observation, tenantId) {
   return row.tenant_id === tenantId &&
     row.site_id === observation.site_id &&
@@ -51,6 +63,23 @@ export async function persistObservation(database, observation, principal, reque
   if (!principal || typeof principal.serviceId !== "string" || !principal.serviceId.trim() ||
       typeof tenantId !== "string" || !tenantId.trim()) {
     throw new Error("verified_service_principal_and_tenant_required");
+  }
+
+  // Idempotent retries represent an already accepted historical write. Resolve
+  // them before INSERT so current capability/rights guards do not reject a
+  // replay of an observation that was validly committed before revocation.
+  const previouslyAccepted = await findExistingObservation(database, observation);
+  if (previouslyAccepted) {
+    if (!sameAcceptedPayload(previouslyAccepted, observation, tenantId)) {
+      return { status: "idempotency_conflict", accepted: false };
+    }
+    return {
+      status: "already_accepted",
+      accepted: true,
+      observation_id: previouslyAccepted.id,
+      verification_status: previouslyAccepted.verification_status,
+      idempotent: true,
+    };
   }
 
   const digest = await stableId(observation.source_id, observation.idempotency_key);
@@ -122,12 +151,7 @@ export async function persistObservation(database, observation, principal, reque
   const batchResults = await database.batch([insertObservation, insertAudit]);
   const inserted = Number(batchResults?.[0]?.meta?.changes ?? 0) > 0;
 
-  const existing = await database.prepare(
-    "SELECT id, tenant_id, site_id, asset_id, source_id, module, metric, value, unit, observed_at, " +
-    "idempotency_key, verification_status, provenance_json, quality_flags_json, source_capability_id, " +
-    "measurement_kind, acquisition_protocol, protocol_version, sampling_mode, sampling_interval_seconds " +
-    "FROM observations WHERE source_id = ? AND idempotency_key = ? LIMIT 1",
-  ).bind(observation.source_id, observation.idempotency_key).first();
+  const existing = await findExistingObservation(database, observation);
 
   if (!existing) throw new Error("observation_persistence_unconfirmed");
   if (!sameAcceptedPayload(existing, observation, tenantId)) {
