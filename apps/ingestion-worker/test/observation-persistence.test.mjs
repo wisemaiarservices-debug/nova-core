@@ -105,14 +105,17 @@ test("inserts observation and tenant-scoped audit atomically with unverified sta
   assert.equal(db.state.observation.tenant_id, tenantId);
 });
 
-test("retries return the original tenant-owned observation without duplicating audit", async () => {
+test("retries return the original tenant-owned observation before current insert guards run", async () => {
   const db = mockD1();
   const first = await persistObservation(db, observation, principal, null, tenantId);
+  // Simulate a later capability/rights revocation: any new INSERT would now
+  // be rejected by the database's BEFORE INSERT governance triggers.
+  db.batch = async () => { throw new Error("current_insert_guard_rejected_replay"); };
   const second = await persistObservation(db, observation, principal, null, tenantId);
   assert.equal(first.observation_id, second.observation_id);
   assert.equal(second.status, "already_accepted");
   assert.equal(second.idempotent, true);
-  assert.equal(db.state.batches, 2);
+  assert.equal(db.state.batches, 1);
   assert.equal(db.state.audit.length, 1);
 });
 
