@@ -26,7 +26,7 @@ run("create pending capability with immutable audit and idempotency record", [
   "version,status,created_by_subject)",
   "VALUES('capability-http-idempotency','tenant-http-a','site-http-a','source-http-a',NULL,'neoagro',",
   "'ec_idempotency_test','dS/m','measured','CI idempotency metric','manual-lab','1.0','interval',3600,",
-  "31536000,300,'Africa/Tunis','[]',0,NULL,'fixture:data-rights','fixture:capability-evidence',",
+  "31536000,300,'Africa/Tunis','[]',0,NULL,'source-rights:ci-http-a','source-evidence:ci-http-a',",
   "1,'pending','ci-human-subject');",
   "INSERT INTO audit_events",
   "(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,occurred_at,request_id,details_json)",
