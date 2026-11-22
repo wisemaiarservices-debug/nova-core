@@ -304,6 +304,8 @@ FROM evaluated
 GROUP BY current_rights_chain_class, observation_age_band
 ORDER BY current_rights_chain_class, observation_age_band;
 
--- Sections 6–7 estimate present-day predicate compatibility only. They do not
+-- Sections 6–7 mirror migration 0064's approval/insert predicates for aggregate impact analysis.
+-- Keep these classifications aligned with the trigger whenever migration 0064 changes.
+-- They estimate present-day predicate compatibility only. They do not
 -- establish the legal authorization status at observation time or decide
 -- retroactivity. Do not use the results to rewrite or delete historical rows.
