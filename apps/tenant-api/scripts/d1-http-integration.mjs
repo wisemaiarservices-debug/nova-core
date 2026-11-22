@@ -63,8 +63,8 @@ try {
     timestamp: { max_future_skew_seconds: 300, timezone: "Africa/Tunis" },
     quality: { allowed_flags: ["suspect"] },
     calibration: { required: false, profile_ref: null },
-    data_rights_ref: "fixture:capability-rights",
-    evidence_ref: "fixture:capability-evidence",
+    data_rights_ref: "source-rights:ci-http-a",
+    evidence_ref: "source-evidence:ci-http-a",
     version: 1,
   };
   const capabilityBody = JSON.stringify(capabilityDraft);
