@@ -183,3 +183,127 @@ ORDER BY finding_class;
 
 -- This inventory intentionally does not decide whether historical observations
 -- are retroactively authorized. It emits counts only; policy must decide that.
+
+-- 6. Exact migration-0064 parity: approved capabilities classified by every
+-- approval-time predicate. Counts only; no identifiers or tenant data are emitted.
+WITH candidates AS (
+  SELECT c.id, c.tenant_id, c.site_id, c.source_id, c.asset_id,
+         c.data_rights_ref, c.evidence_ref,
+         rd.id AS rights_id, rd.tenant_id AS rights_tenant_id,
+         rd.site_id AS rights_site_id, rd.source_id AS rights_source_id,
+         rd.asset_id AS rights_asset_id,
+         rd.supporting_evidence_id, rd.supporting_evidence_sha256,
+         rd.permitted_purposes_json, rd.effective_from AS rights_effective_from,
+         rd.effective_to AS rights_effective_to,
+         doc.id AS evidence_id, doc.tenant_id AS evidence_tenant_id,
+         doc.site_id AS evidence_site_id, doc.source_id AS evidence_source_id,
+         doc.asset_id AS evidence_asset_id, doc.sha256 AS evidence_sha256,
+         doc.effective_from AS evidence_effective_from,
+         doc.effective_to AS evidence_effective_to,
+         (SELECT e.event_type FROM source_data_rights_events e
+           WHERE e.declaration_id=rd.id ORDER BY e.rowid DESC LIMIT 1) AS latest_rights_event,
+         (SELECT e.event_type FROM source_evidence_events e
+           WHERE e.evidence_id=doc.id ORDER BY e.rowid DESC LIMIT 1) AS latest_evidence_event
+  FROM source_capabilities c
+  LEFT JOIN source_data_rights_declarations rd ON rd.id=c.data_rights_ref
+  LEFT JOIN source_evidence_documents doc ON doc.id=rd.supporting_evidence_id
+  WHERE c.status='approved'
+),
+classified AS (
+  SELECT *,
+    CASE
+      WHEN rights_id IS NULL THEN 'unresolved_rights_reference'
+      WHEN rights_tenant_id<>tenant_id OR rights_site_id<>site_id
+        OR rights_source_id<>source_id OR rights_asset_id IS NOT asset_id
+        THEN 'rights_scope_mismatch'
+      WHEN evidence_id IS NULL THEN 'unresolved_supporting_evidence'
+      WHEN evidence_tenant_id<>tenant_id OR evidence_site_id<>site_id
+        OR evidence_source_id<>source_id OR evidence_asset_id IS NOT rights_asset_id
+        THEN 'evidence_scope_mismatch'
+      WHEN evidence_sha256<>supporting_evidence_sha256 THEN 'evidence_digest_mismatch'
+      WHEN evidence_ref IS NOT evidence_id THEN 'capability_evidence_ref_mismatch'
+      WHEN latest_rights_event IS NOT 'approved' THEN 'rights_not_currently_approved'
+      WHEN latest_evidence_event IS NOT 'verified' THEN 'evidence_not_currently_verified'
+      WHEN rights_effective_from>strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        OR (rights_effective_to IS NOT NULL AND rights_effective_to<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        THEN 'rights_outside_effective_window'
+      WHEN evidence_effective_from IS NOT NULL
+        AND evidence_effective_from>strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        OR evidence_effective_to IS NOT NULL
+        AND evidence_effective_to<=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        THEN 'evidence_outside_effective_window'
+      WHEN NOT EXISTS (SELECT 1 FROM json_each(permitted_purposes_json) p
+        WHERE p.type='text' AND p.value='measurement_ingestion')
+        THEN 'missing_measurement_ingestion_purpose'
+      WHEN NOT EXISTS (SELECT 1 FROM json_each(permitted_purposes_json) p
+        WHERE p.type='text' AND p.value='storage')
+        THEN 'missing_storage_purpose'
+      ELSE 'satisfies_0064_approval_predicates'
+    END AS migration_0064_approval_class
+  FROM candidates
+)
+SELECT migration_0064_approval_class, COUNT(*) AS approved_capability_count
+FROM classified
+GROUP BY migration_0064_approval_class
+ORDER BY migration_0064_approval_class;
+
+-- 7. Observation counts by current migration-0064 rights-chain state and age.
+-- Age bands are descriptive only: they do not decide retroactive authorization.
+WITH evaluated AS (
+  SELECT o.id, o.observed_at,
+    CASE
+      WHEN o.source_capability_id IS NULL THEN 'missing_capability_id'
+      WHEN c.id IS NULL THEN 'unresolved_capability'
+      WHEN c.tenant_id<>o.tenant_id OR c.site_id<>o.site_id
+        OR c.source_id<>o.source_id OR c.asset_id IS NOT o.asset_id
+        THEN 'capability_scope_mismatch'
+      WHEN rd.id IS NULL THEN 'unresolved_rights_reference'
+      WHEN rd.tenant_id<>c.tenant_id OR rd.site_id<>c.site_id
+        OR rd.source_id<>c.source_id OR rd.asset_id IS NOT c.asset_id
+        THEN 'rights_scope_mismatch'
+      WHEN doc.id IS NULL THEN 'unresolved_supporting_evidence'
+      WHEN doc.tenant_id<>c.tenant_id OR doc.site_id<>c.site_id
+        OR doc.source_id<>c.source_id OR doc.asset_id IS NOT rd.asset_id
+        OR doc.sha256<>rd.supporting_evidence_sha256
+        THEN 'evidence_scope_or_digest_mismatch'
+      WHEN c.evidence_ref IS NOT doc.id THEN 'capability_evidence_ref_mismatch'
+      WHEN (SELECT e.event_type FROM source_data_rights_events e
+        WHERE e.declaration_id=rd.id ORDER BY e.rowid DESC LIMIT 1) IS NOT 'approved'
+        THEN 'rights_not_currently_approved'
+      WHEN (SELECT e.event_type FROM source_evidence_events e
+        WHERE e.evidence_id=doc.id ORDER BY e.rowid DESC LIMIT 1) IS NOT 'verified'
+        THEN 'evidence_not_currently_verified'
+      WHEN rd.effective_from>strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        OR (rd.effective_to IS NOT NULL AND rd.effective_to<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        THEN 'rights_outside_effective_window'
+      WHEN (doc.effective_from IS NOT NULL AND doc.effective_from>strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        OR (doc.effective_to IS NOT NULL AND doc.effective_to<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        THEN 'evidence_outside_effective_window'
+      WHEN NOT EXISTS (SELECT 1 FROM json_each(rd.permitted_purposes_json) p
+        WHERE p.type='text' AND p.value='measurement_ingestion')
+        THEN 'missing_measurement_ingestion_purpose'
+      WHEN NOT EXISTS (SELECT 1 FROM json_each(rd.permitted_purposes_json) p
+        WHERE p.type='text' AND p.value='storage')
+        THEN 'missing_storage_purpose'
+      ELSE 'currently_satisfies_0064_rights_predicates'
+    END AS current_rights_chain_class,
+    CASE
+      WHEN julianday(o.observed_at) IS NULL THEN 'invalid_timestamp'
+      WHEN julianday(o.observed_at)<julianday('now','-365 days') THEN 'older_than_365_days'
+      WHEN julianday(o.observed_at)<julianday('now','-90 days') THEN '90_to_365_days'
+      ELSE 'within_90_days'
+    END AS observation_age_band
+  FROM observations o
+  LEFT JOIN source_capabilities c ON c.id=o.source_capability_id
+  LEFT JOIN source_data_rights_declarations rd ON rd.id=c.data_rights_ref
+  LEFT JOIN source_evidence_documents doc ON doc.id=rd.supporting_evidence_id
+)
+SELECT current_rights_chain_class, observation_age_band,
+       COUNT(*) AS observation_count
+FROM evaluated
+GROUP BY current_rights_chain_class, observation_age_band
+ORDER BY current_rights_chain_class, observation_age_band;
+
+-- Sections 6–7 estimate present-day predicate compatibility only. They do not
+-- establish the legal authorization status at observation time or decide
+-- retroactivity. Do not use the results to rewrite or delete historical rows.
