@@ -1,80 +1,86 @@
 # Source rights cutover implementation plan v1
 
-**Status:** implementation complete in source; independent review and staging impact assessment remain outstanding.
+**Status:** Implementation and exact-head CI complete; reviewer approved continuation to the next controlled engineering stage. Remote staging inventory and any deployment remain gated.
 
-**Implementation basis:** PR #311 head `873086ea07779f349d47480847e3962a9ff4f9a0`. The original proposal below is retained as a record of the intended design; migration 0064 and its local D1 tests are now implemented.
+**Current PR:** [NOVA Core #311](https://github.com/wisemaiarservices-debug/nova-core/pull/311)  
+**Reviewed implementation head:** `a43b4b408ce689c8e80b0fb1f1a27bfdaeac9670`  
+**Exact-head CI:** [45047879003](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45047879003) — 4/4 jobs passed.
 
-## Verified implementation and CI
+## 1. Verified implementation
 
-- Migration: `apps/api/migrations/0064_source_data_rights_capability_observation_guards.sql`.
-- Exact-head workflow run [44966562811](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44966562811) passed all three jobs.
-- The Tenant Worker job applied ordered migrations through 0064 to disposable local D1 and passed the source-rights capability-approval and observation-insert guard tests, plus the existing capability, calibration, observation, gateway and quality-flag tests.
-- Positive and negative evidence included exact-scope capability approval, valid observation acceptance, missing storage-purpose rejection, unresolved rights-reference rejection, mismatched evidence rejection, and rejection of new observations after rights revocation or evidence revocation.
+- Migration 0055 enforces source capability and calibration requirements at observation insertion.
+- Migrations 0060–0063 provide evidence and data-rights registries, lifecycle controls, idempotency and effective-window protections.
+- Migration 0064 adds rights/evidence checks at capability approval and observation insertion.
+- Rights and evidence scope, lifecycle state, effective windows, exact supporting evidence and required `measurement_ingestion` plus `storage` purposes are checked.
+- Persistence resolves scoped evidence digests and distinguishes exact idempotent retries from conflicting payloads.
+- Timestamp comparisons in migrations 0060, 0062, 0063 and 0064 use SQLite `julianday()` comparisons to avoid lexical ordering errors between whole-second and millisecond UTC timestamps.
+- Historical observations are not rewritten or backfilled. New insert guards apply prospectively.
 
-CI proves the tested source and disposable local D1 behavior only. It does not prove that any remote D1 has applied these migrations or that a deployed Worker is running this code.
+## 2. Exact-head validation
 
-## Enforced D1 boundaries
+Run 45047879003 passed all four jobs:
+- `api-tests`
+- `research-raster-tests`
+- `tenant-worker-tests`
+- `Private tenant Worker package readiness (no deploy)`
+
+The Tenant Worker job applied ordered migrations to disposable local D1 and exercised source evidence, rights, capability lifecycle, calibration, gateway and observation guards. The package-readiness job bundled Workers without deploying them.
+
+This is repository-level and disposable-local-D1 evidence. It does not prove remote staging or production behavior.
+
+## 3. Enforced database boundaries
 
 Migration 0064 adds two independent `BEFORE INSERT` guards:
 
-1. **Capability approval** on `source_capability_events`, for `event_type='approved'`. It resolves `source_capabilities.data_rights_ref` to the exact rights declaration and requires tenant/site/source and NULL-safe asset equality; current approved rights state; current rights effective window; exact supporting evidence ID, digest and scope; capability `evidence_ref` equal to the supporting document ID; current verified evidence state and effective window; and explicit `measurement_ingestion` plus `storage` purposes.
-2. **Observation insertion** on `observations`. It independently rechecks the same rights/evidence chain against the observation's exact capability scope at insert time. Rights revocation or evidence withdrawal therefore blocks future observations without rewriting historical rows.
+1. **Capability approval:** resolves `data_rights_ref` to the exact rights declaration and checks tenant/site/source and NULL-safe asset scope; approved rights state and effective window; exact supporting evidence ID, digest and scope; capability evidence reference; verified evidence state and effective window; and explicit `measurement_ingestion` plus `storage` purposes.
+2. **Observation insertion:** rechecks the same rights/evidence chain against the observation's exact capability scope at insert time. Rights revocation or evidence withdrawal blocks future observations without rewriting historical rows.
 
-Analytics and model-training permissions are not inferred from ingestion or storage. Existing migration 0055 handling retains precedence for missing capability identity and capability scope mismatch; migration 0064 evaluates rights only when an exact scoped capability exists.
+Analytics and model-training permissions are not inferred from ingestion or storage. Existing migration 0055 handling retains precedence for missing capability identity and capability scope mismatch.
 
-## Test fixture and coverage status
+## 4. Regression and fixture coverage
 
-The deterministic synthetic evidence/rights fixture helper and fixture conversions were completed before enabling migration 0064. The CI workflow seeds synthetic rights/evidence chains before approved capability and observation fixtures.
+CI uses synthetic fixtures and disposable local D1. The suite covers positive exact-scope approval/insertion, missing storage purpose, unresolved rights reference, mismatched supporting evidence, rights revocation, evidence revocation, capability lifecycle, calibration, quality flags, idempotency and overlapping capability rejection.
 
-The D1 suite covers:
-- exact positive capability approval and observation insertion;
-- missing storage purpose;
-- unresolved rights reference;
-- mismatched supporting evidence;
-- rights revocation blocking future observations;
-- evidence revocation blocking future observations;
-- existing observation identity, capability scope, calibration, lifecycle and quality-flag boundaries.
+The latest timestamp regression includes acceptance of a whole-second `effective_from` value. An attempted additional expired-rights fixture was removed after its setup failed on an unrelated reviewer/fixture constraint; it is not counted as successful new boundary coverage. Existing expired-rights rejection coverage remains.
 
-The local tests are not a substitute for independent review or remote staging evidence.
+## 5. Reviewer decision and remaining technical checks
 
-## Independent-review handoff
+The human reviewer recorded **APPROVED TO CONTINUE** against the exact implementation head `a43b4b408ce689c8e80b0fb1f1a27bfdaeac9670`. This authorizes controlled non-production preparation and verification work. It is not a production approval or merge authorization.
 
-The reviewer must be independent of the implementation and should inspect the exact PR head, not a moving branch. Review scope:
-- exact tenant/site/source/NULL-safe asset equality across capability, rights declaration, evidence and observation;
-- latest-event semantics and append-only lifecycle assumptions;
-- rights and evidence effective-window boundaries;
-- evidence ID/digest binding and capability evidence reference;
-- explicit purpose checks and non-inference of analytics/model training;
-- precedence and compatibility with migration 0055;
-- revocation and idempotency interactions;
-- preservation of historical observation rows;
-- migration ordering, trigger behavior and adversarial test adequacy.
+The review record identifies these matters for explicit assessment:
+- Lifecycle policy: unique per-record event-type constraints mean revoked evidence or rights declarations cannot simply be re-verified/re-approved in place; replacement records/workflow are required unless policy changes.
+- Latest-event ordering uses append-only lifecycle rows ordered by rowid.
+- Effective-date boundary coverage includes whole-second acceptance and existing expired-rights rejection, but is not exhaustive.
+- Alternate observation write paths must remain covered by the D1 trigger.
+- Asset scope is checked with NULL-safe equality.
 
-Record findings against the exact commit SHA. Any change after review requires re-review of the changed code and a new exact-head CI run.
+## 6. Read-only staging impact assessment
 
-## Read-only staging impact assessment
+The aggregate-only inventory is `apps/tenant-api/scripts/read-only-source-rights-impact-inventory.sql`. CI executed it against disposable local D1 only.
 
-The aggregate-only inventory is `apps/tenant-api/scripts/read-only-source-rights-impact-inventory.sql`. It must first be run against a disposable local D1 copy. A remote staging run is a separate operation and requires explicit authorization plus verified staging database identity and read-only credentials/access.
+The checked-in Tenant API configuration intentionally has no D1 or Cloudflare Access bindings. The gateway has a private Service Binding to the Tenant API but does not establish a staging D1 target. Therefore no verified remote staging D1 identity or authorized query path is currently available.
 
-Before any remote run:
-1. Identify the exact staging account, database name/ID, environment and tenant-data classification from authoritative configuration.
-2. Obtain written authorization limited to read-only aggregate queries.
-3. Confirm the execution path cannot target production and cannot issue writes or migrations.
-4. Capture the exact inventory script commit SHA and query output; do not export tenant names, source names, document bytes, raw telemetry, credentials or secrets.
-5. Have the independent reviewer inspect the output and classify records that would fail migration 0064.
-6. Resolve legacy records only through an approved product/legal policy; do not silently grandfather, rewrite or backfill them.
+Before a remote staging run:
+1. Verify exact staging account, database name/ID, environment and data classification from authoritative Cloudflare configuration.
+2. Confirm a staging-only execution path and least-privilege read-only access.
+3. Capture the inventory script commit and target identity before execution.
+4. Execute only aggregate SELECT queries; do not export tenant/source identifiers, document bytes, raw telemetry, credentials or secrets.
+5. Record execution time and aggregate results, then review any affected legacy records.
+6. Do not use a production target, apply migrations, repair, backfill or modify records.
 
-The inventory must distinguish present-day rights/evidence compliance from historical observation age. It does not decide retroactive authorization or whether historic processing was lawful.
+The prior reviewer authorization is limited to this read-only aggregate inventory against a verified staging D1 target. It does not prove that the target exists or that the inventory has been executed.
 
-## Safe rollout sequence
+## 7. Controlled rollout sequence
 
-1. Fixture conversion and local validation — complete.
-2. Migration 0064 and adversarial local D1 tests — complete.
-3. Independent review of exact PR head — pending.
-4. Explicitly authorized, aggregate-only staging impact inventory — pending.
-5. Product/legal decision for any legacy records and historical observations — pending.
-6. Separate staging migration authorization, deployment authorization and rollback plan — not granted by this document.
+1. Fixture conversion, migrations and disposable local D1 validation — complete.
+2. Exact-head CI — complete, 4/4 passed.
+3. Human reviewer approval to continue — recorded on exact head.
+4. Documentation refresh and staging readiness verification — in progress.
+5. Verify staging D1 identity and secure read-only query path — pending.
+6. Execute authorized aggregate-only staging inventory — pending.
+7. Resolve any legacy-record policy questions and refresh final handover.
+8. Obtain final acceptance before merge; obtain separate staging migration/deployment authorization before any remote operation.
 
-## Explicit non-actions and limits
+## 8. Explicit non-actions
 
-No remote D1 migration, remote staging inventory, Worker deployment, PR merge, secret change, customer notification or paid resource was performed or authorized. PR #311 remains draft/open/unmerged unless separately verified otherwise. No independent security review or production readiness is claimed.
+No remote D1 migration, remote staging inventory, Worker deployment, PR merge, secret change, customer notification or paid-resource change has been performed by this stage. No production readiness is claimed.
