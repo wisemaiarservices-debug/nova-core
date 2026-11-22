@@ -153,11 +153,13 @@ export async function createSourceDataRightsDeclaration({
         "basis_type", "instrument_reference", "permitted_purposes", "restrictions",
         "effective_from", "effective_to",
       ].includes(key))) throw new Error("source_rights_draft_invalid");
+  // The immutable document digest is needed to calculate the canonical request
+  // digest even after the evidence lifecycle has moved to revoked/rejected.
+  // Resolve it using the full ownership scope, but defer the current verified-state
+  // precondition until after the idempotency lookup so exact retries remain stable.
   const evidenceRows = await rows(db.prepare(
-    "SELECT d.sha256 FROM source_evidence_documents d JOIN source_evidence_events e " +
-    "ON e.evidence_id=d.id AND e.event_type='verified' " +
-    "WHERE d.id=? AND d.tenant_id=? AND d.site_id=? AND d.source_id=? " +
-    "AND e.id=(SELECT e2.id FROM source_evidence_events e2 WHERE e2.evidence_id=d.id ORDER BY e2.rowid DESC LIMIT 1) LIMIT 2"
+    "SELECT sha256 FROM source_evidence_documents " +
+    "WHERE id=? AND tenant_id=? AND site_id=? AND source_id=? LIMIT 2"
   ).bind(draft.supporting_evidence_id, tenantId, siteId, sourceId));
   if (evidenceRows.length !== 1) throw new Error("source_rights_supporting_evidence_unverified");
   const prepared = await prepareSourceDataRightsDeclaration({
@@ -170,6 +172,16 @@ export async function createSourceDataRightsDeclaration({
   const replay = decodeReplay(prior, prepared.declaration_sha256,
     "source_rights_idempotency_conflict", "source_rights_idempotency_corrupt");
   if (replay) return replay;
+
+  // New declarations still require the latest evidence lifecycle event to be
+  // verified. The D1 insert guard independently enforces this at commit time.
+  const verifiedEvidence = await rows(db.prepare(
+    "SELECT d.id FROM source_evidence_documents d JOIN source_evidence_events e " +
+    "ON e.evidence_id=d.id AND e.event_type='verified' " +
+    "WHERE d.id=? AND d.tenant_id=? AND d.site_id=? AND d.source_id=? " +
+    "AND e.id=(SELECT e2.id FROM source_evidence_events e2 WHERE e2.evidence_id=d.id ORDER BY e2.rowid DESC LIMIT 1) LIMIT 2"
+  ).bind(draft.supporting_evidence_id, tenantId, siteId, sourceId));
+  if (verifiedEvidence.length !== 1) throw new Error("source_rights_supporting_evidence_unverified");
 
   const declarationId = `source-rights:${cryptoProvider.randomUUID()}`;
   const eventId = cryptoProvider.randomUUID();
