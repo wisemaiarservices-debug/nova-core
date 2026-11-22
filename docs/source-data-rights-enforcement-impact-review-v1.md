@@ -1,55 +1,76 @@
 # Source data-rights enforcement impact review v1
 
-**Review basis:** NOVA Core PR #311, exact source head `d849388909717ae248cb38991935017f72c9c94e`.
+**Review basis:** NOVA Core PR #311, exact implementation head `a43b4b408ce689c8e80b0fb1f1a27bfdaeac9670`.  
+**Exact-head CI:** [45047879003](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45047879003) — 4/4 jobs passed.  
+**Scope:** source implementation review and aggregate inventory executed by CI against disposable local D1. This is not a remote staging or production database inventory.
 
-**Scope:** repository source review and the read-only aggregate inventory executed by CI against disposable local D1. This is not a production or remote-database inventory.
+## 1. Current enforcement outcome
 
-## Exact-head validation
+Migration 0064 closes the previously documented gap by enforcing the source data-rights/evidence chain at:
+- capability approval (`source_capability_events`, `event_type='approved'`);
+- new observation insertion (`observations`).
 
-Workflow [44963409768](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44963409768) passed all three jobs:
-- API and ingestion security tests
-- Research/raster tests
-- Tenant Worker tests, including ordered migrations through 0063, read-only inventory, evidence/rights D1 regressions, capability lifecycle, gateway integration and observation commit guards
+The guards require exact rights declaration and supporting evidence linkage, tenant/site/source/asset scope, current lifecycle state, valid effective windows, and explicit `measurement_ingestion` plus `storage` purposes. The observation insert guard rechecks the current rights/evidence state, so later revocation or withdrawal blocks new observations.
 
-## Inventory result from disposable local D1
+Historical observations are not rewritten or backfilled.
 
-The inventory returned:
-- 3 approved capabilities classified as `legacy_or_malformed_reference` for `data_rights_ref`.
-- All 3 approved capabilities classified as `unresolved` for the rights/evidence governance chain.
-- All 3 approved capabilities classified as `no_resolvable_rights_declaration` in the approved-capability cutover query.
+## 2. Exact-head validation
 
-These are synthetic CI fixture counts only. They must not be interpreted as production tenant counts or evidence about any remote database.
+Run 45047879003 completed successfully:
+- `api-tests`
+- `research-raster-tests`
+- `tenant-worker-tests`
+- `Private tenant Worker package readiness (no deploy)`
 
-## Source-level enforcement gap
+The Tenant Worker tests applied ordered migrations to disposable local D1, seeded synthetic evidence/rights/capability fixtures, ran the aggregate inventory, and exercised lifecycle, calibration, gateway, observation and rights enforcement tests.
 
-At this source head:
-- The capability review guard in migration 0049 checks an independent active reviewer and valid lifecycle state, but does not resolve `data_rights_ref` to a rights declaration.
-- The observation insert guard in migration 0055 validates the capability, source, site, asset, metadata, quality flags and calibration chain, but does not recheck current rights approval or supporting evidence verification.
-- Migrations 0060–0063 establish immutable evidence/rights records, lifecycle events, idempotency, revocation handling and effective-date checks during rights approval. They do not close the capability-approval or observation-insert enforcement gaps.
+This confirms the tested repository behavior in disposable local D1 only. It does not establish remote staging or production behavior.
 
-## Required enforcement contract for a future additive migration
+## 3. Disposable-local-D1 inventory result
 
-A future D1 cutover should fail closed for **new capability approvals** and **new observation inserts** unless all of the following hold at the write boundary:
+The CI inventory is a test fixture diagnostic, not a customer-data inventory. Its synthetic counts must not be interpreted as remote tenant counts or evidence about any staging or production database.
 
-1. `source_capabilities.data_rights_ref` resolves to exactly one `source_data_rights_declarations.id`.
-2. Rights declaration tenant, site and source exactly match the capability; asset scope must be explicitly defined and exact (no cross-asset reuse).
-3. The declaration's latest lifecycle event is `approved`; its effective window includes the approval/write instant.
-4. Its supporting evidence ID and SHA-256 resolve to the exact immutable document under the same tenant/site/source scope.
-5. The evidence's latest lifecycle event is `verified`; its effective window includes the approval/write instant.
-6. The permitted-purpose array explicitly contains both `measurement_ingestion` and `storage`. Analytics and model-training remain separate purposes; neither is implied.
-7. Capability `evidence_ref` must have one canonical interpretation and be consistent with the supporting evidence referenced by the rights declaration. No arbitrary URL or unresolved legacy string should silently satisfy the contract.
+No remote staging inventory has been executed. The checked-in Tenant API configuration intentionally has no D1 or Cloudflare Access bindings, and the gateway configuration contains only the private Tenant API Service Binding. Therefore a verified staging D1 identity and secure query route remain prerequisites.
 
-At observation insertion, repeat the current rights/evidence lifecycle and effective-window checks rather than relying on an earlier capability approval. This ensures a later rights revocation or evidence withdrawal blocks subsequent observation writes. Historical observations should remain immutable; no retroactive deletion or rewriting is implied.
+## 4. Confirmed implementation properties
 
-## Cutover constraints
+- Rights declaration reference resolves within exact tenant/site/source scope.
+- Nullable asset scope is compared with NULL-safe equality.
+- Supporting evidence ID and digest are bound to the immutable document and declaration.
+- Capability evidence reference matches the supporting evidence document ID.
+- Both required purposes, `measurement_ingestion` and `storage`, are explicit.
+- Rights and evidence lifecycle/effective-window checks are repeated at observation insertion.
+- Revocation/withdrawal blocks future observation inserts.
+- Existing observation rows are not rewritten.
 
-- Do not silently grandfather unresolved legacy references for new writes.
-- Do not rewrite or revoke historical approved capabilities based only on this synthetic inventory.
-- Before enabling the migration on any real environment, obtain an explicitly authorized, read-only aggregate inventory of that environment and a product/legal decision on historical records and asset-scope semantics.
-- Convert or replace synthetic and legitimate legacy fixtures with complete evidence/rights chains before enabling the new positive-path tests.
-- Add D1 tests for missing/unresolved references, wrong tenant/site/source/asset, wrong digest, absent purpose, pending/rejected/revoked rights, rejected/revoked/unverified evidence, future/expired windows, exact positive path, rights revoked after approval, evidence withdrawn after approval, and idempotent reviewer event retries.
-- Apply only to disposable local D1 in CI until independent review, staging provisioning and explicit deployment authorization are separately satisfied.
+## 5. Review questions and residual risks
 
-## Status
+1. **Lifecycle re-approval:** Unique event-type constraints mean revoked evidence or rights declarations cannot be re-verified/re-approved in place. A replacement record/workflow is required unless policy changes.
+2. **Latest-event ordering:** Lifecycle checks use append-only event rows ordered by rowid. Confirm the append-only assumption and writer constraints.
+3. **Effective-date boundaries:** Timestamp comparisons use `julianday()`. Current regression coverage includes whole-second effective-from acceptance and existing expired-rights rejection; additional exact boundary cases would strengthen assurance.
+4. **Alternate write paths:** Confirm all supported observation insertion paths remain subject to the database guard.
+5. **Historical records:** Existing observations remain unchanged; the new guard is prospective.
 
-This document records the exact-head audit and specifies the enforcement contract. It makes no runtime/schema change and does not authorize a remote migration, deployment, merge, or data operation.
+These are explicit review questions, not claims that remote production behavior has been tested.
+
+## 6. Staging impact inventory requirements
+
+Before remote execution:
+- verify the exact staging account, database name/ID and environment from authoritative configuration;
+- confirm staging-only routing and least-privilege read-only access;
+- capture the inventory script commit and target identity;
+- run aggregate SELECT queries only;
+- record execution time and aggregate output;
+- do not export tenant/source identifiers, document bytes, raw telemetry, credentials or secrets;
+- do not access production or perform writes, migrations, repairs or backfills.
+
+The reviewer previously authorized a read-only aggregate inventory only against a verified staging D1 target. Authorization is not evidence of execution.
+
+## 7. Current disposition
+
+**Implementation and exact-head CI:** accepted for continued controlled engineering.  
+**Reviewer decision:** approved to continue on the current head.  
+**Remote staging impact inventory:** pending verified staging D1 identity and secure read-only access.  
+**Merge and deployment:** not authorized by this impact review.
+
+This document is a source-level impact assessment and safety handoff, not a legal determination, penetration test, production certification or authorization to process customer data.
