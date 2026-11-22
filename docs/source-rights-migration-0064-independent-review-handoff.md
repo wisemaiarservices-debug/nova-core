@@ -1,77 +1,76 @@
 # Source rights migration 0064 — independent review handoff
 
-**Migration implementation commit:** `873086ea07779f349d47480847e3962a9ff4f9a0`.
+**Current PR:** [NOVA Core #311](https://github.com/wisemaiarservices-debug/nova-core/pull/311)  
+**Current implementation head:** `a43b4b408ce689c8e80b0fb1f1a27bfdaeac9670`  
+**Exact-head CI:** [45047879003](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/45047879003), 4/4 jobs passed.  
+**Human review status:** Approved to continue to the next controlled engineering stage on this exact head.
 
-**PR head at latest validation:** `c3d90d5a1087babcbe13167e24c19f88dcc38444` (PR #311). Reconfirm the head before review; any later change to migration/runtime code requires review of the new exact commit.
+This handoff records the review scope and known limitations. It is not production certification or deployment authorization.
 
-**Scope:** source-level review of migration 0064 and its interactions with migrations 0055, 0060–0063, source-capability lifecycle, observation persistence and idempotency. This is not a request to deploy, migrate a remote database, merge the PR or certify the whole platform.
+## 1. Review scope
 
-## Required reviewer independence
+Review migration 0064 and its interactions with:
+- migration 0055 observation capability/calibration commit guard;
+- migrations 0060–0063 evidence and data-rights governance, idempotency, revocation and effective windows;
+- source capability lifecycle and persistence;
+- observation persistence and idempotency;
+- all supported observation write paths;
+- disposable local D1 regression scripts;
+- read-only aggregate impact inventory SQL.
 
-The reviewer should not be an author of migration 0064 or its tests. The review record should identify the exact commit reviewed, reviewer, date, files inspected, findings, severity and disposition. A clean CI run is not an independent review.
+Any code change after the reviewed commit requires review of the new exact head and a new exact-head CI run.
 
-## Review checklist
+## 2. Confirmed implementation and test evidence
 
-### A. Exact identity and scope
-- [ ] Rights declaration ID resolves exactly from `source_capabilities.data_rights_ref`.
-- [ ] Tenant, site and source match across capability, rights declaration and evidence document.
-- [ ] Asset equality is NULL-safe and rejects NULL-vs-specific and cross-asset reuse.
-- [ ] Observation scope matches the selected capability exactly.
-- [ ] Capability `evidence_ref` equals the supporting evidence document ID.
+Migration 0064 adds database guards at capability approval and observation insertion. It checks exact rights declaration and evidence linkage, tenant/site/source/asset scope, current lifecycle state, effective windows, and explicit `measurement_ingestion` plus `storage` purposes.
 
-### B. Lifecycle and effective time
-- [ ] Only the latest rights lifecycle event may authorize approval/insertion; latest state must be `approved`.
-- [ ] Only the latest evidence lifecycle event may authorize approval/insertion; latest state must be `verified`.
-- [ ] Rights declaration and evidence document effective windows use inclusive start and exclusive end boundaries.
-- [ ] Event ordering assumptions based on D1 rowid are valid for append-only event tables and cannot be bypassed by another writer.
-- [ ] Revocation/withdrawal prevents future observations while leaving existing observation rows unchanged.
+Migration 0055 continues to enforce capability identity/scope, measurement metadata, quality flags, observation freshness and calibration requirements. Historical observations are not rewritten.
 
-### C. Rights semantics and evidence integrity
-- [ ] Supporting evidence ID, SHA-256 digest and exact scope bind the rights declaration to the document.
-- [ ] Both `measurement_ingestion` and `storage` must be explicit.
-- [ ] Analytics and model-training purposes are not inferred from ingestion/storage.
-- [ ] Malformed or unexpected purpose JSON fails closed under the schema and trigger assumptions.
+Exact-head CI run 45047879003 passed all four jobs. Tenant Worker tests applied ordered migrations and exercised governance paths against disposable local D1 with synthetic fixtures. Worker package readiness bundled code without deployment.
 
-### D. Trigger interactions and write paths
-- [ ] Migration 0064 preserves migration 0055 rejection precedence for missing capability identity and mismatched capability scope.
-- [ ] All application and direct-SQL observation insert paths are subject to the same D1 trigger.
-- [ ] No alternate writer, batch import or migration path bypasses the database guard.
-- [ ] Capability approval and observation insertion are atomic with their relevant audit/idempotency records.
-- [ ] Exact retries remain deterministic; changed-intent key reuse remains rejected.
-- [ ] Rights/evidence lifecycle changes between approval and observation insertion are rechecked at insertion time.
+## 3. Known findings requiring explicit disposition
 
-### E. Migration and tests
-- [ ] Migration ordering and trigger replacement behavior are correct from a clean database and an upgrade database.
-- [ ] Positive, negative, boundary-time, cross-scope, missing-reference, purpose, revocation and historical-row tests are adequate.
-- [ ] The test fixtures are synthetic and do not depend on production/customer data.
-- [ ] CI evidence corresponds to the exact commit under review.
+### Lifecycle re-approval
+Unique event-type constraints on evidence and rights lifecycle records prevent re-verification/re-approval of the same record after revocation. The current policy requires a replacement evidence document or rights declaration for renewed authorization. Confirm that this is the intended product/legal lifecycle.
 
-## Evidence currently available
+### Latest-event ordering
+Latest lifecycle state is selected using append-only event rows ordered by rowid. Confirm that all writers preserve append-only semantics and that no alternate writer can manipulate ordering assumptions.
 
-- Exact-head CI: [44967375569](https://github.com/wisemaiarservices-debug/nova-core/actions/runs/44967375569), all three jobs passed on PR head `c3d90d5a1087babcbe13167e24c19f88dcc38444`. The tenant Worker job applied ordered migrations through 0064 to disposable local D1, ran the expanded read-only inventory, and passed evidence/rights lifecycle, capability, calibration, gateway, observation, quality-flag and source-rights guard tests.
-- Migration under review: `apps/api/migrations/0064_source_data_rights_capability_observation_guards.sql`.
-- Guard tests: `apps/tenant-api/scripts/d1-source-rights-guard-tests.mjs`.
-- Read-only aggregate inventory: `apps/tenant-api/scripts/read-only-source-rights-impact-inventory.sql`.
+### Effective windows
+Migrations 0060, 0062, 0063 and 0064 use SQLite `julianday()` comparisons for effective windows. Tests cover whole-second effective-from acceptance and existing expired-rights rejection. Exact start/end boundary and timezone-format coverage can be expanded.
 
-CI used disposable local D1. It is not evidence that remote staging or production has applied migration 0064.
+### Asset and tenant scope
+Migration 0064 uses NULL-safe equality for nullable asset scope and rechecks scope at observation insertion. Confirm cross-tenant, cross-site, cross-source and cross-asset negative cases remain covered across all writers.
 
-## Review outcome template
+### Alternate write paths
+The D1 trigger is the commit-time enforcement boundary. Confirm direct SQL, ingestion Worker, batch and any future observation writer cannot bypass the trigger.
 
-Record one of:
-- **Approved for staging impact assessment only** — no deployment or migration authorization implied.
-- **Changes required** — list findings, affected paths/lines, severity and required regression tests.
-- **Unable to conclude** — list missing evidence or environment assumptions.
+## 4. Staging impact inventory — not yet executed remotely
 
-A reviewer approval must not be represented as production readiness, a penetration test, legal approval or authorization to process customer data.
+The aggregate inventory script is `apps/tenant-api/scripts/read-only-source-rights-impact-inventory.sql`. CI has exercised it against disposable local D1 only.
 
-## Staging inventory safety gate
+The checked-in `apps/tenant-api/wrangler.toml` intentionally has no D1 or Cloudflare Access bindings. The gateway configuration binds only to the private Tenant API Worker. A verified staging D1 identity and secure read-only query route are therefore not established by repository configuration.
 
-The inventory script is SELECT-only and aggregate-oriented. Before any remote staging execution:
-1. Confirm the exact staging D1 database identity from authoritative environment configuration.
-2. Obtain explicit written authorization for a read-only aggregate inventory.
-3. Use a read-only execution identity and a staging-only route; do not use Wrangler `--remote` until the target is independently verified.
-4. Record script SHA, target identity, execution time and aggregate output.
-5. Do not retrieve or export document bytes, tenant/source names, raw telemetry, secrets or credentials.
-6. Do not run against production. Do not migrate, repair, backfill or alter records as part of this assessment.
+Before remote staging execution:
+1. Verify exact staging account, database name/ID and environment from authoritative Cloudflare configuration.
+2. Confirm staging-only routing and a least-privilege read-only execution identity.
+3. Record the inventory script commit and verified target identity.
+4. Execute aggregate SELECT statements only; do not export tenant/source names, document bytes, raw telemetry, credentials or secrets.
+5. Record execution time and aggregate results.
+6. Do not access production, run migrations, write data, repair or backfill records.
 
-The inventory is diagnostic only. Any remediation, retroactivity decision or staging migration requires separate product/legal review and separate authorization.
+The human reviewer authorization is limited to this read-only aggregate inventory against a verified staging D1 target. It does not establish that the target is configured or that the inventory has run.
+
+## 5. Review outcome and next stage
+
+**Current review decision:** Approved to continue to controlled non-production engineering and staging preparation.
+
+**Completed:** implementation, exact-head CI, reviewer approval to continue, disposable local D1 inventory/test coverage.
+
+**Pending:** staging D1 identity verification, secure read-only access, remote staging aggregate inventory, disposition of lifecycle policy and boundary/write-path findings, final handover refresh, and final merge acceptance.
+
+## 6. Operational boundary
+
+No production database access, remote D1 migration, Worker deployment, PR merge, customer-data export, secret change or paid-resource change is authorized by this handoff.
+
+A future merge decision requires the remaining review and staging gates to be satisfied. Any staging migration or deployment requires separate explicit operational authorization and a reviewed rollback/forward-recovery plan.
