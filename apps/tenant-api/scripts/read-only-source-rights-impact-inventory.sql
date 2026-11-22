@@ -64,6 +64,9 @@ SELECT
     WHEN latest_rights_event IS NULL THEN 'no_rights_event'
     WHEN latest_rights_event <> 'approved' THEN 'rights_not_approved'
     WHEN latest_evidence_event IS NULL OR latest_evidence_event <> 'verified' THEN 'evidence_not_verified'
+    WHEN julianday(effective_from) > julianday('now')
+      OR (effective_to IS NOT NULL AND julianday(effective_to) <= julianday('now'))
+      THEN 'rights_outside_effective_window'
     WHEN (evidence_effective_from IS NOT NULL AND julianday(evidence_effective_from) > julianday('now'))
       OR (evidence_effective_to IS NOT NULL AND julianday(evidence_effective_to) <= julianday('now'))
       THEN 'supporting_evidence_outside_effective_window'
