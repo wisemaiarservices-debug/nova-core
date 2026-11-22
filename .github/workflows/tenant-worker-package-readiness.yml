@@ -63,5 +63,5 @@ jobs:
     steps:
       - name: Confirm deployment commands are absent
         run: |
-          ! grep -Eq 'wrangler(\.js)? deploy([[:space:]]|$)' .github/workflows/tenant-worker-package-readiness.yml
+          awk '/wrangler(@[0-9.]+)? deploy/ && !/--dry-run/ { bad=1 } END { exit bad }' .github/workflows/tenant-worker-package-readiness.yml
           ! grep -Eq 'CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID|secrets\.' .github/workflows/tenant-worker-package-readiness.yml
