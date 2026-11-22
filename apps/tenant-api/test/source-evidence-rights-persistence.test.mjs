@@ -28,7 +28,7 @@ const common = {
 };
 
 function fixtureDb(kind) {
-  const state = { request: null, batches: 0, statements: [] };
+  const state = { request: null, batches: 0, statements: [], evidenceVerified: true };
   const db = {
     prepare(sql) {
       return {
@@ -49,6 +49,9 @@ function fixtureDb(kind) {
             verification_status: "verified", registered_by_subject: "source-registrar",
           }] };
           if (sql.includes("FROM source_evidence_documents d JOIN source_evidence_events")) {
+            return { results: state.evidenceVerified ? [{ id: "source-evidence:verified-fixture" }] : [] };
+          }
+          if (sql.includes("FROM source_evidence_documents")) {
             return { results: [{ sha256: "a".repeat(64) }] };
           }
           if (sql.includes("FROM source_evidence_document_requests") ||
@@ -116,6 +119,40 @@ test("rights declaration exact retry replays without a second write", async () =
   assert.equal(second.replayed, true);
   assert.equal(second.declaration_id, first.declaration_id);
   assert.equal(state.batches, 1);
+});
+
+test("rights declaration exact retry replays after supporting evidence is revoked", async () => {
+  const { db, state } = fixtureDb("rights");
+  const first = await createSourceDataRightsDeclaration({ ...common, db, draft: rightsDraft() });
+  state.evidenceVerified = false;
+  const second = await createSourceDataRightsDeclaration({ ...common, db, draft: rightsDraft() });
+  assert.equal(second.replayed, true);
+  assert.equal(second.declaration_id, first.declaration_id);
+  assert.equal(state.batches, 1);
+});
+
+test("rights declaration changed payload conflicts after supporting evidence is revoked", async () => {
+  const { db, state } = fixtureDb("rights");
+  await createSourceDataRightsDeclaration({ ...common, db, draft: rightsDraft() });
+  state.evidenceVerified = false;
+  const changed = { ...rightsDraft(), provider_name: "Changed provider" };
+  await assert.rejects(
+    createSourceDataRightsDeclaration({ ...common, db, draft: changed }),
+    /source_rights_idempotency_conflict/,
+  );
+  assert.equal(state.batches, 1);
+});
+
+test("new rights declaration remains blocked after supporting evidence is revoked", async () => {
+  const { db, state } = fixtureDb("rights");
+  state.evidenceVerified = false;
+  await assert.rejects(
+    createSourceDataRightsDeclaration({
+      ...common, db, idempotencyKey: "new-after-revocation", draft: rightsDraft(),
+    }),
+    /source_rights_supporting_evidence_unverified/,
+  );
+  assert.equal(state.batches, 0);
 });
 
 test("rights declaration cannot claim caller-supplied evidence digest or tenant scope", async () => {
