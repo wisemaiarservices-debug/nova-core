@@ -1,16 +1,19 @@
 const MODULES = new Set(["nova-core", "neoagro", "neogrid", "neocell"]);
 const METHODS = new Set(["sensor", "manual", "provider_api", "satellite", "model", "derived"]);
+const MEASUREMENT_KINDS = new Set(["measured", "derived"]);
+const SAMPLING_MODES = new Set(["interval", "event"]);
+const PROTOCOL_PATTERN = /^[a-z][a-z0-9._-]{0,79}$/;
 const QUALITY_FLAGS = new Set([
   "estimated", "sensor_calibration_due", "sensor_fault", "outlier_suspected",
   "provider_fill_value", "manually_entered", "gridded_or_reanalysis", "time_alignment_uncertain",
 ]);
 const TOP_LEVEL_KEYS = new Set([
-  "site_id", "asset_id", "source_id", "module", "metric", "value", "unit",
+  "site_id", "asset_id", "source_id", "source_capability_id", "measurement_kind", "acquisition_protocol", "protocol_version", "sampling_mode", "sampling_interval_seconds", "module", "metric", "value", "unit",
   "observed_at", "idempotency_key", "provenance", "quality_flags",
 ]);
 const PROVENANCE_KEYS = new Set(["provider", "acquisition_method", "source_record_ref"]);
 const METRIC_PATTERN = /^[a-z][a-z0-9_.-]{0,119}$/;
-const UNIT_PATTERN = /^[A-Za-z0-9%°µμ/._ -]{1,48}$/;
+const UNIT_PATTERN = /^[A-Za-z0-9%°µμ/._-]{1,32}$/;
 const RFC3339_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function isRecord(value) {
@@ -22,7 +25,7 @@ function hasOnlyKeys(value, allowed) {
 }
 
 function requiredString(value, max, field) {
-  if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > max) {
+  if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > max || /[\u0000-\u001f\u007f]/.test(value)) {
     throw new Error("invalid_" + field);
   }
 }
@@ -56,6 +59,16 @@ export function validateObservationPayload(payload, nowMs = Date.now()) {
   requiredString(payload.site_id, 120, "site_id");
   if (payload.asset_id !== undefined && payload.asset_id !== null) requiredString(payload.asset_id, 120, "asset_id");
   requiredString(payload.source_id, 120, "source_id");
+  requiredString(payload.source_capability_id, 160, "source_capability_id");
+  if (!MEASUREMENT_KINDS.has(payload.measurement_kind)) throw new Error("invalid_measurement_kind");
+  if (typeof payload.acquisition_protocol !== "string" || !PROTOCOL_PATTERN.test(payload.acquisition_protocol)) throw new Error("invalid_acquisition_protocol");
+  requiredString(payload.protocol_version, 80, "protocol_version");
+  if (!SAMPLING_MODES.has(payload.sampling_mode)) throw new Error("invalid_sampling_mode");
+  if (payload.sampling_mode === "interval") {
+    if (!Number.isSafeInteger(payload.sampling_interval_seconds) || payload.sampling_interval_seconds < 1 || payload.sampling_interval_seconds > 31536000) throw new Error("invalid_sampling_interval_seconds");
+  } else if (payload.sampling_interval_seconds !== null) {
+    throw new Error("invalid_sampling_interval_seconds");
+  }
   if (!MODULES.has(payload.module)) throw new Error("invalid_module");
   if (typeof payload.metric !== "string" || !METRIC_PATTERN.test(payload.metric)) throw new Error("invalid_metric");
   if (typeof payload.value !== "number" || !Number.isFinite(payload.value)) throw new Error("invalid_value");

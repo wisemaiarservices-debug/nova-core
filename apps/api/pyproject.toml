@@ -15,3 +15,7 @@ dev = [
   "pytest",
   "httpx",
 ]
+
+[tool.setuptools.packages.find]
+include = ["services*"]
+exclude = ["migrations*", "tests*"]
