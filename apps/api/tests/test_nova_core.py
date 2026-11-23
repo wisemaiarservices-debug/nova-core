@@ -328,3 +328,34 @@ def test_nasa_power_workers_fetch_payload_checks_status_and_decodes_body():
     assert payload == {"properties": {"parameter": {"T2M": {}}}}
     assert called["url"] == "https://example.invalid"
 
+def test_nasa_power_workers_body_reader_cancels_stream_when_read_is_cancelled():
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class BlockingReader:
+        def __init__(self):
+            self.cancelled = False
+            self.released = False
+
+        async def read(self):
+            await asyncio.Event().wait()
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def releaseLock(self):
+            self.released = True
+
+    reader = BlockingReader()
+    response = SimpleNamespace(body=SimpleNamespace(getReader=lambda: reader))
+
+    async def exercise():
+        task = asyncio.create_task(nasa_power._read_worker_body(response))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
+    assert reader.cancelled is True
+    assert reader.released is True
