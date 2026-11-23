@@ -141,7 +141,11 @@ async def _read_worker_body(response: Any) -> bytes:
             pass
         raise
     finally:
-        reader.releaseLock()
+        try:
+            reader.releaseLock()
+        except Exception:
+            # Cleanup must not replace the original read/cancellation failure.
+            pass
     return b"".join(chunks)
 
 
