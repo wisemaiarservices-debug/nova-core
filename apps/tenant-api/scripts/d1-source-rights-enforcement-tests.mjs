@@ -237,7 +237,7 @@ const expiryCapabilityId = "capability-rights-expiry-after-approval";
 const expiryMetric = "rights_guard_expiry_after_approval";
 execute("approve capability while rights are currently effective", [
   ...rightsWindowSetup(expiryRightsId, expiryRightsDigest,
-    "strftime('%Y-%m-%dT%H:%M:%SZ','now')", "'2099-01-01T00:00:00Z'"),
+    "'2020-01-01T00:00:00Z'", "'2099-01-01T00:00:00Z'"),
   capability(expiryCapabilityId, expiryMetric, expiryRightsId, "source-evidence:ci-http-grant"),
   submitted(expiryCapabilityId, "event-rights-expiry-after-approval-submitted",
     "req-rights-expiry-after-approval-submit"),
