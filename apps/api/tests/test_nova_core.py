@@ -193,7 +193,6 @@ def test_public_api_route_surface_matches_reviewed_allowlist():
         for route in app.routes
         if isinstance(route, APIRoute)
         for method in route.methods or set()
-        if method in {"GET", "POST"}
     }
     expected = {
         ("GET", "/health"),
