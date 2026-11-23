@@ -12,10 +12,10 @@ async function rows(statement){
 
 const OPERATION_SQL=`SELECT operation.operation_id,operation.tenant_id,operation.site_id,
  operation.observation_id,operation.actor_subject,operation.state,operation.assessment_id,
- operation.lease_version,operation.lease_expires_at,operation.lease_request_id
+ operation.lease_version,operation.lease_expires_at,operation.lease_request_id,site.status AS site_status
  FROM measurement_assessment_operations operation
  JOIN tenants tenant ON tenant.id=operation.tenant_id AND tenant.status='active'
- JOIN sites site ON site.id=operation.site_id AND site.tenant_id=operation.tenant_id AND site.status='active'
+ JOIN sites site ON site.id=operation.site_id AND site.tenant_id=operation.tenant_id
  JOIN tenant_memberships membership ON membership.tenant_id=operation.tenant_id
   AND membership.subject=operation.actor_subject AND membership.status='active'
  JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=operation.tenant_id
@@ -33,12 +33,12 @@ const INSERT_SQL=`WITH operation_context AS (
   operation.actor_subject,operation.lease_version,operation.lease_request_id,
   observation.source_id,observation.module,observation.metric,observation.value,
   observation.unit,observation.observed_at,observation.provenance_json,
-  observation.verification_status
+  observation.verification_status,site.status AS site_status
  FROM measurement_assessment_operations operation
  JOIN observations observation ON observation.id=operation.observation_id
   AND observation.tenant_id=operation.tenant_id AND observation.site_id=operation.site_id
  JOIN tenants tenant ON tenant.id=operation.tenant_id AND tenant.status='active'
- JOIN sites site ON site.id=operation.site_id AND site.tenant_id=operation.tenant_id AND site.status='active'
+ JOIN sites site ON site.id=operation.site_id AND site.tenant_id=operation.tenant_id
  JOIN tenant_memberships membership ON membership.tenant_id=operation.tenant_id
   AND membership.subject=operation.actor_subject AND membership.status='active'
  JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=operation.tenant_id
@@ -49,7 +49,7 @@ const INSERT_SQL=`WITH operation_context AS (
   AND operation.lease_request_id=? AND operation.lease_expires_at>?
 ),
 evidence_gate AS (
- SELECT CASE WHEN ? IN ('passed','failed')
+ SELECT CASE WHEN ctx.site_status='active' AND ? IN ('passed','failed')
   AND ctx.verification_status='verified'
   AND EXISTS (
    SELECT 1 FROM assets asset WHERE asset.id=? AND asset.tenant_id=ctx.tenant_id
@@ -119,6 +119,7 @@ SELECT ?,ctx.tenant_id,ctx.site_id,ctx.observation_id,
  CASE WHEN gate.approved=1 THEN ? ELSE NULL END,
  CASE WHEN gate.approved=1 THEN ? ELSE 'not_assessed' END,
  CASE WHEN gate.approved=1 THEN ?
+  WHEN ctx.site_status='inactive' THEN 'site_inactive_at_completion'
   WHEN ?='not_assessed' THEN ? ELSE 'governance_state_changed_before_assessment' END,
  ctx.value,ctx.unit,'1.0.0',ctx.operation_id,ctx.actor_subject,
  ctx.lease_version,ctx.lease_request_id,?,?
@@ -144,6 +145,8 @@ export async function completeMeasurementAssessmentOperation(db,{
   if(prior.length!==1)return {error:"assessment_operation_result_unavailable",status:409};
   return {data:prior[0],status:200};
  }
+ if(!["active","inactive"].includes(operation.site_status))
+  return {error:"assessment_operation_site_unavailable",status:409};
  if(operation.state!=="running"||operation.lease_version!==expectedLeaseVersion||
     operation.lease_request_id!==expectedLeaseRequestId||
     typeof operation.lease_expires_at!=="string"||Date.parse(operation.lease_expires_at)<=Date.parse(now))
