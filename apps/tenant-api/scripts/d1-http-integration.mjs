@@ -30,6 +30,32 @@ async function throughGateway(path, token = accessToken(), extraHeaders = {}, me
   });
   return { response, body: await response.json() };
 }
+
+function signedPrivateWorkerHeaders(requestId) {
+  const subject = "ci-human-subject";
+  const issuedAt = String(Math.floor(Date.now() / 1000));
+  const bodyDigest = createHash("sha256").update(Buffer.alloc(0)).digest("hex");
+  const headers = new Headers({
+    "x-nova-verified-subject": subject,
+    "x-nova-verified-issuer": issuer,
+    "x-nova-verified-audience": audience,
+    "x-nova-gateway-issued-at": issuedAt,
+    "x-nova-request-id": requestId,
+    "x-nova-body-sha256": bodyDigest,
+  });
+  const path = "/internal/v1/tenants/tenant-http-a/sites/site-http-a";
+  const canonical = JSON.stringify([
+    "GET", path, subject, issuer, audience, issuedAt, requestId,
+    bodyDigest, null, null,
+  ]);
+  headers.set("x-nova-internal-signature",
+    createHmac("sha256", secret).update(canonical).digest("hex"));
+  return headers;
+}
+async function throughPrivateWorker(headers) {
+  const response = await fetch(base + "/__ci/private-worker/sites/site-http-a", { headers });
+  return { response, body: await response.json() };
+}
 async function ready() {
   for (let i = 0; i < 100; i++) {
     if (child.exitCode !== null) throw new Error("Wrangler multi-Worker local runtime exited before readiness");
@@ -48,6 +74,19 @@ try {
   assert.equal(allowed.response.status, 200, JSON.stringify(allowed.body));
   assert.equal(allowed.body.data.id, "site-http-a");
   assert.equal(allowed.body.data.tenant_id, "tenant-http-a");
+
+  // Exercise the private Worker's signed-envelope nonce gate directly through
+  // a CI-only local Service Binding proxy. Two simultaneous identical signed
+  // envelopes must have exactly one winner; a later replay must also be denied.
+  const replayHeaders = signedPrivateWorkerHeaders("ci-concurrent-nonce-replay-01");
+  const simultaneousNonceRequests = await Promise.all([
+    throughPrivateWorker(replayHeaders),
+    throughPrivateWorker(replayHeaders),
+  ]);
+  assert.deepEqual(simultaneousNonceRequests.map(item => item.response.status).sort(),
+    [200, 401], JSON.stringify(simultaneousNonceRequests.map(item => item.body)));
+  const laterNonceReplay = await throughPrivateWorker(replayHeaders);
+  assert.equal(laterNonceReplay.response.status, 401, JSON.stringify(laterNonceReplay.body));
 
   const deniedGrant = await throughGateway("/api/v1/tenants/tenant-http-a/sites/site-http-b");
   assert.equal(deniedGrant.response.status, 404);
