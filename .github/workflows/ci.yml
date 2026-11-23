@@ -61,6 +61,9 @@ jobs:
       - name: Test source capability lifecycle rejection guards against local D1
         working-directory: apps/tenant-api
         run: node ./scripts/d1-capability-lifecycle-tests.mjs
+      - name: Test source calibration profile registry guards against local D1
+        working-directory: apps/tenant-api
+        run: node ./scripts/d1-calibration-profile-tests.mjs
       - name: Exercise gateway and private Worker over local Service Bindings + D1
         working-directory: apps/tenant-api
         run: node ./scripts/d1-http-integration.mjs
