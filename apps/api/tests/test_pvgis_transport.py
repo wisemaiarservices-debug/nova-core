@@ -164,3 +164,29 @@ def test_worker_response_stream_is_cancelled_when_read_is_cancelled():
 
     assert reader.cancelled is True
     assert reader.released is True
+
+
+def test_async_worker_fetch_uses_one_deadline_for_headers_and_body(monkeypatch):
+    reader = _Reader([b'{"outputs":{"totals":{}}}'])
+    response = _Response(reader)
+    deadlines = []
+    original_wait_for = asyncio.wait_for
+
+    async def fake_fetch(url, options):
+        return response
+
+    async def recording_wait_for(awaitable, timeout):
+        deadlines.append(timeout)
+        return await original_wait_for(awaitable, timeout=timeout)
+
+    _install_worker_ffi(monkeypatch, fake_fetch)
+    monkeypatch.setattr(pvgis.asyncio, "wait_for", recording_wait_for)
+
+    result = asyncio.run(
+        pvgis.fetch_broadband_performance_async(
+            36.8, 10.2, date(2024, 1, 1), date(2024, 1, 7)
+        )
+    )
+
+    assert result == {"outputs": {"totals": {}}}
+    assert deadlines == [pvgis.TIMEOUT_SECONDS]
