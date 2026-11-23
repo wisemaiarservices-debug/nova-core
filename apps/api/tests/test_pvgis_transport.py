@@ -1,4 +1,7 @@
 import asyncio
+import sys
+import types
+from datetime import date
 
 import pytest
 
@@ -10,7 +13,8 @@ class _Chunk:
         self.value = value
 
     def to_py(self):
-        return self.value
+        # Pyodide converts JavaScript TypedArray buffers to memoryview.
+        return memoryview(self.value)
 
 
 class _ReadResult:
@@ -49,8 +53,24 @@ class _Body:
 
 
 class _Response:
-    def __init__(self, reader):
+    def __init__(self, reader, *, ok=True, content_type="application/json"):
         self.body = _Body(reader)
+        self.ok = ok
+        self.status = 200 if ok else 502
+        self.headers = types.SimpleNamespace(get=lambda key: content_type if key == "content-type" else None)
+
+
+def _install_worker_ffi(monkeypatch, fetch):
+    js_module = types.ModuleType("js")
+    js_module.Object = types.SimpleNamespace(fromEntries=object())
+    js_module.fetch = fetch
+    ffi_module = types.ModuleType("pyodide.ffi")
+    ffi_module.to_js = lambda value, dict_converter=None: value
+    pyodide_module = types.ModuleType("pyodide")
+    pyodide_module.ffi = ffi_module
+    monkeypatch.setitem(sys.modules, "js", js_module)
+    monkeypatch.setitem(sys.modules, "pyodide", pyodide_module)
+    monkeypatch.setitem(sys.modules, "pyodide.ffi", ffi_module)
 
 
 def test_worker_response_body_is_joined_incrementally(monkeypatch):
@@ -78,3 +98,49 @@ def test_worker_response_body_is_cancelled_immediately_over_limit(monkeypatch):
 def test_worker_response_requires_streaming_body():
     with pytest.raises(RuntimeError, match="readable body"):
         asyncio.run(pvgis._read_bounded_response(object()))
+
+
+def test_async_worker_fetch_uses_readable_stream_and_rejects_redirects(monkeypatch):
+    reader = _Reader([b'{"outputs":', b'{"totals":{}}}'])
+    response = _Response(reader)
+    calls = []
+
+    async def fake_fetch(url, options):
+        calls.append((url, options))
+        return response
+
+    _install_worker_ffi(monkeypatch, fake_fetch)
+
+    result = asyncio.run(
+        pvgis.fetch_broadband_performance_async(
+            36.8, 10.2, date(2024, 1, 1), date(2024, 1, 7)
+        )
+    )
+
+    assert result == {"outputs": {"totals": {}}}
+    assert len(calls) == 1
+    assert calls[0][1]["redirect"] == "error"
+    assert "latitude=36.8" in calls[0][0]
+    assert reader.released is True
+    assert reader.cancelled is False
+
+
+def test_async_worker_fetch_cancels_oversized_stream(monkeypatch):
+    reader = _Reader([b"x" * 8, b"y" * 8])
+    response = _Response(reader)
+    monkeypatch.setattr(pvgis, "MAX_RESPONSE_BYTES", 10)
+
+    async def fake_fetch(url, options):
+        return response
+
+    _install_worker_ffi(monkeypatch, fake_fetch)
+
+    with pytest.raises(RuntimeError, match="2 MiB limit"):
+        asyncio.run(
+            pvgis.fetch_broadband_performance_async(
+                36.8, 10.2, date(2024, 1, 1), date(2024, 1, 7)
+            )
+        )
+
+    assert reader.cancelled is True
+    assert reader.released is True
