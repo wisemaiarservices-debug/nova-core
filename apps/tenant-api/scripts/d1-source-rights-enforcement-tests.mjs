@@ -253,4 +253,30 @@ execute("deny observation after rights expire following capability approval", [
   observation("obs-rights-expired-after-capability-approval", expiryCapabilityId, expiryMetric),
 ], "observation requires current exact-scope approved ingestion and storage rights");
 
+// Supporting evidence can expire after capability approval just like the rights declaration.
+// Recheck the evidence effective window independently at the observation commit boundary.
+const evidenceExpiryRightsId = "source-rights:ci-evidence-expiry-after-approval";
+const evidenceExpiryRightsDigest = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+const evidenceExpiryCapabilityId = "capability-rights-evidence-expiry-after-approval";
+const evidenceExpiryMetric = "rights_guard_evidence_expiry_after_approval";
+execute("approve capability while supporting evidence is currently effective", [
+  ...rightsWindowSetup(evidenceExpiryRightsId, evidenceExpiryRightsDigest,
+    "'2020-01-01T00:00:00Z'", "'2099-01-01T00:00:00Z'"),
+  capability(evidenceExpiryCapabilityId, evidenceExpiryMetric, evidenceExpiryRightsId,
+    "source-evidence:ci-http-grant"),
+  submitted(evidenceExpiryCapabilityId, "event-rights-evidence-expiry-submitted",
+    "req-rights-evidence-expiry-submit"),
+  approval(evidenceExpiryCapabilityId, "event-rights-evidence-expiry-approved",
+    "req-rights-evidence-expiry-approve"),
+]);
+execute("advance supporting evidence expiry in disposable D1 fixture", [
+  "DROP TRIGGER source_evidence_documents_immutable_update",
+  "UPDATE source_evidence_documents SET effective_to='2025-01-01T00:00:00Z' WHERE id='source-evidence:ci-http-grant'",
+  "CREATE TRIGGER source_evidence_documents_immutable_update BEFORE UPDATE ON source_evidence_documents BEGIN SELECT RAISE(ABORT, 'source evidence documents are immutable'); END",
+]);
+execute("deny observation after supporting evidence expires following capability approval", [
+  observation("obs-evidence-expired-after-capability-approval", evidenceExpiryCapabilityId,
+    evidenceExpiryMetric),
+], "observation requires current exact-scope approved ingestion and storage rights");
+
 console.log("Source data-rights capability and observation guards passed");
