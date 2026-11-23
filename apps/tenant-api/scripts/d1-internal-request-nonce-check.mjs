@@ -9,7 +9,9 @@ const args = [
 ];
 
 function execute(sql, json = false) {
-  const result = spawnSync("npx", [...args, ...(json ? ["--json"] : []), sql], {
+  // --command consumes the immediately following argument as its SQL value.
+  // Keep --json after that value so yargs does not consume the flag as SQL.
+  const result = spawnSync("npx", [...args, sql, ...(json ? ["--json"] : [])], {
     encoding: "utf8",
   });
   const output = (result.stdout || "") + "\n" + (result.stderr || "");
