@@ -1669,15 +1669,15 @@ export default {
         if (sensorMappingRegister) {
           if (request.method !== "POST" || !["tenant_owner", "tenant_admin"].includes(membership[0].role) ||
               !await hasSiteReadGrant(env.DB, tenant, subject, sensorMappingRegister[2])) return error("not_found", 404);
-          const registered = await registerSensorSourceMapping(env.DB, tenant, sensorMappingRegister[1], sensorMappingRegister[2],
-            sensorMappingRegister[3], subject, requestId, draftBody);
+          const registered = await registerSensorSourceMapping(env.DB, tenant, sensorMappingRegister[2], sensorMappingRegister[3],
+            subject, requestId, draftBody);
           return registered.error ? json({ error: registered.error }, registered.status) : json({ data: registered.data, request_id: requestId }, registered.status);
         }
         if (sensorMappingReview) {
           if (request.method !== "POST" || !ROLE_ACTIONS[membership[0].role]?.has("read") ||
               !await hasSiteReadGrant(env.DB, tenant, subject, sensorMappingReview[2])) return error("not_found", 404);
-          const reviewed = await reviewSensorSourceMapping(env.DB, tenant, sensorMappingReview[1], sensorMappingReview[2],
-            sensorMappingReview[3], sensorMappingReview[4], subject, requestId, draftBody);
+          const reviewed = await reviewSensorSourceMapping(env.DB, tenant, sensorMappingReview[2], sensorMappingReview[3],
+            sensorMappingReview[4], subject, requestId, draftBody);
           return reviewed.error ? json({ error: reviewed.error }, reviewed.status) : json({ data: reviewed.data, request_id: requestId }, reviewed.status);
         }
         if (calibrationRegister) {

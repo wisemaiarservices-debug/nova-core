@@ -1,7 +1,6 @@
 name: Deploy NOVA Core API to Cloudflare Workers
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - feat/nova-core-v1-provenance-and-honest-impact
@@ -11,7 +10,7 @@ permissions:
 
 jobs:
   deploy:
-    if: contains(github.event.head_commit.message, 'deploy-nova-core') || github.event_name == 'workflow_dispatch'
+    if: contains(github.event.head_commit.message, 'deploy-nova-core')
     runs-on: ubuntu-latest
     environment: nova-core-api
     env:
