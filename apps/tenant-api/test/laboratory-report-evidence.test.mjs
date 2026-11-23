@@ -17,7 +17,7 @@ const body = {
 };
 
 function database() {
-  const state = { evidence: null, events: [], audits: [], batches: 0, statements: [], readAuthorized: true };
+  const state = { evidence: null, events: [], audits: [], auditChanges: 1, batches: 0, statements: [], readAuthorized: true };
   const db = {
     state,
     prepare(sql) {
@@ -26,8 +26,8 @@ function database() {
         bind(...values) { this.values = values; state.statements.push({ sql, values }); return this; },
         async run() {
           if (sql.includes("INSERT INTO audit_events")) {
-            state.audits.push({ sql, values: this.values });
-            return { meta: { changes: 1 } };
+            if (state.auditChanges === 1) state.audits.push({ sql, values: this.values });
+            return { meta: { changes: state.auditChanges } };
           }
           throw new Error("unexpected run: " + sql);
         },
@@ -115,6 +115,16 @@ test("retrieves persisted bytes only inside the final active membership and site
   db.state.evidence.document_bytes = new TextEncoder().encode("%PDF-tampered");
   await assert.rejects(() => readLaboratoryReportEvidence(db, "tenant-a", "reader@example.test", "site-a", created.data.id, "request-read-2"),
     /laboratory_report_persisted_digest_mismatch/);
+});
+
+test("fails closed when the laboratory report read audit cannot be persisted", async () => {
+  const db = database();
+  const created = await registerLaboratoryReportEvidence(db, "tenant-a", "owner@example.test", "request-1", body);
+  db.state.auditChanges = 0;
+  await assert.rejects(() => readLaboratoryReportEvidence(
+    db, "tenant-a", "reader@example.test", "site-a", created.data.id, "request-read-fail",
+  ), /laboratory_report_read_audit_failed/);
+  assert.equal(db.state.audits.length, 0);
 });
 
 test("rejects malformed payloads, non-PDF bytes, unsafe filenames and invalid dates", async () => {
