@@ -111,8 +111,7 @@ def test_wapor_api_endpoint_maps_provider_failure_and_invalid_inputs(monkeypatch
         asyncio.run(wapor_rasters("invalid", None, None))
     assert exc.value.status_code == 422
 
-@pytest.mark.asyncio
-async def test_wapor_async_endpoints_use_async_fetch_and_preserve_bounds(monkeypatch):
+def test_wapor_async_endpoints_use_async_fetch_and_preserve_bounds(monkeypatch):
     calls = []
 
     async def fake_async(url):
@@ -127,11 +126,14 @@ async def test_wapor_async_endpoints_use_async_fetch_and_preserve_bounds(monkeyp
         raise AssertionError(url)
 
     monkeypatch.setattr(wapor, "_request_json_async", fake_async)
-    mapsets = await wapor.list_mapsets_async()
-    assert [item["code"] for item in mapsets["mapsets"]] == ["L2-AETI-D"]
-    rasters = await wapor.list_rasters_async(
-        "L2-AETI-D", date(2024, 1, 11), date(2024, 1, 20)
-    )
+    async def run():
+        mapsets = await wapor.list_mapsets_async()
+        assert [item["code"] for item in mapsets["mapsets"]] == ["L2-AETI-D"]
+        return await wapor.list_rasters_async(
+            "L2-AETI-D", date(2024, 1, 11), date(2024, 1, 20)
+        )
+
+    rasters = asyncio.run(run())
     assert [item["period_start"] for item in rasters["rasters"]] == ["2024-01-11"]
     assert calls == [
         wapor.BASE_URL,
@@ -140,15 +142,14 @@ async def test_wapor_async_endpoints_use_async_fetch_and_preserve_bounds(monkeyp
     ]
 
 
-@pytest.mark.asyncio
-async def test_wapor_async_pagination_remains_bounded(monkeypatch):
+def test_wapor_async_pagination_remains_bounded(monkeypatch):
     calls = []
 
     async def fake_async(url):
         calls.append(url)
         return _page([{"code": "L1-AETI-D"}], url + "?next=1")
 
-    result = await wapor._collect_pages_async(wapor.BASE_URL, fake_async)
+    result = asyncio.run(wapor._collect_pages_async(wapor.BASE_URL, fake_async))
     assert result["pages_read"] == wapor.MAX_PAGES
     assert result["truncated"] is True
     assert len(calls) == wapor.MAX_PAGES
