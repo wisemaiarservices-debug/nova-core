@@ -306,7 +306,7 @@ const boundary = spawnSync("npx", [
 const boundaryOutput = (boundary.stdout || "") + "\n" + (boundary.stderr || "");
 assert.equal(boundary.status, 0,
   "effective_to equality boundary query failed\\n" + boundaryOutput);
-assert.match(boundaryOutput, /"boundary_is_valid"\\s*:\\s*0/,
+assert.match(boundaryOutput, /"boundary_is_valid"\s*:\s*0/,
   "effective_to equality must evaluate as outside the exclusive validity window\\n" + boundaryOutput);
 console.log("Passed: effective_to equality is outside the exclusive validity window");
 
