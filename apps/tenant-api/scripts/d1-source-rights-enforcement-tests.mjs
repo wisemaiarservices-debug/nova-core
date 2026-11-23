@@ -293,13 +293,21 @@ execute("reject rights approval before future effective_from", [
 
 // SQLite's strict greater-than comparison is the boundary used by migration
 // 0064 for effective_to. Equal instants must not satisfy an exclusive expiry.
-// This deterministic local-D1 assertion avoids a wall-clock race at millisecond
-// precision; the live trigger's expiry-after-approval test above exercises its
-// actual observation-insert enforcement.
-execute("assert effective_to equality is outside the exclusive validity window", [
-  "CREATE TEMP TABLE ci_effective_to_exclusive_boundary (valid INTEGER CHECK(valid=1))",
-  "INSERT INTO ci_effective_to_exclusive_boundary(valid) " +
-    "SELECT CASE WHEN julianday('2026-01-01T00:00:00Z') > julianday('2026-01-01T00:00:00Z') THEN 1 ELSE 0 END",
-], "CHECK constraint failed");
+// D1's local SQL API does not authorize TEMP table creation, so keep this
+// deterministic assertion read-only and avoid creating session-local objects.
+// The live trigger's expiry-after-approval test above exercises actual inserts.
+const boundary = spawnSync("npx", [
+  "--yes", "wrangler@4.13.2", "d1", "execute", "DB", "--local",
+  "--config", "wrangler.d1-test.toml", "--persist-to", "./.wrangler-d1-test",
+  "--command",
+  "SELECT CASE WHEN julianday('2026-01-01T00:00:00Z') > " +
+    "julianday('2026-01-01T00:00:00Z') THEN 1 ELSE 0 END AS boundary_is_valid",
+], { encoding: "utf8" });
+const boundaryOutput = (boundary.stdout || "") + "\n" + (boundary.stderr || "");
+assert.equal(boundary.status, 0,
+  "effective_to equality boundary query failed\\n" + boundaryOutput);
+assert.match(boundaryOutput, /"boundary_is_valid"\\s*:\\s*0/,
+  "effective_to equality must evaluate as outside the exclusive validity window\\n" + boundaryOutput);
+console.log("Passed: effective_to equality is outside the exclusive validity window");
 
 console.log("Source data-rights capability and observation guards passed");
