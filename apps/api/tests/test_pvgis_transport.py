@@ -144,3 +144,23 @@ def test_async_worker_fetch_cancels_oversized_stream(monkeypatch):
 
     assert reader.cancelled is True
     assert reader.released is True
+
+
+def test_worker_response_stream_is_cancelled_when_read_is_cancelled():
+    class _BlockingReader(_Reader):
+        async def read(self):
+            await asyncio.Event().wait()
+
+    reader = _BlockingReader([])
+
+    async def exercise_cancellation():
+        task = asyncio.create_task(pvgis._read_bounded_response(_Response(reader)))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise_cancellation())
+
+    assert reader.cancelled is True
+    assert reader.released is True
