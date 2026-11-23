@@ -288,3 +288,43 @@ def test_nasa_power_workers_fetch_options_reject_redirects():
     assert options["headers"]["Accept"] == "application/json"
     assert options["redirect"] == "error"
     assert captured["converter"] is marker
+
+def test_nasa_power_workers_fetch_payload_checks_status_and_decodes_body():
+    from types import SimpleNamespace
+    from apps.api.services.nasa_power import _fetch_worker_payload
+
+    class FakeReader:
+        def __init__(self):
+            self.done = False
+
+        async def read(self):
+            if self.done:
+                return SimpleNamespace(done=True, value=None)
+            self.done = True
+            return SimpleNamespace(
+                done=False,
+                value=SimpleNamespace(to_py=lambda: b'{"properties":{"parameter":{"T2M":{}}}}'),
+            )
+
+        async def cancel(self):
+            pass
+
+        def releaseLock(self):
+            pass
+
+    response = SimpleNamespace(
+        ok=True,
+        headers=SimpleNamespace(get=lambda key: None),
+        body=SimpleNamespace(getReader=FakeReader),
+    )
+    called = {}
+
+    async def fake_fetch(url, options):
+        called["url"] = url
+        called["options"] = options
+        return response
+
+    payload = asyncio.run(_fetch_worker_payload(fake_fetch, "https://example.invalid", {}))
+    assert payload == {"properties": {"parameter": {"T2M": {}}}}
+    assert called["url"] == "https://example.invalid"
+
