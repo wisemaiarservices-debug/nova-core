@@ -77,6 +77,14 @@ def parse_daily_response(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _worker_fetch_options(to_js: Any, object_from_entries: Any) -> Any:
+    """Build Fetch options with redirect handling explicit and testable."""
+    return to_js(
+        {"method": "GET", "headers": {"Accept": "application/json"}, "redirect": "error"},
+        dict_converter=object_from_entries,
+    )
+
+
 def _request_url(latitude: float, longitude: float, start_date: date, end_date: date) -> str:
     query = {
         "parameters": NASA_POWER_PARAMETERS,
@@ -147,10 +155,7 @@ async def fetch_daily_point_async(
         )
 
     try:
-        options = to_js(
-            {"method": "GET", "headers": headers, "redirect": "error"},
-            dict_converter=Object.fromEntries,
-        )
+        options = _worker_fetch_options(to_js, Object.fromEntries)
         response = await asyncio.wait_for(
             fetch(url, options), timeout=NASA_POWER_TIMEOUT_SECONDS
         )
