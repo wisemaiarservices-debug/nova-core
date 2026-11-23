@@ -251,6 +251,7 @@ def test_nasa_power_workers_body_reader_enforces_streaming_limit(monkeypatch):
 
 
 def test_nasa_power_urllib_opener_installs_redirect_rejection(monkeypatch):
+    from datetime import date
     from urllib.error import HTTPError
     from apps.api.services import nasa_power
 
