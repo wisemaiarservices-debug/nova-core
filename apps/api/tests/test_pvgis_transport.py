@@ -21,15 +21,17 @@ class _ReadResult:
 
 class _Reader:
     def __init__(self, chunks):
-        self.chunks = iter(chunks)
+        self.chunks = list(chunks)
+        self.index = 0
         self.cancelled = False
         self.released = False
 
     async def read(self):
-        try:
-            return _ReadResult(next(self.chunks))
-        except StopIteration:
+        if self.index >= len(self.chunks):
             return _ReadResult(done=True)
+        value = self.chunks[self.index]
+        self.index += 1
+        return _ReadResult(value)
 
     async def cancel(self):
         self.cancelled = True
