@@ -184,3 +184,66 @@ def test_storage_status_reports_incomplete_schema():
     assert result["status"] == "schema_incomplete"
     assert result["present_tables"] == ["sites"]
     assert "observations" in result["missing_tables"]
+
+
+def test_nasa_power_transport_reads_with_a_hard_response_limit(monkeypatch):
+    from apps.api.services import nasa_power
+
+    class FakeResponse:
+        def __init__(self, body):
+            self.body = body
+            self.requested = None
+
+        def read(self, size):
+            self.requested = size
+            return self.body[:size]
+
+    monkeypatch.setattr(nasa_power, "NASA_POWER_MAX_RESPONSE_BYTES", 8)
+    response = FakeResponse(b'{"ok":1}')
+    assert nasa_power._read_bounded_response(response) == b'{"ok":1}'
+    assert response.requested == 9
+
+    oversized = FakeResponse(b'{"ok":12345}')
+    with pytest.raises(RuntimeError, match="2 MiB limit"):
+        nasa_power._read_bounded_response(oversized)
+    assert oversized.requested == 9
+
+
+def test_nasa_power_urllib_redirect_handler_refuses_redirects():
+    from apps.api.services.nasa_power import _RejectRedirects
+
+    handler = _RejectRedirects()
+    assert handler.redirect_request(
+        None, None, 302, "Found", {}, "https://example.invalid/redirect"
+    ) is None
+
+
+def test_nasa_power_workers_body_reader_enforces_streaming_limit(monkeypatch):
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class FakeReader:
+        def __init__(self):
+            self.chunks = [b"1234", b"5678", b"9"]
+            self.cancelled = False
+            self.released = False
+
+        async def read(self):
+            if self.chunks:
+                return SimpleNamespace(done=False, value=SimpleNamespace(to_py=lambda: self.chunks.pop(0)))
+            return SimpleNamespace(done=True, value=None)
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def releaseLock(self):
+            self.released = True
+
+    reader = FakeReader()
+    response = SimpleNamespace(body=SimpleNamespace(getReader=lambda: reader))
+    monkeypatch.setattr(nasa_power, "NASA_POWER_MAX_RESPONSE_BYTES", 8)
+
+    with pytest.raises(RuntimeError, match="2 MiB limit"):
+        asyncio.run(nasa_power._read_worker_body(response))
+    assert reader.cancelled is True
+    assert reader.released is True
