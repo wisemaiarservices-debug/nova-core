@@ -227,4 +227,30 @@ execute("accept currently effective rights with whole-second effective_from", [
   approval("capability-rights-seconds-precision","event-rights-seconds-precision-approved","req-rights-seconds-precision-approve"),
 ]);
 
+// Simulate elapsed time without a wall-clock sleep: first approve a capability
+// while its rights are valid, then move only the immutable expiry boundary into
+// the past in disposable local D1. Temporarily bypassing the immutable-row
+// trigger is test-fixture setup only; production/application writes remain append-only.
+const expiryRightsId = "source-rights:ci-expiry-after-approval";
+const expiryRightsDigest = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const expiryCapabilityId = "capability-rights-expiry-after-approval";
+const expiryMetric = "rights_guard_expiry_after_approval";
+execute("approve capability while rights are currently effective", [
+  ...rightsWindowSetup(expiryRightsId, expiryRightsDigest,
+    "strftime('%Y-%m-%dT%H:%M:%SZ','now')", "'2099-01-01T00:00:00Z'"),
+  capability(expiryCapabilityId, expiryMetric, expiryRightsId, "source-evidence:ci-http-grant"),
+  submitted(expiryCapabilityId, "event-rights-expiry-after-approval-submitted",
+    "req-rights-expiry-after-approval-submit"),
+  approval(expiryCapabilityId, "event-rights-expiry-after-approval-approved",
+    "req-rights-expiry-after-approval-approve"),
+]);
+execute("advance approved rights expiry boundary in disposable D1 fixture", [
+  "DROP TRIGGER source_data_rights_declarations_immutable_update",
+  "UPDATE source_data_rights_declarations SET effective_to='2025-01-01T00:00:00Z' WHERE id=" + q(expiryRightsId),
+  "CREATE TRIGGER source_data_rights_declarations_immutable_update BEFORE UPDATE ON source_data_rights_declarations BEGIN SELECT RAISE(ABORT, 'source data rights declarations are immutable'); END",
+]);
+execute("deny observation after rights expire following capability approval", [
+  observation("obs-rights-expired-after-capability-approval", expiryCapabilityId, expiryMetric),
+], "observation requires current exact-scope approved ingestion and storage rights");
+
 console.log("Source data-rights capability and observation guards passed");
