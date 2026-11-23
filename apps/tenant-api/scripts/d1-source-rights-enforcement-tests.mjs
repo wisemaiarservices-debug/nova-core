@@ -271,7 +271,7 @@ execute("approve capability while supporting evidence is currently effective", [
 ]);
 execute("advance supporting evidence expiry in disposable D1 fixture", [
   "DROP TRIGGER source_evidence_documents_immutable_update",
-  "UPDATE source_evidence_documents SET effective_to='2025-01-01T00:00:00Z' WHERE id='source-evidence:ci-http-grant'",
+  "UPDATE source_evidence_documents SET effective_from='2020-01-01T00:00:00Z',effective_to='2025-01-01T00:00:00Z' WHERE id='source-evidence:ci-http-grant'",
   "CREATE TRIGGER source_evidence_documents_immutable_update BEFORE UPDATE ON source_evidence_documents BEGIN SELECT RAISE(ABORT, 'source evidence documents are immutable'); END",
 ]);
 execute("deny observation after supporting evidence expires following capability approval", [
