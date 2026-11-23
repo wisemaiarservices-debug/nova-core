@@ -82,15 +82,10 @@ async def _request_json_async(url: str) -> dict[str, Any]:
         dict_converter=Object.fromEntries,
     )
     try:
-        response = await asyncio.wait_for(fetch(url, options), timeout=TIMEOUT_SECONDS)
-        if not response.ok:
-            raise RuntimeError(f"WaPOR request failed with HTTP {response.status}")
-        if "json" not in str(response.headers.get("content-type") or "").lower():
-            raise RuntimeError("WaPOR returned a non-JSON content type")
-        raw = await response.text()
-        if len(raw.encode("utf-8")) > MAX_RESPONSE_BYTES:
-            raise RuntimeError("WaPOR response exceeded the 1 MiB page limit")
-        payload = json.loads(raw)
+        payload = await asyncio.wait_for(
+            _fetch_worker_payload(fetch, url, options),
+            timeout=TIMEOUT_SECONDS,
+        )
     except RuntimeError:
         raise
     except Exception as exc:
@@ -147,6 +142,48 @@ async def _collect_pages_async(
             raise RuntimeError("WaPOR returned an invalid pagination link")
         pages += 1
     return {"items": items, "pages_read": pages, "truncated": bool(next_url) or len(items) >= MAX_ITEMS}
+
+
+async def _read_bounded_response(response: Any) -> bytes:
+    """Read a Workers Fetch body incrementally and cancel once it exceeds the cap."""
+    body = getattr(response, "body", None)
+    if body is None:
+        raise RuntimeError("WaPOR response did not expose a readable body")
+    reader = body.getReader()
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            result = await reader.read()
+            if result.done:
+                break
+            chunk = bytes(result.value.to_py())
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                raise RuntimeError("WaPOR response exceeded the 1 MiB page limit")
+            chunks.append(chunk)
+    except BaseException:
+        try:
+            await reader.cancel()
+        except BaseException:
+            pass
+        raise
+    finally:
+        try:
+            reader.releaseLock()
+        except Exception:
+            pass
+    return b"".join(chunks)
+
+
+async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str, Any]:
+    response = await fetch(url, options)
+    if not response.ok:
+        raise RuntimeError(f"WaPOR request failed with HTTP {response.status}")
+    if "json" not in str(response.headers.get("content-type") or "").lower():
+        raise RuntimeError("WaPOR returned a non-JSON content type")
+    raw = await _read_bounded_response(response)
+    return json.loads(raw.decode("utf-8"))
 
 
 def _mapset_summary(item: dict[str, Any]) -> dict[str, Any]:
