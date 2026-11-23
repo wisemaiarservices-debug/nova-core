@@ -359,3 +359,29 @@ def test_nasa_power_workers_body_reader_cancels_stream_when_read_is_cancelled():
     asyncio.run(exercise())
     assert reader.cancelled is True
     assert reader.released is True
+
+
+def test_nasa_power_workers_body_reader_preserves_read_error_when_lock_release_fails():
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class FailingReader:
+        def __init__(self):
+            self.cancelled = False
+
+        async def read(self):
+            raise RuntimeError("original stream read failure")
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def releaseLock(self):
+            raise ValueError("lock cleanup failure")
+
+    reader = FailingReader()
+    response = SimpleNamespace(body=SimpleNamespace(getReader=lambda: reader))
+
+    with pytest.raises(RuntimeError, match="original stream read failure"):
+        asyncio.run(nasa_power._read_worker_body(response))
+
+    assert reader.cancelled is True
