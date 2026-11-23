@@ -122,6 +122,31 @@ def _collect_pages(first_url: str, request_json=_request_json) -> dict[str, Any]
     return {"items": items, "pages_read": pages, "truncated": bool(next_url) or len(items) >= MAX_ITEMS}
 
 
+async def _collect_pages_async(
+    first_url: str, request_json=_request_json_async
+) -> dict[str, Any]:
+    """Collect bounded WaPOR pages without blocking the Worker event loop."""
+    next_url: str | None = first_url
+    items: list[dict[str, Any]] = []
+    pages = 0
+    while next_url and pages < MAX_PAGES and len(items) < MAX_ITEMS:
+        _validate_api_url(next_url)
+        envelope = (await request_json(next_url))["response"]
+        page_items = envelope.get("items", [])
+        links = envelope.get("links", [])
+        if not isinstance(page_items, list) or not all(isinstance(item, dict) for item in page_items):
+            raise RuntimeError("WaPOR returned an invalid items collection")
+        items.extend(page_items[: MAX_ITEMS - len(items)])
+        next_links = [link.get("href") for link in links if isinstance(link, dict) and link.get("rel") == "next"]
+        if len(next_links) > 1:
+            raise RuntimeError("WaPOR returned ambiguous pagination links")
+        next_url = next_links[0] if next_links else None
+        if next_url is not None and not isinstance(next_url, str):
+            raise RuntimeError("WaPOR returned an invalid pagination link")
+        pages += 1
+    return {"items": items, "pages_read": pages, "truncated": bool(next_url) or len(items) >= MAX_ITEMS}
+
+
 def _mapset_summary(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "code": item.get("code"),
@@ -225,10 +250,68 @@ def list_rasters(
 
 
 async def list_mapsets_async() -> dict[str, Any]:
-    return await asyncio.to_thread(list_mapsets, _request_json)
+    result = await _collect_pages_async(BASE_URL)
+    records = [_mapset_summary(item) for item in result["items"]]
+    records = [item for item in records if isinstance(item["code"], str)]
+    return {
+        "status": "retrieved",
+        "dataset_id": "fao-wapor-v3",
+        "provider": "Food and Agriculture Organization of the United Nations",
+        "evidence_class": "satellite_derived",
+        "mapsets": records,
+        "pages_read": result["pages_read"],
+        "truncated": result["truncated"],
+        "limitations": [
+            "This endpoint lists provider mapset metadata only; no raster pixels are downloaded.",
+            "Mapset availability does not establish coverage or validity for a particular study area.",
+            "WaPOR products are satellite-derived/model-processed estimates, not field sensor measurements.",
+            "No data is persisted and no site or asset is registered.",
+        ],
+    }
 
 
 async def list_rasters_async(
     mapset_code: str, start_date: date | None = None, end_date: date | None = None
 ) -> dict[str, Any]:
-    return await asyncio.to_thread(list_rasters, mapset_code, start_date, end_date, _request_json)
+    code = validate_mapset_code(mapset_code)
+    if start_date and end_date and end_date < start_date:
+        raise ValueError("end_date must be on or after start_date")
+    available = await _collect_pages_async(BASE_URL)
+    if not any(item.get("code") == code for item in available["items"]):
+        raise ValueError("mapset_code is not present in the current WaPOR v3 catalogue")
+    result = await _collect_pages_async(f"{BASE_URL}/{code}/rasters")
+    records = []
+    for item in result["items"]:
+        raster_code = item.get("code")
+        if not isinstance(raster_code, str):
+            continue
+        period = _raster_date(raster_code)
+        if start_date and period and period < start_date:
+            continue
+        if end_date and period and period > end_date:
+            continue
+        records.append({
+            "code": raster_code,
+            "download_url": item.get("downloadUrl"),
+            "gsutil_uri": item.get("gsutilUri"),
+            "period_start": period.isoformat() if period else None,
+        })
+    return {
+        "status": "retrieved",
+        "dataset_id": "fao-wapor-v3",
+        "mapset_code": code,
+        "evidence_class": "satellite_derived",
+        "rasters": records,
+        "pages_read": result["pages_read"],
+        "truncated": result["truncated"],
+        "request": {
+            "start_date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat() if end_date else None,
+        },
+        "limitations": [
+            "Raster index metadata only; GeoTIFF pixel data is not downloaded or interpreted.",
+            "A dekad's period_start is the first calendar day of its ten-day period, not an instantaneous observation timestamp.",
+            "Provider download URLs and units must be checked before a separate bounded raster-processing stage.",
+            "No data is persisted and no site or asset is registered.",
+        ],
+    }
