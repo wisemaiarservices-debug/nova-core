@@ -125,6 +125,18 @@ def fetch_broadband_performance(
     return parse_response(payload)
 
 
+async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str, Any]:
+    """Fetch and consume one bounded response under the caller's total deadline."""
+    response = await fetch(url, options)
+    if not response.ok:
+        raise RuntimeError(f"PVGIS request failed with HTTP {response.status}")
+    content_type = str(response.headers.get("content-type") or "")
+    if "json" not in content_type.lower():
+        raise RuntimeError("PVGIS returned a non-JSON content type")
+    raw = await _read_bounded_response(response)
+    return json.loads(raw.decode("utf-8"))
+
+
 async def fetch_broadband_performance_async(
     latitude: float, longitude: float, start_date: date, end_date: date
 ) -> dict[str, Any]:
@@ -160,16 +172,10 @@ async def fetch_broadband_performance_async(
         dict_converter=Object.fromEntries,
     )
     try:
-        response = await asyncio.wait_for(fetch(url, options), timeout=TIMEOUT_SECONDS)
-        if not response.ok:
-            raise RuntimeError(f"PVGIS request failed with HTTP {response.status}")
-        content_type = str(response.headers.get("content-type") or "")
-        if "json" not in content_type.lower():
-            raise RuntimeError("PVGIS returned a non-JSON content type")
-        raw = await asyncio.wait_for(
-            _read_bounded_response(response), timeout=TIMEOUT_SECONDS
+        payload = await asyncio.wait_for(
+            _fetch_worker_payload(fetch, url, options),
+            timeout=TIMEOUT_SECONDS,
         )
-        payload = json.loads(raw.decode("utf-8"))
     except RuntimeError:
         raise
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
