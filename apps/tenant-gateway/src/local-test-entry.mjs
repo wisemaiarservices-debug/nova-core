@@ -19,6 +19,13 @@ const gateway = createGateway({
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/__ci/private-worker/sites/site-http-a" && request.method === "GET") {
+      if (!env.TENANT_API) return new Response("not_found", { status: 404 });
+      return env.TENANT_API.fetch(new Request(
+        "https://nova-core-tenant-api.internal/internal/v1/tenants/tenant-http-a/sites/site-http-a",
+        { method: "GET", headers: request.headers },
+      ));
+    }
     if (url.pathname.startsWith("/__ci/")) {
       if (!env.TENANT_API) return new Response("not_found", { status: 404 });
       return env.TENANT_API.fetch(new Request(
