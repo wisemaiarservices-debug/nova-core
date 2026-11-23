@@ -52,6 +52,39 @@ def parse_response(payload: Any) -> dict[str, Any]:
     return payload
 
 
+async def _read_bounded_response(response: Any) -> bytes:
+    """Read a Workers Fetch body incrementally and cancel as soon as it exceeds the cap."""
+    body = getattr(response, "body", None)
+    if body is None:
+        raise RuntimeError("PVGIS response did not expose a readable body")
+    reader = body.getReader()
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            result = await reader.read()
+            if result.done:
+                break
+            chunk = bytes(result.value.to_py())
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                raise RuntimeError("PVGIS response exceeded the 2 MiB limit")
+            chunks.append(chunk)
+    except BaseException:
+        # Also stop network consumption on timeout, cancellation, or read errors.
+        try:
+            await reader.cancel()
+        except BaseException:
+            pass
+        raise
+    finally:
+        try:
+            reader.releaseLock()
+        except Exception:
+            pass
+    return b"".join(chunks)
+
+
 def fetch_broadband_performance(
     latitude: float, longitude: float, start_date: date, end_date: date
 ) -> dict[str, Any]:
@@ -95,7 +128,7 @@ def fetch_broadband_performance(
 async def fetch_broadband_performance_async(
     latitude: float, longitude: float, start_date: date, end_date: date
 ) -> dict[str, Any]:
-    """Use Workers fetch in Pyodide and a bounded urllib call in local Python."""
+    """Use bounded Workers streaming in Pyodide and bounded urllib locally."""
     validate_request(latitude, longitude, start_date, end_date)
     try:
         from js import Object, fetch
@@ -133,12 +166,14 @@ async def fetch_broadband_performance_async(
         content_type = str(response.headers.get("content-type") or "")
         if "json" not in content_type.lower():
             raise RuntimeError("PVGIS returned a non-JSON content type")
-        text = await response.text()
-        if len(text.encode("utf-8")) > MAX_RESPONSE_BYTES:
-            raise RuntimeError("PVGIS response exceeded the 2 MiB limit")
-        payload = json.loads(text)
+        raw = await asyncio.wait_for(
+            _read_bounded_response(response), timeout=TIMEOUT_SECONDS
+        )
+        payload = json.loads(raw.decode("utf-8"))
     except RuntimeError:
         raise
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("PVGIS returned invalid JSON") from exc
     except Exception as exc:
         raise RuntimeError("PVGIS request failed or timed out") from exc
     return parse_response(payload)
