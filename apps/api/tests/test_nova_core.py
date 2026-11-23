@@ -184,3 +184,147 @@ def test_storage_status_reports_incomplete_schema():
     assert result["status"] == "schema_incomplete"
     assert result["present_tables"] == ["sites"]
     assert "observations" in result["missing_tables"]
+
+
+def test_nasa_power_transport_reads_with_a_hard_response_limit(monkeypatch):
+    from apps.api.services import nasa_power
+
+    class FakeResponse:
+        def __init__(self, body):
+            self.body = body
+            self.requested = None
+
+        def read(self, size):
+            self.requested = size
+            return self.body[:size]
+
+    monkeypatch.setattr(nasa_power, "NASA_POWER_MAX_RESPONSE_BYTES", 8)
+    response = FakeResponse(b'{"ok":1}')
+    assert nasa_power._read_bounded_response(response) == b'{"ok":1}'
+    assert response.requested == 9
+
+    oversized = FakeResponse(b'{"ok":12345}')
+    with pytest.raises(RuntimeError, match="2 MiB limit"):
+        nasa_power._read_bounded_response(oversized)
+    assert oversized.requested == 9
+
+
+def test_nasa_power_urllib_redirect_handler_refuses_redirects():
+    from apps.api.services.nasa_power import _RejectRedirects
+
+    handler = _RejectRedirects()
+    assert handler.redirect_request(
+        None, None, 302, "Found", {}, "https://example.invalid/redirect"
+    ) is None
+
+
+def test_nasa_power_workers_body_reader_enforces_streaming_limit(monkeypatch):
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class FakeReader:
+        def __init__(self):
+            self.chunks = [b"1234", b"5678", b"9"]
+            self.cancelled = False
+            self.released = False
+
+        async def read(self):
+            if self.chunks:
+                return SimpleNamespace(done=False, value=SimpleNamespace(to_py=lambda: self.chunks.pop(0)))
+            return SimpleNamespace(done=True, value=None)
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def releaseLock(self):
+            self.released = True
+
+    reader = FakeReader()
+    response = SimpleNamespace(body=SimpleNamespace(getReader=lambda: reader))
+    monkeypatch.setattr(nasa_power, "NASA_POWER_MAX_RESPONSE_BYTES", 8)
+
+    with pytest.raises(RuntimeError, match="2 MiB limit"):
+        asyncio.run(nasa_power._read_worker_body(response))
+    assert reader.cancelled is True
+    assert reader.released is True
+
+
+
+def test_nasa_power_urllib_opener_installs_redirect_rejection(monkeypatch):
+    from datetime import date
+    from urllib.error import HTTPError
+    from apps.api.services import nasa_power
+
+    class FakeOpener:
+        handlers = []
+
+        def open(self, request, timeout):
+            assert timeout == nasa_power.NASA_POWER_TIMEOUT_SECONDS
+            raise HTTPError(request.full_url, 302, "Found", {}, None)
+
+    opener = FakeOpener()
+    def fake_build_opener(handler):
+        opener.handlers = [handler]
+        return opener
+
+    monkeypatch.setattr(nasa_power, "build_opener", fake_build_opener)
+    with pytest.raises(RuntimeError, match="NASA POWER request failed"):
+        nasa_power.fetch_daily_point(36.8, 10.2, date(2026, 1, 1), date(2026, 1, 1))
+    assert any(isinstance(handler, nasa_power._RejectRedirects) for handler in opener.handlers)
+
+
+def test_nasa_power_workers_fetch_options_reject_redirects():
+    from apps.api.services.nasa_power import _worker_fetch_options
+
+    captured = {}
+    def fake_to_js(value, *, dict_converter):
+        captured["value"] = value
+        captured["converter"] = dict_converter
+        return value
+
+    marker = object()
+    options = _worker_fetch_options(fake_to_js, marker)
+    assert options["method"] == "GET"
+    assert options["headers"]["Accept"] == "application/json"
+    assert options["redirect"] == "error"
+    assert captured["converter"] is marker
+
+def test_nasa_power_workers_fetch_payload_checks_status_and_decodes_body():
+    from types import SimpleNamespace
+    from apps.api.services.nasa_power import _fetch_worker_payload
+
+    class FakeReader:
+        def __init__(self):
+            self.done = False
+
+        async def read(self):
+            if self.done:
+                return SimpleNamespace(done=True, value=None)
+            self.done = True
+            return SimpleNamespace(
+                done=False,
+                value=SimpleNamespace(to_py=lambda: b'{"properties":{"parameter":{"T2M":{}}}}'),
+            )
+
+        async def cancel(self):
+            pass
+
+        def releaseLock(self):
+            pass
+
+    response = SimpleNamespace(
+        ok=True,
+        headers=SimpleNamespace(get=lambda key: None),
+        body=SimpleNamespace(getReader=FakeReader),
+    )
+    called = {}
+
+    async def fake_fetch(url, options):
+        called["url"] = url
+        called["options"] = options
+        return response
+
+    payload = asyncio.run(_fetch_worker_payload(fake_fetch, "https://example.invalid", {}))
+    assert payload == {"properties": {"parameter": {"T2M": {}}}}
+    assert called["url"] == "https://example.invalid"
+
