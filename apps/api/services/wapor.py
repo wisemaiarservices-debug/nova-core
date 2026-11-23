@@ -123,9 +123,11 @@ def _collect_pages(first_url: str, request_json=_request_json) -> dict[str, Any]
 
 
 async def _collect_pages_async(
-    first_url: str, request_json=_request_json_async
+    first_url: str, request_json=None
 ) -> dict[str, Any]:
     """Collect bounded WaPOR pages without blocking the Worker event loop."""
+    if request_json is None:
+        request_json = _request_json_async
     next_url: str | None = first_url
     items: list[dict[str, Any]] = []
     pages = 0
