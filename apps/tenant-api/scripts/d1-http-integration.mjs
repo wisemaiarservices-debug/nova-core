@@ -78,7 +78,7 @@ try {
   // Exercise the private Worker's signed-envelope nonce gate directly through
   // a CI-only local Service Binding proxy. Two simultaneous identical signed
   // envelopes must have exactly one winner; a later replay must also be denied.
-  const replayHeaders = signedPrivateWorkerHeaders("ci-concurrent-nonce-replay-01");
+  const replayHeaders = signedPrivateWorkerHeaders("ci-concurrent-nonce-replay-" + randomUUID());
   const simultaneousNonceRequests = await Promise.all([
     throughPrivateWorker(replayHeaders),
     throughPrivateWorker(replayHeaders),
