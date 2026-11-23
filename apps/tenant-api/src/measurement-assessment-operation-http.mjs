@@ -62,7 +62,7 @@ function publicOperation(data) {
 
 async function authorizeSite(db, tenant, subject, siteId) {
   const authorized = await readRows(db.prepare(
-    "SELECT site.id FROM sites site JOIN tenants tenant_row ON tenant_row.id=site.tenant_id AND tenant_row.status='active' JOIN tenant_memberships membership ON membership.tenant_id=site.tenant_id AND membership.subject=? AND membership.status='active' JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=site.tenant_id AND grant_read.subject=membership.subject AND grant_read.resource_type='site' AND grant_read.resource_id=site.id AND grant_read.action='read' WHERE site.tenant_id=? AND site.id=? AND site.status='active' LIMIT 2"
+    "SELECT site.id FROM sites site JOIN tenants tenant_row ON tenant_row.id=site.tenant_id AND tenant_row.status='active' JOIN tenant_memberships membership ON membership.tenant_id=site.tenant_id AND membership.subject=? AND membership.status='active' JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=site.tenant_id AND grant_read.subject=membership.subject AND grant_read.resource_type='site' AND grant_read.resource_id=site.id AND grant_read.action='read' WHERE site.tenant_id=? AND site.id=? AND site.status IN ('active','inactive') LIMIT 2"
   ).bind(subject, tenant, siteId));
   return authorized.length === 1 && authorized[0].id === siteId;
 }
@@ -85,7 +85,7 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
         (Object.hasOwn(body, "predecessor_operation_id") &&
           !validId(body.predecessor_operation_id))) return error("invalid_request_body", 400);
     const observed = await readRows(env.DB.prepare(
-      "SELECT observation.site_id FROM observations observation JOIN sites site ON site.id=observation.site_id AND site.tenant_id=observation.tenant_id AND site.status='active' JOIN tenants tenant_row ON tenant_row.id=observation.tenant_id AND tenant_row.status='active' WHERE observation.tenant_id=? AND observation.id=? LIMIT 2"
+      "SELECT observation.site_id FROM observations observation JOIN sites site ON site.id=observation.site_id AND site.tenant_id=observation.tenant_id AND site.status IN ('active','inactive') JOIN tenants tenant_row ON tenant_row.id=observation.tenant_id AND tenant_row.status='active' WHERE observation.tenant_id=? AND observation.id=? LIMIT 2"
     ).bind(tenant, observation));
     if (observed.length !== 1 || !await authorizeSite(env.DB, tenant, subject, observed[0].site_id)) {
       return error("not_found", 404);
@@ -101,7 +101,7 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
     result = await reserveMeasurementAssessmentOperation(env.DB, tenant,
       observed[0].site_id, observation, subject, requestDigest, requestId, predecessor);
   } else {
-    if (!await operationVisible(env.DB, tenant, subject, operation)) return error("not_found", 404);
+    if (!await operationVisible(env.DB, tenant, subject, operation, action === "read" || action === "complete" || action === "claim")) return error("not_found", 404);
     if (action === "read") {
       if (Object.keys(body).length) return error("invalid_request_body", 400);
       result = await readMeasurementAssessmentOperation(env.DB, tenant, subject, operation);
@@ -143,9 +143,9 @@ export async function handleMeasurementAssessmentOperationRequest(request, env, 
     json({ data: publicOperation(result?.data), request_id: requestId }, result?.status ?? 200);
 }
 
-async function operationVisible(db, tenant, subject, operationId) {
+async function operationVisible(db, tenant, subject, operationId, allowInactive = false) {
   const rows = await readRows(db.prepare(
-    "SELECT operation.operation_id FROM measurement_assessment_operations operation JOIN tenants tenant_row ON tenant_row.id=operation.tenant_id AND tenant_row.status='active' JOIN sites site ON site.id=operation.site_id AND site.tenant_id=operation.tenant_id AND site.status='active' JOIN tenant_memberships membership ON membership.tenant_id=operation.tenant_id AND membership.subject=? AND membership.status='active' JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=operation.tenant_id AND grant_read.subject=membership.subject AND grant_read.resource_type='site' AND grant_read.resource_id=operation.site_id AND grant_read.action='read' WHERE operation.tenant_id=? AND operation.actor_subject=? AND operation.operation_id=? LIMIT 2"
-  ).bind(subject, tenant, subject, operationId));
+    "SELECT operation.operation_id FROM measurement_assessment_operations operation JOIN tenants tenant_row ON tenant_row.id=operation.tenant_id AND tenant_row.status='active' JOIN sites site ON site.id=operation.site_id AND site.tenant_id=operation.tenant_id AND (site.status='active' OR (?=1 AND site.status='inactive')) JOIN tenant_memberships membership ON membership.tenant_id=operation.tenant_id AND membership.subject=? AND membership.status='active' JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=operation.tenant_id AND grant_read.subject=membership.subject AND grant_read.resource_type='site' AND grant_read.resource_id=operation.site_id AND grant_read.action='read' WHERE operation.tenant_id=? AND operation.actor_subject=? AND operation.operation_id=? LIMIT 2"
+  ).bind(allowInactive ? 1 : 0, subject, tenant, subject, operationId));
   return rows.length === 1 && rows[0].operation_id === operationId;
 }

@@ -29,7 +29,7 @@ export async function reserveMeasurementAssessmentOperation(db,tenant,siteId,obs
   return {error:"assessment_operation_request_invalid",status:400};
 
  const prior=await rows(db.prepare(
-  "SELECT operation.operation_id,operation.tenant_id,operation.site_id,operation.observation_id,operation.actor_subject,operation.request_digest,operation.state,operation.assessment_id,operation.predecessor_operation_id,operation.lease_version,operation.lease_expires_at,operation.lease_request_id,operation.attempt_count,operation.created_at,operation.updated_at,operation.completed_at FROM measurement_assessment_operations operation JOIN tenant_memberships membership ON membership.tenant_id=operation.tenant_id AND membership.subject=operation.actor_subject AND membership.status='active' JOIN tenants tenant_row ON tenant_row.id=operation.tenant_id AND tenant_row.status='active' JOIN sites site_row ON site_row.id=operation.site_id AND site_row.tenant_id=operation.tenant_id AND site_row.status='active' JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=operation.tenant_id AND grant_read.subject=operation.actor_subject AND grant_read.resource_type='site' AND grant_read.resource_id=operation.site_id AND grant_read.action='read' WHERE operation.tenant_id=? AND operation.site_id=? AND operation.observation_id=? AND operation.actor_subject=? AND operation.request_digest=? LIMIT 2"
+  "SELECT operation.operation_id,operation.tenant_id,operation.site_id,operation.observation_id,operation.actor_subject,operation.request_digest,operation.state,operation.assessment_id,operation.predecessor_operation_id,operation.lease_version,operation.lease_expires_at,operation.lease_request_id,operation.attempt_count,operation.created_at,operation.updated_at,operation.completed_at FROM measurement_assessment_operations operation JOIN tenant_memberships membership ON membership.tenant_id=operation.tenant_id AND membership.subject=operation.actor_subject AND membership.status='active' JOIN tenants tenant_row ON tenant_row.id=operation.tenant_id AND tenant_row.status='active' JOIN sites site_row ON site_row.id=operation.site_id AND site_row.tenant_id=operation.tenant_id AND site_row.status IN ('active','inactive') JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=operation.tenant_id AND grant_read.subject=operation.actor_subject AND grant_read.resource_type='site' AND grant_read.resource_id=operation.site_id AND grant_read.action='read' WHERE operation.tenant_id=? AND operation.site_id=? AND operation.observation_id=? AND operation.actor_subject=? AND operation.request_digest=? LIMIT 2"
  ).bind(tenant,siteId,observationId,actorSubject,requestDigest));
  if(prior.length>1)return {error:"assessment_operation_identity_conflict",status:409};
  if(prior.length===1)return {data:prior[0],status:200};
@@ -98,10 +98,25 @@ export async function reserveMeasurementAssessmentOperation(db,tenant,siteId,obs
  return {error:"assessment_operation_not_available",status:404};
 }
 
+const OPERATION_HISTORY_SELECT=`SELECT operation.operation_id,operation.tenant_id,operation.site_id,operation.observation_id,
+ operation.actor_subject,operation.request_digest,operation.state,operation.assessment_id,
+ operation.predecessor_operation_id,operation.lease_version,operation.lease_expires_at,operation.lease_request_id,
+ operation.attempt_count,operation.created_at,operation.updated_at,operation.completed_at
+ FROM measurement_assessment_operations operation
+ JOIN tenant_memberships membership ON membership.tenant_id=operation.tenant_id
+  AND membership.subject=operation.actor_subject AND membership.status='active'
+ JOIN tenants tenant ON tenant.id=operation.tenant_id AND tenant.status='active'
+ JOIN sites site ON site.id=operation.site_id AND site.tenant_id=operation.tenant_id
+  AND site.status IN ('active','inactive')
+ JOIN tenant_resource_grants grant_read ON grant_read.tenant_id=operation.tenant_id
+  AND grant_read.subject=operation.actor_subject AND grant_read.resource_type='site'
+  AND grant_read.resource_id=operation.site_id AND grant_read.action='read'
+ WHERE operation.tenant_id=? AND operation.actor_subject=? AND operation.operation_id=? LIMIT 2`;
+
 export async function readMeasurementAssessmentOperation(db,tenant,actorSubject,operationId){
  if(!validId(tenant)||!validText(actorSubject,200)||!validId(operationId))
   return {error:"assessment_operation_request_invalid",status:400};
- const found=await rows(db.prepare(OPERATION_SELECT).bind(tenant,actorSubject,operationId));
+ const found=await rows(db.prepare(OPERATION_HISTORY_SELECT).bind(tenant,actorSubject,operationId));
  if(found.length!==1)return {error:"assessment_operation_not_found",status:404};
  const events=await rows(db.prepare(
   "SELECT event_id,from_state,to_state,event_type,request_id,occurred_at FROM measurement_assessment_operation_events WHERE tenant_id=? AND operation_id=? AND actor_subject=? ORDER BY occurred_at,event_id"
@@ -128,7 +143,7 @@ export async function claimMeasurementAssessmentOperation(db,tenant,actorSubject
  const nowMs=Date.parse(now),expiryMs=Date.parse(leaseExpiresAt);
  if(expiryMs<=nowMs||expiryMs>nowMs+300000)
   return {error:"assessment_operation_lease_window_invalid",status:400};
- const current=await rows(db.prepare(OPERATION_SELECT).bind(tenant,actorSubject,operationId));
+ const current=await rows(db.prepare(OPERATION_HISTORY_SELECT).bind(tenant,actorSubject,operationId));
  if(current.length!==1)return {error:"assessment_operation_not_found",status:404};
  const operation=current[0];
  let fromState,eventType,statePredicate,stateValues;
@@ -151,7 +166,7 @@ export async function claimMeasurementAssessmentOperation(db,tenant,actorSubject
  AND EXISTS (SELECT 1 FROM tenant_memberships membership
    JOIN tenants tenant_row ON tenant_row.id=membership.tenant_id AND tenant_row.status='active'
    WHERE membership.tenant_id=? AND membership.subject=? AND membership.status='active')
- AND EXISTS (SELECT 1 FROM sites site_row WHERE site_row.id=? AND site_row.tenant_id=? AND site_row.status='active')
+ AND EXISTS (SELECT 1 FROM sites site_row WHERE site_row.id=? AND site_row.tenant_id=? AND site_row.status IN ('active','inactive'))
  AND EXISTS (SELECT 1 FROM tenant_resource_grants grant_read
    WHERE grant_read.tenant_id=? AND grant_read.subject=? AND grant_read.resource_type='site'
      AND grant_read.resource_id=? AND grant_read.action='read')`;
