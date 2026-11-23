@@ -247,3 +247,43 @@ def test_nasa_power_workers_body_reader_enforces_streaming_limit(monkeypatch):
         asyncio.run(nasa_power._read_worker_body(response))
     assert reader.cancelled is True
     assert reader.released is True
+
+
+
+def test_nasa_power_urllib_opener_installs_redirect_rejection(monkeypatch):
+    from urllib.error import HTTPError
+    from apps.api.services import nasa_power
+
+    class FakeOpener:
+        handlers = []
+
+        def open(self, request, timeout):
+            assert timeout == nasa_power.NASA_POWER_TIMEOUT_SECONDS
+            raise HTTPError(request.full_url, 302, "Found", {}, None)
+
+    opener = FakeOpener()
+    def fake_build_opener(handler):
+        opener.handlers = [handler]
+        return opener
+
+    monkeypatch.setattr(nasa_power, "build_opener", fake_build_opener)
+    with pytest.raises(RuntimeError, match="NASA POWER request failed"):
+        nasa_power.fetch_daily_point(36.8, 10.2, date(2026, 1, 1), date(2026, 1, 1))
+    assert any(isinstance(handler, nasa_power._RejectRedirects) for handler in opener.handlers)
+
+
+def test_nasa_power_workers_fetch_options_reject_redirects():
+    from apps.api.services.nasa_power import _worker_fetch_options
+
+    captured = {}
+    def fake_to_js(value, *, dict_converter):
+        captured["value"] = value
+        captured["converter"] = dict_converter
+        return value
+
+    marker = object()
+    options = _worker_fetch_options(fake_to_js, marker)
+    assert options["method"] == "GET"
+    assert options["headers"]["Accept"] == "application/json"
+    assert options["redirect"] == "error"
+    assert captured["converter"] is marker
