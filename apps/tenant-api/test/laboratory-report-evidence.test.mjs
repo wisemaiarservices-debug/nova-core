@@ -108,7 +108,7 @@ test("retrieves persisted bytes only inside the final active membership and site
   assert.match(db.state.audits[0].sql, /laboratory_report\.read/);
   assert.deepEqual(db.state.audits[0].values.slice(1, 4),
     ["tenant-a", "reader@example.test", created.data.id]);
-  assert.equal(db.state.audits[0].values[7], "request-read-1");
+  assert.equal(db.state.audits[0].values[5], "request-read-1");
   db.state.readAuthorized = false;
   assert.equal(await readLaboratoryReportEvidence(db, "tenant-a", "reader@example.test", "site-a", created.data.id), null);
   db.state.readAuthorized = true;
