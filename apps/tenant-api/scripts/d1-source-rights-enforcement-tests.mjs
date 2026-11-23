@@ -279,4 +279,34 @@ execute("deny observation after supporting evidence expires following capability
     evidenceExpiryMetric),
 ], "observation requires current exact-scope approved ingestion and storage rights");
 
+
+// A declaration may be approved administratively before its effective window
+// begins, but it must not authorize capability approval until effective_from.
+// This exercises the migration-0064 approval guard against a future start.
+const futureRightsId = "source-rights:ci-future-effective-from";
+const futureRightsDigest = "abababababababababababababababababababababababababababababababab";
+execute("prepare approved rights declaration whose effective window starts in the future", [
+  ...rightsWindowSetup(futureRightsId, futureRightsDigest,
+    "'2099-01-01T00:00:00Z'", "'2100-01-01T00:00:00Z'"),
+  capability("capability-rights-future-effective-from", "rights_guard_future_effective_from",
+    futureRightsId, "source-evidence:ci-http-grant"),
+  submitted("capability-rights-future-effective-from",
+    "event-rights-future-effective-from-submitted", "req-rights-future-effective-from-submit"),
+]);
+execute("deny capability approval before rights effective_from", [
+  approval("capability-rights-future-effective-from",
+    "event-rights-future-effective-from-approved", "req-rights-future-effective-from-approve"),
+], "capability approval requires current exact-scope approved ingestion and storage rights");
+
+// SQLite's strict greater-than comparison is the boundary used by migration
+// 0064 for effective_to. Equal instants must not satisfy an exclusive expiry.
+// This deterministic local-D1 assertion avoids a wall-clock race at millisecond
+// precision; the live trigger's expiry-after-approval test above exercises its
+// actual observation-insert enforcement.
+execute("assert effective_to equality is outside the exclusive validity window", [
+  "CREATE TEMP TABLE ci_effective_to_exclusive_boundary (valid INTEGER CHECK(valid=1))",
+  "INSERT INTO ci_effective_to_exclusive_boundary(valid) " +
+    "SELECT CASE WHEN julianday('2026-01-01T00:00:00Z') > julianday('2026-01-01T00:00:00Z') THEN 1 ELSE 0 END",
+], "CHECK constraint failed");
+
 console.log("Source data-rights capability and observation guards passed");
