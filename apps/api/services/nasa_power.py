@@ -139,12 +139,23 @@ async def _read_worker_body(response: Any) -> bytes:
     return b"".join(chunks)
 
 
+async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str, Any]:
+    """Fetch and consume one bounded response; caller applies a total deadline."""
+    response = await fetch(url, options)
+    if not response.ok:
+        raise RuntimeError(f"NASA POWER request failed with HTTP {response.status}")
+    content_length = response.headers.get("content-length")
+    if content_length and int(content_length) > NASA_POWER_MAX_RESPONSE_BYTES:
+        raise RuntimeError("NASA POWER response exceeded the 2 MiB limit")
+    raw = await _read_worker_body(response)
+    return _decode_json_response(raw)
+
+
 async def fetch_daily_point_async(
     latitude: float, longitude: float, start_date: date, end_date: date
 ) -> dict[str, Any]:
     """Fetch NASA POWER through Workers fetch on Pyodide, or urllib locally."""
     url = _request_url(latitude, longitude, start_date, end_date)
-    headers = {"Accept": "application/json"}
 
     try:
         from js import Object, fetch
@@ -156,18 +167,10 @@ async def fetch_daily_point_async(
 
     try:
         options = _worker_fetch_options(to_js, Object.fromEntries)
-        response = await asyncio.wait_for(
-            fetch(url, options), timeout=NASA_POWER_TIMEOUT_SECONDS
+        payload = await asyncio.wait_for(
+            _fetch_worker_payload(fetch, url, options),
+            timeout=NASA_POWER_TIMEOUT_SECONDS,
         )
-        if not response.ok:
-            raise RuntimeError(f"NASA POWER request failed with HTTP {response.status}")
-        content_length = response.headers.get("content-length")
-        if content_length and int(content_length) > NASA_POWER_MAX_RESPONSE_BYTES:
-            raise RuntimeError("NASA POWER response exceeded the 2 MiB limit")
-        raw = await asyncio.wait_for(
-            _read_worker_body(response), timeout=NASA_POWER_TIMEOUT_SECONDS
-        )
-        payload = _decode_json_response(raw)
     except Exception as exc:
         raise RuntimeError(f"NASA POWER request failed: {exc}") from exc
 
