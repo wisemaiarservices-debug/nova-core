@@ -188,6 +188,26 @@ def test_storage_status_reports_incomplete_schema():
 def test_public_api_route_surface_matches_reviewed_allowlist():
     from fastapi.routing import APIRoute
 
+    all_route_paths = {route.path for route in app.routes}
+    expected_all_route_paths = {
+        "/openapi.json",
+        "/docs",
+        "/docs/oauth2-redirect",
+        "/redoc",
+        "/health",
+        "/api/v1/data/catalogue",
+        "/api/v1/data/water/wapor/mapsets",
+        "/api/v1/data/water/wapor/rasters",
+        "/api/v1/data/solar/pvgis/performance",
+        "/api/v1/storage/status",
+        "/api/v1/forecast/run",
+        "/api/v1/recommendations/run",
+        "/api/v1/scenarios/simulate",
+        "/api/v1/assistant/explain",
+        "/api/v1/data/weather/nasa-power/daily",
+    }
+    assert all_route_paths == expected_all_route_paths
+
     actual = {
         (method, route.path)
         for route in app.routes
