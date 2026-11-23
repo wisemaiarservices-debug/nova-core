@@ -1,0 +1,9 @@
+# Runtime bundle only: keep local development and migration artifacts out of Workers uploads.
+.venv/
+.venv-workers/
+.pytest_cache/
+.mypy_cache/
+__pycache__/
+*.py[cod]
+migrations/
+tests/
