@@ -153,3 +153,50 @@ def test_wapor_async_pagination_remains_bounded(monkeypatch):
     assert result["pages_read"] == wapor.MAX_PAGES
     assert result["truncated"] is True
     assert len(calls) == wapor.MAX_PAGES
+
+def test_wapor_worker_response_stream_is_bounded_and_releases_reader():
+    class Chunk:
+        def __init__(self, value):
+            self.value = value
+        def to_py(self):
+            return self.value
+
+    class Reader:
+        def __init__(self, chunks):
+            self.chunks = iter(chunks)
+            self.released = False
+            self.cancelled = False
+        async def read(self):
+            try:
+                value = next(self.chunks)
+                return type("ReadResult", (), {"done": False, "value": Chunk(value)})()
+            except StopIteration:
+                return type("ReadResult", (), {"done": True, "value": None})()
+        async def cancel(self):
+            self.cancelled = True
+        def releaseLock(self):
+            self.released = True
+
+    class Body:
+        def __init__(self, reader):
+            self.reader = reader
+        def getReader(self):
+            return self.reader
+
+    async def run():
+        reader = Reader([b'{"response":', b'{"items":[]}}'])
+        response = type("Response", (), {"body": Body(reader)})()
+        raw = await wapor._read_bounded_response(response)
+        assert raw == b'{"response":{"items":[]}}'
+        assert reader.released is True
+        assert reader.cancelled is False
+
+        overflow = Reader([b"x" * (wapor.MAX_RESPONSE_BYTES + 1)])
+        response = type("Response", (), {"body": Body(overflow)})()
+        with pytest.raises(RuntimeError, match="1 MiB"):
+            await wapor._read_bounded_response(response)
+        assert overflow.cancelled is True
+        assert overflow.released is True
+
+    asyncio.run(run())
+
