@@ -75,3 +75,33 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest==8.3.4
       - name: Run WaPOR COG research tests
         run: python -m pytest apps/api/tests/test_wapor_cog_aoi_runner.py scripts/tests/test_wapor_cog_aoi_integration.py
+
+  python-worker-rate-limit-binding-proof:
+    name: Python Worker Rate Limiting binding proof (local only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.3"
+      - name: Install isolated Python Worker SDK
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        run: uv sync
+      - name: Test binding exceptions fail closed
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        run: uv run --project . python -m unittest test_probe.py
+      - name: Verify local Rate Limiting binding and Python FFI behavior
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        run: node ./check.mjs . ./wrangler.jsonc rate-limit
+      - name: Verify missing binding fails closed
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        env:
+          PORT: "8792"
+        run: node ./check.mjs . ./wrangler-no-binding.jsonc missing-binding
