@@ -68,9 +68,15 @@ async def _read_bounded_response(response: Any) -> bytes:
             chunk = bytes(result.value.to_py())
             total += len(chunk)
             if total > MAX_RESPONSE_BYTES:
-                await reader.cancel()
                 raise RuntimeError("PVGIS response exceeded the 2 MiB limit")
             chunks.append(chunk)
+    except BaseException:
+        # Also stop network consumption on timeout, cancellation, or read errors.
+        try:
+            await reader.cancel()
+        except BaseException:
+            pass
+        raise
     finally:
         try:
             reader.releaseLock()
