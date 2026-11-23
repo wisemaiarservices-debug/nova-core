@@ -280,23 +280,16 @@ execute("deny observation after supporting evidence expires following capability
 ], "observation requires current exact-scope approved ingestion and storage rights");
 
 
-// A declaration may be approved administratively before its effective window
-// begins, but it must not authorize capability approval until effective_from.
-// This exercises the migration-0064 approval guard against a future start.
+// Future-dated declarations cannot become approved: migration 0063 rejects
+// the lifecycle approval itself before migration 0064 can consume that state.
+// Exercise the earliest authoritative gate rather than manufacturing an
+// impossible approved-future declaration by bypassing database triggers.
 const futureRightsId = "source-rights:ci-future-effective-from";
 const futureRightsDigest = "abababababababababababababababababababababababababababababababab";
-execute("prepare approved rights declaration whose effective window starts in the future", [
+execute("reject rights approval before future effective_from", [
   ...rightsWindowSetup(futureRightsId, futureRightsDigest,
     "'2099-01-01T00:00:00Z'", "'2100-01-01T00:00:00Z'"),
-  capability("capability-rights-future-effective-from", "rights_guard_future_effective_from",
-    futureRightsId, "source-evidence:ci-http-grant"),
-  submitted("capability-rights-future-effective-from",
-    "event-rights-future-effective-from-submitted", "req-rights-future-effective-from-submit"),
-]);
-execute("deny capability approval before rights effective_from", [
-  approval("capability-rights-future-effective-from",
-    "event-rights-future-effective-from-approved", "req-rights-future-effective-from-approve"),
-], "capability approval requires current exact-scope approved ingestion and storage rights");
+], "data rights event requires exact declaration and evidence digests, valid lifecycle and independent reviewer authority");
 
 // SQLite's strict greater-than comparison is the boundary used by migration
 // 0064 for effective_to. Equal instants must not satisfy an exclusive expiry.
