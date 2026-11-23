@@ -104,6 +104,9 @@ class DB {
           db.nonces.add(args[0]);
           return { meta: { changes: 1 } };
         }
+        if (sql.includes("INSERT INTO audit_events") && sql.includes("laboratory_report.read")) {
+          return { meta: { changes: 1 } };
+        }
         throw new Error("unexpected write SQL");
       },
     }; } };
@@ -1025,6 +1028,11 @@ retrievable report\
   assert.equal(result.data.sha256, sha256);
   assert.equal(Buffer.from(result.data.document_base64, "base64").compare(bytes), 0);
   assert.equal(result.data.verification_status, "registered_unverified");
+  const readAudit = db.calls.find(call => call.sql.includes("INSERT INTO audit_events") &&
+    call.sql.includes("laboratory_report.read"));
+  assert.ok(readAudit);
+  assert.deepEqual(readAudit.args.slice(1, 4), ["tenant-a", "operator@example.test", "lab-report-a"]);
+  assert.equal(readAudit.args[5], "request-123");
 });
 
 
