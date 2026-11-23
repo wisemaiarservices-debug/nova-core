@@ -1909,7 +1909,7 @@ export default {
               : json({ data: registered.data, request_id: requestId }, registered.status);
           }
           if (!ROLE_ACTIONS[membership[0].role]?.has("read")) return error("not_found", 404);
-          const evidence = await readLaboratoryReportEvidence(env.DB, tenant, subject, siteId, labReportDetail[3]);
+          const evidence = await readLaboratoryReportEvidence(env.DB, tenant, subject, siteId, labReportDetail[3], requestId);
           return evidence ? json({ data: evidence, request_id: requestId }) : error("not_found", 404);
         }
         if (observationVerification) {
