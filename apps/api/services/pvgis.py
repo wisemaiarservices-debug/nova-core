@@ -44,6 +44,17 @@ def validate_request(
         raise ValueError("PVGIS research request cannot exceed 367 calendar days")
 
 
+def _is_json_content_type(value: Any) -> bool:
+    """Accept JSON media types, including vendor +json types, not substring lookalikes."""
+    media_type = str(value or "").split(";", 1)[0].strip().lower()
+    if "/" not in media_type:
+        return False
+    _type, subtype = media_type.split("/", 1)
+    return _type == "application" and (
+        subtype == "json" or subtype.endswith("+json")
+    )
+
+
 def parse_response(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict) or not payload:
         raise ValueError("PVGIS returned an empty or invalid JSON object")
@@ -111,7 +122,7 @@ def fetch_broadband_performance(
     try:
         with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
             content_type = response.headers.get("Content-Type", "")
-            if "json" not in content_type.lower():
+            if not _is_json_content_type(content_type):
                 raise RuntimeError("PVGIS returned a non-JSON content type")
             raw = response.read(MAX_RESPONSE_BYTES + 1)
             if len(raw) > MAX_RESPONSE_BYTES:
