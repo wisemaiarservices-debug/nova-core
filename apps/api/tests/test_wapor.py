@@ -214,3 +214,41 @@ def test_wapor_worker_response_stream_is_bounded_and_releases_reader():
 
     asyncio.run(run())
 
+
+
+def test_wapor_async_mapsets_enforces_total_operation_deadline(monkeypatch):
+    cancelled = False
+
+    async def slow_request(url):
+        nonlocal cancelled
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+
+    monkeypatch.setattr(wapor, "TOTAL_OPERATION_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(wapor, "_request_json_async", slow_request)
+
+    with pytest.raises(RuntimeError, match="total deadline"):
+        asyncio.run(wapor.list_mapsets_async())
+
+    assert cancelled is True
+
+
+def test_wapor_async_rasters_total_deadline_covers_catalogue_and_raster_pages(monkeypatch):
+    calls = []
+
+    async def slow_after_catalogue(url):
+        calls.append(url)
+        if url == wapor.BASE_URL:
+            return _page([{"code": "L2-AETI-D"}])
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(wapor, "TOTAL_OPERATION_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(wapor, "_request_json_async", slow_after_catalogue)
+
+    with pytest.raises(RuntimeError, match="total deadline"):
+        asyncio.run(wapor.list_rasters_async("L2-AETI-D"))
+
+    assert calls == [wapor.BASE_URL, wapor.BASE_URL + "/L2-AETI-D/rasters"]
