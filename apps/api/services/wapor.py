@@ -18,6 +18,7 @@ BASE_URL = "https://data.apps.fao.org/gismgr/api/v2/catalog/workspaces/WAPOR-3/m
 ALLOWED_HOST = "data.apps.fao.org"
 ALLOWED_PATH_PREFIX = "/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets"
 TIMEOUT_SECONDS = 15
+TOTAL_OPERATION_TIMEOUT_SECONDS = 60
 MAX_RESPONSE_BYTES = 1 * 1024 * 1024
 MAX_PAGES = 8
 MAX_ITEMS = 2000
@@ -290,7 +291,31 @@ def list_rasters(
     }
 
 
+async def _within_total_operation_budget(operation: Any) -> Any:
+    """Bound the complete endpoint operation, including all pagination pages."""
+    try:
+        return await asyncio.wait_for(
+            operation, timeout=TOTAL_OPERATION_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(
+            f"WaPOR operation exceeded the {TOTAL_OPERATION_TIMEOUT_SECONDS}-second total deadline"
+        ) from exc
+
+
 async def list_mapsets_async() -> dict[str, Any]:
+    return await _within_total_operation_budget(_list_mapsets_async_impl())
+
+
+async def list_rasters_async(
+    mapset_code: str, start_date: date | None = None, end_date: date | None = None
+) -> dict[str, Any]:
+    return await _within_total_operation_budget(
+        _list_rasters_async_impl(mapset_code, start_date, end_date)
+    )
+
+
+async def _list_mapsets_async_impl() -> dict[str, Any]:
     result = await _collect_pages_async(BASE_URL)
     records = [_mapset_summary(item) for item in result["items"]]
     records = [item for item in records if isinstance(item["code"], str)]
@@ -311,7 +336,7 @@ async def list_mapsets_async() -> dict[str, Any]:
     }
 
 
-async def list_rasters_async(
+async def _list_rasters_async_impl(
     mapset_code: str, start_date: date | None = None, end_date: date | None = None
 ) -> dict[str, Any]:
     code = validate_mapset_code(mapset_code)
