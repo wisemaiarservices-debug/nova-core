@@ -365,3 +365,28 @@ def test_wapor_worker_fetch_options_attach_abort_signal():
     options = wapor._worker_fetch_options(fake_to_js, object(), signal)
     assert options["redirect"] == "manual"
     assert options["signal"] is signal
+
+
+
+def test_wapor_worker_fetch_aborts_underlying_request_on_timeout():
+    class Controller:
+        aborted = False
+        def abort(self):
+            self.aborted = True
+
+    controller = Controller()
+
+    async def blocked_fetch(url, options):
+        await asyncio.Event().wait()
+
+    async def run():
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                wapor._fetch_worker_payload_with_abort(
+                    blocked_fetch, "https://example.invalid", {}, controller
+                ),
+                timeout=0.01,
+            )
+
+    asyncio.run(run())
+    assert controller.aborted is True
