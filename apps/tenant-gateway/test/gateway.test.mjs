@@ -1031,3 +1031,70 @@ test("forwards the retired assessment route without a client operation key", asy
   assert.match(forwarded[0].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
   assert.match(forwarded[1].headers.get("x-nova-internal-signature"), /^[a-f0-9]{64}$/);
 });
+
+test("bounds streamed gateway request bodies before retaining oversized chunks", async () => {
+  let cancelled = false;
+  let forwarded = false;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "bounded-reader", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("A".repeat(40000)));
+      controller.enqueue(new TextEncoder().encode("B".repeat(30000)));
+    },
+    cancel() { cancelled = true; },
+  });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/water-quality-criteria",
+    { method: "POST", duplex: "half", body: stream, headers: {
+      "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid",
+    } }), env({ TENANT_API: { fetch: async () => {
+      forwarded = true;
+      return new Response("{}", { headers: { "content-type": "application/json" } });
+    } } }));
+  assert.equal(response.status, 400);
+  assert.equal(forwarded, false);
+  await Promise.resolve();
+  assert.equal(cancelled, true);
+});
+
+test("accepts a body exactly at the gateway limit and preserves its signed digest", async () => {
+  let captured;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "bounded-reader", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const payload = "x".repeat(65536);
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/water-quality-criteria",
+    { method: "POST", body: payload, headers: {
+      "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid",
+    } }), env({ TENANT_API: { fetch: async request => {
+      captured = request;
+      return new Response("{}", { headers: { "content-type": "application/json" } });
+    } } }));
+  assert.equal(response.status, 200);
+  assert.equal(await captured.text(), payload);
+  assert.equal(captured.headers.get("x-nova-body-sha256"),
+    createHash("sha256").update(payload).digest("hex"));
+});
+
+test("rejects malformed and over-limit declared gateway request lengths before reading", async () => {
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "bounded-reader", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  for (const length of ["01", "-1", "65537", "9007199254740992"]) {
+    let forwarded = false;
+    const response = await gateway.fetch(new Request(
+      "https://gateway.test/api/v1/tenants/tenant-a/water-quality-criteria",
+      { method: "POST", body: "{}", headers: {
+        "content-type": "application/json", "content-length": length,
+        "Cf-Access-Jwt-Assertion": "valid",
+      } }), env({ TENANT_API: { fetch: async () => {
+        forwarded = true;
+        return new Response("{}", { headers: { "content-type": "application/json" } });
+      } } }));
+    assert.equal(response.status, 400);
+    assert.equal(forwarded, false);
+  }
+});
