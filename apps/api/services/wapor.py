@@ -232,12 +232,18 @@ async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str,
 async def _fetch_worker_payload_with_abort(
     fetch: Any, url: str, options: Any, controller: Any
 ) -> dict[str, Any]:
-    """Abort the underlying Fetch when the Python task fails or is cancelled."""
+    """Abort Fetch before awaiting potentially slow stream cleanup."""
+    task = asyncio.create_task(_fetch_worker_payload(fetch, url, options))
     try:
-        return await _fetch_worker_payload(fetch, url, options)
+        return await asyncio.shield(task)
     except BaseException:
         try:
             controller.abort()
+        except BaseException:
+            pass
+        task.cancel()
+        try:
+            await task
         except BaseException:
             pass
         raise
