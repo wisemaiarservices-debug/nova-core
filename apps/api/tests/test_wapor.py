@@ -266,6 +266,22 @@ def test_wapor_json_content_type_is_strict(content_type, expected):
     assert wapor._is_json_content_type(content_type) is expected
 
 
+def test_wapor_worker_fetch_options_use_manual_redirects():
+    captured = {}
+    marker = object()
+
+    def fake_to_js(value, *, dict_converter):
+        captured["value"] = value
+        captured["converter"] = dict_converter
+        return value
+
+    options = wapor._worker_fetch_options(fake_to_js, marker)
+    assert options["method"] == "GET"
+    assert options["headers"]["Accept"] == "application/json"
+    assert options["redirect"] == "manual"
+    assert captured["converter"] is marker
+
+
 def test_wapor_worker_fetch_cancels_unread_body_on_http_and_media_type_rejection():
     from types import SimpleNamespace
 
