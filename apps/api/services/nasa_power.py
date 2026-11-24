@@ -151,17 +151,33 @@ async def _read_worker_body(response: Any) -> bytes:
     return b"".join(chunks)
 
 
+async def _cancel_worker_response_body(response: Any) -> None:
+    """Cancel an unconsumed Workers Fetch body when response validation fails."""
+    body = getattr(response, "body", None)
+    cancel = getattr(body, "cancel", None)
+    if not callable(cancel):
+        return
+    try:
+        await cancel()
+    except Exception:
+        # Preserve the original HTTP/header validation error.
+        pass
+
+
 async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str, Any]:
     """Fetch and consume one bounded response; caller applies a total deadline."""
     response = await fetch(url, options)
     if not response.ok:
+        await _cancel_worker_response_body(response)
         raise RuntimeError(f"NASA POWER request failed with HTTP {response.status}")
     content_length = response.headers.get("content-length")
     if content_length is not None:
         normalized_length = str(content_length).strip()
         if not normalized_length or not normalized_length.isascii() or not normalized_length.isdigit():
+            await _cancel_worker_response_body(response)
             raise RuntimeError("NASA POWER response had an invalid Content-Length header")
         if int(normalized_length) > NASA_POWER_MAX_RESPONSE_BYTES:
+            await _cancel_worker_response_body(response)
             raise RuntimeError("NASA POWER response exceeded the 2 MiB limit")
     raw = await _read_worker_body(response)
     return _decode_json_response(raw)
