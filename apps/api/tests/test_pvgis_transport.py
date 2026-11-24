@@ -283,3 +283,80 @@ def test_worker_fetch_rejects_invalid_json_body(monkeypatch):
         )
 
     assert reader.released is True
+
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        None,
+        "",
+        "text/plain",
+        "application/notjson",
+        "application/jsonp",
+        "not-a-media-type",
+    ],
+)
+def test_sync_fetch_rejects_non_json_media_types(monkeypatch, content_type):
+    class _SyncResponse:
+        headers = types.SimpleNamespace(
+            get=lambda self, key, default="": content_type if key == "Content-Type" else default
+        )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, size):
+            raise AssertionError("invalid media type must be rejected before body read")
+
+    class _Opener:
+        def open(self, request, timeout):
+            assert timeout == pvgis.TIMEOUT_SECONDS
+            return _SyncResponse()
+
+    monkeypatch.setattr(pvgis, "build_opener", lambda handler: _Opener())
+
+    with pytest.raises(RuntimeError, match="non-JSON content type"):
+        pvgis.fetch_broadband_performance(
+            36.8, 10.2, date(2024, 1, 1), date(2024, 1, 7)
+        )
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/json",
+        "Application/JSON; charset=utf-8",
+        "application/vnd.api+json",
+    ],
+)
+def test_sync_fetch_accepts_standard_and_vendor_json_media_types(monkeypatch, content_type):
+    class _SyncResponse:
+        headers = types.SimpleNamespace(
+            get=lambda self, key, default="": content_type if key == "Content-Type" else default
+        )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, size):
+            assert size == pvgis.MAX_RESPONSE_BYTES + 1
+            return b'{"outputs":{"totals":{}}}'
+
+    class _Opener:
+        def open(self, request, timeout):
+            return _SyncResponse()
+
+    monkeypatch.setattr(pvgis, "build_opener", lambda handler: _Opener())
+
+    result = pvgis.fetch_broadband_performance(
+        36.8, 10.2, date(2024, 1, 1), date(2024, 1, 7)
+    )
+
+    assert result == {"outputs": {"totals": {}}}
