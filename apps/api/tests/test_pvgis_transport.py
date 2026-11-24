@@ -198,11 +198,10 @@ def test_async_worker_fetch_uses_one_deadline_for_headers_and_body(monkeypatch):
 
 def test_worker_response_rejects_chunk_before_copy(monkeypatch):
     class OversizedView:
-        def __len__(self):
-            return 11
+        byteLength = 11
 
-        def __bytes__(self):
-            raise AssertionError("oversized chunk must not be copied")
+        def to_py(self):
+            raise AssertionError("oversized JS TypedArray must be rejected before conversion")
 
     class OversizedReader:
         def __init__(self):
