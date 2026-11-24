@@ -80,7 +80,7 @@ def parse_daily_response(payload: dict[str, Any]) -> dict[str, Any]:
 def _worker_fetch_options(to_js: Any, object_from_entries: Any) -> Any:
     """Build Fetch options with redirect handling explicit and testable."""
     return to_js(
-        {"method": "GET", "headers": {"Accept": "application/json"}, "redirect": "error"},
+        {"method": "GET", "headers": {"Accept": "application/json"}, "redirect": "manual"},
         dict_converter=object_from_entries,
     )
 
