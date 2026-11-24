@@ -385,3 +385,42 @@ def test_nasa_power_workers_body_reader_preserves_read_error_when_lock_release_f
         asyncio.run(nasa_power._read_worker_body(response))
 
     assert reader.cancelled is True
+
+
+def test_nasa_power_workers_body_rejects_chunk_before_copy(monkeypatch):
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class OversizedView:
+        def __len__(self):
+            return 9
+
+        def __bytes__(self):
+            raise AssertionError("oversized chunk must not be copied")
+
+    class FakeReader:
+        def __init__(self):
+            self.cancelled = False
+            self.released = False
+
+        async def read(self):
+            return SimpleNamespace(
+                done=False,
+                value=SimpleNamespace(to_py=lambda: OversizedView()),
+            )
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def releaseLock(self):
+            self.released = True
+
+    reader = FakeReader()
+    monkeypatch.setattr(nasa_power, "NASA_POWER_MAX_RESPONSE_BYTES", 8)
+    response = SimpleNamespace(body=SimpleNamespace(getReader=lambda: reader))
+
+    with pytest.raises(RuntimeError, match="2 MiB limit"):
+        asyncio.run(nasa_power._read_worker_body(response))
+
+    assert reader.cancelled is True
+    assert reader.released is True
