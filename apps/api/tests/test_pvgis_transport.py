@@ -190,3 +190,38 @@ def test_async_worker_fetch_uses_one_deadline_for_headers_and_body(monkeypatch):
 
     assert result == {"outputs": {"totals": {}}}
     assert deadlines == [pvgis.TIMEOUT_SECONDS]
+
+
+def test_worker_response_rejects_chunk_before_copy(monkeypatch):
+    class OversizedView:
+        def __len__(self):
+            return 11
+
+        def __bytes__(self):
+            raise AssertionError("oversized chunk must not be copied")
+
+    class OversizedReader:
+        def __init__(self):
+            self.cancelled = False
+            self.released = False
+
+        async def read(self):
+            return types.SimpleNamespace(
+                done=False,
+                value=types.SimpleNamespace(to_py=lambda: OversizedView()),
+            )
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def releaseLock(self):
+            self.released = True
+
+    reader = OversizedReader()
+    monkeypatch.setattr(pvgis, "MAX_RESPONSE_BYTES", 10)
+
+    with pytest.raises(RuntimeError, match="2 MiB limit"):
+        asyncio.run(pvgis._read_bounded_response(_Response(reader)))
+
+    assert reader.cancelled is True
+    assert reader.released is True
