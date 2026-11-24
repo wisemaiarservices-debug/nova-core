@@ -230,7 +230,11 @@ def test_nasa_power_workers_body_reader_enforces_streaming_limit(monkeypatch):
 
         async def read(self):
             if self.chunks:
-                return SimpleNamespace(done=False, value=SimpleNamespace(to_py=lambda: self.chunks.pop(0)))
+                chunk = self.chunks.pop(0)
+                return SimpleNamespace(
+                    done=False,
+                    value=SimpleNamespace(byteLength=len(chunk), to_py=lambda: chunk),
+                )
             return SimpleNamespace(done=True, value=None)
 
         async def cancel(self):
@@ -303,7 +307,10 @@ def test_nasa_power_workers_fetch_payload_checks_status_and_decodes_body():
             self.done = True
             return SimpleNamespace(
                 done=False,
-                value=SimpleNamespace(to_py=lambda: b'{"properties":{"parameter":{"T2M":{}}}}'),
+                value=SimpleNamespace(
+                    byteLength=len(b'{"properties":{"parameter":{"T2M":{}}}}'),
+                    to_py=lambda: b'{"properties":{"parameter":{"T2M":{}}}}',
+                ),
             )
 
         async def cancel(self):
@@ -391,12 +398,11 @@ def test_nasa_power_workers_body_rejects_chunk_before_copy(monkeypatch):
     from types import SimpleNamespace
     from apps.api.services import nasa_power
 
-    class OversizedView:
-        def __len__(self):
-            return 9
+    class OversizedChunk:
+        byteLength = 9
 
-        def __bytes__(self):
-            raise AssertionError("oversized chunk must not be copied")
+        def to_py(self):
+            raise AssertionError("oversized chunk must not be converted")
 
     class FakeReader:
         def __init__(self):
@@ -406,7 +412,7 @@ def test_nasa_power_workers_body_rejects_chunk_before_copy(monkeypatch):
         async def read(self):
             return SimpleNamespace(
                 done=False,
-                value=SimpleNamespace(to_py=lambda: OversizedView()),
+                value=OversizedChunk(),
             )
 
         async def cancel(self):
@@ -494,7 +500,7 @@ def test_nasa_power_worker_fetch_accepts_whitespace_padded_content_length():
             self.done = True
             return SimpleNamespace(
                 done=False,
-                value=SimpleNamespace(to_py=lambda: payload),
+                value=SimpleNamespace(byteLength=len(payload), to_py=lambda: payload),
             )
         async def cancel(self):
             pass
