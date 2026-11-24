@@ -643,3 +643,16 @@ def test_nasa_power_worker_fetch_aborts_underlying_request_on_cancellation():
 
     asyncio.run(run())
     assert controller.aborted is True
+
+
+def test_nasa_power_worker_fetch_options_attach_abort_signal():
+    from apps.api.services import nasa_power
+
+    signal = object()
+
+    def fake_to_js(value, *, dict_converter):
+        return value
+
+    options = nasa_power._worker_fetch_options(fake_to_js, object(), signal)
+    assert options["redirect"] == "manual"
+    assert options["signal"] is signal
