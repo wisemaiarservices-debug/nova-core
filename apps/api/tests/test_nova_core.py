@@ -615,3 +615,31 @@ def test_nasa_power_worker_fetch_preserves_validation_error_if_body_cancel_fails
 
     with pytest.raises(RuntimeError, match="invalid Content-Length"):
         asyncio.run(nasa_power._fetch_worker_payload(fake_fetch, "https://example.invalid", {}))
+
+
+def test_nasa_power_worker_fetch_aborts_underlying_request_on_cancellation():
+    from apps.api.services import nasa_power
+
+    class Controller:
+        aborted = False
+        def abort(self):
+            self.aborted = True
+
+    controller = Controller()
+
+    async def blocked_fetch(url, options):
+        await asyncio.Event().wait()
+
+    async def run():
+        task = asyncio.create_task(
+            nasa_power._fetch_worker_payload_with_abort(
+                blocked_fetch, "https://example.invalid", {}, controller
+            )
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+    assert controller.aborted is True
