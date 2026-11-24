@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nova-rate-limit-binding-proof",
+  "main": "worker.py",
+  "compatibility_date": "2026-11-10",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "ratelimits": [
+    {
+      "name": "TEST_RATE_LIMITER",
+      "namespace_id": "987654321",
+      "simple": {
+        "limit": 1,
+        "period": 10
+      }
+    }
+  ]
+}
