@@ -7,5 +7,5 @@ requires-python = ">=3.14"
 [dependency-groups]
 dev = [
   "workers-py==1.17.8",
-  "workers-runtime-sdk"
+  "workers-runtime-sdk==1.9.7"
 ]
