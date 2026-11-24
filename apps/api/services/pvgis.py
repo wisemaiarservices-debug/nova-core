@@ -137,13 +137,28 @@ def fetch_broadband_performance(
     return parse_response(payload)
 
 
+async def _cancel_worker_response_body(response: Any) -> None:
+    """Cancel an unconsumed Workers Fetch body when response validation fails."""
+    body = getattr(response, "body", None)
+    cancel = getattr(body, "cancel", None)
+    if not callable(cancel):
+        return
+    try:
+        await cancel()
+    except Exception:
+        # Preserve the original HTTP/header validation error.
+        pass
+
+
 async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str, Any]:
     """Fetch and consume one bounded response under the caller's total deadline."""
     response = await fetch(url, options)
     if not response.ok:
+        await _cancel_worker_response_body(response)
         raise RuntimeError(f"PVGIS request failed with HTTP {response.status}")
     content_type = str(response.headers.get("content-type") or "")
     if not _is_json_content_type(content_type):
+        await _cancel_worker_response_body(response)
         raise RuntimeError("PVGIS returned a non-JSON content type")
     raw = await _read_bounded_response(response)
     return json.loads(raw.decode("utf-8"))
