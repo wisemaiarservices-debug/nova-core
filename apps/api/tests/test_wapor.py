@@ -421,7 +421,7 @@ def test_wapor_aborts_fetch_before_waiting_for_slow_stream_cleanup():
         response = SimpleNamespace(
             ok=True,
             status=200,
-            headers=SimpleNamespace(get=lambda key: None),
+            headers=SimpleNamespace(get=lambda key: "application/json" if key == "content-type" else None),
             body=SimpleNamespace(getReader=lambda: reader),
         )
 
