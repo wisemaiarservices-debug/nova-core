@@ -277,7 +277,7 @@ def test_nasa_power_urllib_opener_installs_redirect_rejection(monkeypatch):
     assert any(isinstance(handler, nasa_power._RejectRedirects) for handler in opener.handlers)
 
 
-def test_nasa_power_workers_fetch_options_reject_redirects():
+def test_nasa_power_workers_fetch_options_use_manual_redirects():
     from apps.api.services.nasa_power import _worker_fetch_options
 
     captured = {}
@@ -290,7 +290,7 @@ def test_nasa_power_workers_fetch_options_reject_redirects():
     options = _worker_fetch_options(fake_to_js, marker)
     assert options["method"] == "GET"
     assert options["headers"]["Accept"] == "application/json"
-    assert options["redirect"] == "error"
+    assert options["redirect"] == "manual"
     assert captured["converter"] is marker
 
 def test_nasa_power_workers_fetch_payload_checks_status_and_decodes_body():
