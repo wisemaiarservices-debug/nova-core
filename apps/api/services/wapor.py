@@ -31,6 +31,17 @@ class _RejectRedirects(HTTPRedirectHandler):
         return None
 
 
+def _is_json_content_type(value: Any) -> bool:
+    """Accept JSON media types without substring lookalikes."""
+    media_type = str(value or "").split(";", 1)[0].strip().lower()
+    if "/" not in media_type:
+        return False
+    media_type_group, subtype = media_type.split("/", 1)
+    return media_type_group == "application" and (
+        subtype == "json" or subtype.endswith("+json")
+    )
+
+
 def _validate_api_url(url: str) -> None:
     parsed = urlparse(url)
     valid_path = (
@@ -54,7 +65,7 @@ def _request_json(url: str) -> dict[str, Any]:
     request = Request(url, headers={"Accept": "application/json", "User-Agent": "NOVA-Core-Research/0.1"}, method="GET")
     try:
         with build_opener(_RejectRedirects()).open(request, timeout=TIMEOUT_SECONDS) as response:
-            if "json" not in response.headers.get("Content-Type", "").lower():
+            if not _is_json_content_type(response.headers.get("Content-Type", "")):
                 raise RuntimeError("WaPOR returned a non-JSON content type")
             raw = response.read(MAX_RESPONSE_BYTES + 1)
             if len(raw) > MAX_RESPONSE_BYTES:
@@ -179,11 +190,26 @@ async def _read_bounded_response(response: Any) -> bytes:
     return b"".join(chunks)
 
 
+async def _cancel_worker_response_body(response: Any) -> None:
+    """Cancel an unconsumed Workers Fetch body when response validation fails."""
+    body = getattr(response, "body", None)
+    cancel = getattr(body, "cancel", None)
+    if not callable(cancel):
+        return
+    try:
+        await cancel()
+    except Exception:
+        # Preserve the original HTTP/header validation error.
+        pass
+
+
 async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str, Any]:
     response = await fetch(url, options)
     if not response.ok:
+        await _cancel_worker_response_body(response)
         raise RuntimeError(f"WaPOR request failed with HTTP {response.status}")
-    if "json" not in str(response.headers.get("content-type") or "").lower():
+    if not _is_json_content_type(response.headers.get("content-type")):
+        await _cancel_worker_response_body(response)
         raise RuntimeError("WaPOR returned a non-JSON content type")
     raw = await _read_bounded_response(response)
     return json.loads(raw.decode("utf-8"))
