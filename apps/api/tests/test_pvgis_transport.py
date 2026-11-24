@@ -47,9 +47,13 @@ class _Reader:
 class _Body:
     def __init__(self, reader):
         self.reader = reader
+        self.cancelled = False
 
     def getReader(self):
         return self.reader
+
+    async def cancel(self):
+        self.cancelled = True
 
 
 class _Response:
@@ -251,6 +255,23 @@ def test_worker_fetch_rejects_non_json_media_types(monkeypatch, content_type):
             pvgis._fetch_worker_payload(fake_fetch, "https://example.invalid", {})
         )
 
+    assert reader.released is False
+    assert response.body.cancelled is True
+
+
+def test_worker_fetch_cancels_non_success_response_body():
+    reader = _Reader([b"upstream error"])
+    response = _Response(reader, ok=False)
+
+    async def fake_fetch(url, options):
+        return response
+
+    with pytest.raises(RuntimeError, match="HTTP 502"):
+        asyncio.run(
+            pvgis._fetch_worker_payload(fake_fetch, "https://example.invalid", {})
+        )
+
+    assert response.body.cancelled is True
     assert reader.released is False
 
 
