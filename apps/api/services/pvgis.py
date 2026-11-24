@@ -213,7 +213,11 @@ async def fetch_broadband_performance_async(
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("PVGIS returned invalid JSON") from exc
     except Exception as exc:
-        raise RuntimeError("PVGIS request failed or timed out") from exc
+        # Keep the provider failure message sanitized while preserving the
+        # exception class for runtime diagnostics (without logging request data).
+        raise RuntimeError(
+            f"PVGIS request failed or timed out ({type(exc).__name__})"
+        ) from exc
     return parse_response(payload)
 
 
