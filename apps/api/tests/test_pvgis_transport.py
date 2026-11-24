@@ -299,9 +299,7 @@ def test_worker_fetch_rejects_invalid_json_body(monkeypatch):
 )
 def test_sync_fetch_rejects_non_json_media_types(monkeypatch, content_type):
     class _SyncResponse:
-        headers = types.SimpleNamespace(
-            get=lambda self, key, default="": content_type if key == "Content-Type" else default
-        )
+        headers = {"Content-Type": content_type}
 
         def __enter__(self):
             return self
@@ -335,9 +333,7 @@ def test_sync_fetch_rejects_non_json_media_types(monkeypatch, content_type):
 )
 def test_sync_fetch_accepts_standard_and_vendor_json_media_types(monkeypatch, content_type):
     class _SyncResponse:
-        headers = types.SimpleNamespace(
-            get=lambda self, key, default="": content_type if key == "Content-Type" else default
-        )
+        headers = {"Content-Type": content_type}
 
         def __enter__(self):
             return self
