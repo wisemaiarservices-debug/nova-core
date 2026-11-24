@@ -103,7 +103,7 @@ async def _request_json_async(url: str) -> dict[str, Any]:
         from pyodide.ffi import to_js
     except ImportError:
         return await asyncio.to_thread(_request_json, url)
-    controller = AbortController()
+    controller = AbortController.new()
     options = _worker_fetch_options(to_js, Object.fromEntries, controller.signal)
     try:
         payload = await asyncio.wait_for(
