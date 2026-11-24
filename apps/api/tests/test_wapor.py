@@ -191,7 +191,21 @@ def test_wapor_worker_response_stream_is_bounded_and_releases_reader():
         assert reader.released is True
         assert reader.cancelled is False
 
-        overflow = Reader([b"x" * (wapor.MAX_RESPONSE_BYTES + 1)])
+        class OversizedView:
+            def __len__(self):
+                return wapor.MAX_RESPONSE_BYTES + 1
+            def __bytes__(self):
+                raise AssertionError("oversized chunk must be rejected before copying")
+
+        class OversizedChunk:
+            def to_py(self):
+                return OversizedView()
+
+        class OversizedReader(Reader):
+            async def read(self):
+                return type("ReadResult", (), {"done": False, "value": OversizedChunk()})()
+
+        overflow = OversizedReader([])
         response = type("Response", (), {"body": Body(overflow)})()
         with pytest.raises(RuntimeError, match="1 MiB"):
             await wapor._read_bounded_response(response)
