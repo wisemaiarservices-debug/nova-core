@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - feat/nova-core-v1-provenance-and-honest-impact
+      - fix/pvgis-worker-streaming-response-cap
     paths:
       - "apps/api/**"
       - ".github/workflows/cloudflare-worker-smoke.yml"
@@ -66,3 +67,16 @@ jobs:
           grep -q '"status":"review_required"' /tmp/nova-recommendation.json
           curl --max-time 5 --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
           grep -q 'nasa-power/daily' /tmp/nova-openapi.json
+          if [ "$GITHUB_REF_NAME" = "fix/pvgis-worker-streaming-response-cap" ]; then
+            PVGIS_STATUS=$(curl --retry 1 --retry-delay 2 --max-time 45 --silent --show-error \
+              -o /tmp/nova-pvgis-performance.json -w '%{http_code}' \
+              'http://127.0.0.1:8787/api/v1/data/solar/pvgis/performance?latitude=36.8&longitude=10.2&start_date=2024-01-01&end_date=2024-01-07') || PVGIS_STATUS=000
+            echo "PVGIS_HTTP_STATUS=$PVGIS_STATUS"
+            cat /tmp/nova-pvgis-performance.json || true
+            if [ "$PVGIS_STATUS" != "200" ]; then
+              echo "PVGIS Worker request failed; Worker diagnostics follow."
+              cat /tmp/nova-worker.log
+              exit 1
+            fi
+            jq -e '.status == "retrieved" and .dataset_id == "jrc-pvgis-6" and (.data | type == "object")' /tmp/nova-pvgis-performance.json
+          fi
