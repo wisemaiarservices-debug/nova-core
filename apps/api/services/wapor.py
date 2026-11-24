@@ -82,12 +82,18 @@ def _request_json(url: str) -> dict[str, Any]:
     return payload
 
 
-def _worker_fetch_options(to_js: Any, object_from_entries: Any) -> Any:
-    """Build Fetch options that disable automatic redirects in Workers."""
-    return to_js(
-        {"method": "GET", "headers": {"Accept": "application/json"}, "redirect": "manual"},
-        dict_converter=object_from_entries,
-    )
+def _worker_fetch_options(
+    to_js: Any, object_from_entries: Any, signal: Any = None
+) -> Any:
+    """Build Fetch options with explicit redirect and abort-signal handling."""
+    values = {
+        "method": "GET",
+        "headers": {"Accept": "application/json"},
+        "redirect": "manual",
+    }
+    if signal is not None:
+        values["signal"] = signal
+    return to_js(values, dict_converter=object_from_entries)
 
 
 async def _request_json_async(url: str) -> dict[str, Any]:
