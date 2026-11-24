@@ -220,7 +220,7 @@ async def fetch_daily_point_async(
         )
 
     try:
-        controller = AbortController()
+        controller = AbortController.new()
         options = _worker_fetch_options(to_js, Object.fromEntries, controller.signal)
         payload = await asyncio.wait_for(
             _fetch_worker_payload_with_abort(fetch, url, options, controller),
