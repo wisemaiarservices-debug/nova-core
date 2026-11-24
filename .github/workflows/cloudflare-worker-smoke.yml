@@ -2,7 +2,6 @@ name: NOVA Core Cloudflare Worker smoke test
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - "apps/api/**"
       - ".github/workflows/cloudflare-worker-smoke.yml"
@@ -66,3 +65,13 @@ jobs:
           grep -q '"status":"review_required"' /tmp/nova-recommendation.json
           curl --max-time 5 --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
           grep -q 'nasa-power/daily' /tmp/nova-openapi.json
+          grep -q 'nasa-power/daily' /tmp/nova-openapi.json
+          # Exercise the real Workers/Pyodide Fetch transport against bounded,
+          # historical provider requests; these calls are read-only and do not
+          # persist provider data or create site/asset records.
+          curl --retry 2 --retry-delay 3 --max-time 45 --silent --show-error --fail \
+            'http://127.0.0.1:8787/api/v1/data/weather/nasa-power/daily?latitude=36.8&longitude=10.2&start_date=2025-01-01&end_date=2025-01-07' > /tmp/nova-nasa-power.json
+          jq -e '.status == "retrieved" and .data_source == "NASA POWER Daily API" and (.records | type == "array")' /tmp/nova-nasa-power.json
+          curl --retry 2 --retry-delay 3 --max-time 75 --silent --show-error --fail \
+            'http://127.0.0.1:8787/api/v1/data/water/wapor/mapsets' > /tmp/nova-wapor-mapsets.json
+          jq -e '.status == "retrieved" and .dataset_id == "fao-wapor-v3" and (.mapsets | type == "array")' /tmp/nova-wapor-mapsets.json
