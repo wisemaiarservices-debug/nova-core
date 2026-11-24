@@ -656,3 +656,30 @@ def test_nasa_power_worker_fetch_options_attach_abort_signal():
     options = nasa_power._worker_fetch_options(fake_to_js, object(), signal)
     assert options["redirect"] == "manual"
     assert options["signal"] is signal
+
+
+
+def test_nasa_power_worker_fetch_aborts_underlying_request_on_timeout():
+    from apps.api.services import nasa_power
+
+    class Controller:
+        aborted = False
+        def abort(self):
+            self.aborted = True
+
+    controller = Controller()
+
+    async def blocked_fetch(url, options):
+        await asyncio.Event().wait()
+
+    async def run():
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                nasa_power._fetch_worker_payload_with_abort(
+                    blocked_fetch, "https://example.invalid", {}, controller
+                ),
+                timeout=0.01,
+            )
+
+    asyncio.run(run())
+    assert controller.aborted is True
