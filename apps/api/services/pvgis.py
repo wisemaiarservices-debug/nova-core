@@ -76,11 +76,16 @@ async def _read_bounded_response(response: Any) -> bytes:
             result = await reader.read()
             if result.done:
                 break
-            view = result.value.to_py()
-            chunk_size = len(view)
+            # Inspect the JavaScript TypedArray before Pyodide converts it.
+            # to_py() can allocate/copy the complete chunk, so it must only run
+            # after the cumulative response budget has been checked.
+            chunk_view = result.value
+            chunk_size = int(chunk_view.byteLength)
             if total + chunk_size > MAX_RESPONSE_BYTES:
                 raise RuntimeError("PVGIS response exceeded the 2 MiB limit")
-            chunk = bytes(view)
+            chunk = bytes(chunk_view.to_py())
+            if len(chunk) != chunk_size:
+                raise RuntimeError("PVGIS response chunk length changed during conversion")
             total += chunk_size
             chunks.append(chunk)
     except BaseException:
