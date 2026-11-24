@@ -157,10 +157,12 @@ async def _read_bounded_response(response: Any) -> bytes:
             result = await reader.read()
             if result.done:
                 break
-            chunk = bytes(result.value.to_py())
-            total += len(chunk)
-            if total > MAX_RESPONSE_BYTES:
+            view = result.value.to_py()
+            chunk_size = len(view)
+            if total + chunk_size > MAX_RESPONSE_BYTES:
                 raise RuntimeError("WaPOR response exceeded the 1 MiB page limit")
+            chunk = bytes(view)
+            total += chunk_size
             chunks.append(chunk)
     except BaseException:
         try:
