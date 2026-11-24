@@ -84,7 +84,6 @@ async def _read_bounded_response(response: Any) -> bytes:
             total += chunk_size
             chunks.append(chunk)
     except BaseException:
-        # Also stop network consumption on timeout, cancellation, or read errors.
         try:
             await reader.cancel()
         except BaseException:
@@ -144,7 +143,7 @@ async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str,
     if not response.ok:
         raise RuntimeError(f"PVGIS request failed with HTTP {response.status}")
     content_type = str(response.headers.get("content-type") or "")
-    if "json" not in content_type.lower():
+    if not _is_json_content_type(content_type):
         raise RuntimeError("PVGIS returned a non-JSON content type")
     raw = await _read_bounded_response(response)
     return json.loads(raw.decode("utf-8"))
