@@ -157,8 +157,12 @@ async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str,
     if not response.ok:
         raise RuntimeError(f"NASA POWER request failed with HTTP {response.status}")
     content_length = response.headers.get("content-length")
-    if content_length and int(content_length) > NASA_POWER_MAX_RESPONSE_BYTES:
-        raise RuntimeError("NASA POWER response exceeded the 2 MiB limit")
+    if content_length is not None:
+        normalized_length = str(content_length).strip()
+        if not normalized_length or not normalized_length.isascii() or not normalized_length.isdigit():
+            raise RuntimeError("NASA POWER response had an invalid Content-Length header")
+        if int(normalized_length) > NASA_POWER_MAX_RESPONSE_BYTES:
+            raise RuntimeError("NASA POWER response exceeded the 2 MiB limit")
     raw = await _read_worker_body(response)
     return _decode_json_response(raw)
 
