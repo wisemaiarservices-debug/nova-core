@@ -478,3 +478,39 @@ def test_nasa_power_worker_fetch_rejects_oversized_content_length_before_reading
                 fake_fetch, "https://example.invalid", {}
             )
         )
+
+
+def test_nasa_power_worker_fetch_accepts_whitespace_padded_content_length():
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    payload = b'{"a":1}'
+    class Reader:
+        def __init__(self):
+            self.done = False
+        async def read(self):
+            if self.done:
+                return SimpleNamespace(done=True, value=None)
+            self.done = True
+            return SimpleNamespace(
+                done=False,
+                value=SimpleNamespace(to_py=lambda: payload),
+            )
+        async def cancel(self):
+            pass
+        def releaseLock(self):
+            pass
+
+    response = SimpleNamespace(
+        ok=True,
+        status=200,
+        headers=SimpleNamespace(get=lambda key: f" {len(payload)} "),
+        body=SimpleNamespace(getReader=Reader),
+    )
+
+    async def fake_fetch(url, options):
+        return response
+
+    assert asyncio.run(
+        nasa_power._fetch_worker_payload(fake_fetch, "https://example.invalid", {})
+    ) == {"a": 1}
