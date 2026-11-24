@@ -9,6 +9,8 @@ on:
     branches:
       - main
       - feat/nova-core-v1-provenance-and-honest-impact
+      - fix/nasa-power-bounded-transport-v1
+      - fix/wapor-python-worker-async-fetch-v1
     paths:
       - "apps/api/**"
       - ".github/workflows/cloudflare-worker-smoke.yml"
