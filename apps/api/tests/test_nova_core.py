@@ -424,3 +424,57 @@ def test_nasa_power_workers_body_rejects_chunk_before_copy(monkeypatch):
 
     assert reader.cancelled is True
     assert reader.released is True
+
+
+def test_nasa_power_worker_fetch_rejects_invalid_content_length_before_reading():
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    for invalid_length in ("", "  ", "-1", "+12", "1.5", "１２"):
+        response = SimpleNamespace(
+            ok=True,
+            status=200,
+            headers=SimpleNamespace(get=lambda key, value=invalid_length: value),
+            body=SimpleNamespace(
+                getReader=lambda: (_ for _ in ()).throw(
+                    AssertionError("body must not be read for invalid Content-Length")
+                )
+            ),
+        )
+
+        async def fake_fetch(url, options):
+            return response
+
+        with pytest.raises(RuntimeError, match="invalid Content-Length"):
+            asyncio.run(
+                nasa_power._fetch_worker_payload(
+                    fake_fetch, "https://example.invalid", {}
+                )
+            )
+
+
+def test_nasa_power_worker_fetch_rejects_oversized_content_length_before_reading(monkeypatch):
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    monkeypatch.setattr(nasa_power, "NASA_POWER_MAX_RESPONSE_BYTES", 8)
+    response = SimpleNamespace(
+        ok=True,
+        status=200,
+        headers=SimpleNamespace(get=lambda key: "9"),
+        body=SimpleNamespace(
+            getReader=lambda: (_ for _ in ()).throw(
+                AssertionError("body must not be read when declared length exceeds cap")
+            )
+        ),
+    )
+
+    async def fake_fetch(url, options):
+        return response
+
+    with pytest.raises(RuntimeError, match="2 MiB limit"):
+        asyncio.run(
+            nasa_power._fetch_worker_payload(
+                fake_fetch, "https://example.invalid", {}
+            )
+        )
