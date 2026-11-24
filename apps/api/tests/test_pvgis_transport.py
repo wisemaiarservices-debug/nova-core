@@ -11,6 +11,7 @@ from apps.api.services import pvgis
 class _Chunk:
     def __init__(self, value):
         self.value = value
+        self.byteLength = len(value)
 
     def to_py(self):
         # Pyodide converts JavaScript TypedArray buffers to memoryview.
@@ -211,7 +212,7 @@ def test_worker_response_rejects_chunk_before_copy(monkeypatch):
         async def read(self):
             return types.SimpleNamespace(
                 done=False,
-                value=types.SimpleNamespace(to_py=lambda: OversizedView()),
+                value=OversizedView(),
             )
 
         async def cancel(self):
