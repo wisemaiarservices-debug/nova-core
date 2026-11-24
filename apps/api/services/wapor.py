@@ -93,14 +93,15 @@ def _worker_fetch_options(to_js: Any, object_from_entries: Any) -> Any:
 async def _request_json_async(url: str) -> dict[str, Any]:
     _validate_api_url(url)
     try:
-        from js import Object, fetch
+        from js import AbortController, Object, fetch
         from pyodide.ffi import to_js
     except ImportError:
         return await asyncio.to_thread(_request_json, url)
-    options = _worker_fetch_options(to_js, Object.fromEntries)
+    controller = AbortController()
+    options = _worker_fetch_options(to_js, Object.fromEntries, controller.signal)
     try:
         payload = await asyncio.wait_for(
-            _fetch_worker_payload(fetch, url, options),
+            _fetch_worker_payload_with_abort(fetch, url, options, controller),
             timeout=TIMEOUT_SECONDS,
         )
     except RuntimeError:
@@ -220,6 +221,20 @@ async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str,
         raise RuntimeError("WaPOR returned a non-JSON content type")
     raw = await _read_bounded_response(response)
     return json.loads(raw.decode("utf-8"))
+
+
+async def _fetch_worker_payload_with_abort(
+    fetch: Any, url: str, options: Any, controller: Any
+) -> dict[str, Any]:
+    """Abort the underlying Fetch when the Python task fails or is cancelled."""
+    try:
+        return await _fetch_worker_payload(fetch, url, options)
+    except BaseException:
+        try:
+            controller.abort()
+        except BaseException:
+            pass
+        raise
 
 
 def _mapset_summary(item: dict[str, Any]) -> dict[str, Any]:
