@@ -403,9 +403,11 @@ def test_wapor_aborts_fetch_before_waiting_for_slow_stream_cleanup():
 
     class Reader:
         def __init__(self):
+            self.read_started = asyncio.Event()
             self.cancel_started = asyncio.Event()
             self.release_cancel = asyncio.Event()
         async def read(self):
+            self.read_started.set()
             await asyncio.Event().wait()
         async def cancel(self):
             self.cancel_started.set()
@@ -431,8 +433,7 @@ def test_wapor_aborts_fetch_before_waiting_for_slow_stream_cleanup():
                 fake_fetch, "https://example.invalid", {}, controller
             )
         )
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        await asyncio.wait_for(reader.read_started.wait(), timeout=1)
         task.cancel()
         await asyncio.wait_for(reader.cancel_started.wait(), timeout=1)
         assert controller.aborted is True
