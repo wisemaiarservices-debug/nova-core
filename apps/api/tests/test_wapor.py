@@ -158,6 +158,7 @@ def test_wapor_worker_response_stream_is_bounded_and_releases_reader():
     class Chunk:
         def __init__(self, value):
             self.value = value
+            self.byteLength = len(value)
         def to_py(self):
             return self.value
 
@@ -191,15 +192,10 @@ def test_wapor_worker_response_stream_is_bounded_and_releases_reader():
         assert reader.released is True
         assert reader.cancelled is False
 
-        class OversizedView:
-            def __len__(self):
-                return wapor.MAX_RESPONSE_BYTES + 1
-            def __bytes__(self):
-                raise AssertionError("oversized chunk must be rejected before copying")
-
         class OversizedChunk:
+            byteLength = wapor.MAX_RESPONSE_BYTES + 1
             def to_py(self):
-                return OversizedView()
+                raise AssertionError("oversized chunk must be rejected before conversion")
 
         class OversizedReader(Reader):
             async def read(self):
