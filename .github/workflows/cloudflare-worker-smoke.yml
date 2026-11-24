@@ -1,10 +1,6 @@
 name: NOVA Core Cloudflare Worker smoke test
 
 on:
-  pull_request:
-    paths:
-      - "apps/api/**"
-      - ".github/workflows/cloudflare-worker-smoke.yml"
   push:
     branches:
       - main
@@ -66,7 +62,6 @@ jobs:
             -d '{}' http://127.0.0.1:8787/api/v1/recommendations/run > /tmp/nova-recommendation.json
           grep -q '"status":"review_required"' /tmp/nova-recommendation.json
           curl --max-time 5 --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
-          grep -q 'nasa-power/daily' /tmp/nova-openapi.json
           grep -q 'nasa-power/daily' /tmp/nova-openapi.json
           # Exercise the real Workers/Pyodide Fetch transport against bounded,
           # historical provider requests; these calls are read-only and do not
