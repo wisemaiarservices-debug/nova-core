@@ -77,12 +77,18 @@ def parse_daily_response(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _worker_fetch_options(to_js: Any, object_from_entries: Any) -> Any:
-    """Build Fetch options with redirect handling explicit and testable."""
-    return to_js(
-        {"method": "GET", "headers": {"Accept": "application/json"}, "redirect": "manual"},
-        dict_converter=object_from_entries,
-    )
+def _worker_fetch_options(
+    to_js: Any, object_from_entries: Any, signal: Any = None
+) -> Any:
+    """Build Fetch options with explicit redirect and abort-signal handling."""
+    values = {
+        "method": "GET",
+        "headers": {"Accept": "application/json"},
+        "redirect": "manual",
+    }
+    if signal is not None:
+        values["signal"] = signal
+    return to_js(values, dict_converter=object_from_entries)
 
 
 def _request_url(latitude: float, longitude: float, start_date: date, end_date: date) -> str:
@@ -185,6 +191,20 @@ async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str,
     return _decode_json_response(raw)
 
 
+async def _fetch_worker_payload_with_abort(
+    fetch: Any, url: str, options: Any, controller: Any
+) -> dict[str, Any]:
+    """Abort the underlying Fetch when the Python task fails or is cancelled."""
+    try:
+        return await _fetch_worker_payload(fetch, url, options)
+    except BaseException:
+        try:
+            controller.abort()
+        except BaseException:
+            pass
+        raise
+
+
 async def fetch_daily_point_async(
     latitude: float, longitude: float, start_date: date, end_date: date
 ) -> dict[str, Any]:
@@ -192,7 +212,7 @@ async def fetch_daily_point_async(
     url = _request_url(latitude, longitude, start_date, end_date)
 
     try:
-        from js import Object, fetch
+        from js import AbortController, Object, fetch
         from pyodide.ffi import to_js
     except ImportError:
         return await asyncio.to_thread(
@@ -200,9 +220,10 @@ async def fetch_daily_point_async(
         )
 
     try:
-        options = _worker_fetch_options(to_js, Object.fromEntries)
+        controller = AbortController()
+        options = _worker_fetch_options(to_js, Object.fromEntries, controller.signal)
         payload = await asyncio.wait_for(
-            _fetch_worker_payload(fetch, url, options),
+            _fetch_worker_payload_with_abort(fetch, url, options, controller),
             timeout=NASA_POWER_TIMEOUT_SECONDS,
         )
     except Exception as exc:
