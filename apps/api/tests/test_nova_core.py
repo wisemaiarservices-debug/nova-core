@@ -514,3 +514,98 @@ def test_nasa_power_worker_fetch_accepts_whitespace_padded_content_length():
     assert asyncio.run(
         nasa_power._fetch_worker_payload(fake_fetch, "https://example.invalid", {})
     ) == {"a": 1}
+
+
+
+def test_nasa_power_worker_fetch_cancels_non_success_response_body():
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class Body:
+        def __init__(self):
+            self.cancelled = False
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def getReader(self):
+            raise AssertionError("non-success response body must not be read")
+
+    body = Body()
+    response = SimpleNamespace(
+        ok=False,
+        status=502,
+        headers=SimpleNamespace(get=lambda key: None),
+        body=body,
+    )
+
+    async def fake_fetch(url, options):
+        return response
+
+    with pytest.raises(RuntimeError, match="HTTP 502"):
+        asyncio.run(nasa_power._fetch_worker_payload(fake_fetch, "https://example.invalid", {}))
+
+    assert body.cancelled is True
+
+
+@pytest.mark.parametrize(
+    ("content_length", "error"),
+    [
+        ("invalid", "invalid Content-Length"),
+        ("9", "2 MiB limit"),
+    ],
+)
+def test_nasa_power_worker_fetch_cancels_body_for_rejected_content_length(
+    monkeypatch, content_length, error
+):
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class Body:
+        def __init__(self):
+            self.cancelled = False
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def getReader(self):
+            raise AssertionError("rejected Content-Length body must not be read")
+
+    body = Body()
+    response = SimpleNamespace(
+        ok=True,
+        status=200,
+        headers=SimpleNamespace(get=lambda key: content_length),
+        body=body,
+    )
+    monkeypatch.setattr(nasa_power, "NASA_POWER_MAX_RESPONSE_BYTES", 8)
+
+    async def fake_fetch(url, options):
+        return response
+
+    with pytest.raises(RuntimeError, match=error):
+        asyncio.run(nasa_power._fetch_worker_payload(fake_fetch, "https://example.invalid", {}))
+
+    assert body.cancelled is True
+
+
+def test_nasa_power_worker_fetch_preserves_validation_error_if_body_cancel_fails():
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class Body:
+        async def cancel(self):
+            raise RuntimeError("cleanup failure")
+
+    response = SimpleNamespace(
+        ok=True,
+        status=200,
+        headers=SimpleNamespace(get=lambda key: "invalid"),
+        body=Body(),
+    )
+
+    async def fake_fetch(url, options):
+        return response
+
+    with pytest.raises(RuntimeError, match="invalid Content-Length"):
+        asyncio.run(nasa_power._fetch_worker_payload(fake_fetch, "https://example.invalid", {}))
