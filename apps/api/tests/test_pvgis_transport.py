@@ -225,3 +225,61 @@ def test_worker_response_rejects_chunk_before_copy(monkeypatch):
 
     assert reader.cancelled is True
     assert reader.released is True
+
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        None,
+        "",
+        "text/plain",
+        "application/notjson",
+        "application/jsonp",
+        "not-a-media-type",
+    ],
+)
+def test_worker_fetch_rejects_non_json_media_types(monkeypatch, content_type):
+    reader = _Reader([b'{"outputs":{}}'])
+    response = _Response(reader, content_type=content_type)
+
+    async def fake_fetch(url, options):
+        return response
+
+    with pytest.raises(RuntimeError, match="non-JSON content type"):
+        asyncio.run(
+            pvgis._fetch_worker_payload(fake_fetch, "https://example.invalid", {})
+        )
+
+    assert reader.released is False
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/json",
+        "Application/JSON; charset=utf-8",
+        "application/vnd.api+json",
+    ],
+)
+def test_json_media_type_accepts_standard_and_vendor_json(content_type):
+    assert pvgis._is_json_content_type(content_type) is True
+
+
+def test_worker_fetch_rejects_invalid_json_body(monkeypatch):
+    reader = _Reader([b"not-json"])
+    response = _Response(reader)
+
+    async def fake_fetch(url, options):
+        return response
+
+    _install_worker_ffi(monkeypatch, fake_fetch)
+
+    with pytest.raises(RuntimeError, match="invalid JSON"):
+        asyncio.run(
+            pvgis.fetch_broadband_performance_async(
+                36.8, 10.2, date(2024, 1, 1), date(2024, 1, 7)
+            )
+        )
+
+    assert reader.released is True
