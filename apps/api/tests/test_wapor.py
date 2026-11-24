@@ -252,3 +252,65 @@ def test_wapor_async_rasters_total_deadline_covers_catalogue_and_raster_pages(mo
         asyncio.run(wapor.list_rasters_async("L2-AETI-D"))
 
     assert calls == [wapor.BASE_URL, wapor.BASE_URL + "/L2-AETI-D/rasters"]
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        ("application/json", True),
+        ("application/json; charset=utf-8", True),
+        ("application/geo+json", True),
+        ("application/notjson", False),
+        ("application/jsonp", False),
+        ("text/json", False),
+        ("", False),
+    ],
+)
+def test_wapor_json_content_type_is_strict(content_type, expected):
+    assert wapor._is_json_content_type(content_type) is expected
+
+
+def test_wapor_worker_fetch_cancels_unread_body_on_http_and_media_type_rejection():
+    from types import SimpleNamespace
+
+    class Body:
+        def __init__(self):
+            self.cancelled = False
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def getReader(self):
+            raise AssertionError("rejected body must not be read")
+
+    async def check(response, message):
+        async def fake_fetch(url, options):
+            return response
+
+        with pytest.raises(RuntimeError, match=message):
+            await wapor._fetch_worker_payload(fake_fetch, "https://example.invalid", {})
+        assert response.body.cancelled is True
+
+    async def run():
+        non_success_body = Body()
+        await check(
+            SimpleNamespace(
+                ok=False,
+                status=503,
+                headers=SimpleNamespace(get=lambda key: "application/json"),
+                body=non_success_body,
+            ),
+            "HTTP 503",
+        )
+        invalid_type_body = Body()
+        await check(
+            SimpleNamespace(
+                ok=True,
+                status=200,
+                headers=SimpleNamespace(get=lambda key: "application/jsonp"),
+                body=invalid_type_body,
+            ),
+            "non-JSON content type",
+        )
+
+    asyncio.run(run())
