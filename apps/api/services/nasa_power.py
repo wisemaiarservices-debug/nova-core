@@ -128,11 +128,13 @@ async def _read_worker_body(response: Any) -> bytes:
             item = await reader.read()
             if item.done:
                 break
-            view = item.value.to_py()
-            chunk_size = len(view)
+            chunk_view = item.value
+            chunk_size = int(chunk_view.byteLength)
             if total + chunk_size > NASA_POWER_MAX_RESPONSE_BYTES:
                 raise RuntimeError("NASA POWER response exceeded the 2 MiB limit")
-            chunk = bytes(view)
+            chunk = bytes(chunk_view.to_py())
+            if len(chunk) != chunk_size:
+                raise RuntimeError("NASA POWER response chunk length changed during conversion")
             total += chunk_size
             chunks.append(chunk)
     except BaseException:
