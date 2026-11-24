@@ -683,3 +683,54 @@ def test_nasa_power_worker_fetch_aborts_underlying_request_on_timeout():
 
     asyncio.run(run())
     assert controller.aborted is True
+
+
+def test_nasa_power_aborts_fetch_before_waiting_for_slow_stream_cleanup():
+    from types import SimpleNamespace
+    from apps.api.services import nasa_power
+
+    class Controller:
+        aborted = False
+        def abort(self):
+            self.aborted = True
+
+    class Reader:
+        def __init__(self):
+            self.cancel_started = asyncio.Event()
+            self.release_cancel = asyncio.Event()
+        async def read(self):
+            await asyncio.Event().wait()
+        async def cancel(self):
+            self.cancel_started.set()
+            await self.release_cancel.wait()
+        def releaseLock(self):
+            pass
+
+    async def run():
+        controller = Controller()
+        reader = Reader()
+        response = SimpleNamespace(
+            ok=True,
+            status=200,
+            headers=SimpleNamespace(get=lambda key: None),
+            body=SimpleNamespace(getReader=lambda: reader),
+        )
+
+        async def fake_fetch(url, options):
+            return response
+
+        task = asyncio.create_task(
+            nasa_power._fetch_worker_payload_with_abort(
+                fake_fetch, "https://example.invalid", {}, controller
+            )
+        )
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.wait_for(reader.cancel_started.wait(), timeout=1)
+        assert controller.aborted is True
+        reader.release_cancel.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
