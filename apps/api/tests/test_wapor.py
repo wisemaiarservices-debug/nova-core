@@ -326,3 +326,42 @@ def test_wapor_worker_fetch_cancels_unread_body_on_http_and_media_type_rejection
         )
 
     asyncio.run(run())
+
+
+def test_wapor_worker_fetch_aborts_underlying_request_on_cancellation():
+    class Controller:
+        aborted = False
+        def abort(self):
+            self.aborted = True
+
+    controller = Controller()
+
+    async def blocked_fetch(url, options):
+        await asyncio.Event().wait()
+
+    async def run():
+        task = asyncio.create_task(
+            wapor._fetch_worker_payload_with_abort(
+                blocked_fetch, "https://example.invalid", {}, controller
+            )
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+    assert controller.aborted is True
+
+
+def test_wapor_worker_fetch_options_attach_abort_signal():
+    captured = {}
+    signal = object()
+
+    def fake_to_js(value, *, dict_converter):
+        captured["value"] = value
+        return value
+
+    options = wapor._worker_fetch_options(fake_to_js, object(), signal)
+    assert options["redirect"] == "manual"
+    assert options["signal"] is signal
