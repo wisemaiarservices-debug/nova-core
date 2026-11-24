@@ -128,10 +128,12 @@ async def _read_worker_body(response: Any) -> bytes:
             item = await reader.read()
             if item.done:
                 break
-            chunk = bytes(item.value.to_py())
-            total += len(chunk)
-            if total > NASA_POWER_MAX_RESPONSE_BYTES:
+            view = item.value.to_py()
+            chunk_size = len(view)
+            if total + chunk_size > NASA_POWER_MAX_RESPONSE_BYTES:
                 raise RuntimeError("NASA POWER response exceeded the 2 MiB limit")
+            chunk = bytes(view)
+            total += chunk_size
             chunks.append(chunk)
     except BaseException:
         # Stop upstream consumption on overflow, timeout, cancellation, or read failure.
