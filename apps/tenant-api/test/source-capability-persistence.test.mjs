@@ -21,8 +21,8 @@ const draft = () => ({
   version: 1,
 });
 
-function fixtureDb() {
-  const state = { request: null, batches: 0, statements: [] };
+function fixtureDb({ capabilityInsertChanges = 1 } = {}) {
+  const state = { request: null, batches: 0, statements: [], capabilityInsertChanges };
   const db = {
     prepare(sql) {
       return {
@@ -57,12 +57,18 @@ function fixtureDb() {
         assert.equal((statement.sql.match(/\?/g) || []).length, statement.args.length,
           "SQL placeholder count must match bound arguments");
       }
-      const args = statements[2].args;
-      state.request = {
-        request_sha256: args[5], capability_id: args[6], request_id: args[7],
-        response_json: args[8],
-      };
-      return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      const results = statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      results[0].meta.changes = state.capabilityInsertChanges;
+      // Model the zero-row result conservatively: no idempotency row is
+      // considered visible when the capability insert did not take effect.
+      if (state.capabilityInsertChanges === 1) {
+        const args = statements[2].args;
+        state.request = {
+          request_sha256: args[5], capability_id: args[6], request_id: args[7],
+          response_json: args[8],
+        };
+      }
+      return results;
     },
   };
   return { db, state };
@@ -86,6 +92,18 @@ test("creates one immutable pending draft with atomic audit and idempotency stat
   assert.equal(state.batches, 1);
   assert.match(state.request.request_sha256, /^[a-f0-9]{64}$/);
   assert.equal(state.statements.filter(item => item.sql.startsWith("INSERT INTO")).length, 3);
+});
+
+
+
+test("zero-row capability insert fails the batch and does not expose an idempotency result", async () => {
+  const { db, state } = fixtureDb({ capabilityInsertChanges: 0 });
+  await assert.rejects(
+    createSourceCapabilityDraft({ ...common, db, draft: draft() }),
+    /source_capability_atomic_write_failed/,
+  );
+  assert.equal(state.batches, 1);
+  assert.equal(state.request, null);
 });
 
 test("exact retry replays stored response without a second write batch", async () => {
