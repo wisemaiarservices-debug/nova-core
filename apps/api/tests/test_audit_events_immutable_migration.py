@@ -47,9 +47,14 @@ class AuditEventsImmutableMigrationTests(unittest.TestCase):
 
     def test_new_audit_event_inserts_remain_allowed(self):
         self.db.execute(
-            "INSERT INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("audit-new", "tenant-a", "service", "service-a", "observation.accepted",
-             "observation", "obs-a", "2026-11-25T00:01:00Z", "request-new", "{}"),
+            """
+            INSERT INTO audit_events (
+              id, actor_type, actor_id, action, entity_type, entity_id,
+              occurred_at, request_id, details_json, tenant_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("audit-new", "service", "service-a", "observation.accepted",
+             "observation", "obs-a", "2026-11-25T00:01:00Z", "request-new", "{}", "tenant-a"),
         )
         self.assertEqual(
             self.db.execute("SELECT COUNT(*) FROM audit_events WHERE id = 'audit-new'").fetchone()[0],
@@ -77,10 +82,15 @@ class AuditEventsImmutableMigrationTests(unittest.TestCase):
     def test_replace_cannot_overwrite_an_existing_audit_event(self):
         with self.assertRaisesRegex(sqlite3.IntegrityError, "audit events are immutable"):
             self.db.execute(
-                "INSERT OR REPLACE INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("audit-a", "tenant-b", "attacker", "attacker-a", "audit.rewritten",
+                """
+                INSERT OR REPLACE INTO audit_events (
+                  id, actor_type, actor_id, action, entity_type, entity_id,
+                  occurred_at, request_id, details_json, tenant_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("audit-a", "attacker", "attacker-a", "audit.rewritten",
                  "audit", "audit-a", "2026-11-25T00:02:00Z", "request-rewrite",
-                 '{"rewritten":true}'),
+                 '{"rewritten":true}', "tenant-b"),
             )
         self.assertEqual(
             self.db.execute(
