@@ -18,6 +18,7 @@ BASE_URL = "https://data.apps.fao.org/gismgr/api/v2/catalog/workspaces/WAPOR-3/m
 ALLOWED_HOST = "data.apps.fao.org"
 ALLOWED_PATH_PREFIX = "/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets"
 TIMEOUT_SECONDS = 15
+TOTAL_OPERATION_TIMEOUT_SECONDS = 60
 MAX_RESPONSE_BYTES = 1 * 1024 * 1024
 MAX_PAGES = 8
 MAX_ITEMS = 2000
@@ -28,6 +29,17 @@ RASTER_DATE_PATTERN = re.compile(r"\.(\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-D[1-3]|\d{4}
 class _RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def _is_json_content_type(value: Any) -> bool:
+    """Accept JSON media types without substring lookalikes."""
+    media_type = str(value or "").split(";", 1)[0].strip().lower()
+    if "/" not in media_type:
+        return False
+    media_type_group, subtype = media_type.split("/", 1)
+    return media_type_group == "application" and (
+        subtype == "json" or subtype.endswith("+json")
+    )
 
 
 def _validate_api_url(url: str) -> None:
@@ -53,7 +65,7 @@ def _request_json(url: str) -> dict[str, Any]:
     request = Request(url, headers={"Accept": "application/json", "User-Agent": "NOVA-Core-Research/0.1"}, method="GET")
     try:
         with build_opener(_RejectRedirects()).open(request, timeout=TIMEOUT_SECONDS) as response:
-            if "json" not in response.headers.get("Content-Type", "").lower():
+            if not _is_json_content_type(response.headers.get("Content-Type", "")):
                 raise RuntimeError("WaPOR returned a non-JSON content type")
             raw = response.read(MAX_RESPONSE_BYTES + 1)
             if len(raw) > MAX_RESPONSE_BYTES:
@@ -70,27 +82,34 @@ def _request_json(url: str) -> dict[str, Any]:
     return payload
 
 
+def _worker_fetch_options(
+    to_js: Any, object_from_entries: Any, signal: Any = None
+) -> Any:
+    """Build Fetch options with explicit redirect and abort-signal handling."""
+    values = {
+        "method": "GET",
+        "headers": {"Accept": "application/json"},
+        "redirect": "manual",
+    }
+    if signal is not None:
+        values["signal"] = signal
+    return to_js(values, dict_converter=object_from_entries)
+
+
 async def _request_json_async(url: str) -> dict[str, Any]:
     _validate_api_url(url)
     try:
-        from js import Object, fetch
+        from js import AbortController, Object, fetch
         from pyodide.ffi import to_js
     except ImportError:
         return await asyncio.to_thread(_request_json, url)
-    options = to_js(
-        {"method": "GET", "headers": {"Accept": "application/json"}, "redirect": "error"},
-        dict_converter=Object.fromEntries,
-    )
+    controller = AbortController.new()
+    options = _worker_fetch_options(to_js, Object.fromEntries, controller.signal)
     try:
-        response = await asyncio.wait_for(fetch(url, options), timeout=TIMEOUT_SECONDS)
-        if not response.ok:
-            raise RuntimeError(f"WaPOR request failed with HTTP {response.status}")
-        if "json" not in str(response.headers.get("content-type") or "").lower():
-            raise RuntimeError("WaPOR returned a non-JSON content type")
-        raw = await response.text()
-        if len(raw.encode("utf-8")) > MAX_RESPONSE_BYTES:
-            raise RuntimeError("WaPOR response exceeded the 1 MiB page limit")
-        payload = json.loads(raw)
+        payload = await asyncio.wait_for(
+            _fetch_worker_payload_with_abort(fetch, url, options, controller),
+            timeout=TIMEOUT_SECONDS,
+        )
     except RuntimeError:
         raise
     except Exception as exc:
@@ -98,6 +117,21 @@ async def _request_json_async(url: str) -> dict[str, Any]:
     if not isinstance(payload, dict) or not isinstance(payload.get("response"), dict):
         raise RuntimeError("WaPOR returned an unexpected response envelope")
     return payload
+
+
+def _next_page_url(links: Any) -> str | None:
+    """Reject malformed pagination metadata instead of silently ending discovery."""
+    if not isinstance(links, list) or not all(isinstance(link, dict) for link in links):
+        raise RuntimeError("WaPOR returned an invalid pagination links collection")
+    next_links = [link for link in links if link.get("rel") == "next"]
+    if len(next_links) > 1:
+        raise RuntimeError("WaPOR returned ambiguous pagination links")
+    if not next_links:
+        return None
+    href = next_links[0].get("href")
+    if not isinstance(href, str) or not href.strip():
+        raise RuntimeError("WaPOR returned an invalid pagination link")
+    return href
 
 
 def _collect_pages(first_url: str, request_json=_request_json) -> dict[str, Any]:
@@ -112,14 +146,112 @@ def _collect_pages(first_url: str, request_json=_request_json) -> dict[str, Any]
         if not isinstance(page_items, list) or not all(isinstance(item, dict) for item in page_items):
             raise RuntimeError("WaPOR returned an invalid items collection")
         items.extend(page_items[: MAX_ITEMS - len(items)])
-        next_links = [link.get("href") for link in links if isinstance(link, dict) and link.get("rel") == "next"]
-        if len(next_links) > 1:
-            raise RuntimeError("WaPOR returned ambiguous pagination links")
-        next_url = next_links[0] if next_links else None
-        if next_url is not None and not isinstance(next_url, str):
-            raise RuntimeError("WaPOR returned an invalid pagination link")
+        next_url = _next_page_url(links)
         pages += 1
     return {"items": items, "pages_read": pages, "truncated": bool(next_url) or len(items) >= MAX_ITEMS}
+
+
+async def _collect_pages_async(
+    first_url: str, request_json=None
+) -> dict[str, Any]:
+    """Collect bounded WaPOR pages without blocking the Worker event loop."""
+    if request_json is None:
+        request_json = _request_json_async
+    next_url: str | None = first_url
+    items: list[dict[str, Any]] = []
+    pages = 0
+    while next_url and pages < MAX_PAGES and len(items) < MAX_ITEMS:
+        _validate_api_url(next_url)
+        envelope = (await request_json(next_url))["response"]
+        page_items = envelope.get("items", [])
+        links = envelope.get("links", [])
+        if not isinstance(page_items, list) or not all(isinstance(item, dict) for item in page_items):
+            raise RuntimeError("WaPOR returned an invalid items collection")
+        items.extend(page_items[: MAX_ITEMS - len(items)])
+        next_url = _next_page_url(links)
+        pages += 1
+    return {"items": items, "pages_read": pages, "truncated": bool(next_url) or len(items) >= MAX_ITEMS}
+
+
+async def _read_bounded_response(response: Any) -> bytes:
+    """Read a Workers Fetch body incrementally and cancel once it exceeds the cap."""
+    body = getattr(response, "body", None)
+    if body is None:
+        raise RuntimeError("WaPOR response did not expose a readable body")
+    reader = body.getReader()
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            result = await reader.read()
+            if result.done:
+                break
+            chunk_view = result.value
+            chunk_size = int(chunk_view.byteLength)
+            if total + chunk_size > MAX_RESPONSE_BYTES:
+                raise RuntimeError("WaPOR response exceeded the 1 MiB page limit")
+            chunk = bytes(chunk_view.to_py())
+            if len(chunk) != chunk_size:
+                raise RuntimeError("WaPOR response chunk length changed during conversion")
+            total += chunk_size
+            chunks.append(chunk)
+    except BaseException:
+        try:
+            await reader.cancel()
+        except BaseException:
+            pass
+        raise
+    finally:
+        try:
+            reader.releaseLock()
+        except Exception:
+            pass
+    return b"".join(chunks)
+
+
+async def _cancel_worker_response_body(response: Any) -> None:
+    """Cancel an unconsumed Workers Fetch body when response validation fails."""
+    body = getattr(response, "body", None)
+    cancel = getattr(body, "cancel", None)
+    if not callable(cancel):
+        return
+    try:
+        await cancel()
+    except Exception:
+        # Preserve the original HTTP/header validation error.
+        pass
+
+
+async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str, Any]:
+    response = await fetch(url, options)
+    if not response.ok:
+        await _cancel_worker_response_body(response)
+        raise RuntimeError(f"WaPOR request failed with HTTP {response.status}")
+    if not _is_json_content_type(response.headers.get("content-type")):
+        await _cancel_worker_response_body(response)
+        raise RuntimeError("WaPOR returned a non-JSON content type")
+    raw = await _read_bounded_response(response)
+    return json.loads(raw.decode("utf-8"))
+
+
+async def _fetch_worker_payload_with_abort(
+    fetch: Any, url: str, options: Any, controller: Any
+) -> dict[str, Any]:
+    """Abort Fetch before awaiting potentially slow stream cleanup."""
+    task = asyncio.create_task(_fetch_worker_payload(fetch, url, options))
+    try:
+        return await asyncio.shield(task)
+    except BaseException:
+        try:
+            controller.abort()
+        except BaseException:
+            pass
+        task.cancel()
+        try:
+            await task
+        except BaseException:
+            pass
+        raise
 
 
 def _mapset_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -224,11 +356,93 @@ def list_rasters(
     }
 
 
+async def _within_total_operation_budget(operation: Any) -> Any:
+    """Bound the complete endpoint operation, including all pagination pages."""
+    try:
+        return await asyncio.wait_for(
+            operation, timeout=TOTAL_OPERATION_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(
+            f"WaPOR operation exceeded the {TOTAL_OPERATION_TIMEOUT_SECONDS}-second total deadline"
+        ) from exc
+
+
 async def list_mapsets_async() -> dict[str, Any]:
-    return await asyncio.to_thread(list_mapsets, _request_json)
+    return await _within_total_operation_budget(_list_mapsets_async_impl())
 
 
 async def list_rasters_async(
     mapset_code: str, start_date: date | None = None, end_date: date | None = None
 ) -> dict[str, Any]:
-    return await asyncio.to_thread(list_rasters, mapset_code, start_date, end_date, _request_json)
+    return await _within_total_operation_budget(
+        _list_rasters_async_impl(mapset_code, start_date, end_date)
+    )
+
+
+async def _list_mapsets_async_impl() -> dict[str, Any]:
+    result = await _collect_pages_async(BASE_URL)
+    records = [_mapset_summary(item) for item in result["items"]]
+    records = [item for item in records if isinstance(item["code"], str)]
+    return {
+        "status": "retrieved",
+        "dataset_id": "fao-wapor-v3",
+        "provider": "Food and Agriculture Organization of the United Nations",
+        "evidence_class": "satellite_derived",
+        "mapsets": records,
+        "pages_read": result["pages_read"],
+        "truncated": result["truncated"],
+        "limitations": [
+            "This endpoint lists provider mapset metadata only; no raster pixels are downloaded.",
+            "Mapset availability does not establish coverage or validity for a particular study area.",
+            "WaPOR products are satellite-derived/model-processed estimates, not field sensor measurements.",
+            "No data is persisted and no site or asset is registered.",
+        ],
+    }
+
+
+async def _list_rasters_async_impl(
+    mapset_code: str, start_date: date | None = None, end_date: date | None = None
+) -> dict[str, Any]:
+    code = validate_mapset_code(mapset_code)
+    if start_date and end_date and end_date < start_date:
+        raise ValueError("end_date must be on or after start_date")
+    available = await _collect_pages_async(BASE_URL)
+    if not any(item.get("code") == code for item in available["items"]):
+        raise ValueError("mapset_code is not present in the current WaPOR v3 catalogue")
+    result = await _collect_pages_async(f"{BASE_URL}/{code}/rasters")
+    records = []
+    for item in result["items"]:
+        raster_code = item.get("code")
+        if not isinstance(raster_code, str):
+            continue
+        period = _raster_date(raster_code)
+        if start_date and period and period < start_date:
+            continue
+        if end_date and period and period > end_date:
+            continue
+        records.append({
+            "code": raster_code,
+            "download_url": item.get("downloadUrl"),
+            "gsutil_uri": item.get("gsutilUri"),
+            "period_start": period.isoformat() if period else None,
+        })
+    return {
+        "status": "retrieved",
+        "dataset_id": "fao-wapor-v3",
+        "mapset_code": code,
+        "evidence_class": "satellite_derived",
+        "rasters": records,
+        "pages_read": result["pages_read"],
+        "truncated": result["truncated"],
+        "request": {
+            "start_date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat() if end_date else None,
+        },
+        "limitations": [
+            "Raster index metadata only; GeoTIFF pixel data is not downloaded or interpreted.",
+            "A dekad's period_start is the first calendar day of its ten-day period, not an instantaneous observation timestamp.",
+            "Provider download URLs and units must be checked before a separate bounded raster-processing stage.",
+            "No data is persisted and no site or asset is registered.",
+        ],
+    }

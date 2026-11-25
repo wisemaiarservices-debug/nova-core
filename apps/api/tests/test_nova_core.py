@@ -184,3 +184,58 @@ def test_storage_status_reports_incomplete_schema():
     assert result["status"] == "schema_incomplete"
     assert result["present_tables"] == ["sites"]
     assert "observations" in result["missing_tables"]
+
+
+def test_public_api_route_surface_matches_reviewed_allowlist():
+    from fastapi.routing import APIRoute
+
+    all_route_paths = {route.path for route in app.routes}
+    expected_all_route_paths = {
+        "/openapi.json",
+        "/docs",
+        "/docs/oauth2-redirect",
+        "/redoc",
+        "/health",
+        "/api/v1/data/catalogue",
+        "/api/v1/data/water/wapor/mapsets",
+        "/api/v1/data/water/wapor/rasters",
+        "/api/v1/data/solar/pvgis/performance",
+        "/api/v1/storage/status",
+        "/api/v1/forecast/run",
+        "/api/v1/recommendations/run",
+        "/api/v1/scenarios/simulate",
+        "/api/v1/assistant/explain",
+        "/api/v1/data/weather/nasa-power/daily",
+    }
+    assert all_route_paths == expected_all_route_paths
+
+    actual = {
+        (method, route.path)
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods or set()
+    }
+    expected = {
+        ("GET", "/health"),
+        ("GET", "/api/v1/data/catalogue"),
+        ("GET", "/api/v1/data/water/wapor/mapsets"),
+        ("GET", "/api/v1/data/water/wapor/rasters"),
+        ("GET", "/api/v1/data/solar/pvgis/performance"),
+        ("GET", "/api/v1/storage/status"),
+        ("POST", "/api/v1/forecast/run"),
+        ("POST", "/api/v1/recommendations/run"),
+        ("POST", "/api/v1/scenarios/simulate"),
+        ("POST", "/api/v1/assistant/explain"),
+        ("GET", "/api/v1/data/weather/nasa-power/daily"),
+    }
+
+    assert actual == expected
+    assert not any(
+        path.startswith((
+            "/api/v1/tenant",
+            "/api/v1/evidence",
+            "/api/v1/admin",
+            "/api/v1/ingestion",
+        ))
+        for _, path in actual
+    )
