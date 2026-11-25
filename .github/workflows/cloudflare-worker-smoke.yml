@@ -116,6 +116,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
         run: uv sync --python 3.14 --project apps/api --all-groups
+      - name: Compare direct runner reachability to PVGIS (status only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNNER_STATUS=$(curl --max-time 45 --silent --show-error -o /dev/null -w '%{http_code}' 'https://photovoltaic-geographical-information-system.ec.europa.eu/api/v6/performance/broadband?latitude=36.8&longitude=10.2&start_time=2024-01-01%2000%3A00%3A00&end_time=2024-01-07%2023%3A59%3A59') || RUNNER_STATUS=000
+          echo "PVGIS_RUNNER_HTTP_STATUS=$RUNNER_STATUS"
       - name: Run API Worker and probe live PVGIS provider
         shell: bash
         run: |
