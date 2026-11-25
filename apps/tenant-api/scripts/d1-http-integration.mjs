@@ -819,7 +819,7 @@ try {
       });
       const failedBody = await failedWrite.json();
       assert.equal(failedWrite.status, 400, JSON.stringify(failedBody));
-      assert.match(failedBody.error, /atomic_write_failed/);
+      assert.match(failedBody.error, /ci_injected_final_ledger_failure/);
       const stateResponse = await fetch(base + "/__ci/source-write-state?kind=" +
         kind + "&request=" + encodeURIComponent(requestId) +
         "&key=" + encodeURIComponent(idempotencyKey));
