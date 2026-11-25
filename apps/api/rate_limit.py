@@ -12,9 +12,15 @@ class PublicApiRateLimitMiddleware:
     Worker Rate Limiting counters are approximate and location-local.
     """
 
-    def __init__(self, app: Any, binding_name: str = "NOVA_PUBLIC_API_LIMITER"):
+    def __init__(
+        self,
+        app: Any,
+        binding_name: str = "NOVA_PUBLIC_API_LIMITER",
+        fallback_env: Any = None,
+    ):
         self.app = app
         self.binding_name = binding_name
+        self.fallback_env = fallback_env
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http":
@@ -29,8 +35,10 @@ class PublicApiRateLimitMiddleware:
 
         # The ASGI Workers adapter supplies env in Cloudflare. Native pytest
         # and local ASGI tools have no Workers env and remain usable.
-        runtime_env = scope.get("env")
+        runtime_env = scope.get("env") or self.fallback_env
         if runtime_env is None:
+            # Native ASGI (pytest/uvicorn) has no Workers environment. In the
+            # deployed Worker, main.py also supplies workers.env as a fallback.
             await self.app(scope, receive, send)
             return
 

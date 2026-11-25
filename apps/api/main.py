@@ -84,7 +84,7 @@ app.add_middleware(
     allow_headers=["Accept", "Content-Type"],
 )
 # Outer middleware: protects every public /api/v1 route before provider or DB work.
-app.add_middleware(PublicApiRateLimitMiddleware)
+app.add_middleware(PublicApiRateLimitMiddleware, fallback_env=worker_env)
 
 
 def now_iso() -> str:

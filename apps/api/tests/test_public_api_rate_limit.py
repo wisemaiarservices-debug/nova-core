@@ -157,6 +157,16 @@ def test_non_api_or_preflight_requests_do_not_consume_limiter(path, method):
     assert reached is True
 
 
+def test_workers_env_fallback_fails_closed_if_binding_missing():
+    messages, reached = asyncio.run(invoke(
+        PublicApiRateLimitMiddleware(None, fallback_env=SimpleNamespace()),
+        make_scope(env=None),
+    ))
+    assert messages[0]["status"] == 503
+    assert b"rate_limiter_unavailable" in messages[1]["body"]
+    assert reached is False
+
+
 def test_native_asgi_without_cloudflare_env_remains_available():
     messages, reached = asyncio.run(invoke(
         PublicApiRateLimitMiddleware(None),
