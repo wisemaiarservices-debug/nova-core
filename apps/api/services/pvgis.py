@@ -169,13 +169,33 @@ async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str,
     return json.loads(raw.decode("utf-8"))
 
 
+async def _fetch_worker_payload_with_abort(
+    fetch: Any, url: str, options: Any, controller: Any
+) -> dict[str, Any]:
+    """Abort the upstream Fetch before awaiting potentially slow stream cleanup."""
+    task = asyncio.create_task(_fetch_worker_payload(fetch, url, options))
+    try:
+        return await asyncio.shield(task)
+    except BaseException:
+        try:
+            controller.abort()
+        except BaseException:
+            pass
+        task.cancel()
+        try:
+            await task
+        except BaseException:
+            pass
+        raise
+
+
 async def fetch_broadband_performance_async(
     latitude: float, longitude: float, start_date: date, end_date: date
 ) -> dict[str, Any]:
     """Use bounded Workers streaming in Pyodide and bounded urllib locally."""
     validate_request(latitude, longitude, start_date, end_date)
     try:
-        from js import Object, fetch
+        from js import AbortController, Object, fetch
         from pyodide.ffi import to_js
     except ImportError:
         return await asyncio.to_thread(
@@ -195,17 +215,19 @@ async def fetch_broadband_performance_async(
         }
     )
     url = f"{PVGIS_PERFORMANCE_URL}?{query}"
+    controller = AbortController.new()
     options = to_js(
         {
             "method": "GET",
             "headers": {"Accept": "application/json"},
             "redirect": "error",
+            "signal": controller.signal,
         },
         dict_converter=Object.fromEntries,
     )
     try:
         payload = await asyncio.wait_for(
-            _fetch_worker_payload(fetch, url, options),
+            _fetch_worker_payload_with_abort(fetch, url, options, controller),
             timeout=TIMEOUT_SECONDS,
         )
     except RuntimeError:
