@@ -65,10 +65,12 @@ class _Response:
         self.headers = types.SimpleNamespace(get=lambda key: content_type if key == "content-type" else None)
 
 
-def _install_worker_ffi(monkeypatch, fetch):
+def _install_worker_ffi(monkeypatch, fetch, abort_controller=None):
     js_module = types.ModuleType("js")
     js_module.Object = types.SimpleNamespace(fromEntries=object())
     js_module.fetch = fetch
+    if abort_controller is not None:
+        js_module.AbortController = abort_controller
     ffi_module = types.ModuleType("pyodide.ffi")
     ffi_module.to_js = lambda value, dict_converter=None: value
     pyodide_module = types.ModuleType("pyodide")
@@ -377,3 +379,144 @@ def test_sync_fetch_accepts_standard_and_vendor_json_media_types(monkeypatch, co
     )
 
     assert result == {"outputs": {"totals": {}}}
+
+
+
+def test_async_worker_fetch_attaches_abort_signal(monkeypatch):
+    reader = _Reader([b'{"outputs":{"totals":{}}}'])
+    response = _Response(reader)
+    controller = types.SimpleNamespace(signal=object(), aborted=False)
+    controller.abort = lambda: setattr(controller, "aborted", True)
+
+    class AbortController:
+        @staticmethod
+        def new():
+            return controller
+
+    calls = []
+
+    async def fake_fetch(url, options):
+        calls.append((url, options))
+        return response
+
+    _install_worker_ffi(monkeypatch, fake_fetch, AbortController)
+
+    result = asyncio.run(
+        pvgis.fetch_broadband_performance_async(
+            36.8, 10.2, date(2024, 1, 1), date(2024, 1, 7)
+        )
+    )
+
+    assert result == {"outputs": {"totals": {}}}
+    assert calls[0][1]["signal"] is controller.signal
+    assert calls[0][1]["redirect"] == "error"
+    assert controller.aborted is False
+
+
+def test_worker_fetch_aborts_upstream_request_on_cancellation():
+    class Controller:
+        aborted = False
+
+        def abort(self):
+            self.aborted = True
+
+    controller = Controller()
+    fetch_started = asyncio.Event()
+
+    async def blocked_fetch(url, options):
+        fetch_started.set()
+        await asyncio.Event().wait()
+
+    async def exercise():
+        task = asyncio.create_task(
+            pvgis._fetch_worker_payload_with_abort(
+                blocked_fetch, "https://example.invalid", {}, controller
+            )
+        )
+        await fetch_started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
+    assert controller.aborted is True
+
+
+def test_worker_fetch_aborts_upstream_request_on_timeout():
+    class Controller:
+        aborted = False
+
+        def abort(self):
+            self.aborted = True
+
+    controller = Controller()
+    fetch_started = asyncio.Event()
+
+    async def blocked_fetch(url, options):
+        fetch_started.set()
+        await asyncio.Event().wait()
+
+    async def exercise():
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                pvgis._fetch_worker_payload_with_abort(
+                    blocked_fetch, "https://example.invalid", {}, controller
+                ),
+                timeout=0.01,
+            )
+
+    asyncio.run(exercise())
+    assert controller.aborted is True
+
+
+def test_worker_fetch_aborts_before_waiting_for_slow_stream_cleanup():
+    class Controller:
+        aborted = False
+
+        def abort(self):
+            self.aborted = True
+
+    class BlockingReader:
+        def __init__(self):
+            self.read_started = asyncio.Event()
+            self.cancel_started = asyncio.Event()
+            self.release_cancel = asyncio.Event()
+
+        async def read(self):
+            self.read_started.set()
+            await asyncio.Event().wait()
+
+        async def cancel(self):
+            self.cancel_started.set()
+            await self.release_cancel.wait()
+
+        def releaseLock(self):
+            pass
+
+    async def exercise():
+        controller = Controller()
+        reader = BlockingReader()
+        response = types.SimpleNamespace(
+            ok=True,
+            status=200,
+            headers=types.SimpleNamespace(get=lambda key: "application/json"),
+            body=types.SimpleNamespace(getReader=lambda: reader),
+        )
+
+        async def fake_fetch(url, options):
+            return response
+
+        task = asyncio.create_task(
+            pvgis._fetch_worker_payload_with_abort(
+                fake_fetch, "https://example.invalid", {}, controller
+            )
+        )
+        await reader.read_started.wait()
+        task.cancel()
+        await reader.cancel_started.wait()
+        assert controller.aborted is True
+        reader.release_cancel.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
