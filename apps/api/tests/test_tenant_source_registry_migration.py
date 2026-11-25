@@ -47,6 +47,11 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
         self.db.executescript((ROOT / "migrations" / "0028_tenant_asset_registration.sql").read_text())
         self.db.executescript(MIGRATION.read_text())
         self.db.executescript((ROOT / "migrations" / "0033_site_grant_mutation_guards.sql").read_text())
+        self.db.executescript("""
+          CREATE TABLE source_evidence_events (id TEXT);
+          CREATE TABLE source_data_rights_events (id TEXT);
+        """)
+        self.db.executescript((ROOT / "migrations" / "0065_source_rights_event_rowid_order.sql").read_text())
         self.db.executemany(
             "INSERT INTO tenant_resource_grants VALUES (?, 'tenant-a', ?, 'site', 'site-a', 'read')",
             [('grant-owner', 'owner-sub'), ('grant-reviewer', 'reviewer-sub')],
@@ -146,6 +151,37 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
               VALUES ('req-b','tenant-a','site-a','owner-sub','key-a',?,'source-a','request-b')
             """, ('b'*64,))
 
+
+
+    def test_source_event_order_rejects_backdated_future_and_injected_rowids(self):
+        self.db.execute("""
+          INSERT INTO tenant_source_events
+          (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id)
+          VALUES ('event-register','tenant-a','site-a','source-a','owner-sub','registered','evidence/source-a','request-register')
+        """)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'timestamp must be valid and monotonic'):
+            self.db.execute("""
+              INSERT INTO tenant_source_events
+              (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id,occurred_at)
+              VALUES ('event-backdated','tenant-a','site-a','source-a','owner-sub','registered',
+                      'evidence/source-a','request-backdated','2000-01-01T00:00:00.000Z')
+            """)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'timestamp must be valid and monotonic'):
+            self.db.execute("""
+              INSERT INTO tenant_source_events
+              (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id,occurred_at)
+              VALUES ('event-future','tenant-a','site-a','source-a','owner-sub','registered',
+                      'evidence/source-a','request-future','2999-01-01T00:00:00.000Z')
+            """)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'rowid must be monotonic'):
+            self.db.execute("""
+              INSERT INTO tenant_source_events
+              (rowid,id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id)
+              VALUES (999,'event-injected','tenant-a','site-a','source-a','owner-sub','registered',
+                      'evidence/source-a','request-injected')
+            """)
+        count = self.db.execute("SELECT COUNT(*) FROM tenant_source_events").fetchone()[0]
+        self.assertEqual(count, 1)
 
 if __name__ == "__main__":
     unittest.main()
