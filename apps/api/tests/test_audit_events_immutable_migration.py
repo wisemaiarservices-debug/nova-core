@@ -74,6 +74,21 @@ class AuditEventsImmutableMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(sqlite3.IntegrityError, "audit events cannot be deleted"):
             self.db.execute("DELETE FROM audit_events WHERE id = ?", ("audit-a",))
 
+    def test_replace_cannot_overwrite_an_existing_audit_event(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "audit events are immutable"):
+            self.db.execute(
+                "INSERT OR REPLACE INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("audit-a", "tenant-b", "attacker", "attacker-a", "audit.rewritten",
+                 "audit", "audit-a", "2026-11-25T00:02:00Z", "request-rewrite",
+                 '{"rewritten":true}'),
+            )
+        self.assertEqual(
+            self.db.execute(
+                "SELECT tenant_id, action, details_json FROM audit_events WHERE id = 'audit-a'"
+            ).fetchone(),
+            ("tenant-a", "site.updated", "{}"),
+        )
+
     def test_legacy_event_can_receive_one_time_tenant_assignment(self):
         self.db.execute(
             "UPDATE audit_events SET tenant_id = ? WHERE id = ?",
