@@ -25,3 +25,13 @@ BEFORE DELETE ON audit_events
 BEGIN
   SELECT RAISE(ABORT, 'audit events cannot be deleted');
 END;
+
+-- SQLite's REPLACE conflict algorithm can delete a conflicting row without
+-- firing DELETE triggers when recursive triggers are disabled. Reject an
+-- existing primary key before the conflict algorithm can replace that row.
+CREATE TRIGGER audit_events_immutable_insert_guard
+BEFORE INSERT ON audit_events
+WHEN EXISTS (SELECT 1 FROM audit_events WHERE id = NEW.id)
+BEGIN
+  SELECT RAISE(ABORT, 'audit events are immutable');
+END;
