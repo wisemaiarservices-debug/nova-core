@@ -61,6 +61,9 @@ jobs:
       - name: Seed exact-scope synthetic evidence and approved rights fixtures
         working-directory: apps/tenant-api
         run: node ./scripts/seed-source-rights-test-fixtures.mjs
+      - name: Test source evidence and rights lifecycle rowid ordering against local D1
+        working-directory: apps/tenant-api
+        run: node ./scripts/d1-source-rights-event-order-tests.mjs
       - name: Seed approved capability and observation fixtures after rights verification
         working-directory: apps/tenant-api
         run: npx --yes wrangler@4.13.2 d1 execute DB --local --config wrangler.d1-test.toml --persist-to ./.wrangler-d1-test --file ./test/d1-http-capability-observation-fixtures.sql
