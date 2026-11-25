@@ -32,10 +32,13 @@ controls, not this binding alone.
 
 ## Preview isolation
 
-Production and Preview bindings use different namespace IDs so Preview traffic
-does not consume production buckets. The namespace IDs are deterministic,
-account-specific numeric identifiers derived from the configured Cloudflare
-account ID. They are not secrets.
+Production bindings use distinct, deterministic account-specific namespace IDs.
+Cloudflare Preview configuration does not currently list Rate Limiting bindings
+among its Preview-specific supported binding categories. Therefore this PR
+deliberately does not configure a Preview limiter: the middleware returns 503
+for /api/v1 requests in a Preview where those bindings are absent, while
+/health remains available. Do not add a Preview namespace unless the current
+Wrangler Preview schema and runtime support it. The namespace IDs are not secrets.
 
 ## Deployment gate
 
