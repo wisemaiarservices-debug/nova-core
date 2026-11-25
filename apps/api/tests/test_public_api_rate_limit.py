@@ -7,7 +7,7 @@ import pytest
 from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api.main import app
-from apps.api.rate_limit import PublicApiRateLimitMiddleware
+from apps.api.rate_limit import PUBLIC_API_RATE_LIMIT_ROUTES, PublicApiRateLimitMiddleware
 
 
 def make_scope(path="/api/v1/data/weather/nasa-power/daily", headers=None, env=None, method="GET"):
@@ -50,6 +50,13 @@ def install_pyodide_bridge(monkeypatch):
     monkeypatch.setitem(sys.modules, "js", js)
     monkeypatch.setitem(sys.modules, "pyodide", pyodide)
     monkeypatch.setitem(sys.modules, "pyodide.ffi", ffi)
+
+
+def test_every_public_api_route_has_a_dedicated_rate_limit_bucket():
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if path.startswith("/api/v1/"):
+            assert path in PUBLIC_API_RATE_LIMIT_ROUTES
 
 
 def test_rate_limit_binding_is_production_only_until_preview_support_exists():
