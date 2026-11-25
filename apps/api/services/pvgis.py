@@ -155,9 +155,30 @@ async def _cancel_worker_response_body(response: Any) -> None:
         pass
 
 
+def _worker_js_error_name(exc: BaseException) -> str | None:
+    """Return only a safe JavaScript error class; never expose provider URLs or messages."""
+    candidates = (
+        getattr(exc, "name", None),
+        getattr(getattr(exc, "js_error", None), "name", None),
+    )
+    for candidate in candidates:
+        if (
+            isinstance(candidate, str)
+            and candidate.isidentifier()
+            and len(candidate) <= 40
+        ):
+            return candidate
+    return None
+
+
 async def _fetch_worker_payload(fetch: Any, url: str, options: Any) -> dict[str, Any]:
     """Fetch and consume one bounded response under the caller's total deadline."""
-    response = await fetch(url, options)
+    try:
+        response = await fetch(url, options)
+    except Exception as exc:
+        js_name = _worker_js_error_name(exc)
+        diagnostic = f"; JS error={js_name}" if js_name else ""
+        raise RuntimeError(f"PVGIS upstream Fetch rejected{diagnostic}") from exc
     if not response.ok:
         await _cancel_worker_response_body(response)
         raise RuntimeError(f"PVGIS request failed with HTTP {response.status}")
