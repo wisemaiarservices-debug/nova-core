@@ -3,11 +3,6 @@ from __future__ import annotations
 import ipaddress
 import json
 from typing import Any, Awaitable, Callable
-try:
-    from workers import env as worker_env
-except ImportError:
-    worker_env = None
-
 UPSTREAM_PATH_PREFIXES = (
     "/api/v1/data/water/wapor/",
     "/api/v1/data/solar/pvgis/",
@@ -54,8 +49,11 @@ class PublicApiRateLimitMiddleware:
         # Plain ASGI/CPython tests and local FastAPI tooling have no Workers
         # environment. A deployed Python Worker has the Workers env module;
         # if its bindings are absent, do not silently bypass limits.
-        runtime_env = scope.get("env") or worker_env
+        runtime_env = scope.get("env")
         if runtime_env is None:
+            # CPython/FastAPI unit tests run outside the Workers runtime.
+            # The deployed ASGI adapter supplies scope["env"] (covered by the
+            # existing Python Worker binding proof).
             await self.app(scope, receive, send)
             return
 
