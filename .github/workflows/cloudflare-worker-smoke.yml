@@ -2,7 +2,6 @@ name: NOVA Core Cloudflare Worker smoke test
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - "apps/api/**"
       - ".github/workflows/cloudflare-worker-smoke.yml"
@@ -150,6 +149,7 @@ jobs:
           jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .transport == "global-js-fetch" and .fetch_callable == true and .expected_network_rejection == true and .abort_signal_attached == true' /tmp/nova-pvgis-global-binding.json
 
   pvgis-network-preflight:
+    if: github.event_name == 'push'
     name: PVGIS provider network reachability preflight
     runs-on: ubuntu-latest
     outputs:
