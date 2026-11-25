@@ -105,6 +105,50 @@ jobs:
           fi
           jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .native_response_stream == true and .abort_signal_attached == true and .payload_verified == true' /tmp/nova-pvgis-runtime.json
 
+  pvgis-global-fetch-binding:
+    name: PVGIS global js.fetch binding in Pyodide runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - name: Install Python Worker dependencies
+        run: uv sync --python 3.14 --project apps/api --all-groups
+      - name: Run isolated Worker through global js.fetch against reserved .invalid domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/api
+          uv run --python 3.14 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8791 > /tmp/nova-pvgis-global-binding.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 45); do
+            if curl --max-time 3 --silent --show-error --fail http://127.0.0.1:8791/health > /tmp/nova-pvgis-global-binding-health.json; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+              cat /tmp/nova-pvgis-global-binding.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/nova-pvgis-global-binding.log
+            exit 1
+          fi
+          STATUS=$(curl --max-time 15 --silent --show-error -o /tmp/nova-pvgis-global-binding.json -w '%{http_code}' http://127.0.0.1:8791/pvgis-global-fetch-binding) || STATUS=000
+          echo "PVGIS_GLOBAL_FETCH_BINDING_HTTP_STATUS=$STATUS"
+          cat /tmp/nova-pvgis-global-binding.json
+          if [ "$STATUS" != "200" ]; then
+            cat /tmp/nova-pvgis-global-binding.log
+            exit 1
+          fi
+          jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .transport == "global-js-fetch" and .fetch_callable == true and .expected_network_rejection == true and .abort_signal_attached == true' /tmp/nova-pvgis-global-binding.json
+
   pvgis-network-preflight:
     name: PVGIS provider network reachability preflight
     runs-on: ubuntu-latest
