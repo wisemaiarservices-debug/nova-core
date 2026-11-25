@@ -13,6 +13,7 @@ const child = spawn(
   "uv",
   [
     "run",
+    "--locked",
     "--project",
     ".",
     "pywrangler",
