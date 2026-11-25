@@ -59,9 +59,8 @@ function fixtureDb({ capabilityInsertChanges = 1 } = {}) {
       }
       const results = statements.map(() => ({ success: true, meta: { changes: 1 } }));
       results[0].meta.changes = state.capabilityInsertChanges;
-      // Model the all-or-nothing D1 batch contract: if the capability insert
-      // affects zero rows, the database trigger on the idempotency record
-      // rejects the batch and none of its writes become visible.
+      // Model the zero-row result conservatively: no idempotency row is
+      // considered visible when the capability insert did not take effect.
       if (state.capabilityInsertChanges === 1) {
         const args = statements[2].args;
         state.request = {
@@ -106,7 +105,8 @@ test("zero-row capability insert fails the batch and does not expose an idempote
   assert.equal(state.batches, 1);
   assert.equal(state.request, null);
 });
-\ntest("exact retry replays stored response without a second write batch", async () => {
+
+test("exact retry replays stored response without a second write batch", async () => {
   const { db, state } = fixtureDb();
   const first = await createSourceCapabilityDraft({ ...common, db, draft: draft() });
   const second = await createSourceCapabilityDraft({ ...common, db, draft: draft() });
