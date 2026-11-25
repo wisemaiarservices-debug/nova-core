@@ -188,15 +188,10 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: "0.12.3"
-      - name: Generate isolated dependency lock (temporary bootstrap)
+      - name: Verify isolated dependency lock is current
         working-directory: apps/api/tests/rate_limit_binding_proof
-        run: |
-          uv lock --no-progress
-          echo "RATE_LIMIT_UV_LOCK_BASE64_BEGIN"
-          base64 -w0 uv.lock
-          echo
-          echo "RATE_LIMIT_UV_LOCK_BASE64_END"
-      - name: Install isolated Python Worker SDK from generated lock
+        run: uv lock --check
+      - name: Install isolated Python Worker SDK from committed lock
         working-directory: apps/api/tests/rate_limit_binding_proof
         run: uv sync --locked
       - name: Test binding exceptions fail closed
