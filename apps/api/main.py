@@ -9,6 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 try:
+    from .rate_limit import PublicApiRateLimitMiddleware
+except ImportError:
+    from rate_limit import PublicApiRateLimitMiddleware
+
+try:
     from .services.nasa_power import fetch_daily_point_async
     from .services.d1_storage import storage_status
     from .services.dataset_catalogue import catalogue_summary, list_datasets
@@ -78,6 +83,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Accept", "Content-Type"],
 )
+# Outer middleware: protects every public /api/v1 route before provider or DB work.
+app.add_middleware(PublicApiRateLimitMiddleware)
 
 
 def now_iso() -> str:
