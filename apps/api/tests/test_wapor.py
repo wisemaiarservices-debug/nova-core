@@ -110,3 +110,335 @@ def test_wapor_api_endpoint_maps_provider_failure_and_invalid_inputs(monkeypatch
     with pytest.raises(HTTPException) as exc:
         asyncio.run(wapor_rasters("invalid", None, None))
     assert exc.value.status_code == 422
+
+def test_wapor_async_endpoints_use_async_fetch_and_preserve_bounds(monkeypatch):
+    calls = []
+
+    async def fake_async(url):
+        calls.append(url)
+        if url == wapor.BASE_URL:
+            return _page([{"code": "L2-AETI-D"}])
+        if url == wapor.BASE_URL + "/L2-AETI-D/rasters":
+            return _page([
+                {"code": "WAPOR-3.L2-AETI-D.2024-01-D1"},
+                {"code": "WAPOR-3.L2-AETI-D.2024-01-D2"},
+            ])
+        raise AssertionError(url)
+
+    monkeypatch.setattr(wapor, "_request_json_async", fake_async)
+    async def run():
+        mapsets = await wapor.list_mapsets_async()
+        assert [item["code"] for item in mapsets["mapsets"]] == ["L2-AETI-D"]
+        return await wapor.list_rasters_async(
+            "L2-AETI-D", date(2024, 1, 11), date(2024, 1, 20)
+        )
+
+    rasters = asyncio.run(run())
+    assert [item["period_start"] for item in rasters["rasters"]] == ["2024-01-11"]
+    assert calls == [
+        wapor.BASE_URL,
+        wapor.BASE_URL,
+        wapor.BASE_URL + "/L2-AETI-D/rasters",
+    ]
+
+
+def test_wapor_async_pagination_remains_bounded(monkeypatch):
+    calls = []
+
+    async def fake_async(url):
+        calls.append(url)
+        return _page([{"code": "L1-AETI-D"}], url + "?next=1")
+
+    result = asyncio.run(wapor._collect_pages_async(wapor.BASE_URL, fake_async))
+    assert result["pages_read"] == wapor.MAX_PAGES
+    assert result["truncated"] is True
+    assert len(calls) == wapor.MAX_PAGES
+
+def test_wapor_worker_response_stream_is_bounded_and_releases_reader():
+    class Chunk:
+        def __init__(self, value):
+            self.value = value
+            self.byteLength = len(value)
+        def to_py(self):
+            return self.value
+
+    class Reader:
+        def __init__(self, chunks):
+            self.chunks = iter(chunks)
+            self.released = False
+            self.cancelled = False
+        async def read(self):
+            try:
+                value = next(self.chunks)
+                return type("ReadResult", (), {"done": False, "value": Chunk(value)})()
+            except StopIteration:
+                return type("ReadResult", (), {"done": True, "value": None})()
+        async def cancel(self):
+            self.cancelled = True
+        def releaseLock(self):
+            self.released = True
+
+    class Body:
+        def __init__(self, reader):
+            self.reader = reader
+        def getReader(self):
+            return self.reader
+
+    async def run():
+        reader = Reader([b'{"response":', b'{"items":[]}}'])
+        response = type("Response", (), {"body": Body(reader)})()
+        raw = await wapor._read_bounded_response(response)
+        assert raw == b'{"response":{"items":[]}}'
+        assert reader.released is True
+        assert reader.cancelled is False
+
+        class OversizedChunk:
+            byteLength = wapor.MAX_RESPONSE_BYTES + 1
+            def to_py(self):
+                raise AssertionError("oversized chunk must be rejected before conversion")
+
+        class OversizedReader(Reader):
+            async def read(self):
+                return type("ReadResult", (), {"done": False, "value": OversizedChunk()})()
+
+        overflow = OversizedReader([])
+        response = type("Response", (), {"body": Body(overflow)})()
+        with pytest.raises(RuntimeError, match="1 MiB"):
+            await wapor._read_bounded_response(response)
+        assert overflow.cancelled is True
+        assert overflow.released is True
+
+    asyncio.run(run())
+
+
+
+def test_wapor_async_mapsets_enforces_total_operation_deadline(monkeypatch):
+    cancelled = False
+
+    async def slow_request(url):
+        nonlocal cancelled
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+
+    monkeypatch.setattr(wapor, "TOTAL_OPERATION_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(wapor, "_request_json_async", slow_request)
+
+    with pytest.raises(RuntimeError, match="total deadline"):
+        asyncio.run(wapor.list_mapsets_async())
+
+    assert cancelled is True
+
+
+def test_wapor_async_rasters_total_deadline_covers_catalogue_and_raster_pages(monkeypatch):
+    calls = []
+
+    async def slow_after_catalogue(url):
+        calls.append(url)
+        if url == wapor.BASE_URL:
+            return _page([{"code": "L2-AETI-D"}])
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(wapor, "TOTAL_OPERATION_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(wapor, "_request_json_async", slow_after_catalogue)
+
+    with pytest.raises(RuntimeError, match="total deadline"):
+        asyncio.run(wapor.list_rasters_async("L2-AETI-D"))
+
+    assert calls == [wapor.BASE_URL, wapor.BASE_URL + "/L2-AETI-D/rasters"]
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        ("application/json", True),
+        ("application/json; charset=utf-8", True),
+        ("application/geo+json", True),
+        ("application/notjson", False),
+        ("application/jsonp", False),
+        ("text/json", False),
+        ("", False),
+    ],
+)
+def test_wapor_json_content_type_is_strict(content_type, expected):
+    assert wapor._is_json_content_type(content_type) is expected
+
+
+def test_wapor_worker_fetch_options_use_manual_redirects():
+    captured = {}
+    marker = object()
+
+    def fake_to_js(value, *, dict_converter):
+        captured["value"] = value
+        captured["converter"] = dict_converter
+        return value
+
+    options = wapor._worker_fetch_options(fake_to_js, marker)
+    assert options["method"] == "GET"
+    assert options["headers"]["Accept"] == "application/json"
+    assert options["redirect"] == "manual"
+    assert captured["converter"] is marker
+
+
+def test_wapor_worker_fetch_cancels_unread_body_on_http_and_media_type_rejection():
+    from types import SimpleNamespace
+
+    class Body:
+        def __init__(self):
+            self.cancelled = False
+
+        async def cancel(self):
+            self.cancelled = True
+
+        def getReader(self):
+            raise AssertionError("rejected body must not be read")
+
+    async def check(response, message):
+        async def fake_fetch(url, options):
+            return response
+
+        with pytest.raises(RuntimeError, match=message):
+            await wapor._fetch_worker_payload(fake_fetch, "https://example.invalid", {})
+        assert response.body.cancelled is True
+
+    async def run():
+        non_success_body = Body()
+        await check(
+            SimpleNamespace(
+                ok=False,
+                status=503,
+                headers=SimpleNamespace(get=lambda key: "application/json"),
+                body=non_success_body,
+            ),
+            "HTTP 503",
+        )
+        invalid_type_body = Body()
+        await check(
+            SimpleNamespace(
+                ok=True,
+                status=200,
+                headers=SimpleNamespace(get=lambda key: "application/jsonp"),
+                body=invalid_type_body,
+            ),
+            "non-JSON content type",
+        )
+
+    asyncio.run(run())
+
+
+def test_wapor_worker_fetch_aborts_underlying_request_on_cancellation():
+    class Controller:
+        aborted = False
+        def abort(self):
+            self.aborted = True
+
+    controller = Controller()
+
+    async def blocked_fetch(url, options):
+        await asyncio.Event().wait()
+
+    async def run():
+        task = asyncio.create_task(
+            wapor._fetch_worker_payload_with_abort(
+                blocked_fetch, "https://example.invalid", {}, controller
+            )
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+    assert controller.aborted is True
+
+
+def test_wapor_worker_fetch_options_attach_abort_signal():
+    captured = {}
+    signal = object()
+
+    def fake_to_js(value, *, dict_converter):
+        captured["value"] = value
+        return value
+
+    options = wapor._worker_fetch_options(fake_to_js, object(), signal)
+    assert options["redirect"] == "manual"
+    assert options["signal"] is signal
+
+
+
+def test_wapor_worker_fetch_aborts_underlying_request_on_timeout():
+    class Controller:
+        aborted = False
+        def abort(self):
+            self.aborted = True
+
+    controller = Controller()
+
+    async def blocked_fetch(url, options):
+        await asyncio.Event().wait()
+
+    async def run():
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                wapor._fetch_worker_payload_with_abort(
+                    blocked_fetch, "https://example.invalid", {}, controller
+                ),
+                timeout=0.01,
+            )
+
+    asyncio.run(run())
+    assert controller.aborted is True
+
+
+def test_wapor_aborts_fetch_before_waiting_for_slow_stream_cleanup():
+    from types import SimpleNamespace
+    from apps.api.services import wapor
+
+    class Controller:
+        aborted = False
+        def abort(self):
+            self.aborted = True
+
+    class Reader:
+        def __init__(self):
+            self.read_started = asyncio.Event()
+            self.cancel_started = asyncio.Event()
+            self.release_cancel = asyncio.Event()
+        async def read(self):
+            self.read_started.set()
+            await asyncio.Event().wait()
+        async def cancel(self):
+            self.cancel_started.set()
+            await self.release_cancel.wait()
+        def releaseLock(self):
+            pass
+
+    async def run():
+        controller = Controller()
+        reader = Reader()
+        response = SimpleNamespace(
+            ok=True,
+            status=200,
+            headers=SimpleNamespace(get=lambda key: "application/json" if key == "content-type" else None),
+            body=SimpleNamespace(getReader=lambda: reader),
+        )
+
+        async def fake_fetch(url, options):
+            return response
+
+        task = asyncio.create_task(
+            wapor._fetch_worker_payload_with_abort(
+                fake_fetch, "https://example.invalid", {}, controller
+            )
+        )
+        await asyncio.wait_for(reader.read_started.wait(), timeout=1)
+        task.cancel()
+        await asyncio.wait_for(reader.cancel_started.wait(), timeout=1)
+        assert controller.aborted is True
+        reader.release_cancel.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
