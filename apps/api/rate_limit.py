@@ -4,6 +4,20 @@ import ipaddress
 from typing import Any
 
 
+PUBLIC_API_RATE_LIMIT_ROUTES = frozenset({
+    "/api/v1/data/catalogue",
+    "/api/v1/data/water/wapor/mapsets",
+    "/api/v1/data/water/wapor/rasters",
+    "/api/v1/data/solar/pvgis/performance",
+    "/api/v1/storage/status",
+    "/api/v1/forecast/run",
+    "/api/v1/recommendations/run",
+    "/api/v1/scenarios/simulate",
+    "/api/v1/assistant/explain",
+    "/api/v1/data/weather/nasa-power/daily",
+})
+
+
 class PublicApiRateLimitMiddleware:
     """Apply a per-client, per-route abuse budget to public API v1 requests.
 
@@ -60,7 +74,10 @@ class PublicApiRateLimitMiddleware:
 
         # Route-specific keys avoid one provider's usage consuming another
         # route's allowance. Do not include query strings or caller headers.
-        key = f"{client_ip}:{method}:{path}"
+        # Unknown paths share one bucket instead of allowing arbitrary
+        # caller-chosen paths to create unbounded independent rate-limit keys.
+        route_key = path if path in PUBLIC_API_RATE_LIMIT_ROUTES else "__unmatched__"
+        key = f"{client_ip}:{method}:{route_key}"
         try:
             from js import Object
             from pyodide.ffi import to_js

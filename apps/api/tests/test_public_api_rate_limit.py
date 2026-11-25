@@ -121,6 +121,34 @@ def test_uses_cloudflare_ip_and_route_scoped_key(monkeypatch):
     assert limiter.options == {"key": "203.0.113.8:GET:/api/v1/data/weather/nasa-power/daily"}
 
 
+def test_unknown_paths_share_one_rate_limit_bucket(monkeypatch):
+    install_pyodide_bridge(monkeypatch)
+
+    class Limiter:
+        options = []
+        async def limit(self, options):
+            self.options.append(options["key"])
+            return SimpleNamespace(success=True)
+
+    limiter = Limiter()
+    middleware = PublicApiRateLimitMiddleware(None)
+    for path in ("/api/v1/not-a-route/one", "/api/v1/not-a-route/two"):
+        messages, reached = asyncio.run(invoke(
+            middleware,
+            make_scope(
+                path=path,
+                headers=[(b"cf-connecting-ip", b"203.0.113.11")],
+                env=SimpleNamespace(NOVA_PUBLIC_API_LIMITER=limiter),
+            ),
+        ))
+        assert messages[0]["status"] == 200
+        assert reached is True
+    assert limiter.options == [
+        "203.0.113.11:GET:__unmatched__",
+        "203.0.113.11:GET:__unmatched__",
+    ]
+
+
 def test_limiter_rejection_returns_429(monkeypatch):
     install_pyodide_bridge(monkeypatch)
 
