@@ -69,8 +69,22 @@ def _install_worker_ffi(monkeypatch, fetch, abort_controller=None):
     js_module = types.ModuleType("js")
     js_module.Object = types.SimpleNamespace(fromEntries=object())
     js_module.fetch = fetch
-    if abort_controller is not None:
-        js_module.AbortController = abort_controller
+    if abort_controller is None:
+        class _DefaultController:
+            def __init__(self):
+                self.signal = object()
+                self.aborted = False
+
+            def abort(self):
+                self.aborted = True
+
+        class _DefaultAbortController:
+            @staticmethod
+            def new():
+                return _DefaultController()
+
+        abort_controller = _DefaultAbortController
+    js_module.AbortController = abort_controller
     ffi_module = types.ModuleType("pyodide.ffi")
     ffi_module.to_js = lambda value, dict_converter=None: value
     pyodide_module = types.ModuleType("pyodide")
