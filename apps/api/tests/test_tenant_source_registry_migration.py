@@ -183,10 +183,6 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
         count = self.db.execute("SELECT COUNT(*) FROM tenant_source_events").fetchone()[0]
         self.assertEqual(count, 1)
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_source_lifecycle_event_rechecks_site_read_grant_at_insert(self):
         self.db.execute("DELETE FROM tenant_resource_grants WHERE subject='owner-sub'")
         with self.assertRaisesRegex(sqlite3.IntegrityError, 'site grant'):
@@ -232,3 +228,7 @@ if __name__ == "__main__":
               (id,tenant_id,site_id,asset_id,actor_subject,event_type,request_id)
               VALUES ('asset-event-no-grant','tenant-a','site-a','asset-a','owner-sub','created','asset-request-no-grant')
             """)
+
+
+if __name__ == "__main__":
+    unittest.main()
