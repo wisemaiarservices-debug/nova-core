@@ -4,7 +4,9 @@ import types
 from types import SimpleNamespace
 
 import pytest
+from fastapi.middleware.cors import CORSMiddleware
 
+from apps.api.main import app
 from apps.api.rate_limit import PublicApiRateLimitMiddleware
 
 
@@ -48,6 +50,11 @@ def install_pyodide_bridge(monkeypatch):
     monkeypatch.setitem(sys.modules, "js", js)
     monkeypatch.setitem(sys.modules, "pyodide", pyodide)
     monkeypatch.setitem(sys.modules, "pyodide.ffi", ffi)
+
+
+def test_cors_wraps_rate_limiter_for_throttled_browser_responses():
+    assert app.user_middleware[0].cls is CORSMiddleware
+    assert app.user_middleware[1].cls is PublicApiRateLimitMiddleware
 
 
 def test_cloudflare_scope_without_binding_fails_closed():

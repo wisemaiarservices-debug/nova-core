@@ -76,6 +76,8 @@ configured_origins = (
 ALLOWED_ORIGINS = [
     origin.strip() for origin in configured_origins.split(",") if origin.strip()
 ]
+# Register rate limiting first so CORS is outermost and also decorates 429/503 responses.
+app.add_middleware(PublicApiRateLimitMiddleware, fallback_env=worker_env)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -83,8 +85,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Accept", "Content-Type"],
 )
-# Outer middleware: protects every public /api/v1 route before provider or DB work.
-app.add_middleware(PublicApiRateLimitMiddleware, fallback_env=worker_env)
 
 
 def now_iso() -> str:
