@@ -25,6 +25,14 @@ class AuditEventsImmutableMigrationTests(unittest.TestCase):
             request_id TEXT,
             details_json TEXT NOT NULL
           );
+          -- Preserve the tenant-existence check introduced in migration 0002.
+          CREATE TRIGGER audit_events_tenant_update_guard
+          BEFORE UPDATE OF tenant_id ON audit_events
+          WHEN NEW.tenant_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM tenants WHERE id = NEW.tenant_id)
+          BEGIN
+            SELECT RAISE(ABORT, 'audit event tenant does not exist');
+          END;
           INSERT INTO audit_events VALUES
             ('audit-a', 'tenant-a', 'operator', 'operator-a', 'site.updated',
              'site', 'site-a', '2026-11-25T00:00:00Z', 'request-a', '{}');
@@ -36,6 +44,17 @@ class AuditEventsImmutableMigrationTests(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+
+    def test_new_audit_event_inserts_remain_allowed(self):
+        self.db.execute(
+            "INSERT INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("audit-new", "tenant-a", "service", "service-a", "observation.accepted",
+             "observation", "obs-a", "2026-11-25T00:01:00Z", "request-new", "{}"),
+        )
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM audit_events WHERE id = 'audit-new'").fetchone()[0],
+            1,
+        )
 
     def test_audit_payload_cannot_be_updated(self):
         with self.assertRaisesRegex(sqlite3.IntegrityError, "audit events are immutable"):
@@ -70,6 +89,13 @@ class AuditEventsImmutableMigrationTests(unittest.TestCase):
             self.db.execute(
                 "UPDATE audit_events SET tenant_id = ? WHERE id = ?",
                 ("tenant-b", "audit-legacy"),
+            )
+
+    def test_legacy_tenant_assignment_rejects_unknown_tenant(self):
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "audit event tenant does not exist"):
+            self.db.execute(
+                "UPDATE audit_events SET tenant_id = ? WHERE id = ?",
+                ("tenant-missing", "audit-legacy"),
             )
 
     def test_legacy_tenant_assignment_cannot_change_audit_payload(self):
