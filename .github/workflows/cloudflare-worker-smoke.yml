@@ -105,8 +105,30 @@ jobs:
           fi
           jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .native_response_stream == true and .abort_signal_attached == true and .payload_verified == true' /tmp/nova-pvgis-runtime.json
 
+  pvgis-network-preflight:
+    name: PVGIS provider network reachability preflight
+    runs-on: ubuntu-latest
+    outputs:
+      reachable: ${{ steps.probe.outputs.reachable }}
+    steps:
+      - name: Check provider DNS and HTTPS reachability from runner
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          STATUS=$(curl --connect-timeout 10 --max-time 45 --silent --show-error -o /dev/null -w '%{http_code}' 'https://photovoltaic-geographical-information-system.ec.europa.eu/api/v6/performance/broadband?latitude=36.8&longitude=10.2&start_time=2024-01-01%2000%3A00%3A00&end_time=2024-01-07%2023%3A59%3A59') || STATUS=000
+          echo "PVGIS_RUNNER_HTTP_STATUS=$STATUS"
+          if [ "$STATUS" = "000" ]; then
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::PVGIS live probe skipped: runner cannot establish provider HTTPS connectivity (DNS/network/TLS). This is inconclusive, not a provider pass."
+          else
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+          fi
+
   pvgis-live-provider-probe:
     name: PVGIS live provider integration probe
+    needs: pvgis-network-preflight
+    if: needs.pvgis-network-preflight.outputs.reachable == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -116,12 +138,6 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
         run: uv sync --python 3.14 --project apps/api --all-groups
-      - name: Compare direct runner reachability to PVGIS (status only)
-        shell: bash
-        run: |
-          set -euo pipefail
-          RUNNER_STATUS=$(curl --max-time 45 --silent --show-error -o /dev/null -w '%{http_code}' 'https://photovoltaic-geographical-information-system.ec.europa.eu/api/v6/performance/broadband?latitude=36.8&longitude=10.2&start_time=2024-01-01%2000%3A00%3A00&end_time=2024-01-07%2023%3A59%3A59') || RUNNER_STATUS=000
-          echo "PVGIS_RUNNER_HTTP_STATUS=$RUNNER_STATUS"
       - name: Run API Worker and probe live PVGIS provider
         shell: bash
         run: |
