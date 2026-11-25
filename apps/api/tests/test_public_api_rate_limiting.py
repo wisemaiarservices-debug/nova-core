@@ -94,7 +94,8 @@ def test_missing_binding_fails_closed_on_api_route():
 def test_missing_or_ambiguous_cloudflare_client_ip_fails_closed():
     middleware = PublicApiRateLimitMiddleware(app_response())
     env = SimpleNamespace(PUBLIC_API_RATE_LIMITER=FakeLimiter())
-    for headers in ([], [(b"cf-connecting-ip", b"bad-ip")],
+    for headers in ([], [(b"x-forwarded-for", b"203.0.113.10")],
+                    [(b"cf-connecting-ip", b"bad-ip")],
                     [(b"cf-connecting-ip", b"203.0.113.10"), (b"cf-connecting-ip", b"203.0.113.11")]):
         messages = asyncio.run(invoke(middleware, env=env, headers=headers))
         assert response_status(messages) == 503
@@ -112,3 +113,9 @@ def test_options_preflight_does_not_consume_rate_limit():
     messages = asyncio.run(invoke(middleware, env=env, method="OPTIONS"))
     assert response_status(messages) == 204
     assert general.keys == []
+
+def test_missing_general_binding_fails_closed():
+    middleware = PublicApiRateLimitMiddleware(app_response())
+    env = SimpleNamespace()
+    messages = asyncio.run(invoke(middleware, env=env))
+    assert response_status(messages) == 503
