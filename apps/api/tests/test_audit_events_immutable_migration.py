@@ -3,44 +3,44 @@ import sqlite3
 import unittest
 
 
-MIGRATION = Path(__file__).resolve().parents[1] / "migrations" / "0066_audit_events_immutable.sql"
+ROOT = Path(__file__).resolve().parents[1]
+INITIAL_MIGRATION = ROOT / "migrations" / "0001_initial.sql"
+TENANT_MIGRATION = ROOT / "migrations" / "0002_tenant_isolation.sql"
+IMMUTABILITY_MIGRATION = ROOT / "migrations" / "0066_audit_events_immutable.sql"
 
 
 class AuditEventsImmutableMigrationTests(unittest.TestCase):
     def setUp(self):
         self.db = sqlite3.connect(":memory:")
-        self.db.executescript("""
-          CREATE TABLE tenants (id TEXT PRIMARY KEY);
-          INSERT INTO tenants VALUES ('tenant-a');
-          INSERT INTO tenants VALUES ('tenant-b');
-          CREATE TABLE audit_events (
-            id TEXT PRIMARY KEY,
-            tenant_id TEXT,
-            actor_type TEXT NOT NULL,
-            actor_id TEXT,
-            action TEXT NOT NULL,
-            entity_type TEXT NOT NULL,
-            entity_id TEXT NOT NULL,
-            occurred_at TEXT NOT NULL,
-            request_id TEXT,
-            details_json TEXT NOT NULL
-          );
-          -- Preserve the tenant-existence check introduced in migration 0002.
-          CREATE TRIGGER audit_events_tenant_update_guard
-          BEFORE UPDATE OF tenant_id ON audit_events
-          WHEN NEW.tenant_id IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM tenants WHERE id = NEW.tenant_id)
-          BEGIN
-            SELECT RAISE(ABORT, 'audit event tenant does not exist');
-          END;
-          INSERT INTO audit_events VALUES
-            ('audit-a', 'tenant-a', 'operator', 'operator-a', 'site.updated',
-             'site', 'site-a', '2026-11-25T00:00:00Z', 'request-a', '{}');
-          INSERT INTO audit_events VALUES
-            ('audit-legacy', NULL, 'system', NULL, 'legacy.imported',
-             'legacy', 'legacy-a', '2026-11-24T00:00:00Z', NULL, '{}');
-        """)
-        self.db.executescript(MIGRATION.read_text(encoding="utf-8"))
+        # Apply the real schema and tenant-isolation migrations so this test
+        # exercises the actual tenant guard alongside the immutability guard.
+        self.db.executescript(INITIAL_MIGRATION.read_text(encoding="utf-8"))
+        self.db.executescript(TENANT_MIGRATION.read_text(encoding="utf-8"))
+        self.db.executemany(
+            "INSERT INTO tenants (id, display_name) VALUES (?, ?)",
+            [("tenant-a", "Tenant A"), ("tenant-b", "Tenant B")],
+        )
+        self.db.execute(
+            """
+            INSERT INTO audit_events (
+              id, tenant_id, actor_type, actor_id, action, entity_type,
+              entity_id, occurred_at, request_id, details_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("audit-a", "tenant-a", "operator", "operator-a", "site.updated",
+             "site", "site-a", "2026-11-25T00:00:00Z", "request-a", "{}"),
+        )
+        self.db.execute(
+            """
+            INSERT INTO audit_events (
+              id, tenant_id, actor_type, actor_id, action, entity_type,
+              entity_id, occurred_at, request_id, details_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("audit-legacy", None, "system", None, "legacy.imported",
+             "legacy", "legacy-a", "2026-11-24T00:00:00Z", None, "{}"),
+        )
+        self.db.executescript(IMMUTABILITY_MIGRATION.read_text(encoding="utf-8"))
 
     def tearDown(self):
         self.db.close()
