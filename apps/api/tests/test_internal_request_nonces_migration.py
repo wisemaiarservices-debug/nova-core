@@ -87,3 +87,42 @@ def test_expiry_index_supports_bounded_cleanup_selection():
         (25,),
     ).fetchall()
     assert expired == [("expired",)]
+
+
+def test_concurrent_connections_consume_one_request_id_once(tmp_path):
+    """Independent SQLite connections must serialize the unique nonce insert."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    path = tmp_path / "nonce-concurrency.sqlite"
+    setup = database()
+    backup = sqlite3.connect(path)
+    setup.backup(backup)
+    backup.close()
+    setup.close()
+
+    workers = 12
+    barrier = Barrier(workers)
+
+    def concurrent_consume(_):
+        connection = sqlite3.connect(path, timeout=10, isolation_level=None)
+        try:
+            connection.execute("PRAGMA busy_timeout = 10000")
+            barrier.wait(timeout=10)
+            return consume(connection, "gateway-concurrent-request", 1_800_000_000)
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(concurrent_consume, range(workers)))
+
+    assert results.count(True) == 1
+    assert results.count(False) == workers - 1
+    verify = sqlite3.connect(path)
+    try:
+        assert verify.execute(
+            "SELECT COUNT(*) FROM internal_request_nonces WHERE request_id = ?",
+            ("gateway-concurrent-request",),
+        ).fetchone() == (1,)
+    finally:
+        verify.close()
