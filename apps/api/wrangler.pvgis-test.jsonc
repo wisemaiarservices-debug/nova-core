@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nova-pvgis-runtime-test",
+  "main": "tests/pvgis_runtime_worker.py",
+  "compatibility_date": "2026-11-10",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": false,
+  "preview_urls": false
+}
