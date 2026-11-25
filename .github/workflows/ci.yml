@@ -172,3 +172,36 @@ jobs:
         run: npx --yes wrangler@4.13.2 deploy --dry-run --outdir /tmp/nova-ingestion-worker-dry-run --config wrangler.jsonc
       - name: Verify private ingestion Worker bundle
         run: test -s /tmp/nova-ingestion-worker-dry-run/index.js
+
+  python-worker-rate-limit-binding-proof:
+    name: Python Worker Rate Limiting binding proof (local only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.3"
+      - name: Verify isolated dependency lock is current
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        run: uv lock --check
+      - name: Install isolated Python Worker SDK from committed lock
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        run: uv sync --locked
+      - name: Test binding exceptions fail closed
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        run: uv run --locked --project . python -m unittest test_probe.py
+      - name: Verify local Rate Limiting binding and Python FFI behavior
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        run: node ./check.mjs . ./wrangler.jsonc rate-limit
+      - name: Verify missing binding fails closed
+        working-directory: apps/api/tests/rate_limit_binding_proof
+        env:
+          PORT: "8792"
+        run: node ./check.mjs . ./wrangler-no-binding.jsonc missing-binding
