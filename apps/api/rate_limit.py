@@ -77,7 +77,10 @@ class PublicApiRateLimitMiddleware:
         # Unknown paths share one bucket instead of allowing arbitrary
         # caller-chosen paths to create unbounded independent rate-limit keys.
         route_key = path if path in PUBLIC_API_RATE_LIMIT_ROUTES else "__unmatched__"
-        key = f"{client_ip}:{method}:{route_key}"
+        # HTTP method is caller-controlled too. Keep the key space bounded even
+        # for arbitrary extension methods sent to otherwise known routes.
+        method_key = method if method in {"GET", "POST"} else "__other__"
+        key = f"{client_ip}:{method_key}:{route_key}"
         try:
             from js import Object
             from pyodide.ffi import to_js
