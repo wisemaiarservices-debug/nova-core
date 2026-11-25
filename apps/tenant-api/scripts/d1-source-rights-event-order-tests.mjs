@@ -8,16 +8,16 @@ const args = [
 ];
 const q = value => "'" + String(value).replaceAll("'", "''") + "'";
 function execute(label, statements, expectedError = null) {
-  const sql = statements.join(";\\n");
+  const sql = statements.join(";\n");
   const result = spawnSync("npx", [...args, sql], { encoding: "utf8" });
-  const output = (result.stdout || "") + "\\n" + (result.stderr || "");
+  const output = (result.stdout || "") + "\n" + (result.stderr || "");
   if (expectedError) {
-    assert.notEqual(result.status, 0, label + " unexpectedly succeeded\\n" + output);
-    assert.match(output, new RegExp(expectedError), label + " failed for an unexpected reason\\n" + output);
+    assert.notEqual(result.status, 0, label + " unexpectedly succeeded\n" + output);
+    assert.match(output, new RegExp(expectedError), label + " failed for an unexpected reason\n" + output);
     console.log("Rejected as expected: " + label);
     return;
   }
-  assert.equal(result.status, 0, label + " failed\\n" + output);
+  assert.equal(result.status, 0, label + " failed\n" + output);
   return output;
 }
 function audit(id, actor, action, entityType, entityId, requestId) {
