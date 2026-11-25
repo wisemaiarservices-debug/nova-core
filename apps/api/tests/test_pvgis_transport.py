@@ -534,3 +534,26 @@ def test_worker_fetch_aborts_before_waiting_for_slow_stream_cleanup():
             await task
 
     asyncio.run(exercise())
+
+
+
+def test_worker_fetch_reports_safe_javascript_error_class_without_message():
+    class JsException(Exception):
+        name = "TypeError"
+
+    async def rejected_fetch(url, options):
+        raise JsException("sensitive request URL and query must not escape")
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"PVGIS upstream Fetch rejected; JS error=TypeError",
+    ) as caught:
+        asyncio.run(
+            pvgis._fetch_worker_payload(
+                rejected_fetch,
+                "https://example.invalid/private?coordinates=redacted",
+                {},
+            )
+        )
+
+    assert "sensitive request URL" not in str(caught.value)
