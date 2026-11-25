@@ -125,6 +125,52 @@ jobs:
             echo "reachable=true" >> "$GITHUB_OUTPUT"
           fi
 
+  pvgis-global-fetch-runtime:
+    name: PVGIS real global js.fetch in Pyodide runtime
+    needs: pvgis-network-preflight
+    if: needs.pvgis-network-preflight.outputs.reachable == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - name: Install Python Worker dependencies
+        run: uv sync --python 3.14 --project apps/api --all-groups
+      - name: Run isolated Worker through its real global js.fetch path
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/api
+          uv run --python 3.14 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8790 > /tmp/nova-pvgis-global-fetch.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 45); do
+            if curl --max-time 3 --silent --show-error --fail http://127.0.0.1:8790/health > /tmp/nova-pvgis-global-fetch-health.json; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+              cat /tmp/nova-pvgis-global-fetch.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/nova-pvgis-global-fetch.log
+            exit 1
+          fi
+          STATUS=$(curl --max-time 60 --silent --show-error -o /tmp/nova-pvgis-global-fetch.json -w '%{http_code}' http://127.0.0.1:8790/pvgis-global-fetch) || STATUS=000
+          echo "PVGIS_GLOBAL_JS_FETCH_HTTP_STATUS=$STATUS"
+          if [ "$STATUS" != "200" ]; then
+            cat /tmp/nova-pvgis-global-fetch.json || true
+            cat /tmp/nova-pvgis-global-fetch.log
+            exit 1
+          fi
+          jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .transport == "global-js-fetch" and .payload_verified == true' /tmp/nova-pvgis-global-fetch.json
+
   pvgis-live-provider-probe:
     name: PVGIS live provider integration probe
     needs: pvgis-network-preflight
