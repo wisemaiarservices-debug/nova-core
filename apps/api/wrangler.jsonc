@@ -13,25 +13,7 @@
   "previews": {
     "vars": {
       "NOVA_CORE_ALLOWED_ORIGINS": "http://localhost:3000,http://localhost:5173,http://localhost:8400,http://localhost:8504,http://localhost:8508"
-    },
-    "ratelimits": [
-      {
-        "name": "PUBLIC_API_RATE_LIMITER",
-        "namespace_id": "241330000204711",
-        "simple": {
-          "limit": 120,
-          "period": 60
-        }
-      },
-      {
-        "name": "UPSTREAM_API_RATE_LIMITER",
-        "namespace_id": "241330000204712",
-        "simple": {
-          "limit": 12,
-          "period": 60
-        }
-      }
-    ]
+    }
   },
   "python_modules": {
     "exclude": [
