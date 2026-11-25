@@ -156,6 +156,35 @@ def test_unknown_paths_share_one_rate_limit_bucket(monkeypatch):
     ]
 
 
+def test_arbitrary_methods_share_one_bounded_rate_limit_bucket(monkeypatch):
+    install_pyodide_bridge(monkeypatch)
+
+    class Limiter:
+        options = []
+        async def limit(self, options):
+            self.options.append(options["key"])
+            return SimpleNamespace(success=True)
+
+    limiter = Limiter()
+    middleware = PublicApiRateLimitMiddleware(None)
+    for method in ("CUSTOM-ONE", "CUSTOM-TWO"):
+        messages, reached = asyncio.run(invoke(
+            middleware,
+            make_scope(
+                path="/api/v1/data/catalogue",
+                method=method,
+                headers=[(b"cf-connecting-ip", b"203.0.113.12")],
+                env=SimpleNamespace(NOVA_PUBLIC_API_LIMITER=limiter),
+            ),
+        ))
+        assert messages[0]["status"] == 200
+        assert reached is True
+    assert limiter.options == [
+        "203.0.113.12:__other__:/api/v1/data/catalogue",
+        "203.0.113.12:__other__:/api/v1/data/catalogue",
+    ]
+
+
 def test_limiter_rejection_returns_429(monkeypatch):
     install_pyodide_bridge(monkeypatch)
 
