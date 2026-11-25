@@ -4,6 +4,7 @@ This entrypoint is used only by the CI workflow with a dedicated Wrangler config
 It is not imported by the production API Worker.
 """
 import json
+from datetime import date
 
 from fastapi import FastAPI
 from js import AbortController, Object, Response
@@ -58,6 +59,21 @@ async def pvgis_runtime_probe():
         "native_response_stream": True,
         "abort_signal_attached": calls[0][1].signal is not None,
         "payload_verified": True,
+    }
+
+
+@app.get("/pvgis-global-fetch")
+async def pvgis_global_fetch_probe():
+    """Exercise the real Workers global js.fetch path against the live PVGIS API."""
+    payload = await pvgis.fetch_broadband_performance_async(
+        36.8, 10.2, date(2024, 1, 1), date(2024, 1, 7)
+    )
+    return {
+        "status": "ok",
+        "runtime": "cloudflare-python-worker-pyodide",
+        "transport": "global-js-fetch",
+        "payload_verified": isinstance(payload, dict) and bool(payload),
+        "payload_keys": sorted(payload.keys()),
     }
 
 
