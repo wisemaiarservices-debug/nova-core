@@ -1098,3 +1098,28 @@ test("rejects malformed and over-limit declared gateway request lengths before r
     assert.equal(forwarded, false);
   }
 });
+
+
+test("times out and cancels a stalled streamed gateway request body", async () => {
+  let cancelled = false;
+  let forwarded = false;
+  const gateway = createGateway({ verifyAccessToken: async () => ({
+    subject: "bounded-reader", issuer: "https://example.cloudflareaccess.com", audience: "aud",
+  }) });
+  const stream = new ReadableStream({
+    pull() { return new Promise(() => {}); },
+    cancel() { cancelled = true; },
+  });
+  const response = await gateway.fetch(new Request(
+    "https://gateway.test/api/v1/tenants/tenant-a/water-quality-criteria",
+    { method: "POST", duplex: "half", body: stream, headers: {
+      "content-type": "application/json", "Cf-Access-Jwt-Assertion": "valid",
+    } }), env({ TENANT_API: { fetch: async () => {
+      forwarded = true;
+      return new Response("{}", { headers: { "content-type": "application/json" } });
+    } } }));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "request_body_timeout");
+  assert.equal(forwarded, false);
+  assert.equal(cancelled, true);
+});
