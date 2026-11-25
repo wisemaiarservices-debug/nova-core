@@ -53,6 +53,48 @@ function validSubject(value) {
     value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
+async function readBoundedRequestBody(request, limit, timeoutMs = 10000) {
+  const declared = request.headers.get("content-length");
+  if (declared !== null) {
+    if (!/^(0|[1-9][0-9]*)$/.test(declared)) throw new Error("invalid_request_content_length");
+    const length = Number(declared);
+    if (!Number.isSafeInteger(length) || length > limit) throw new Error("request_body_too_large");
+  }
+  if (!request.body) return new ArrayBuffer(0);
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("request_body_timeout")), timeoutMs);
+  });
+  try {
+    while (true) {
+      const result = await Promise.race([reader.read(), deadline]);
+      if (result.done) break;
+      const chunk = result.value;
+      if (!(chunk instanceof Uint8Array) || chunk.byteLength > limit - total) {
+        throw new Error("request_body_too_large");
+      }
+      chunks.push(chunk);
+      total += chunk.byteLength;
+    }
+    const body = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return body.buffer;
+  } catch (cause) {
+    try { void reader.cancel(cause).catch(() => {}); } catch { /* Preserve the original read failure. */ }
+    throw cause;
+  } finally {
+    clearTimeout(timer);
+    try { reader.releaseLock(); } catch { /* Cancellation may still be settling. */ }
+  }
+}
+
 function configuredProvisioningSubjects(value) {
   if (typeof value !== "string" || value.length === 0 || value.length > 10000) return null;
   const subjects = value.split(",").map(item => item.trim());
@@ -316,14 +358,18 @@ export function createGateway({ verifyAccessToken = (token, config) => verifyHum
           headers.set("x-nova-supabase-token-sha256",
             Array.from(new Uint8Array(tokenDigest), byte => byte.toString(16).padStart(2, "0")).join(""));
         }
+        let forwardedBody;
         if (request.method === "POST") {
-          const declaredLength = Number(request.headers.get("content-length") ?? "0");
-          if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" ||
-              !Number.isFinite(declaredLength) || declaredLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
+          if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
+            return error("invalid_request_body", 400);
+          }
           headers.set("content-type", "application/json");
+          try {
+            forwardedBody = await readBoundedRequestBody(request, labReportUpload ? 1500000 : 65536);
+          } catch (cause) {
+            return error(cause?.message === "request_body_timeout" ? "request_body_timeout" : "invalid_request_body", 400);
+          }
         }
-        const forwardedBody = request.method === "POST" ? await request.arrayBuffer() : undefined;
-        if (forwardedBody && forwardedBody.byteLength > (labReportUpload ? 1500000 : 65536)) return error("invalid_request_body", 400);
         const digest = await crypto.subtle.digest("SHA-256", forwardedBody ?? new ArrayBuffer(0));
         headers.set("x-nova-body-sha256", Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join(""));
         headers.set("x-nova-internal-signature",

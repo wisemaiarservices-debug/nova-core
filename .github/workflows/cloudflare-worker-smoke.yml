@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - feat/nova-core-v1-provenance-and-honest-impact
+      - feat/observation-capability-ingestion-enforcement-v1
       - fix/pvgis-worker-streaming-response-cap
     paths:
       - "apps/api/**"
