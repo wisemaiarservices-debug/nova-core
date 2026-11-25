@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHash, createHmac, createPrivateKey, randomUUID, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -30,6 +30,32 @@ async function throughGateway(path, token = accessToken(), extraHeaders = {}, me
   });
   return { response, body: await response.json() };
 }
+
+function signedPrivateWorkerHeaders(requestId) {
+  const subject = "ci-human-subject";
+  const issuedAt = String(Math.floor(Date.now() / 1000));
+  const bodyDigest = createHash("sha256").update(Buffer.alloc(0)).digest("hex");
+  const headers = new Headers({
+    "x-nova-verified-subject": subject,
+    "x-nova-verified-issuer": issuer,
+    "x-nova-verified-audience": audience,
+    "x-nova-gateway-issued-at": issuedAt,
+    "x-nova-request-id": requestId,
+    "x-nova-body-sha256": bodyDigest,
+  });
+  const path = "/internal/v1/tenants/tenant-http-a/sites/site-http-a";
+  const canonical = JSON.stringify([
+    "GET", path, subject, issuer, audience, issuedAt, requestId,
+    bodyDigest, null, null,
+  ]);
+  headers.set("x-nova-internal-signature",
+    createHmac("sha256", secret).update(canonical).digest("hex"));
+  return headers;
+}
+async function throughPrivateWorker(headers) {
+  const response = await fetch(base + "/__ci/private-worker/sites/site-http-a", { headers });
+  return { response, body: await response.json() };
+}
 async function ready() {
   for (let i = 0; i < 100; i++) {
     if (child.exitCode !== null) throw new Error("Wrangler multi-Worker local runtime exited before readiness");
@@ -48,6 +74,19 @@ try {
   assert.equal(allowed.response.status, 200, JSON.stringify(allowed.body));
   assert.equal(allowed.body.data.id, "site-http-a");
   assert.equal(allowed.body.data.tenant_id, "tenant-http-a");
+
+  // Exercise the private Worker's signed-envelope nonce gate directly through
+  // a CI-only local Service Binding proxy. Two simultaneous identical signed
+  // envelopes must have exactly one winner; a later replay must also be denied.
+  const replayHeaders = signedPrivateWorkerHeaders("ci-concurrent-nonce-replay-" + randomUUID());
+  const simultaneousNonceRequests = await Promise.all([
+    throughPrivateWorker(replayHeaders),
+    throughPrivateWorker(replayHeaders),
+  ]);
+  assert.deepEqual(simultaneousNonceRequests.map(item => item.response.status).sort(),
+    [200, 401], JSON.stringify(simultaneousNonceRequests.map(item => item.body)));
+  const laterNonceReplay = await throughPrivateWorker(replayHeaders);
+  assert.equal(laterNonceReplay.response.status, 401, JSON.stringify(laterNonceReplay.body));
 
   const capabilityPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/source-capabilities";
   const capabilityDraft = {
@@ -790,6 +829,53 @@ try {
   assert.equal(rolledBack.configurations.length, 5);
   assert.equal(rolledBack.events.length, 5);
   assert.equal(rolledBack.audits.length, 5);
+
+  // Inject a failure at the final idempotency-ledger INSERT for each real
+  // persistence helper. D1 must roll back its preceding audit, business and
+  // lifecycle INSERTs as one batch.
+  function executeLocalD1(command) {
+    const result = spawnSync("npx", [
+      "--yes", "wrangler@4.13.2", "d1", "execute", "DB", "--local",
+      "--config", "wrangler.d1-test.toml", "--persist-to", "./.wrangler-d1-test",
+      "--command", command,
+    ], { encoding: "utf8" });
+    if (result.status !== 0) {
+      throw new Error("Local D1 trigger operation failed: " + (result.stderr || result.stdout));
+    }
+  }
+  async function assertSourceWriteRollback(kind, table, route) {
+    const suffix = kind + "-" + randomUUID();
+    const requestId = "req-ci-atomic-" + suffix;
+    const idempotencyKey = "ci-atomic-" + suffix;
+    const trigger = "ci_fail_" + kind + "_ledger";
+    executeLocalD1("CREATE TRIGGER " + trigger + " BEFORE INSERT ON " + table +
+      " BEGIN SELECT RAISE(ABORT, 'ci_injected_final_ledger_failure'); END;");
+    try {
+      const failedWrite = await fetch(base + route, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ requestId, idempotencyKey }),
+      });
+      const failedBody = await failedWrite.json();
+      assert.equal(failedWrite.status, 400, JSON.stringify(failedBody));
+      assert.match(failedBody.error, /ci_injected_final_ledger_failure/);
+      const stateResponse = await fetch(base + "/__ci/source-write-state?kind=" +
+        kind + "&request=" + encodeURIComponent(requestId) +
+        "&key=" + encodeURIComponent(idempotencyKey));
+      assert.equal(stateResponse.status, 200);
+      const state = await stateResponse.json();
+      assert.deepEqual(state.audit, [], kind + " audit row must roll back");
+      assert.deepEqual(state.business, [], kind + " business row must roll back");
+      assert.deepEqual(state.events, [], kind + " lifecycle event must roll back");
+      assert.deepEqual(state.ledger, [], kind + " idempotency ledger must remain absent");
+    } finally {
+      executeLocalD1("DROP TRIGGER IF EXISTS " + trigger + ";");
+    }
+  }
+  await assertSourceWriteRollback(
+    "evidence", "source_evidence_document_requests", "/__ci/source-evidence-write");
+  await assertSourceWriteRollback(
+    "rights", "source_data_rights_declaration_requests", "/__ci/source-rights-write");
 
   const adminCannotTransferOwnership = await throughGateway(
     "/api/v1/tenants/tenant-http-a/ownership-transfer", accessToken("ci-http-admin"),
