@@ -16,6 +16,11 @@ from services import pvgis
 app = FastAPI(title="NOVA PVGIS Worker Runtime Test")
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.get("/pvgis-runtime")
 async def pvgis_runtime_probe():
     controller = AbortController.new()
