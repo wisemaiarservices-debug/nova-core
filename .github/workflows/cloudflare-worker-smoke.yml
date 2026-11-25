@@ -12,6 +12,7 @@ on:
       - feat/observation-capability-ingestion-enforcement-v1
       - fix/nasa-power-bounded-transport-v1
       - integration/nasa-power-pvgis-current-base-2026-11-25
+      - integration/wapor-nasa-pvgis-current-base-2026-11-25
       - fix/pvgis-worker-streaming-response-cap
     paths:
       - "apps/api/**"
@@ -81,6 +82,19 @@ jobs:
               exit 1
             fi
             jq -e '.status == "retrieved" and .data_source == "NASA POWER Daily API" and (.records | type == "array")' /tmp/nova-nasa-power.json
+          fi
+          if [ "$GITHUB_REF_NAME" = "integration/wapor-nasa-pvgis-current-base-2026-11-25" ]; then
+            WAPOR_STATUS=$(curl --retry 1 --retry-delay 2 --max-time 75 --silent --show-error \\
+              -o /tmp/nova-wapor-mapsets.json -w '%{http_code}' \\
+              'http://127.0.0.1:8787/api/v1/data/water/wapor/mapsets') || WAPOR_STATUS=000
+            echo "WAPOR_HTTP_STATUS=$WAPOR_STATUS"
+            cat /tmp/nova-wapor-mapsets.json || true
+            if [ "$WAPOR_STATUS" != "200" ]; then
+              echo "WaPOR Worker request failed; Worker diagnostics follow."
+              cat /tmp/nova-worker.log
+              exit 1
+            fi
+            jq -e '.status == "retrieved" and .dataset_id == "fao-wapor-v3" and (.mapsets | type == "array")' /tmp/nova-wapor-mapsets.json
           fi
 
   pvgis-runtime-transport:
