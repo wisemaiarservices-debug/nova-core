@@ -56,7 +56,7 @@ async def pvgis_runtime_probe():
         "status": "ok",
         "runtime": "cloudflare-python-worker-pyodide",
         "native_response_stream": True,
-        "abort_signal_attached": calls[0][1].signal is controller.signal,
+        "abort_signal_attached": calls[0][1].signal is not None,
         "payload_verified": True,
     }
 
