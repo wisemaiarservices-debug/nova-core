@@ -52,15 +52,13 @@ def install_pyodide_bridge(monkeypatch):
     monkeypatch.setitem(sys.modules, "pyodide.ffi", ffi)
 
 
-def test_production_and_preview_use_distinct_rate_limit_namespaces():
+def test_rate_limit_binding_is_production_only_until_preview_support_exists():
     import json
     from pathlib import Path
 
     config = json.loads((Path(__file__).parents[1] / "wrangler.jsonc").read_text())
-    production = config["ratelimits"][0]
-    preview = config["previews"]["ratelimits"][0]
-    assert production["name"] == preview["name"] == "NOVA_PUBLIC_API_LIMITER"
-    assert production["namespace_id"] != preview["namespace_id"]
+    assert config["ratelimits"][0]["name"] == "NOVA_PUBLIC_API_LIMITER"
+    assert "ratelimits" not in config["previews"]
 
 
 def test_cors_wraps_rate_limiter_for_throttled_browser_responses():
