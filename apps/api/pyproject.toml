@@ -7,11 +7,11 @@ dependencies = [
   "fastapi==0.115.6",
   "pydantic==2.12.4",
   "workers-runtime-sdk==1.9.7",
-  "workers-py==1.17.8",
 ]
 
 [dependency-groups]
 dev = [
+  "workers-py==1.17.8",
   "pytest",
   "httpx",
 ]
