@@ -48,6 +48,15 @@ class Recommendation(BaseModel):
 app = FastAPI(title="NOVA Core API", version="0.2.0")
 
 try:
+    from .rate_limiting import PublicApiRateLimitMiddleware
+except ImportError:
+    from rate_limiting import PublicApiRateLimitMiddleware
+
+# Added before CORS so preflight requests are handled before rate limiting.
+app.add_middleware(PublicApiRateLimitMiddleware)
+
+
+try:
     from workers import env as worker_env
 except ImportError:
     worker_env = None

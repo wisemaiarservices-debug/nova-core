@@ -3,7 +3,9 @@
   "name": "nova-core-api",
   "main": "worker.py",
   "compatibility_date": "2026-11-10",
-  "compatibility_flags": ["python_workers"],
+  "compatibility_flags": [
+    "python_workers"
+  ],
   "workers_dev": true,
   "vars": {
     "NOVA_CORE_ALLOWED_ORIGINS": "http://localhost:3000,http://localhost:5173,http://localhost:8400,http://localhost:8504,http://localhost:8508,https://nova-os-pied.vercel.app,https://neoagro-six.vercel.app,https://neocell-ebon.vercel.app,https://neogrid-sigma.vercel.app,https://neohaven-nova-os-website.vercel.app,https://neohaven-nova-os-website-git-feat-n-4294c9-neo-haven-urban-labs.vercel.app,https://neoagro-git-fix-neoagro-provenance-56a89b-neo-haven-urban-labs.vercel.app,https://neocell-git-fix-neocell-api-health-52be8d-neo-haven-urban-labs.vercel.app,https://neogrid-git-fix-neogrid-provenance-43da6f-neo-haven-urban-labs.vercel.app"
@@ -11,13 +13,53 @@
   "previews": {
     "vars": {
       "NOVA_CORE_ALLOWED_ORIGINS": "http://localhost:3000,http://localhost:5173,http://localhost:8400,http://localhost:8504,http://localhost:8508"
-    }
+    },
+    "ratelimits": [
+      {
+        "name": "PUBLIC_API_RATE_LIMITER",
+        "namespace_id": "241330000204711",
+        "simple": {
+          "limit": 120,
+          "period": 60
+        }
+      },
+      {
+        "name": "UPSTREAM_API_RATE_LIMITER",
+        "namespace_id": "241330000204712",
+        "simple": {
+          "limit": 12,
+          "period": 60
+        }
+      }
+    ]
   },
   "python_modules": {
-    "exclude": ["**/*.pyc", "**/*.dist-info/top_level.txt", "**/*.dist-info/entry_points.txt"]
+    "exclude": [
+      "**/*.pyc",
+      "**/*.dist-info/top_level.txt",
+      "**/*.dist-info/entry_points.txt"
+    ]
   },
   "observability": {
     "enabled": true,
     "redact_query_string": true
-  }
+  },
+  "ratelimits": [
+    {
+      "name": "PUBLIC_API_RATE_LIMITER",
+      "namespace_id": "241330000204701",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    },
+    {
+      "name": "UPSTREAM_API_RATE_LIMITER",
+      "namespace_id": "241330000204702",
+      "simple": {
+        "limit": 12,
+        "period": 60
+      }
+    }
+  ]
 }
