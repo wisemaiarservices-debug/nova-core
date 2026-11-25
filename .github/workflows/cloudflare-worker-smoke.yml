@@ -71,7 +71,7 @@ jobs:
           curl --max-time 5 --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
           grep -q 'nasa-power/daily' /tmp/nova-openapi.json
           # Bounded historical NASA POWER request through the actual Worker Fetch path.
-          if [ "$GITHUB_REF_NAME" = "fix/nasa-power-bounded-transport-v1" ] || [ "$GITHUB_REF_NAME" = "integration/nasa-power-pvgis-current-base-2026-11-25" ]; then
+          if [ "$GITHUB_REF_NAME" = "fix/nasa-power-bounded-transport-v1" ] || [ "$GITHUB_REF_NAME" = "integration/nasa-power-pvgis-current-base-2026-11-25" ] || [ "$GITHUB_REF_NAME" = "integration/wapor-nasa-pvgis-current-base-2026-11-25" ]; then
             NASA_STATUS=$(curl --retry 1 --retry-delay 2 --max-time 45 --silent --show-error \
               -o /tmp/nova-nasa-power.json -w '%{http_code}' \
               'http://127.0.0.1:8787/api/v1/data/weather/nasa-power/daily?latitude=36.8&longitude=10.2&start_date=2025-01-01&end_date=2025-01-07') || NASA_STATUS=000
