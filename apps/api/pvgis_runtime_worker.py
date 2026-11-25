@@ -3,11 +3,12 @@
 This entrypoint is used only by the CI workflow with a dedicated Wrangler config.
 It is not imported by the production API Worker.
 """
+import asyncio
 import json
 from datetime import date
 
 from fastapi import FastAPI
-from js import AbortController, Object, Response
+from js import AbortController, Object, Response, fetch
 from pyodide.ffi import to_js
 from workers import asgi
 
@@ -65,6 +66,46 @@ async def pvgis_runtime_probe():
         "abort_signal_attached": calls[0][1].signal is not None,
         "payload_verified": True,
     }
+
+
+@app.get("/pvgis-global-fetch-binding")
+async def pvgis_global_fetch_binding_probe():
+    """Prove global js.fetch is callable without depending on external DNS."""
+    controller = AbortController.new()
+    options = to_js(
+        {
+            "method": "GET",
+            "redirect": "error",
+            "signal": controller.signal,
+        },
+        dict_converter=Object.fromEntries,
+    )
+    try:
+        response = await asyncio.wait_for(
+            fetch("https://nova-core-fetch-probe.invalid/", options),
+            timeout=5,
+        )
+    except Exception as exc:
+        error_name = pvgis._worker_js_error_name(exc)
+        if not error_name:
+            raise RuntimeError(
+                "Global Fetch rejected without a safe JavaScript error class"
+            ) from exc
+        return {
+            "status": "ok",
+            "runtime": "cloudflare-python-worker-pyodide",
+            "transport": "global-js-fetch",
+            "fetch_callable": True,
+            "expected_network_rejection": True,
+            "js_error_class": error_name,
+            "abort_signal_attached": options.signal is not None,
+        }
+    else:
+        try:
+            await response.body.cancel()
+        except Exception:
+            pass
+        raise RuntimeError("Reserved .invalid probe unexpectedly resolved")
 
 
 @app.get("/pvgis-global-fetch")
