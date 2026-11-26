@@ -136,6 +136,6 @@ def test_wapor_catalogue_metadata_matches_fao_v3_access_guidance():
     assert {item.code for item in record.variables} >= {
         "AETI", "RET", "NPP", "E", "T", "I"
     }
-    assert any("no api key" in item.lower() for item in record.limitations)
+    assert any("without an api key" in item.lower() for item in record.limitations)
     assert any("corrections" in item.lower() for item in record.limitations)
     assert "no NOVA WaPOR connector" in record.implementation_note
