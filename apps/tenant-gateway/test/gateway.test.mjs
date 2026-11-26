@@ -12,7 +12,7 @@ const ACCESS_AUDIENCE = "cloudflare-access-app-audience";
 const SIGNING_SECRET = "test-only-secret-material-that-is-at-least-32-bytes";
 const PATH = "/api/v1/tenants/tenant-a/sites/site-a";
 
-function b64url(bytes) {
+function jsonResponse(value) {\n  return new Response(JSON.stringify(value), {\n    headers: { "content-type": "application/json" },\n  });\n}\n\nfunction b64url(bytes) {
   return Buffer.from(bytes).toString("base64url");
 }
 
@@ -90,10 +90,10 @@ test("verifies Access JWT, signs exact tenant path and forwards only through Ser
     },
   });
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => ({
-    ok: true,
-    json: async () => ({ keys: [fixture.jwk] }),
-  });
+  globalThis.fetch = async (url, options) => {
+    assert.ok(options.signal instanceof AbortSignal);
+    return jsonResponse({ keys: [fixture.jwk] });
+  };
   try {
     const result = await gateway.fetch(request({ token: fixture.token }), env);
     assert.equal(result.status, 200);
@@ -153,11 +153,8 @@ test("rejects duplicate JSON members in Access JWT headers and claims", async ()
   });
   unsupportedHeaderFixture.jwk.kid = "access-key-crit";
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({
-      keys: [headerFixture.jwk, claimsFixture.jwk, unsupportedHeaderFixture.jwk],
-    }),
+  globalThis.fetch = async () => jsonResponse({
+    keys: [headerFixture.jwk, claimsFixture.jwk, unsupportedHeaderFixture.jwk],
   });
   let called = false;
   const env = environment(headerFixture.jwk, { fetch: async () => { called = true; } });
@@ -196,10 +193,7 @@ test("rejects non-GET methods and query strings before authentication or forward
 test("fails closed when the private Service Binding is missing", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({ keys: [fixture.jwk] }),
-  });
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
   try {
     const result = await gateway.fetch(
       request({ token: fixture.token }),
@@ -214,10 +208,7 @@ test("fails closed when the private Service Binding is missing", async () => {
 test("does not forward non-JSON, oversized or unexpected upstream responses", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({ keys: [fixture.jwk] }),
-  });
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
   try {
     const nonJson = await gateway.fetch(
       request({ token: fixture.token }),
@@ -261,10 +252,7 @@ test("does not forward non-JSON, oversized or unexpected upstream responses", as
 test("does not disclose upstream response details on Service Binding failure", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({ keys: [fixture.jwk] }),
-  });
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
   try {
     const result = await gateway.fetch(
       request({ token: fixture.token }),
