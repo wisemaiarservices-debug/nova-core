@@ -44,6 +44,7 @@ async function fixtureAccessToken(overrides = {}) {
     aud: [ACCESS_AUDIENCE],
     sub: "access-subject-123456",
     iat: NOW / 1000 - 5,
+    nbf: NOW / 1000 - 5,
     exp: NOW / 1000 + 300,
     ...overrides,
   };
