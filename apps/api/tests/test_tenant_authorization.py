@@ -14,7 +14,7 @@ def membership(subject: str = "user-a", tenant: str = "tenant-a", role: str = "o
     return TenantMembership(subject=subject, tenant_id=tenant, role=role, active=active, tenant_active=tenant_active)
 
 
-def grant(subject: str = "user-a", tenant: str = "tenant-a", resource: str = "site-1", actions=("read", "ingest")):
+def grant(subject: str = "user-a", tenant: str = "tenant-a", resource: str = "site-1", actions=("read",)):
     return ResourceGrant(
         subject=subject,
         tenant_id=tenant,
@@ -194,14 +194,9 @@ def test_authorization_decision_cannot_claim_allowed_with_denial_reason():
 
 
 def test_analyst_and_service_roles_remain_action_limited():
-    analyst = authorize_resource_action(
-        principal_subject="analyst-1", tenant_id="tenant-a",
-        resource_type="source", resource_id="source-1", action="ingest",
-        memberships=(membership(subject="analyst-1", role="analyst"),),
-        resource_grants=(ResourceGrant(
-            subject="analyst-1", tenant_id="tenant-a", resource_type="source",
-            resource_id="source-1", actions=("ingest",),
-        ),),
+    analyst = decide(
+        action="ingest", memberships=(membership(role="analyst"),),
+        grants=(grant(actions=("ingest",)),),
     )
     assert analyst.reason_code == "role_denied"
     service = authorize_resource_action(
