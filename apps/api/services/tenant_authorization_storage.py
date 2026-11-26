@@ -35,10 +35,16 @@ RESOURCE_GRANTS_SQL = """
 SELECT subject, tenant_id, resource_type, resource_id, action
 FROM tenant_resource_grants
 WHERE tenant_id = ? AND subject = ? AND resource_type = ? AND resource_id = ?
+LIMIT 7
 """
 
 
 def _result_rows(result: Any, *, maximum: int) -> list[dict[str, Any]]:
+    success = getattr(result, "success", None)
+    if success is None and isinstance(result, dict):
+        success = result.get("success")
+    if success is False:
+        raise TenantAuthorizationStorageError("authorization storage returned an unsuccessful result")
     rows = getattr(result, "results", None)
     if rows is None and isinstance(result, dict):
         rows = result.get("results")
