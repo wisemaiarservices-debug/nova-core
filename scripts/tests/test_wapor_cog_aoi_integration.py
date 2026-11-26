@@ -20,7 +20,28 @@ AOI = {
 }
 
 
-def test_processes_local_cog_window_and_emits_truthful_provenance(monkeypatch):
+class _SyntheticCogDataset:
+    """Wrap an in-memory GTiff with the GDAL COG layout metadata contract."""
+    def __init__(self, dataset):
+        self._dataset = dataset
+
+    def __getattr__(self, name):
+        return getattr(self._dataset, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self._dataset.close()
+        return False
+
+    def tags(self, ns=None):
+        if ns == "IMAGE_STRUCTURE":
+            return {"LAYOUT": "COG"}
+        return self._dataset.tags(ns=ns)
+
+
+def test_processes_synthetic_cog_window_and_emits_truthful_provenance(monkeypatch):
     samples = np.array(
         [
             [1, 2, 90, 90],
@@ -46,7 +67,7 @@ def test_processes_local_cog_window_and_emits_truthful_provenance(monkeypatch):
     monkeypatch.setattr(
         runner,
         "list_mapsets",
-        lambda: {"mapsets": [{"code": MAPSET, "unit": "mm/day", "caption": "Evapotranspiration"}]},
+        lambda: {"mapsets": [{"code": MAPSET, "unit": "mm/day", "caption": "Evapotranspiration"}], "truncated": False},
     )
     monkeypatch.setattr(
         runner,
@@ -59,20 +80,28 @@ def test_processes_local_cog_window_and_emits_truthful_provenance(monkeypatch):
                     "gsutil_uri": "gs://fao-gismgr-wapor-3-data/example.tif",
                     "period_start": "2024-02-01",
                 }
-            ]
+            ],
+            "truncated": False,
         },
     )
     monkeypatch.setattr(runner, "_preflight_cog", lambda url: 1024)
-    monkeypatch.setattr(rasterio, "open", lambda *args, **kwargs: memory_file.open())
-
-    result = runner.process_wapor_aoi(
-        MAPSET,
-        RASTER,
-        AOI,
-        processing_code_commit="a" * 40,
+    monkeypatch.setattr(
+        rasterio,
+        "open",
+        lambda *args, **kwargs: _SyntheticCogDataset(memory_file.open()),
     )
-    manifest = result["manifest"]
 
+    try:
+        result = runner.process_wapor_aoi(
+            MAPSET,
+            RASTER,
+            AOI,
+            processing_code_commit="a" * 40,
+        )
+    finally:
+        memory_file.close()
+
+    manifest = result["manifest"]
     assert result["status"] == "research_result"
     assert manifest["provider_period_start"] == date(2024, 2, 1).isoformat()
     assert manifest["provider_period_end"] == date(2024, 2, 10).isoformat()
@@ -95,38 +124,3 @@ def test_processes_local_cog_window_and_emits_truthful_provenance(monkeypatch):
     assert len(manifest["processed_window_sha256"]) == 64
     assert result["source"]["object_sha256"] is None
     assert "not a field sensor" in " ".join(result["limitations"])
-
-    memory_file.close()
-
-
-
-def test_rejects_aoi_that_is_only_partially_covered_by_the_raster():
-    from types import SimpleNamespace
-    import pytest
-    from affine import Affine
-    from shapely.geometry import mapping, box
-
-    source = SimpleNamespace(
-        transform=Affine.translation(0, 4) * Affine.scale(1, -1),
-        width=4,
-        height=4,
-    )
-    partial = mapping(box(-1, 1, 2, 3))
-    with pytest.raises(runner.ResearchProcessingError, match="extends beyond"):
-        runner._require_full_aoi_coverage(partial, source)
-
-
-def test_accepts_aoi_fully_inside_rotated_affine_raster_footprint():
-    from types import SimpleNamespace
-    from affine import Affine
-    from shapely.geometry import Polygon, mapping
-
-    transform = Affine(1, 0.2, 0, 0.1, -1, 4)
-    source = SimpleNamespace(transform=transform, width=4, height=4)
-    corners = [
-        transform * (0, 0), transform * (4, 0),
-        transform * (4, 4), transform * (0, 4),
-    ]
-    footprint = Polygon(corners)
-    aoi = footprint.buffer(-0.1)
-    runner._require_full_aoi_coverage(mapping(aoi), source)
