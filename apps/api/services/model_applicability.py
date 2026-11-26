@@ -20,12 +20,28 @@ Scope = Literal["restricted", "unrestricted", "not_required", "unknown"]
 Lifecycle = Literal["research", "offline_evaluated", "independently_validated"]
 
 
+def _normalize_string_tuple(value, label: str) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"{label} must be an array of strings")
+    normalized = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{label} cannot contain blank or non-string values")
+        normalized.append(item.strip())
+    return tuple(normalized)
+
+
 class FeatureRequirement(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     metric: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_.-]*$")
     accepted_units: tuple[str, ...] = Field(min_length=1, max_length=50)
     accepted_evidence_classes: tuple[EvidenceClass, ...] = Field(min_length=1, max_length=7)
+
+    @field_validator("accepted_units", mode="before")
+    @classmethod
+    def normalize_units(cls, value):
+        return _normalize_string_tuple(value, "accepted units")
 
     @model_validator(mode="after")
     def validate_unique_acceptance_values(self) -> "FeatureRequirement":
@@ -39,21 +55,29 @@ class FeatureRequirement(BaseModel):
 
 
 class AvailableFeature(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     metric: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_.-]*$")
     unit: str = Field(min_length=1, max_length=48)
     evidence_class: EvidenceClass
 
+    @field_validator("unit", mode="before")
+    @classmethod
+    def normalize_feature_unit(cls, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("feature unit must be a non-empty string")
+        return value.strip()
+
 
 class ModelApplicabilityContract(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     model_id: str = Field(min_length=1, max_length=120)
     model_version: str = Field(min_length=1, max_length=120)
     domain: Domain
     crop_scope: Scope = "unknown"
     supported_crop_species: tuple[str, ...] = Field(default=(), max_length=100)
+
     climate_scope: Scope = "unknown"
     supported_climate_zones: tuple[str, ...] = Field(default=(), max_length=100)
     equipment_scope: Scope = "unknown"
@@ -63,6 +87,11 @@ class ModelApplicabilityContract(BaseModel):
     required_features: tuple[FeatureRequirement, ...] = Field(default=(), max_length=100)
     lifecycle: Lifecycle = "research"
     validation_record_reference: str | None = Field(default=None, max_length=240)
+
+    @field_validator("supported_crop_species", "supported_climate_zones", "supported_equipment_classes", mode="before")
+    @classmethod
+    def normalize_scope_values(cls, value, info):
+        return _normalize_string_tuple(value, info.field_name)
 
     @model_validator(mode="after")
     def validate_envelope(self) -> "ModelApplicabilityContract":
@@ -89,7 +118,7 @@ class ModelApplicabilityContract(BaseModel):
 
 
 class ClientApplicabilityContext(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     tenant_id: str = Field(min_length=1, max_length=120)
     site_id: str = Field(min_length=1, max_length=120)
@@ -99,6 +128,20 @@ class ClientApplicabilityContext(BaseModel):
     land_area_m2: float | None = Field(default=None, gt=0, le=1_000_000_000_000_000, allow_inf_nan=False)
     equipment_classes: tuple[str, ...] = Field(default=(), max_length=100)
     available_features: tuple[AvailableFeature, ...] = Field(default=(), max_length=100)
+
+    @field_validator("crop_species", "climate_zone", mode="before")
+    @classmethod
+    def normalize_optional_scope_values(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("optional scope values must be non-empty strings when supplied")
+        return value.strip()
+
+    @field_validator("equipment_classes", mode="before")
+    @classmethod
+    def normalize_equipment_classes(cls, value):
+        return _normalize_string_tuple(value, "equipment classes")
 
     @field_validator("land_area_m2", mode="before")
     @classmethod
@@ -128,7 +171,7 @@ class ClientApplicabilityContext(BaseModel):
 
 
 class ApplicabilityAssessment(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     model_id: str
     model_version: str
