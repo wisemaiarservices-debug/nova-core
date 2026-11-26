@@ -43,17 +43,32 @@ def _valid_integer(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _python_value(value: Any) -> Any:
+    """Normalize Pyodide JavaScript proxies while leaving CPython values intact."""
+    to_python = getattr(value, "to_py", None)
+    if callable(to_python):
+        try:
+            return to_python()
+        except Exception:
+            # Keep validation fail-closed if a proxy cannot be converted.
+            return value
+    return value
+
+
 def _rows(result: Any, *, maximum: int) -> list[dict[str, Any]]:
-    success = getattr(result, "success", None)
+    # D1 returns JavaScript objects and arrays in Workers. Pyodide exposes
+    # these as JsProxy values rather than native Python dict/list instances.
+    success = _python_value(getattr(result, "success", None))
     if success is None and isinstance(result, dict):
         success = result.get("success")
     if success is not True:
         raise RequestReplayStorageError("request replay storage is unavailable")
-    rows = getattr(result, "results", None)
+    rows = _python_value(getattr(result, "results", None))
     if rows is None and isinstance(result, dict):
         rows = result.get("results")
     if not isinstance(rows, list) or len(rows) > maximum:
         raise RequestReplayStorageError("request replay storage returned an invalid result")
+    rows = [_python_value(row) for row in rows]
     if any(not isinstance(row, dict) for row in rows):
         raise RequestReplayStorageError("request replay storage returned an invalid result")
     return rows
