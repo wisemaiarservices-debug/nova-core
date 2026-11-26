@@ -35,7 +35,10 @@ def _scheduled_epoch_seconds(scheduled_time_ms: Any) -> int:
     """
     if isinstance(scheduled_time_ms, bool) or not isinstance(scheduled_time_ms, (int, float)):
         raise ValueError("invalid scheduled invocation time")
-    if not math.isfinite(scheduled_time_ms) or scheduled_time_ms <= 0 or not scheduled_time_ms.is_integer() if isinstance(scheduled_time_ms, float) else scheduled_time_ms <= 0:
+    if isinstance(scheduled_time_ms, float):
+        if not math.isfinite(scheduled_time_ms) or not scheduled_time_ms.is_integer():
+            raise ValueError("invalid scheduled invocation time")
+    if scheduled_time_ms <= 0:
         raise ValueError("invalid scheduled invocation time")
     return int(scheduled_time_ms) // 1000
 
