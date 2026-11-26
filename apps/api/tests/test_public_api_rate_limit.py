@@ -72,7 +72,7 @@ def test_rate_limit_binding_is_production_only_until_preview_support_exists():
     assert namespace_id.isdecimal() and int(namespace_id) > 0
     assert len({item["namespace_id"] for item in bindings}) == len(bindings)
     assert binding["simple"]["limit"] == 60
-    assert binding["simple"]["period"] in {10, 60}
+    assert binding["simple"]["period"] == 60
     assert "ratelimits" not in config["previews"]
 
 
