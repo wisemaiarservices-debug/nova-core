@@ -97,3 +97,36 @@ def test_processes_local_cog_window_and_emits_truthful_provenance(monkeypatch):
     assert "not a field sensor" in " ".join(result["limitations"])
 
     memory_file.close()
+
+
+
+def test_rejects_aoi_that_is_only_partially_covered_by_the_raster():
+    from types import SimpleNamespace
+    import pytest
+    from affine import Affine
+    from shapely.geometry import mapping, box
+
+    source = SimpleNamespace(
+        transform=Affine.translation(0, 4) * Affine.scale(1, -1),
+        width=4,
+        height=4,
+    )
+    partial = mapping(box(-1, 1, 2, 3))
+    with pytest.raises(runner.ResearchProcessingError, match="extends beyond"):
+        runner._require_full_aoi_coverage(partial, source)
+
+
+def test_accepts_aoi_fully_inside_rotated_affine_raster_footprint():
+    from types import SimpleNamespace
+    from affine import Affine
+    from shapely.geometry import Polygon, mapping
+
+    transform = Affine(1, 0.2, 0, 0.1, -1, 4)
+    source = SimpleNamespace(transform=transform, width=4, height=4)
+    corners = [
+        transform * (0, 0), transform * (4, 0),
+        transform * (4, 4), transform * (0, 4),
+    ]
+    footprint = Polygon(corners)
+    aoi = footprint.buffer(-0.1)
+    runner._require_full_aoi_coverage(mapping(aoi), source)

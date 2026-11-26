@@ -121,6 +121,22 @@ def _preflight_cog(url: str) -> int:
         raise ResearchProcessingError("WaPOR COG preflight failed or timed out") from exc
 
 
+def _require_full_aoi_coverage(transformed_geometry: dict[str, Any], source) -> None:
+    """Reject AOIs extending beyond the exact affine raster footprint."""
+    from shapely.geometry import Polygon, shape
+
+    footprint = Polygon([
+        source.transform * (0, 0),
+        source.transform * (source.width, 0),
+        source.transform * (source.width, source.height),
+        source.transform * (0, source.height),
+    ])
+    if footprint.is_empty or not footprint.is_valid:
+        raise ResearchProcessingError("WaPOR COG has an invalid raster footprint")
+    if not footprint.covers(shape(transformed_geometry)):
+        raise ResearchProcessingError("Research AOI extends beyond the selected WaPOR raster footprint")
+
+
 def _canonical_hash(payload: Any) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -180,7 +196,7 @@ def process_wapor_aoi(
         from rasterio.errors import WindowError
         from rasterio.features import geometry_mask, geometry_window
         from rasterio.warp import transform_geom
-        from shapely.geometry import shape
+        from shapely.geometry import Polygon, shape
     except ImportError as exc:
         raise ResearchProcessingError("Research raster dependencies are missing; install requirements-research.txt") from exc
 
@@ -204,6 +220,7 @@ def process_wapor_aoi(
                 if source.crs is None:
                     raise ResearchProcessingError("WaPOR COG is missing an explicit coordinate reference system")
                 transformed_geometry = transform_geom("OGC:CRS84", source.crs, aoi_geometry, precision=-1)
+                _require_full_aoi_coverage(transformed_geometry, source)
                 try:
                     window = geometry_window(source, [transformed_geometry])
                 except WindowError as exc:
