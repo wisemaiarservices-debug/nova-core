@@ -53,9 +53,12 @@ class FeatureRequirement(BaseModel):
 class AvailableFeature(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
+    tenant_id: str = Field(min_length=1, max_length=120)
+    site_id: str = Field(min_length=1, max_length=120)
     metric: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_.-]*$")
     unit: str = Field(min_length=1, max_length=48)
     evidence_class: EvidenceClass
+    evidence_reference: str = Field(min_length=1, max_length=240)
 
 
 class ModelApplicabilityContract(BaseModel):
@@ -153,6 +156,9 @@ class ClientApplicabilityContext(BaseModel):
 
     @model_validator(mode="after")
     def unique_available_metrics(self) -> "ClientApplicabilityContext":
+        for feature in self.available_features:
+            if feature.tenant_id != self.tenant_id or feature.site_id != self.site_id:
+                raise ValueError("available feature tenant/site must match the applicability context")
         metrics = [item.metric for item in self.available_features]
         if len(metrics) != len(set(metrics)):
             raise ValueError("available feature metrics must be unique")
