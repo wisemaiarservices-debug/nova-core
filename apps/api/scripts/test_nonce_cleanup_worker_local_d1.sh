@@ -12,7 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-npx --yes wrangler@4 d1 migrations apply nova-core-tenant-db --local --config "${CONFIG}" --yes
+npx --yes wrangler@4 d1 migrations apply nova-core-tenant-db --local --config "${CONFIG}" --force
 npx --yes wrangler@4 d1 execute nova-core-tenant-db --local --config "${CONFIG}" --command "
 INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at)
 VALUES ('runtime-expired-nonce-0001', 1, 1, 1),
