@@ -81,6 +81,16 @@ def test_cors_wraps_rate_limiter_for_throttled_browser_responses():
     assert app.user_middleware[1].cls is PublicApiRateLimitMiddleware
 
 
+def test_empty_cloudflare_environment_fails_closed():
+    messages, reached = asyncio.run(invoke(
+        PublicApiRateLimitMiddleware(None),
+        make_scope(env={}),
+    ))
+    assert messages[0]["status"] == 503
+    assert b"rate_limiter_unavailable" in messages[1]["body"]
+    assert reached is False
+
+
 def test_cloudflare_scope_without_binding_fails_closed():
     messages, reached = asyncio.run(invoke(
         PublicApiRateLimitMiddleware(None),
