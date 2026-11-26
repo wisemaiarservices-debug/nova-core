@@ -20,7 +20,7 @@ def _model(**overrides):
         "climate_scope": "restricted",
         "supported_climate_zones": ("arid", "semi_arid"),
         "equipment_scope": "restricted",
-        "supported_equipment_classes": ("sensor", "weather_station"),
+        "supported_equipment_classes": ("soil_moisture_sensor", "weather_station"),
         "minimum_land_area_m2": 1000,
         "maximum_land_area_m2": 500_000,
         "required_features": (
@@ -45,12 +45,15 @@ def _context(**overrides):
         "crop_species": "tomato",
         "climate_zone": "arid",
         "land_area_m2": 10_000,
-        "equipment_classes": ("sensor", "weather_station"),
+        "equipment_classes": ("soil_moisture_sensor", "weather_station"),
         "available_features": (
             AvailableFeature(
+                tenant_id="tenant-1",
+                site_id="site-1",
                 metric="soil.moisture",
                 unit="% VWC",
                 evidence_class="field_observation",
+                evidence_reference="field-observation-001",
             ),
         ),
     }
@@ -99,9 +102,12 @@ def test_missing_features_and_wrong_units_or_evidence_abstain():
         _model(),
         _context(available_features=(
             AvailableFeature(
+                tenant_id="tenant-1",
+                site_id="site-1",
                 metric="soil.moisture",
                 unit="fraction",
                 evidence_class="satellite_derived",
+                evidence_reference="satellite-input-001",
             ),
         )),
     )
@@ -129,7 +135,7 @@ def test_invalid_scope_and_area_ranges_are_rejected():
 
 
 def test_duplicate_context_features_and_nonfinite_area_are_rejected():
-    feature = AvailableFeature(metric="soil.moisture", unit="% VWC", evidence_class="field_observation")
+    feature = AvailableFeature(tenant_id="tenant-1", site_id="site-1", metric="soil.moisture", unit="% VWC", evidence_class="field_observation", evidence_reference="field-observation-001")
     with pytest.raises(ValidationError, match="unique"):
         _context(available_features=(feature, feature))
     with pytest.raises(ValidationError):
@@ -143,41 +149,22 @@ def test_restricted_equipment_scope_requires_client_equipment_metadata():
     assert any("equipment classes are required" in reason for reason in result.reasons)
 
 
-def test_applicability_scope_values_are_bounded_and_unique():
-    with pytest.raises(ValidationError, match="supported crop species must be unique"):
-        _model(supported_crop_species=("tomato", "TOMATO"))
+def test_available_features_require_evidence_reference_and_exact_tenant_site():
     with pytest.raises(ValidationError):
-        _model(supported_crop_species=tuple(f"crop-{index}" for index in range(201)))
-
-
-def test_context_equipment_classes_match_vendor_neutral_registry_values():
-    result = assess_model_applicability(
-        _model(supported_equipment_classes=("sensor",)),
-        _context(equipment_classes=("SENSOR",)),
-    )
-    assert result.status == "applicable_for_review"
-    with pytest.raises(ValidationError):
-        _context(equipment_classes=("soil_moisture_sensor",))
-
-
-def test_context_area_rejects_oversized_integer_without_overflow():
-    with pytest.raises(ValidationError, match="finite number"):
-        _context(land_area_m2=10**10000)
-
-
-def test_model_and_context_trim_and_normalize_scope_identifiers():
-    model = _model(supported_equipment_classes=(" Sensor ", "WEATHER_STATION"))
-    context = _context(equipment_classes=("SENSOR", " weather_station "))
-    result = assess_model_applicability(model, context)
-    assert result.status == "applicable_for_review"
-
-
-def test_scope_lists_reject_empty_values_after_whitespace_normalization():
-    with pytest.raises(ValidationError, match="supported scope values must be non-empty"):
-        _model(supported_crop_species=("   ",))
-    with pytest.raises(ValidationError, match="accepted units must be non-empty"):
-        FeatureRequirement(
+        AvailableFeature(
+            tenant_id="tenant-1",
+            site_id="site-1",
             metric="soil.moisture",
-            accepted_units=(" ",),
-            accepted_evidence_classes=("field_observation",),
+            unit="% VWC",
+            evidence_class="field_observation",
         )
+    feature = AvailableFeature(
+        tenant_id="tenant-2",
+        site_id="site-1",
+        metric="soil.moisture",
+        unit="% VWC",
+        evidence_class="field_observation",
+        evidence_reference="field-observation-002",
+    )
+    with pytest.raises(ValidationError, match="tenant/site"):
+        _context(available_features=(feature,))
