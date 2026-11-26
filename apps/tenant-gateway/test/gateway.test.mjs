@@ -12,7 +12,13 @@ const ACCESS_AUDIENCE = "cloudflare-access-app-audience";
 const SIGNING_SECRET = "test-only-secret-material-that-is-at-least-32-bytes";
 const PATH = "/api/v1/tenants/tenant-a/sites/site-a";
 
-function jsonResponse(value) {\n  return new Response(JSON.stringify(value), {\n    headers: { "content-type": "application/json" },\n  });\n}\n\nfunction b64url(bytes) {
+function jsonResponse(value) {
+  return new Response(JSON.stringify(value), {
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function b64url(bytes) {
   return Buffer.from(bytes).toString("base64url");
 }
 
