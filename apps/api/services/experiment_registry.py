@@ -1,19 +1,20 @@
-"""Reproducible experiment manifests and bounded offline regression evaluation.
+"""Reproducible experiment manifests and offline regression evaluation.
 
-This module validates metadata and computes metrics from caller-supplied arrays.
-It does not train models, load datasets, persist records, or certify results.
+This module validates experiment metadata and computes metrics from caller-supplied
+arrays. It does not train models, load datasets, persist records, or certify results.
 """
 from __future__ import annotations
 
 import math
-from datetime import datetime
 from itertools import islice
+from datetime import datetime
 from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+
 MAX_EVALUATION_SAMPLES = 1_000_000
-MAX_RASTER_PROCESSING_MANIFESTS = 200
+
 
 EvidenceClass = Literal[
     "field_observation",
@@ -27,11 +28,6 @@ EvidenceClass = Literal[
 ]
 
 
-def _require_aware(value: datetime, label: str) -> None:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{label} timestamps must include a valid timezone offset")
-
-
 class TimeWindow(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -40,8 +36,10 @@ class TimeWindow(BaseModel):
 
     @model_validator(mode="after")
     def validate_window(self) -> "TimeWindow":
-        _require_aware(self.start, "split")
-        _require_aware(self.end, "split")
+        if self.start.tzinfo is None or self.end.tzinfo is None:
+            raise ValueError("split timestamps must include a timezone")
+        if self.start.utcoffset() is None or self.end.utcoffset() is None:
+            raise ValueError("split timestamps must include a valid UTC offset")
         if self.end <= self.start:
             raise ValueError("split window end must be after start")
         return self
@@ -66,20 +64,22 @@ class ChronologicalSplit(BaseModel):
 class EvaluationMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    sample_count: int = Field(ge=2)
+    sample_count: int = Field(ge=2, le=MAX_EVALUATION_SAMPLES)
     mae: float = Field(ge=0, allow_inf_nan=False)
     rmse: float = Field(ge=0, allow_inf_nan=False)
     mean_error: float = Field(allow_inf_nan=False)
     baseline_mae: float = Field(ge=0, allow_inf_nan=False)
     baseline_rmse: float = Field(ge=0, allow_inf_nan=False)
-    rmse_skill_score: float | None = Field(default=None, allow_inf_nan=False)
+    rmse_skill_score: float | None = Field(default=None, le=1.0, allow_inf_nan=False)
     test_period_start: datetime
     test_period_end: datetime
 
     @model_validator(mode="after")
     def validate_test_period(self) -> "EvaluationMetrics":
-        _require_aware(self.test_period_start, "test period")
-        _require_aware(self.test_period_end, "test period")
+        if self.test_period_start.tzinfo is None or self.test_period_end.tzinfo is None:
+            raise ValueError("test period timestamps must include a timezone")
+        if self.test_period_start.utcoffset() is None or self.test_period_end.utcoffset() is None:
+            raise ValueError("test period timestamps must include a valid UTC offset")
         if self.test_period_end <= self.test_period_start:
             raise ValueError("test period end must be after start")
         return self
@@ -98,7 +98,7 @@ class RasterInputReference(BaseModel):
 
 
 class ExperimentManifest(BaseModel):
-    """Immutable description of an experiment; status is not deployment approval."""
+    """Immutable description of an experiment; status is not a deployment approval."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -130,8 +130,8 @@ class ExperimentManifest(BaseModel):
             raise ValueError("feature_names must be unique")
         if any(not name.strip() or len(name) > 100 for name in self.feature_names):
             raise ValueError("feature names must be non-empty and at most 100 characters")
-        if self.status == "evaluated" and self.metrics is None:
-            raise ValueError("evaluated experiments require holdout metrics")
+        if (self.status == "evaluated") != (self.metrics is not None):
+            raise ValueError("evaluated experiments require holdout metrics and research experiments must not carry them")
         raster_ids = [item.manifest_id for item in self.raster_inputs]
         if len(set(raster_ids)) != len(raster_ids):
             raise ValueError("raster input manifest IDs must be unique")
@@ -156,7 +156,7 @@ def _validated_values(values: Sequence[float], name: str) -> list[float]:
     except TypeError as exc:
         raise ValueError(f"{name} must be a numeric sequence") from exc
     if len(raw_values) > MAX_EVALUATION_SAMPLES:
-        raise ValueError(f"{name} exceeds the {MAX_EVALUATION_SAMPLES}-sample evaluation limit")
+        raise ValueError(f"{name} exceeds the {MAX_EVALUATION_SAMPLES} sample limit")
     if any(isinstance(value, (bool, str, bytes)) for value in raw_values):
         raise ValueError(f"{name} must contain numeric values, not booleans or strings")
     try:
@@ -170,22 +170,15 @@ def _validated_values(values: Sequence[float], name: str) -> list[float]:
     return result
 
 
-def _regression_summary(
-    actual: list[float], predicted: list[float]
-) -> tuple[float, float, float]:
+def _regression_summary(actual: list[float], predicted: list[float]) -> tuple[float, float, float]:
     errors = [prediction - observed for observed, prediction in zip(actual, predicted)]
-    if not all(math.isfinite(error) for error in errors):
-        raise ValueError("regression metrics exceed supported numeric range")
-    scale = max(abs(error) for error in errors)
-    if scale == 0:
-        return 0.0, 0.0, 0.0
     try:
-        normalized = [error / scale for error in errors]
-        mae = scale * (math.fsum(abs(error) for error in normalized) / len(errors))
-        rmse = scale * math.sqrt(
-            math.fsum(error * error for error in normalized) / len(errors)
-        )
-        mean_error = scale * (math.fsum(normalized) / len(errors))
+        mae = math.fsum(abs(error) for error in errors) / len(errors)
+        norm = 0.0
+        for error in errors:
+            norm = math.hypot(norm, error)
+        rmse = norm / math.sqrt(len(errors))
+        mean_error = math.fsum(errors) / len(errors)
     except (OverflowError, ValueError) as exc:
         raise ValueError("regression metrics exceed supported numeric range") from exc
     if not all(math.isfinite(value) for value in (mae, rmse, mean_error)):
@@ -203,8 +196,8 @@ def evaluate_regression(
 ) -> EvaluationMetrics:
     """Compute paired holdout metrics against an explicit baseline.
 
-    The caller must prove that inputs are genuine held-out records, that baseline
-    selection avoided test leakage, and that all arrays use matching units.
+    The caller is responsible for proving that inputs are genuine held-out records,
+    that the baseline was selected without test leakage, and that units match.
     """
     actual = _validated_values(actuals, "actuals")
     predicted = _validated_values(predictions, "predictions")
@@ -231,23 +224,20 @@ def evaluate_regression(
     )
 
 
+
 def resolve_raster_input_manifests(
     experiment: ExperimentManifest,
     processing_manifests: Sequence[Mapping[str, Any]],
 ) -> tuple[Mapping[str, Any], ...]:
-    """Resolve raster references against supplied immutable processing manifests.
+    """Resolve every raster reference against supplied immutable processing manifests.
 
-    This is an offline consistency check only. The caller must load manifests
-    from an approved source and verify external storage integrity separately.
+    This is an offline consistency check only. The caller must load the manifests
+    from an approved source and verify any external storage integrity separately.
     """
     if not experiment.raster_inputs:
         return ()
-    if isinstance(processing_manifests, (str, bytes)) or not isinstance(
-        processing_manifests, Sequence
-    ):
-        raise ValueError("processing_manifests must be a bounded sequence of mappings")
-    if len(processing_manifests) > MAX_RASTER_PROCESSING_MANIFESTS:
-        raise ValueError("processing_manifests exceeds the 200-manifest resolution limit")
+    if len(processing_manifests) > 200:
+        raise ValueError("at most 200 processing manifests may be resolved in one experiment")
 
     by_id: dict[str, Mapping[str, Any]] = {}
     for manifest in processing_manifests:
@@ -258,7 +248,7 @@ def resolve_raster_input_manifests(
             raise ValueError("processing manifest is missing a stable manifest_id")
         if manifest_id in by_id:
             raise ValueError("processing manifest IDs must be unique")
-        by_id[manifest_id] = dict(manifest)
+        by_id[manifest_id] = manifest
 
     resolved: list[Mapping[str, Any]] = []
     for reference in experiment.raster_inputs:
