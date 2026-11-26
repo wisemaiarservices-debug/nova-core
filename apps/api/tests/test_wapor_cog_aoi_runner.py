@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from apps.api.services.research_aoi import canonical_research_aoi_sha256
+from apps.api.services.research_aoi import AOIValidationError, canonical_research_aoi_sha256
 
 from scripts.wapor_cog_aoi import (
     MAX_COG_OBJECT_BYTES,
@@ -251,7 +251,7 @@ def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
         ]],
         "unused_metadata": "x" * (1024 * 1024 + 1),
     }
-    with pytest.raises(ResearchProcessingError, match="1 MiB"):
+    with pytest.raises(AOIValidationError, match="1 MiB"):
         canonical_research_aoi_sha256(geometry)
 
 
