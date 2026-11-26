@@ -69,7 +69,7 @@ def test_site_requires_valid_timezone_and_structurally_valid_boundary():
         "type": "Polygon",
         "coordinates": [[[10, 36], [11, 36], [12, 36], [10, 36]]],
     }
-    with pytest.raises(ValidationError, match="structurally valid"):
+    with pytest.raises(ValidationError, match="structurally invalid"):
         SiteProfile(**SITE, boundary_geojson=invalid)
 
 
