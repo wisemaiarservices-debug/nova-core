@@ -177,7 +177,9 @@ export async function verifyCloudflareAccessJwt(
 
   const header = decodeJsonSegment(segments[0]);
   if (
+    Object.keys(header).sort().join(",") !== "alg,kid,typ" ||
     header.alg !== "RS256" ||
+    header.typ !== "JWT" ||
     typeof header.kid !== "string" ||
     !KEY_ID_PATTERN.test(header.kid)
   ) {
