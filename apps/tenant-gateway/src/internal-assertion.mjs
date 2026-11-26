@@ -130,12 +130,12 @@ async function readBoundedJwksResponse(response) {
     throw new TypeError("Cloudflare Access signing keys are unavailable");
   }
   const contentType = response.headers.get("content-type") || "";
-  if (!/^application\\/(?:json|jwk-set\\+json)(?:\\s*;|$)/i.test(contentType)) {
+  if (!/^application\/(?:json|jwk-set\+json)(?:\s*;|$)/i.test(contentType)) {
     throw new TypeError("Cloudflare Access signing keys have an invalid content type");
   }
   const contentLength = response.headers.get("content-length");
   if (contentLength !== null) {
-    if (!/^\\d+$/.test(contentLength) || Number(contentLength) > MAX_JWKS_RESPONSE_BYTES) {
+    if (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_JWKS_RESPONSE_BYTES) {
       throw new TypeError("Cloudflare Access signing-key response is too large");
     }
   }
