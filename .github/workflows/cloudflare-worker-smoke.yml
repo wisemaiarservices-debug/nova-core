@@ -67,6 +67,8 @@ jobs:
           grep -q '"status":"review_required"' /tmp/nova-recommendation.json
           curl --max-time 5 --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
           grep -q 'nasa-power/daily' /tmp/nova-openapi.json
+          grep -q 'data/water/wapor/mapsets' /tmp/nova-openapi.json
+          grep -q 'data/water/wapor/rasters' /tmp/nova-openapi.json
 
   pvgis-runtime-transport:
     name: PVGIS deterministic Pyodide runtime transport
@@ -104,6 +106,8 @@ jobs:
             exit 1
           fi
           jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .native_response_stream == true and .abort_signal_attached == true and .payload_verified == true' /tmp/nova-pvgis-runtime.json
+          curl --max-time 10 --silent --show-error --fail http://127.0.0.1:8788/wapor-runtime > /tmp/nova-wapor-runtime.json
+          jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .native_response_stream == true and .abort_signal_attached == true and .payload_verified == true' /tmp/nova-wapor-runtime.json
 
   pvgis-global-fetch-binding:
     name: PVGIS global js.fetch binding in Pyodide runtime
@@ -148,6 +152,10 @@ jobs:
             exit 1
           fi
           jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .transport == "global-js-fetch" and .fetch_callable == true and .expected_network_rejection == true and .abort_signal_attached == true' /tmp/nova-pvgis-global-binding.json
+          STATUS=$(curl --max-time 15 --silent --show-error -o /tmp/nova-wapor-global-binding.json -w '%{http_code}' http://127.0.0.1:8791/wapor-global-fetch-binding) || STATUS=000
+          echo "WAPOR_GLOBAL_FETCH_BINDING_HTTP_STATUS=$STATUS"
+          if [ "$STATUS" != "200" ]; then cat /tmp/nova-wapor-global-binding.json; cat /tmp/nova-pvgis-global-binding.log; exit 1; fi
+          jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .transport == "global-js-fetch" and .fetch_callable == true and .expected_network_rejection == true and .abort_signal_attached == true' /tmp/nova-wapor-global-binding.json
 
   pvgis-network-preflight:
     if: github.event_name == 'push'
