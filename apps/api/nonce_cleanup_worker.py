@@ -62,4 +62,9 @@ class Default(WorkerEntrypoint):
             database = env.TENANT_DB
         except AttributeError:
             database = None
-        await run_nonce_cleanup(database, scheduled_time_ms=controller.scheduledTime)
+        try:
+            await run_nonce_cleanup(database, scheduled_time_ms=controller.scheduledTime)
+        except Exception as exc:
+            # Keep diagnostics useful without emitting assertion or tenant data.
+            print(f"nonce cleanup scheduled handler failed: {type(exc).__name__}")
+            raise
