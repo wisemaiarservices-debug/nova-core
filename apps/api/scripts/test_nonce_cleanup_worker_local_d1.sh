@@ -21,13 +21,29 @@ VALUES ('runtime-expired-nonce-0001', 1, 1, 1),
 npx --yes wrangler@4 dev --local --test-scheduled --ip 127.0.0.1 --port "${PORT}" --config "${CONFIG}" >"${LOG_FILE}" 2>&1 &
 SERVER_PID="$!"
 ready=0
-for _ in $(seq 1 60); do
-  if curl --silent "${BASE_URL}/" >/dev/null 2>&1; then ready=1; break; fi
-  if ! kill -0 "${SERVER_PID}" 2>/dev/null; then cat "${LOG_FILE}"; echo "Wrangler exited before readiness" >&2; exit 1; fi
+for attempt in $(seq 1 180); do
+  if curl --silent --output /dev/null --write-out '%{http_code}' "${BASE_URL}/" >"${RESPONSE_FILE}" 2>/dev/null; then
+    ready=1
+    break
+  fi
+  if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+    echo "Wrangler exited before readiness (attempt ${attempt}/180)." >&2
+    cat "${LOG_FILE}" >&2
+    exit 1
+  fi
   sleep 1
 done
-if [[ "${ready}" != "1" ]]; then cat "${LOG_FILE}"; echo "Wrangler did not become ready" >&2; exit 1; fi
-if ! curl --silent --show-error --fail "${BASE_URL}/cdn-cgi/local/scheduled?cron=17+*+*+*+*&time=1800000000000&format=json" --output "${RESPONSE_FILE}"; then
+if [[ "${ready}" != "1" ]]; then
+  echo "Wrangler did not become ready within 180 seconds; last root response: $(cat "${RESPONSE_FILE}" 2>/dev/null || true)" >&2
+  cat "${LOG_FILE}" >&2
+  exit 1
+fi
+echo "Local workerd server is ready; invoking scheduled handler."
+if ! curl --silent --show-error --fail --max-time 30 --get \
+  --data-urlencode "cron=17 * * * *" \
+  --data-urlencode "time=1800000000000" \
+  --data-urlencode "format=json" \
+  "${BASE_URL}/cdn-cgi/local/scheduled" --output "${RESPONSE_FILE}"; then
   echo "Scheduled invocation failed; response:" >&2
   cat "${RESPONSE_FILE}" >&2 || true
   echo "Wrangler/workerd diagnostic log:" >&2
