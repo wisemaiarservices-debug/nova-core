@@ -7,7 +7,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from workers import WorkerEntrypoint
+try:
+    from workers import WorkerEntrypoint
+except ModuleNotFoundError as exc:
+    # The CPython test runner has no Workers runtime bridge (js module). The
+    # fallback keeps policy helpers testable; the deployment dry-run still
+    # packages the real Workers runtime entrypoint.
+    if exc.name != "js":
+        raise
+
+    class WorkerEntrypoint:
+        pass
 
 try:
     from .services.tenant_request_replay import MAX_CLEANUP_BATCH, RequestReplayStorageError, cleanup_expired_request_nonces
