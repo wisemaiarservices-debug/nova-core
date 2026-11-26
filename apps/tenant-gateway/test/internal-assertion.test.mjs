@@ -324,3 +324,40 @@ test("rejects invalid JWKS content type and malformed JSON", async () => {
     })),
   );
 });
+
+
+test("fails closed when the JWKS fetch exceeds its timeout", async () => {
+  const fixture = await fixtureAccessToken();
+  await assert.rejects(
+    verifyCloudflareAccessJwt(fixture.token, {
+      teamDomain: TEAM,
+      audience: ACCESS_AUDIENCE,
+      now: NOW,
+      fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
+        options.signal.addEventListener(
+          "abort",
+          () => reject(new Error("request aborted")),
+          { once: true },
+        );
+      }),
+    }),
+    /request aborted/,
+  );
+});
+
+test("accepts the matching signing key during a multi-key rotation overlap", async () => {
+  const fixture = await fixtureAccessToken();
+  const overlappingJwks = {
+    keys: [
+      { ...fixture.jwks.keys[0] },
+      { ...fixture.jwks.keys[0], kid: "previous-access-key" },
+    ],
+  };
+  const identity = await verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async () => jsonResponse(overlappingJwks),
+  });
+  assert.equal(identity.subject, "access-subject-123456");
+});
