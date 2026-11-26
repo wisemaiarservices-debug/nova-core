@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 _SHA256 = r"^[a-f0-9]{64}$"
 _COMMIT = r"^[a-f0-9]{40}$"
 _CODE = r"^[A-Z0-9][A-Z0-9._-]{1,63}$"
-_CRS = r"^(?:EPSG:(?!32767$)[1-9][0-9]{0,5}|OGC:CRS84)$"
+_CRS = r"^(?:EPSG:[1-9][0-9]{0,5}|OGC:CRS84)$"
 
 
 class RasterProcessingManifest(BaseModel):
@@ -135,6 +135,8 @@ class RasterProcessingManifest(BaseModel):
         elif any(value is not None for value in scaled_values):
             raise ValueError("scaled statistics require explicit scale and offset plus valid pixels")
 
+        if self.crs_identifier == "EPSG:32767":
+            raise ValueError("GeoTIFF user-defined CRS code 32767 is not an EPSG identifier")
         if self.geotransform is not None:
             if not all(math.isfinite(value) for value in self.geotransform):
                 raise ValueError("geotransform values must be finite")
