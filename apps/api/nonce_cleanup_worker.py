@@ -66,5 +66,6 @@ class Default(WorkerEntrypoint):
             await run_nonce_cleanup(database, scheduled_time_ms=controller.scheduledTime)
         except Exception as exc:
             # Keep diagnostics useful without emitting assertion or tenant data.
-            print(f"nonce cleanup scheduled handler failed: {type(exc).__name__}")
+            detail = str(exc) if isinstance(exc, RequestReplayStorageError) else type(exc).__name__
+            print(f"nonce cleanup scheduled handler failed: {detail}")
             raise
