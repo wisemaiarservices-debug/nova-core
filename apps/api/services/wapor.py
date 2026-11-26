@@ -69,8 +69,24 @@ def _validate_payload(payload: Any) -> dict[str, Any]:
     return payload
 
 
-def _request_json(url: str) -> dict[str, Any]:
+def _remaining_operation_time(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise RuntimeError("WaPOR discovery exceeded its 60-second operation deadline")
+    return remaining
+
+
+def _set_response_socket_timeout(response: Any, timeout: float) -> None:
+    """Apply the remaining operation budget to each blocking urllib read."""
+    raw = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    settimeout = getattr(raw, "settimeout", None)
+    if callable(settimeout):
+        settimeout(max(0.001, timeout))
+
+
+def _request_json(url: str, *, deadline: float | None = None) -> dict[str, Any]:
     _validate_api_url(url)
+    operation_deadline = deadline if deadline is not None else time.monotonic() + TOTAL_OPERATION_TIMEOUT_SECONDS
     request = Request(
         url,
         headers={
@@ -81,16 +97,15 @@ def _request_json(url: str) -> dict[str, Any]:
     )
     try:
         with build_opener(_RejectRedirects()).open(
-            request, timeout=TIMEOUT_SECONDS
+            request, timeout=min(TIMEOUT_SECONDS, _remaining_operation_time(operation_deadline))
         ) as response:
             if not _is_json_content_type(response.headers.get("Content-Type")):
                 raise RuntimeError("WaPOR returned a non-JSON content type")
-            deadline = time.monotonic() + TIMEOUT_SECONDS
             chunks: list[bytes] = []
             total = 0
             while True:
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("WaPOR request exceeded its total time limit")
+                remaining = _remaining_operation_time(operation_deadline)
+                _set_response_socket_timeout(response, min(TIMEOUT_SECONDS, remaining))
                 chunk = response.read(min(64 * 1024, MAX_RESPONSE_BYTES + 1 - total))
                 if not chunk:
                     break
@@ -101,10 +116,13 @@ def _request_json(url: str) -> dict[str, Any]:
             payload = json.loads(b"".join(chunks).decode("utf-8"))
     except HTTPError as exc:
         raise RuntimeError(f"WaPOR request failed with HTTP {exc.code}") from exc
-    except (URLError, TimeoutError) as exc:
+    except (URLError, TimeoutError, OSError) as exc:
+        if time.monotonic() >= operation_deadline:
+            raise RuntimeError("WaPOR discovery exceeded its 60-second operation deadline") from exc
         raise RuntimeError("WaPOR request failed or timed out") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("WaPOR returned invalid JSON") from exc
+    _remaining_operation_time(operation_deadline)
     return _validate_payload(payload)
 
 
@@ -238,18 +256,30 @@ def _pagination_next(envelope: dict[str, Any], current_url: str) -> str | None:
     return next_url
 
 
-def _collect_pages(first_url: str, request_json=_request_json) -> dict[str, Any]:
+def _collect_pages(
+    first_url: str,
+    request_json=_request_json,
+    *,
+    deadline: float | None = None,
+) -> dict[str, Any]:
+    operation_deadline = deadline if deadline is not None else time.monotonic() + TOTAL_OPERATION_TIMEOUT_SECONDS
     next_url: str | None = first_url
     items: list[dict[str, Any]] = []
     visited: set[str] = set()
     pages = 0
     truncated = False
     while next_url and pages < MAX_PAGES and len(items) < MAX_ITEMS:
+        _remaining_operation_time(operation_deadline)
         _validate_api_url(next_url)
         if next_url in visited:
             raise RuntimeError("WaPOR pagination cycle detected")
         visited.add(next_url)
-        envelope = request_json(next_url)["response"]
+        if request_json is _request_json:
+            payload = request_json(next_url, deadline=operation_deadline)
+        else:
+            payload = request_json(next_url)
+        _remaining_operation_time(operation_deadline)
+        envelope = payload["response"]
         page_items = envelope.get("items", [])
         if not isinstance(page_items, list) or not all(
             isinstance(item, dict) for item in page_items
@@ -263,6 +293,7 @@ def _collect_pages(first_url: str, request_json=_request_json) -> dict[str, Any]
         pages += 1
     if next_url:
         truncated = True
+    _remaining_operation_time(operation_deadline)
     return {"items": items, "pages_read": pages, "truncated": truncated}
 
 
@@ -476,12 +507,13 @@ def list_rasters(
     code = validate_mapset_code(mapset_code)
     if start_date and end_date and end_date < start_date:
         raise ValueError("end_date must be on or after start_date")
-    available = _collect_pages(BASE_URL, request_json)
+    deadline = time.monotonic() + TOTAL_OPERATION_TIMEOUT_SECONDS
+    available = _collect_pages(BASE_URL, request_json, deadline=deadline)
     if not any(item.get("code") == code for item in available["items"]):
         if available["truncated"]:
             raise RuntimeError("WaPOR mapset catalogue was truncated before the mapset could be verified")
         raise ValueError("mapset_code is not present in the current WaPOR v3 catalogue")
-    result = _collect_pages(f"{BASE_URL}/{code}/rasters", request_json)
+    result = _collect_pages(f"{BASE_URL}/{code}/rasters", request_json, deadline=deadline)
     return _raster_result(result, code, start_date, end_date)
 
 
