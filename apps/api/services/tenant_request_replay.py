@@ -47,7 +47,7 @@ def _rows(result: Any, *, maximum: int) -> list[dict[str, Any]]:
     success = getattr(result, "success", None)
     if success is None and isinstance(result, dict):
         success = result.get("success")
-    if success is False:
+    if success is not True:
         raise RequestReplayStorageError("request replay storage is unavailable")
     rows = getattr(result, "results", None)
     if rows is None and isinstance(result, dict):

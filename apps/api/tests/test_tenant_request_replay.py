@@ -179,6 +179,30 @@ def test_d1_storage_failure_fails_closed_without_leaking_details():
     assert "sensitive D1 details" not in str(error.value)
 
 
+@pytest.mark.parametrize("result", [
+    Result([], success=False),
+    type("MissingSuccess", (), {"results": []})(),
+    {"results": []},
+])
+def test_d1_claim_fails_closed_when_success_is_not_explicitly_true(result):
+    db = FakeD1(result)
+    with pytest.raises(RequestReplayStorageError, match="storage is unavailable"):
+        asyncio.run(consume_request_nonce(
+            db, jti="request-id-00000009", issued_at=100, expires_at=160, now=120,
+        ))
+
+
+@pytest.mark.parametrize("result", [
+    Result([], success=False),
+    type("MissingSuccess", (), {"results": []})(),
+    {"results": []},
+])
+def test_d1_cleanup_fails_closed_when_success_is_not_explicitly_true(result):
+    db = FakeD1(result)
+    with pytest.raises(RequestReplayStorageError, match="storage is unavailable"):
+        asyncio.run(cleanup_expired_request_nonces(db, now=1_800_000_000))
+
+
 def test_cleanup_uses_bounded_parameterized_delete():
     db = FakeD1(Result([{"jti": "expired-request-000001"}]))
     removed = asyncio.run(cleanup_expired_request_nonces(db, now=1_800_000_000, limit=25))
