@@ -45,8 +45,6 @@ def _entries(
     ifd_end = ifd_offset + 2 + count * 12 + 4
     if struct.unpack(endian + "I", data[ifd_end - 4:ifd_end])[0] != 0:
         raise GeoTiffError("Multi-image TIFF files are not supported")
-    if struct.unpack(endian + "I", data[ifd_end - 4:ifd_end])[0] != 0:
-        raise GeoTiffError("Multi-image TIFF files are not supported")
     protected = [(0, 8), (ifd_offset, ifd_end)]
     tags: dict[int, tuple[int, list[int] | list[float]]] = {}
     seen: set[int] = set()
@@ -192,8 +190,8 @@ def calculate_geotiff_statistics(data: bytes) -> dict[str, Any]:
     scaled_max: float | None = None
     scaled_mean = 0.0
 
-    for strip_offset, strip_size in strip_ranges:
-        raw = data[strip_offset:strip_offset + strip_size]
+    for strip_start, strip_end in strip_ranges:
+        raw = data[strip_start:strip_end]
         for (sample,) in struct.iter_unpack(endian + fmt, raw):
             value: int | float = sample if sample_format in (1, 2) else float(sample)
             if not math.isfinite(value):
