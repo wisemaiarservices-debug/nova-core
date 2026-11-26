@@ -40,7 +40,7 @@ class TimeWindow(BaseModel):
         if self.start.tzinfo is None or self.end.tzinfo is None:
             raise ValueError("split timestamps must include a timezone")
         if self.start.utcoffset() is None or self.end.utcoffset() is None:
-            raise ValueError("split timestamps must include a valid UTC offset")
+            raise ValueError("split timestamps must include a valid timezone offset")
         if self.end <= self.start:
             raise ValueError("split window end must be after start")
         return self
@@ -80,7 +80,7 @@ class EvaluationMetrics(BaseModel):
         if self.test_period_start.tzinfo is None or self.test_period_end.tzinfo is None:
             raise ValueError("test period timestamps must include a timezone")
         if self.test_period_start.utcoffset() is None or self.test_period_end.utcoffset() is None:
-            raise ValueError("test period timestamps must include a valid UTC offset")
+            raise ValueError("test period timestamps must include a valid timezone offset")
         if self.test_period_end <= self.test_period_start:
             raise ValueError("test period end must be after start")
         return self
@@ -247,7 +247,7 @@ def resolve_raster_input_manifests(
     if isinstance(processing_manifests, (str, bytes)) or not isinstance(processing_manifests, Sequence):
         raise ValueError("processing manifests must be supplied as a bounded sequence")
     if len(processing_manifests) > MAX_RASTER_PROCESSING_MANIFESTS:
-        raise ValueError(f"at most {MAX_RASTER_PROCESSING_MANIFESTS} processing manifests may be resolved in one experiment")
+        raise ValueError(f"processing manifest input exceeds the {MAX_RASTER_PROCESSING_MANIFESTS}-manifest limit")
 
     by_id: dict[str, Mapping[str, Any]] = {}
     for manifest in processing_manifests:

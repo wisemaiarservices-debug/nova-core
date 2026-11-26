@@ -7,6 +7,7 @@ from apps.api.services.experiment_registry import (
     ChronologicalSplit,
     ExperimentManifest,
     TimeWindow,
+    evaluate_regression,
 )
 from apps.api.services.research_dataset_snapshot import ResearchDatasetSnapshot
 from apps.api.services.research_experiment_pipeline import (
@@ -225,7 +226,7 @@ def test_evaluation_rejects_boolean_and_string_samples():
 
 def test_evaluation_rejects_more_than_one_million_samples():
     oversized = (0.0 for _ in range(1_000_001))
-    with pytest.raises(ValueError, match="sample limit"):
+    with pytest.raises(ValueError, match="evaluation limit"):
         evaluate_regression(
             oversized, [0.0, 0.0], [0.0, 0.0],
             test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
