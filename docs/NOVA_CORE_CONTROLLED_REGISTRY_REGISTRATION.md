@@ -59,34 +59,39 @@ Confirm all five tables exist. Check that every proposed site/source ID is unuse
 
 ## Reviewed registration parameterized batch pattern
 
-Prepare a parameterized D1 REST API batch locally from the approved evidence record. Use the D1 database query endpoint with a `batch` array; each item has `sql` and `params`. This is important: D1 batches are transactional, while a plain multi-statement SQL file is not the appropriate way to guarantee that the registry rows and audit events commit together. Never interpolate operator-provided strings into SQL.
+Prepare a parameterized D1 batch locally from the approved evidence record. Execute it only through a controlled, operator-only Worker or trusted server-side script that uses the D1 Worker binding's `D1Database.batch()` API. Do not expose a public registration route. The D1 REST `/query` endpoint accepts an individual query request; do not send it a `batch` array or assume multiple REST calls form one transaction. Never interpolate operator-provided strings into SQL.
 
-The following is a shape example, not executable without replacing the illustrative parameter values and IDs:
+The following is a shape example, not executable without replacing illustrative parameter values and IDs. The operator-only execution environment must bind the intended D1 database as `DB`:
 
-```json
-{
-  "batch": [
-    {
-      "sql": "INSERT INTO sites (id, name, description, latitude, longitude, timezone, status, metadata_json) VALUES (?, ?, ?, ?, ?, ?, 'unconfigured', '{}')",
-      "params": ["REAL_SITE_ID", "APPROVED_SITE_NAME", "APPROVED_DESCRIPTION", null, null, null]
-    },
-    {
-      "sql": "INSERT INTO audit_events (id, actor_type, actor_id, action, entity_type, entity_id, details_json) VALUES (?, 'operator', ?, 'registry.site_registered', 'site', ?, ?)",
-      "params": ["REAL_AUDIT_EVENT_ID", "APPROVED_OPERATOR_ID", "REAL_SITE_ID", "{\"evidence_ref\":\"APPROVED_EVIDENCE_REFERENCE\",\"review\":\"two-person-reviewed\"}"]
-    },
-    {
-      "sql": "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, endpoint_reference, verification_status, verification_method, license_reference, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?, '{}')",
-      "params": ["REAL_SOURCE_ID", "REAL_SITE_ID", "APPROVED_MODULE", "APPROVED_PROVIDER", "APPROVED_SOURCE_TYPE", "APPROVED_DISPLAY_NAME", null, null, null]
-    },
-    {
-      "sql": "INSERT INTO audit_events (id, actor_type, actor_id, action, entity_type, entity_id, details_json) VALUES (?, 'operator', ?, 'registry.source_registered', 'source', ?, ?)",
-      "params": ["REAL_SOURCE_AUDIT_ID", "APPROVED_OPERATOR_ID", "REAL_SOURCE_ID", "{\"evidence_ref\":\"APPROVED_SOURCE_EVIDENCE\",\"verification_status\":\"unverified\"}"]
-    }
-  ]
+```js
+const statements = [
+  env.DB.prepare(
+    "INSERT INTO sites (id, name, description, latitude, longitude, timezone, status, metadata_json) VALUES (?, ?, ?, ?, ?, ?, 'unconfigured', '{}')"
+  ).bind("REAL_SITE_ID", "APPROVED_SITE_NAME", "APPROVED_DESCRIPTION", null, null, null),
+  env.DB.prepare(
+    "INSERT INTO audit_events (id, actor_type, actor_id, action, entity_type, entity_id, details_json) VALUES (?, 'operator', ?, 'registry.site_registered', 'site', ?, ?)"
+  ).bind("REAL_AUDIT_EVENT_ID", "APPROVED_OPERATOR_ID", "REAL_SITE_ID", JSON.stringify({
+    evidence_ref: "APPROVED_EVIDENCE_REFERENCE",
+    review: "two-person-reviewed"
+  })),
+  env.DB.prepare(
+    "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, endpoint_reference, verification_status, verification_method, license_reference, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, 'unverified', ?, ?, '{}')"
+  ).bind("REAL_SOURCE_ID", "REAL_SITE_ID", "APPROVED_MODULE", "APPROVED_PROVIDER", "APPROVED_SOURCE_TYPE", "APPROVED_DISPLAY_NAME", null, null, null),
+  env.DB.prepare(
+    "INSERT INTO audit_events (id, actor_type, actor_id, action, entity_type, entity_id, details_json) VALUES (?, 'operator', ?, 'registry.source_registered', 'source', ?, ?)"
+  ).bind("REAL_SOURCE_AUDIT_ID", "APPROVED_OPERATOR_ID", "REAL_SOURCE_ID", JSON.stringify({
+    evidence_ref: "APPROVED_SOURCE_EVIDENCE",
+    verification_status: "unverified"
+  }))
+];
+
+const results = await env.DB.batch(statements);
+if (results.length !== statements.length || results.some((result) => !result.success)) {
+  throw new Error("registry_batch_failed");
 }
 ```
 
-Send the JSON body to `POST https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/d1/database/DATABASE_ID/query` using a narrowly scoped Cloudflare API token held only in a local secret environment or approved secret manager. Do not place the token in the JSON file, command history, repository, logs, or chat. Require a successful response for every batch result; on any error, stop and investigate rather than retrying with new IDs. Confirm the database/account IDs against the Cloudflare dashboard immediately before the request.
+Keep the operator-only execution surface inaccessible to public clients. Confirm the D1 binding points to the intended database immediately before execution. If the only available mechanism is the D1 REST `/query` endpoint, stop: this multi-statement registration must not be split across independent requests and described as atomic. Do not put API tokens in source, command history, logs, or chat.
 
 The site remains `unconfigured` until its owner and operating scope are confirmed. Do not mark it `active` as part of initial registration by default. Sources remain `unverified` until a separate evidence-based verification review. For a global source, use `null` for `site_id` only when the source is genuinely not site-bound.
 
@@ -96,9 +101,9 @@ For a site that already exists, or when registering multiple records, prepare a 
 
 After the second operator approves the completed batch body:
 
-1. Confirm the database name, account ID, and database ID against the Cloudflare dashboard.
-2. Execute the reviewed parameterized batch against that exact database. Do not execute against a production database unless the organization has explicitly designated it and approved the change.
-3. Confirm the API response reports success for every statement. D1 batch execution is transactional; on any error, stop and investigate before retrying.
+1. Confirm the database name, account ID, and D1 binding target against the Cloudflare dashboard.
+2. Execute the reviewed parameterized batch through the controlled operator-only D1 binding. Do not execute against a production database unless the organization has explicitly designated it and approved the change.
+3. Confirm every result succeeded. D1 `batch()` executes the statements transactionally; on any error, stop and investigate rather than retrying with new IDs.
 4. Re-run the read-only preflight queries. Confirm exactly one site, one source, and their corresponding audit events exist.
 5. Confirm the source has `verification_status='unverified'`, the site remains at its approved status, and no observations were inserted.
 6. Check `/api/v1/storage/status` and Cloudflare D1 row/storage usage.
