@@ -184,7 +184,7 @@ def test_unsuccessful_d1_resource_result_fails_closed():
     )
     import pytest
     from apps.api.services.tenant_authorization_storage import TenantAuthorizationStorageError
-    with pytest.raises(TenantAuthorizationStorageError, match="unsuccessful result"):
+    with pytest.raises(TenantAuthorizationStorageError, match="unsuccessful or incomplete"):
         asyncio.run(read_authorized_tenant_resource(
             db, principal_subject="subject-a", tenant_id="tenant-a",
             resource_type="site", resource_id="site-a",
