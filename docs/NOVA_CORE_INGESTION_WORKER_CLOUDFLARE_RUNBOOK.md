@@ -45,6 +45,16 @@ Official references:
 
 The dedicated ingestion hostname is separate so Access can require Service Auth without blocking browser-facing read endpoints.
 
+## Worker configuration
+
+The isolated Worker now has a Wrangler configuration at `apps/ingestion-worker/wrangler.toml`:
+- Worker name: `nova-core-ingest-api`.
+- Entry point: `src/index.mjs`.
+- `workers.dev` enabled for the dedicated hostname.
+- No D1 binding, Access secret, service-token grant, or credential is committed.
+
+For a later explicitly approved deployment, from `apps/ingestion-worker/` run `npx wrangler@4 deploy`. Authenticate with a narrowly scoped Cloudflare API token stored only in the operator environment. This command is intentionally not run as part of this PR. A first deployment without Access configuration and D1 binding cannot accept observations; configure and test the Access boundary before allowing module callers.
+
 ## Deployment and provisioning sequence — do not skip gates
 
 ### Gate 1 — verify account plan and quotas
