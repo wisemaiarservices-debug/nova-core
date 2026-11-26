@@ -129,6 +129,9 @@ def authorize_resource_action(
     ):
         return AuthorizationDecision(allowed=False, reason_code="invalid_context")
 
+    if not isinstance(resource_type, str) or not isinstance(action, str):
+        return AuthorizationDecision(allowed=False, reason_code="invalid_context")
+
     allowed_actions = RESOURCE_ACTIONS.get(resource_type)
     if allowed_actions is None or action not in allowed_actions:
         return AuthorizationDecision(allowed=False, reason_code="resource_action_invalid")

@@ -214,3 +214,19 @@ def test_analyst_and_service_roles_remain_action_limited():
         ),),
     )
     assert service.reason_code == "role_denied"
+
+
+
+def test_policy_rejects_non_string_resource_and_action_selectors():
+    for resource_type, action in (([], "read"), ("site", [])):
+        result = authorize_resource_action(
+            principal_subject="user-a",
+            tenant_id="tenant-a",
+            resource_type=resource_type,
+            resource_id="site-1",
+            action=action,
+            memberships=(membership(),),
+            resource_grants=(grant(),),
+        )
+        assert result.allowed is False
+        assert result.reason_code == "invalid_context"
