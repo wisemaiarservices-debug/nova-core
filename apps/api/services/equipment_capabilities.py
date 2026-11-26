@@ -28,7 +28,7 @@ MAX_EQUIPMENT_PER_SITE = 5_000
 MAX_SENSORS_PER_SITE = 10_000
 MAX_RATINGS_PER_EQUIPMENT = 100
 MAX_MEASUREMENTS_PER_SENSOR = 100
-SENSOR_CAPABLE_EQUIPMENT_CLASSES = {\"sensor\", \"weather_station\", \"energy_meter\", \"other\"}
+SENSOR_CAPABLE_EQUIPMENT_CLASSES = {"sensor", "weather_station", "energy_meter", "other"}
 
 
 class MeasurementCapability(BaseModel):

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -140,7 +140,7 @@ def test_verified_connectivity_requires_protocol_and_auditable_evidence():
     verified = _sensor(
         connectivity_status="verified",
         connectivity_evidence_reference="connectivity-check-2026-11-26",
-        connectivity_verified_at=__import__("datetime").datetime(2026, 11, 26, 12, tzinfo=__import__("datetime").timezone.utc),
+        connectivity_verified_at=datetime(2026, 11, 26, 12, tzinfo=timezone.utc),
         connectivity_verified_by="operator-1",
     )
     assert verified.connectivity_status == "verified"
