@@ -241,7 +241,7 @@ def test_preflight_rejects_range_size_mismatch(monkeypatch):
 
 
 def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
-    from scripts.wapor_cog_aoi import _canonical_aoi_hash
+    from services.research_aoi import AOIValidationError, canonical_research_aoi_sha256
 
     geometry = {
         "type": "Polygon",
@@ -250,8 +250,8 @@ def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
         ]],
         "unused_metadata": "x" * (1024 * 1024 + 1),
     }
-    with pytest.raises(ResearchProcessingError, match="1 MiB"):
-        _canonical_aoi_hash(geometry)
+    with pytest.raises(AOIValidationError, match="1 MiB"):
+        canonical_research_aoi_sha256(geometry)
 
 
 @pytest.mark.parametrize(
