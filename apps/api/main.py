@@ -16,7 +16,6 @@ except ImportError:
     from services.nasa_power import fetch_daily_point_async
     from services.d1_storage import storage_status
     from services.dataset_catalogue import catalogue_summary, list_datasets
-    from services.dataset_catalogue import catalogue_summary, list_datasets
 
 
 class SiteState(BaseModel):
