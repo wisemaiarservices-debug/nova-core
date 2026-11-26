@@ -272,3 +272,42 @@ jobs:
             exit 1
           fi
           jq -e '.status == "retrieved" and .dataset_id == "jrc-pvgis-6" and (.data | type == "object")' /tmp/nova-pvgis-performance.json
+
+  private-tenant-worker-smoke:
+    name: Private tenant Worker unauthenticated-route denial
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - name: Install Python Worker dependencies
+        run: uv sync --python 3.13 --project apps/api --all-groups
+      - name: Run isolated private Worker and verify unauthenticated denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/api
+          uv run --python 3.13 pywrangler dev --config wrangler.tenant.jsonc --ip 127.0.0.1 --port 8792 > /tmp/nova-private-tenant-worker.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 45); do
+            STATUS=$(curl --max-time 3 --silent --show-error -o /dev/null -w '%{http_code}' \
+              http://127.0.0.1:8792/api/v1/tenants/tenant-a/sites/site-a) || STATUS=000
+            if [ "$STATUS" = "401" ]; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+              cat /tmp/nova-private-tenant-worker.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/nova-private-tenant-worker.log
+            echo "Expected unauthenticated private route to return HTTP 401."
+            exit 1
+          fi
