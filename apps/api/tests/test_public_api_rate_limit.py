@@ -74,6 +74,7 @@ def test_rate_limit_binding_is_production_only_until_preview_support_exists():
     assert binding["simple"]["limit"] == 60
     assert binding["simple"]["period"] == 60
     assert "ratelimits" not in config["previews"]
+    assert config["observability"]["redact_query_string"] is True
 
 
 def test_cors_wraps_rate_limiter_for_throttled_browser_responses():
