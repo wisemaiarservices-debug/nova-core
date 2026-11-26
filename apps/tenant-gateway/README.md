@@ -6,13 +6,15 @@ active gateway and intentionally exposes no route.
 ## Trust contract
 
 1. Cloudflare Access must authenticate the user at the gateway hostname.
-2. A dedicated Access JWT verifier must validate the `Cf-Access-Jwt-Assertion`
-   signature against Cloudflare's published signing keys and enforce the
-   configured team issuer, application audience, expiry and not-before claims.
-3. Only the verifier's resulting trusted subject may be passed as
-   `verifiedAccessIdentity` to `createInternalAssertion`. Never derive this
-   value from `Cf-Access-Authenticated-User-Email`, arbitrary request headers,
-   query parameters or request bodies.
+2. The gateway calls `verifyCloudflareAccessJwt` with the Access JWT from the
+   `Cf-Access-Jwt-Assertion` header, a fixed team domain and the configured
+   application audience. The verifier checks the RS256 signature against the
+   team's fixed JWKS endpoint and validates issuer, audience, expiry,
+   not-before and subject claims.
+3. Only the verifier's module-branded identity may be passed as
+   `verifiedAccessIdentity` to `createInternalAssertion`. Plain objects and
+   values copied from `Cf-Access-Authenticated-User-Email`, arbitrary request
+   headers, query parameters or request bodies are rejected.
 4. The signer binds the internal assertion to GET and the exact canonical
    tenant-resource path. It uses a runtime secret binding, a key ID and a
    maximum 120-second lifetime.
@@ -20,9 +22,10 @@ active gateway and intentionally exposes no route.
    private API must verify it, atomically consume its `jti`, then load D1
    membership and exact resource grants before returning data.
 
-The present implementation does not yet include the Access JWT verifier,
-gateway request handler, private Service Binding, D1 binding, or secret
-provisioning. The Worker entrypoint is intentionally inert and
+The Access JWT verifier and assertion signer are implemented and covered by
+offline tests. The gateway request handler, private Service Binding, D1 binding,
+Cloudflare Access application/policy, and runtime secret provisioning are not
+implemented or configured. The Worker entrypoint is intentionally inert and
 `workers_dev` is disabled. Do not deploy it.
 
 ## Runtime secrets
