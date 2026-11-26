@@ -1,80 +1,117 @@
 # NOVA Core Human Access Identity — Design Gate V1
 
-Status: design decision; implementation and route exposure remain blocked pending a verified runtime boundary.
+Status: design decision only. Human identity implementation and tenant-route exposure remain blocked until the runtime boundary and Cloudflare Access configuration are proven.
 
-## Decision
+## 1. Decision
 
-Human authentication for tenant-facing NOVA OS and NOVA Core routes must be performed at a trusted JavaScript Cloudflare Worker edge using the native Web Crypto API (or a separately reviewed, supported JWT library). The current FastAPI/Python API must not decode a token and treat its claims as verified. The existing Python `cloudflare_access_identity.py` is explicitly a claims adapter for service tokens: its docstring requires upstream RS256/JWKS signature verification. It is not a signature verifier and not a human identity adapter.
+Use Cloudflare Access at a trusted JavaScript Worker edge. Prefer Cloudflare's native Worker Access identity context (`ctx.access`) when the Worker is directly invoked through Access. Do not manually parse a browser-supplied identity header or treat decoded JWT claims as verified.
 
-The existing ingestion Worker's `access-auth.mjs` demonstrates an RS256/JWKS verification pattern, but its policy accepts only Access service tokens (`type=app`, empty `sub`, non-empty `common_name`). It decodes claim fields before signature verification for rejection checks; a human verifier must verify the signature before trusting or using claims. Do not reuse its service-token identity policy for humans, and do not expose tenant APIs through the ingestion Worker merely to reuse that code. Extract a shared verifier only after its runtime and deployment boundary are chosen and tested.
+The existing Python `cloudflare_access_identity.py` is a claims adapter for service tokens; its docstring requires upstream RS256/JWKS signature verification. It is not a signature verifier or a human identity adapter.
 
-## Trusted human identity contract
+The ingestion Worker's `access-auth.mjs` verifies RS256 service-token JWTs with Web Crypto and a JWKS cache. Its policy requires service-token form (`type=app`, empty `sub`, non-empty `common_name`). It must not be reused as the human identity policy.
 
-The future verifier must:
+## 2. Preferred human identity boundary: native Worker Access
 
-1. Read only `Cf-Access-Jwt-Assertion` from the trusted request path. Do not trust `Cf-Access-Authenticated-User-Email`, browser-supplied subject fields, or decoded JWT payloads.
-2. Enforce a maximum token size of 16,384 ASCII characters and exactly three JWT segments. Reject duplicate JSON member names in the protected header and claims before parsing.
-3. Accept only `RS256`; require a non-empty `kid`; resolve the key only from the configured team's fixed `/cdn-cgi/access/certs` JWKS URL (never a token-supplied `jku`/`x5u`); validate RSA signing-key metadata; refresh JWKS once for an unknown key ID; cache keys for a bounded interval; fail closed if key retrieval or signature verification fails.
-4. Verify the signature before trusting or using any claim. Then require exact configured issuer and application audience, valid integer `exp`, `iat`, optional `nbf`, sensible time ordering, and a bounded token lifetime with a small documented clock skew.
-5. Require a non-empty, bounded `sub` as the immutable principal subject. Reject service tokens (Cloudflare service-token claims have an empty `sub` and use `common_name`). Do not use email as the database principal key. Email may be retained only as a verified display/audit attribute.
-6. Return a minimal immutable principal, e.g. `{ subject, issuer, audience, email? }`. Never accept a principal or verified claims object from request JSON.
-7. Map authentication failures to generic 401 responses; map JWKS/provider outages to generic 503 responses. Never return token, signature, key, or provider internals.
+Cloudflare documents that Worker-level Access protects the Worker across routes, custom domains, its `workers.dev` hostname and preview deployments. Configure it for **all traffic**, not previews only, and do not add bypass policies for tenant routes.
 
-## Authorization and request flow
+At the directly invoked JavaScript Worker:
+
+1. Require `ctx.access` to exist. If it is absent, deny.
+2. Call `await ctx.access.getIdentity()`. If identity retrieval fails or returns no usable identity, deny.
+3. Use a stable Cloudflare Access user identifier as the principal subject: the verified application-token `sub` or the documented `user_uuid` identity field, after confirming the actual `ctx.access.getIdentity()` shape in an isolated Worker test.
+4. Treat email as display/contact metadata only. Never use email, group name, URL, request body, or UI state as the database authorization key or tenant entitlement.
+5. Reject service-token identities on human routes (`service_token_status=true`, or service-token form with empty `sub` and `common_name`).
+
+Cloudflare documents that the Access application-token `sub` is a stable user ID within an account, but changes if the user is removed and re-added or authenticates to another organization. The full identity response also exposes `user_uuid`. The canonical subject field must be selected and tested against the actual Worker identity shape; do not silently fall back to email.
+
+### Critical Service Binding limitation
+
+Cloudflare explicitly states that `ctx.access` applies only to the directly invoked Worker and is **not propagated through Service Binding HTTP or RPC calls**. A downstream Python Worker therefore cannot trust the caller's `ctx.access` object or an ordinary forwarded subject header.
+
+If the JavaScript edge Worker calls the Python API through a private Service Binding, the edge must mint a short-lived signed internal assertion after native Access authentication. The Python Worker must verify that assertion before constructing a principal. The assertion contract must include:
+
+- fixed issuer and exact audience for the Python API;
+- stable Access subject only; no tenant ID, role, permissions, or grant asserted by the browser;
+- `iat`, `exp` with a short maximum lifetime, and unique `jti`;
+- authenticated signing key ID and bounded key rotation;
+- replay protection for `jti` at the receiving boundary, or a documented proof that replay cannot cross the private invocation boundary;
+- strict algorithm pinning, constant-time signature verification, and fail-closed handling of tampering, expiry, wrong issuer/audience, unknown key, or replay.
+
+The Python Worker must accept the assertion only over the private Service Binding and must have no public route that bypasses the verifier. Service Binding isolation constrains transport; it does not itself authenticate the human.
+
+A same-Worker in-memory handoff avoids this additional assertion boundary. Do not assume Service Binding propagates Access identity.
+
+## 3. Fallback: explicit Access JWT verification
+
+Use manual JWT verification only if native `ctx.access` is unavailable and a signed Access JWT reaches a trusted edge component.
+
+- Read only `Cf-Access-Jwt-Assertion` from the trusted request path. Never trust `Cf-Access-Authenticated-User-Email` or browser-supplied subject fields.
+- Enforce a maximum token size of 16,384 ASCII characters and exactly three JWT segments. Reject duplicate JSON member names in the protected header and claims before parsing.
+- Accept only `RS256`; require a non-empty `kid`; resolve keys only from the configured team's fixed `/cdn-cgi/access/certs` JWKS URL. Never follow token-supplied `jku` or `x5u` URLs.
+- Validate RSA signing-key metadata, refresh JWKS once for an unknown `kid`, cache keys for a bounded interval, and fail closed on key retrieval or signature errors.
+- Verify the signature before trusting or using any claim. Require exact configured issuer and application audience; valid integer `exp`, `iat`, optional `nbf`; sensible time ordering; and a bounded token lifetime with documented clock skew.
+- Require `type=app` and a non-empty stable `sub`; reject service-token form on human routes.
+
+Map authentication failures to generic 401 responses and JWKS/provider outages to generic 503 responses. Never expose token, signature, key, or provider internals.
+
+## 4. Authorization and request flow
 
 ```text
 Browser
-  -> Cloudflare Access policy
-  -> trusted identity-verification edge
-  -> verified principal.subject
+  -> Worker-level Cloudflare Access (all traffic + previews)
+  -> directly invoked JavaScript Worker (ctx.access)
+  -> stable verified subject
+  -> [private Service Binding + signed internal assertion, if Python is separate]
   -> tenant selector from route (not an entitlement)
   -> D1 membership loader (reconstructed PR #368)
-  -> exact resource/action authorization
-  -> tenant-scoped repository (reconstructed PR #369)
+  -> exact resource/action authorization (reconstructed PR #367)
+  -> tenant-scoped read repository (reconstructed PR #369)
   -> response
 ```
 
-- Tenant IDs and resource IDs from URLs are selectors only. They do not establish membership or grants.
-- Roles and exact resource grants come only from tenant-scoped D1 records and the reconstructed policy in PR #367 (historical PR #36).
-- The identity adapter must not assign tenant roles from email domains, JWT group claims, client configuration, or UI state.
+- Access proves authentication, not tenant membership or authorization.
+- Tenant IDs and resource IDs from URLs are selectors only.
+- Roles and exact resource grants come only from tenant-scoped D1 records.
+- Do not assign tenant roles from email domains, JWT group claims, client configuration, or UI state.
 - Every tenant-facing read must use the authorization-first repository. Future writes require separate authorization-first write services and atomic audit persistence.
-- Denied and absent resources should remain indistinguishable to callers.
-- Keep the service-token ingestion identity and human-user identity as separate principal types and separate policy paths.
+- Denied and absent resources remain indistinguishable to callers.
+- Keep service-token ingestion identity and human-user identity as separate principal types and policy paths.
 
-## Runtime/deployment gate
+## 5. Runtime and deployment gate
 
-Before implementation, inspect and prove the selected Cloudflare deployment model can preserve the verified principal across the edge-to-API boundary. Prefer an in-memory same-Worker handoff or private Service Binding; the Python API must not be directly reachable through a public hostname that bypasses the verifier. If a signed internal assertion is unavoidable, define its own issuer, audience, short expiry, replay controls, key management, and verification; never forward a browser-provided subject header. The Python API must accept identity only from that authenticated internal boundary.
+No tenant routes may be exposed until all of the following are true:
 
-No tenant routes may be exposed until:
-- Access application coverage includes every public hostname and every enabled Worker hostname. If Access cannot protect a `workers.dev` or preview hostname, disable `workers_dev`/preview URLs for the tenant-facing Worker; do not leave an alternate public path around the Access gate. Test bypass paths explicitly.
-- issuer and audience are configured per environment without committing secrets;
-- human tokens pass and service tokens, forged tokens, wrong-audience tokens, expired tokens, unknown-kid tokens, and JWKS outages fail closed;
-- identity is connected to reconstructed PR #368 membership loading and PR #369 reads;
-- D1 migration and binding are reviewed and explicitly provisioned;
-- audit behavior, tenant isolation and integration tests pass.
+1. Zero Trust/Access is enabled and a Worker-level Access policy protects production and preview traffic, with no bypass for tenant routes.
+2. Every alternate hostname is covered. If Worker-level Access cannot be enabled, disable `workers_dev` and preview URLs for the tenant-facing Worker.
+3. The actual `ctx.access.getIdentity()` shape and canonical stable subject field are verified in an isolated Worker test. Wrangler's local `access.dev` simulation is useful for unit tests but does not prove production Access configuration.
+4. If the Python API remains a separate Worker, the signed internal assertion and Service Binding boundary are implemented and adversarially tested. No public Python API path may bypass the verifier.
+5. Membership loading is connected to reconstructed PR #368 and reads to reconstructed PR #369; no request may provide its own principal or authorization records.
+6. D1 migration and binding are reviewed and explicitly provisioned; audit behavior, tenant isolation, and integration tests pass.
+7. Token/identity failures, service-token substitution, key rotation, JWKS outage, assertion replay, and cross-tenant access all fail closed.
 
-## Required tests
-
-- valid human token resolves the exact `sub` and optional email;
-- empty/missing `sub` and service-token `common_name` are rejected;
-- malformed/oversized JWT, non-RS256 algorithm, missing `kid`, invalid signature, wrong issuer/audience, expired token, future `iat`, and invalid `nbf` are rejected;
-- unknown `kid` triggers one JWKS refresh; unavailable/invalid JWKS fails closed;
-- untrusted email and identity headers do not influence the principal;
-- browser-supplied tenant ID cannot grant access without the exact D1 membership and resource grant;
-- no route accepts caller-supplied `principal_subject` or authorization records.
-
-## Current implementation facts
+## 6. Current implementation facts
 
 - PR #367 (historical PR #36) supplies tenant policy and draft D1 schema primitives; its migration has not been applied.
 - PR #368 (historical PR #38) loads trusted membership and exact grants from D1; it does not authenticate users.
-- PR #369 (historical PR #39) supplies authorization-first, tenant-scoped reads; it does not authenticate users or expose routes.
-- The ingestion Worker verifies RS256 service-token JWTs using Web Crypto and a JWKS cache. Its policy requires service-token claims and must not be treated as human-user verification.
+- PR #369 (historical PR #39) supplies authorization-first tenant-scoped reads; it does not authenticate users or expose routes.
 - The latest read-only Cloudflare account inventory found no zones, no D1 databases, and Access API status `access.api.error.not_enabled`; no Access application or policy is configured.
-- The only deployed Worker in that account is `nova-core-api`; its current `workers_dev` and preview URL exposure are enabled. No tenant identity gate or Access coverage is proven for those alternate hostnames. Do not expose tenant routes there.
-- No D1 database, binding, tenant, membership, customer record, Access application, or human identity route is provisioned by this design.
+- The only deployed Worker in the account is `nova-core-api`; its current `workers_dev` and preview URL exposure are enabled. No tenant identity gate or Access coverage is proven. Do not expose tenant routes there.
+- No D1 database, binding, tenant, membership, customer record, Access application, signed internal assertion, or human identity route is provisioned by this design.
 
-## References
+## 7. Required tests
 
-- Cloudflare Access JWT validation: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
-- Cloudflare Access signing keys and rotation: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
-- Existing NOVA Core implementation: `apps/ingestion-worker/src/access-auth.mjs` (service-token verifier only).
+- `ctx.access` missing, identity retrieval failure, and missing stable subject all deny.
+- Human identity resolves the exact stable subject; email changes do not change authorization identity.
+- Service-token identity is rejected on human routes.
+- Signed internal assertion rejects tampering, wrong issuer/audience, expired/future timestamps, unknown key, replayed `jti`, and unsupported algorithm.
+- Service Binding cannot be called through a public bypass path.
+- If JWT fallback is used: malformed/oversized token, non-RS256 algorithm, missing `kid`, invalid signature, wrong issuer/audience, expired token, future `iat`, invalid `nbf`, unknown `kid`, and JWKS outage are rejected.
+- Browser-supplied tenant ID cannot grant access without exact D1 membership and resource grant.
+- No route accepts caller-supplied `principal_subject` or authorization records.
+
+## 8. References
+
+- Cloudflare Workers Access and `ctx.access`: https://developers.cloudflare.com/workers/configuration/cloudflare-access/
+- Cloudflare Access application token and stable `sub` / service-token claim shape: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/
+- Cloudflare Access JWT validation fallback: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
+- Existing NOVA Core service-token verifier: `apps/ingestion-worker/src/access-auth.mjs`.
