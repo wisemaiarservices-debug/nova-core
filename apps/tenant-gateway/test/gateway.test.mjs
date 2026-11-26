@@ -349,3 +349,28 @@ test("rejects duplicate JSON members in private API response payloads", async ()
     globalThis.fetch = originalFetch;
   }
 });
+
+test("accepts a valid numeric Content-Length on bounded private API responses", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  const payload = JSON.stringify({ id: "site-a", tenant_id: "tenant-a" });
+  try {
+    const result = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async () => new Response(payload, {
+          status:  200,
+          headers: {
+            "content-type": "application/json",
+            "content-length": String(new TextEncoder().encode(payload).byteLength),
+          },
+        }),
+      }),
+    );
+    assert.equal(result.status, 200);
+    assert.deepEqual(await result.json(), { id: "site-a", tenant_id: "tenant-a" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
