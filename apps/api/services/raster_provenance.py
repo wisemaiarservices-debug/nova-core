@@ -36,7 +36,9 @@ class RasterProcessingManifest(BaseModel):
     processed_window_sha256: str = Field(pattern=_SHA256)
     provider_metadata_sha256: str | None = Field(default=None, pattern=_SHA256)
     processing_code_commit: str = Field(pattern=_COMMIT)
-    processing_method: Literal["nova-geotiff-strip-statistics-v1"]
+    processing_method: Literal["nova-geotiff-strip-statistics-v1", "nova-wapor-cog-aoi-v1"]
+    source_dtype: str | None = Field(default=None, pattern=r"^(?:u?int(?:8|16|32)|float(?:32|64))$", max_length=32)
+    source_nodata: str | None = Field(default=None, max_length=64)
     evidence_class: Literal["satellite_derived"] = "satellite_derived"
 
     # width/height describe the processed AOI crop; source dimensions preserve the full COG shape.
@@ -75,6 +77,10 @@ class RasterProcessingManifest(BaseModel):
             raise ValueError("retrieved_at must include a valid timezone offset")
         if self.units is not None and not self.units.strip():
             raise ValueError("units must be a non-empty authoritative provider unit")
+        if self.source_nodata is not None and not self.source_nodata.strip():
+            raise ValueError("source_nodata must be non-empty when supplied")
+        if self.processing_method == "nova-wapor-cog-aoi-v1" and self.source_dtype is None:
+            raise ValueError("WaPOR COG AOI processing manifests require source_dtype")
 
         pixel_count = self.width * self.height
         if pixel_count > 10_000_000:

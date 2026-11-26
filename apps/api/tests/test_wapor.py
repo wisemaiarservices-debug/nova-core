@@ -193,3 +193,64 @@ def test_wapor_api_endpoint_maps_provider_failure_and_invalid_inputs(monkeypatch
     with pytest.raises(HTTPException) as exc:
         asyncio.run(wapor_rasters("invalid", None, None))
     assert exc.value.status_code == 422
+
+
+
+def test_sync_discovery_deadline_is_shared_across_pages(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(wapor.time, "monotonic", lambda: now[0])
+    calls = []
+    def slow_page(url):
+        calls.append(url)
+        now[0] += 20
+        return _page([{"code": "L1-AETI-D"}], url + f"?page={len(calls) + 1}")
+    with pytest.raises(RuntimeError, match="60-second operation deadline"):
+        wapor._collect_pages(wapor.BASE_URL, slow_page)
+    assert len(calls) == 3
+
+
+def test_sync_list_rasters_shares_deadline_across_catalogue_and_index(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(wapor.time, "monotonic", lambda: now[0])
+    calls = []
+    def slow_page(url):
+        calls.append(url)
+        now[0] += 31
+        if url == wapor.BASE_URL:
+            return _page([{"code": "L1-AETI-D"}])
+        return _page([])
+    with pytest.raises(RuntimeError, match="60-second operation deadline"):
+        wapor.list_rasters("L1-AETI-D", request_json=slow_page)
+    assert len(calls) == 2
+
+
+def test_sync_request_reduces_socket_timeout_before_each_read(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr(wapor.time, "monotonic", lambda: now[0])
+    class Socket:
+        def __init__(self): self.timeouts = []
+        def settimeout(self, value): self.timeouts.append(value)
+    class Raw:
+        def __init__(self, sock): self._sock = sock
+    class File:
+        def __init__(self, sock): self.raw = Raw(sock)
+    class Response:
+        headers = {"Content-Type": "application/json"}
+        def __init__(self, sock):
+            self.fp = File(sock)
+            self.parts = [b'{"response":', b'{"items":[],"links":[]}}', b""]
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self, size):
+            now[0] += 2
+            return self.parts.pop(0)
+    sock = Socket()
+    response = Response(sock)
+    class Opener:
+        def open(self, request, timeout):
+            assert timeout == 10.0
+            return response
+    monkeypatch.setattr(wapor, "build_opener", lambda *args: Opener())
+    result = wapor._request_json(wapor.BASE_URL, deadline=110.0)
+    assert result["response"]["items"] == []
+    assert sock.timeouts == [10.0, 8.0, 6.0]

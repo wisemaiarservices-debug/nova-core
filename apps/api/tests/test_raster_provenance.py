@@ -222,3 +222,29 @@ def test_accepts_ogc_crs84_and_rejects_whitespace_only_units():
     assert result.crs_identifier == "OGC:CRS84"
     with pytest.raises(ValidationError, match="non-empty authoritative"):
         _manifest(units="   ")
+
+
+
+def test_wapor_cog_method_records_source_dtype_and_nodata():
+    result = _manifest(
+        processing_method="nova-wapor-cog-aoi-v1",
+        source_dtype="int16",
+        source_nodata="-9999.0",
+    )
+    assert result.source_dtype == "int16"
+    assert result.source_nodata == "-9999.0"
+
+
+def test_wapor_cog_method_requires_supported_dtype():
+    with pytest.raises(ValidationError):
+        _manifest(
+            processing_method="nova-wapor-cog-aoi-v1",
+            source_dtype="int64",
+        )
+    with pytest.raises(ValidationError, match="require source_dtype"):
+        _manifest(processing_method="nova-wapor-cog-aoi-v1")
+
+
+def test_source_nodata_cannot_be_empty():
+    with pytest.raises(ValidationError, match="source_nodata must be non-empty"):
+        _manifest(source_nodata="   ")

@@ -13,6 +13,7 @@ A processing manifest binds one output to the exact provider asset and code that
 - SHA-256 of the normalized AOI-window pixel data, validity mask and spatial window metadata;
 - optional SHA-256 of the complete source COG object, populated only when the entire object is actually downloaded and hashed, together with full source dimensions;
 - optional SHA-256 of the provider metadata snapshot;
+- source sample dtype and provider NoData sentinel when using the AOI COG runner;
 - exact 40-character processing-code commit and named processing method;
 - processed AOI-window dimensions, original source-raster dimensions, and separate valid/NoData/outside-AOI pixel counts;
 - raw statistics and optional calibrated statistics;
@@ -43,3 +44,6 @@ The processed-window checksum is a canonical hash of the selected pixel window, 
 No API endpoint, D1 table/binding, downloader, object store, retention policy, scheduled job, mapset/raster retrieval workflow, clipping, reprojection, topology engine, zonal statistics, model training, or production deployment is added here. Before a downloader is implemented, validate the official WaPOR v3 download URL semantics and host allowlist; reject redirects and arbitrary URLs, and enforce byte, time, area, and pixel bounds.
 
 For AOI-clipped processing, width and height describe the cropped pixel window. Source width and height retain the full source COG dimensions. Pixels inside the crop but outside the polygon are counted separately from provider NoData pixels; the three counts must sum to the crop-window pixel count.
+
+
+The AOI COG runner records source sample dtype and the provider NoData sentinel as source metadata. These values describe the raw raster representation and masking semantics; they do not imply a calibration or verified physical unit.
