@@ -1,6 +1,6 @@
 # NOVA PVGIS 6 research connector
 
-Status: implemented in draft PR #15; not deployed or scheduled.
+Status: implementation candidate in Draft PR #339; not deployed or scheduled.
 
 ## Endpoint
 
