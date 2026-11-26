@@ -248,7 +248,7 @@ def test_sync_request_reduces_socket_timeout_before_each_read(monkeypatch):
     response = Response(sock)
     class Opener:
         def open(self, request, timeout):
-            assert timeout == 15
+            assert timeout == 10.0
             return response
     monkeypatch.setattr(wapor, "build_opener", lambda *args: Opener())
     result = wapor._request_json(wapor.BASE_URL, deadline=110.0)

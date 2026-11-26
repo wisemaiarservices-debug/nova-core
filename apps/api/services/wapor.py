@@ -126,7 +126,10 @@ def _request_json(url: str, *, deadline: float | None = None) -> dict[str, Any]:
     return _validate_payload(payload)
 
 
-async def _read_worker_response_bytes(response: Any) -> bytes:
+async _DEFAULT_REQUEST_JSON = _request_json
+
+
+def _read_worker_response_bytes(response: Any) -> bytes:
     body = getattr(response, "body", None)
     if body is None:
         raise RuntimeError("WaPOR response did not include a readable body")
@@ -274,7 +277,7 @@ def _collect_pages(
         if next_url in visited:
             raise RuntimeError("WaPOR pagination cycle detected")
         visited.add(next_url)
-        if request_json is _request_json:
+        if request_json is _DEFAULT_REQUEST_JSON:
             payload = request_json(next_url, deadline=operation_deadline)
         else:
             payload = request_json(next_url)
