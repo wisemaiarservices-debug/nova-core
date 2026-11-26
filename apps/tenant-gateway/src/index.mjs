@@ -100,15 +100,28 @@ export default {
       if (internalResponse.status === 404) {
         return response(404, JSON.stringify({ detail: "not found" }));
       }
+      const upstreamContentType = internalResponse.headers
+        .get("content-type")
+        ?.split(";", 1)[0]
+        ?.trim()
+        .toLowerCase();
       if (
         internalResponse.status !== 200 ||
-        !internalResponse.headers.get("content-type")?.toLowerCase().startsWith("application/json")
+        upstreamContentType !== "application/json"
       ) {
         return response(503, JSON.stringify({ detail: "gateway unavailable" }));
       }
 
       const body = await internalResponse.arrayBuffer();
       if (body.byteLength > MAX_RESPONSE_BYTES) {
+        return response(502, JSON.stringify({ detail: "upstream response rejected" }));
+      }
+      try {
+        const payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+          return response(502, JSON.stringify({ detail: "upstream response rejected" }));
+        }
+      } catch {
         return response(502, JSON.stringify({ detail: "upstream response rejected" }));
       }
       return new Response(body, {
