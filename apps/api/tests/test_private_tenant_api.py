@@ -201,6 +201,18 @@ def test_duplicate_authorization_headers_and_non_get_requests_are_rejected():
     db.close()
 
 
+def test_missing_or_duplicate_authorization_is_rejected_before_database_access():
+    db = SQLiteD1()
+    with pytest.raises(Exception, match="internal assertion rejected"):
+        __import__("asyncio").run(resolve_private_tenant_read(
+            method="GET", raw_path=PATH, authorization_values=[],
+            env=env(db), tenant_id="tenant-a", resource_collection="sites",
+            resource_id="site-a", now=NOW,
+        ))
+    assert db.calls == []
+    db.close()
+
+
 def test_missing_database_binding_fails_closed():
     with pytest.raises(Exception, match="storage is unavailable"):
         __import__("asyncio").run(resolve_private_tenant_read(
