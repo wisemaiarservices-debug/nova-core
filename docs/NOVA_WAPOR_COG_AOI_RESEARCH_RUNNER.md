@@ -11,7 +11,7 @@ The runner uses the existing bounded FAO WaPOR v3 catalogue reader:
 3. Validate the provider-supplied download URL against the exact `storage.googleapis.com/fao-gismgr-wapor-3-data` bucket and object path for that mapset/raster.
 4. Perform a no-redirect HTTPS HEAD and exact four-byte TIFF signature range preflight; require the range's total size to match HEAD.
 5. Open only a GDAL-identified Cloud Optimized GeoTIFF with redirect following disabled and bounded timeout/cache settings.
-6. Validate caller-supplied WGS84 geometry structurally and with Shapely topology checks, transform it into the raster CRS, and read only the intersecting crop window.
+6. Validate caller-supplied WGS84 geometry structurally and with Shapely topology checks, transform it into the raster CRS, and calculate a boundless AOI window; reject the request if any part of the AOI falls outside the raster footprint.
 7. Enforce a 10-million-pixel window limit and single-band supported sample dtypes; apply the provider mask, NoData sentinel and finite-value mask.
 8. Count valid, NoData/invalid and outside-AOI pixels separately; compute raw statistics and emit an immutable checksum-bound processing manifest.
 
@@ -25,7 +25,7 @@ Only dekadal mapsets and raster codes are supported in this first version. Month
 - Initial GET must return HTTP 206, Content-Length 4, exact `Content-Range: bytes 0-3/{object-size}`, and the classic TIFF byte-order/magic prefix.
 - GDAL redirect following is disabled; HTTP retries are disabled; request timeout is bounded; only `.tif` remote objects are enabled.
 - AOI input JSON is capped at 1 MiB; the geometry validator enforces polygon/ring/position caps; Shapely rejects invalid polygon topology.
-- The crop is capped at 10 million pixels and a single band. Only a bounded set of 8/16/32-bit integer and 32/64-bit float dtypes is supported.
+- The full AOI must fit inside the raster footprint; partial coverage is rejected rather than silently clipped. The crop is capped at 10 million pixels and a single band. Only a bounded set of 8/16/32-bit integer and 32/64-bit float dtypes is supported.
 - The full remote COG is not downloaded. `source_object_sha256` remains null; `processed_window_sha256` hashes exact crop samples, inside/valid masks, dtype, CRS, transform and pixel window.
 - The source object's size is bounded, but this version does not meter cumulative HTTP range bytes independently of GDAL. Do not raise the object-size cap without a separate transfer-budget implementation.
 

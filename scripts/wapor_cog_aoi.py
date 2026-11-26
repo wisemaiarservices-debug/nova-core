@@ -354,7 +354,7 @@ def process_wapor_aoi(
                     precision=-1,
                 )
                 try:
-                    window = geometry_window(source, [transformed_geometry], boundless=False)
+                    window = geometry_window(source, [transformed_geometry], boundless=True)
                 except WindowError as exc:
                     raise ResearchProcessingError("Research AOI does not intersect the selected WaPOR raster") from exc
                 window = window.round_offsets(op=math.floor).round_lengths(op=math.ceil)
