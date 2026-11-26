@@ -23,7 +23,7 @@ npx --yes wrangler@4 dev --local --test-scheduled --ip 127.0.0.1 --port "${PORT}
 SERVER_PID="$!"
 ready=0
 for _ in $(seq 1 60); do
-  if curl --silent --fail "${BASE_URL}/" >/dev/null 2>&1; then ready=1; break; fi
+  if curl --silent "${BASE_URL}/" >/dev/null 2>&1; then ready=1; break; fi
   if ! kill -0 "${SERVER_PID}" 2>/dev/null; then cat "${LOG_FILE}"; echo "Wrangler exited before readiness" >&2; exit 1; fi
   sleep 1
 done
