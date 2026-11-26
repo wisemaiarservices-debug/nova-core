@@ -11,7 +11,7 @@ from datetime import date
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from apps.api.services.research_aoi import AOIValidationError, validate_research_aoi
 
@@ -193,6 +193,10 @@ class SiteProfile(BaseModel):
                 for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
             )
         return value
+
+    @field_serializer("metadata")
+    def serialize_metadata(self, value: tuple[MetadataEntry, ...]) -> dict[str, str]:
+        return {item.key: item.value for item in value}
 
     @model_validator(mode="after")
     def validate_site_configuration(self) -> "SiteProfile":

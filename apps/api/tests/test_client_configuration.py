@@ -116,6 +116,10 @@ def test_boundary_and_metadata_are_recursively_immutable_and_detached_from_input
     metadata["operator"] = "mutated"
     assert profile.boundary_geojson.coordinates[0][0][0] == 10.0
     assert profile.metadata[0].value == "verified by caller"
+    assert profile.model_dump(mode="json")["metadata"] == {
+        "irrigation_note": "verified by caller",
+        "operator": "team-a",
+    }
     with pytest.raises(TypeError):
         profile.boundary_geojson.coordinates[0][0][0] = 12.0
     with pytest.raises(ValidationError):
