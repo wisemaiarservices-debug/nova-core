@@ -55,5 +55,11 @@ class Default(WorkerEntrypoint):
     """Cloudflare Python Worker scheduled entrypoint."""
 
     async def scheduled(self, controller, env, ctx):
-        database = getattr(env, "TENANT_DB", None)
-        await run_nonce_cleanup(database, scheduled_time_ms=getattr(controller, "scheduledTime", None))
+        # Workers runtime bindings are exposed as JavaScript object properties.
+        # Resolve the D1 binding directly so the Pyodide bridge performs its
+        # normal property access instead of Python's generic getattr fallback.
+        try:
+            database = env.TENANT_DB
+        except AttributeError:
+            database = None
+        await run_nonce_cleanup(database, scheduled_time_ms=controller.scheduledTime)
