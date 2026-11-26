@@ -4,6 +4,12 @@
   "main": "src/index.mjs",
   "compatibility_date": "2026-11-10",
   "workers_dev": false,
+  "services": [
+    {
+      "binding": "TENANT_API",
+      "service": "nova-core-tenant-api"
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 0,

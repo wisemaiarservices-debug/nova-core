@@ -1,7 +1,8 @@
 # Private tenant gateway security module
 
-This package contains the gateway-side HMAC assertion signer only. It is not an
-active gateway and intentionally exposes no route.
+This package contains the Cloudflare Access verifier, HMAC assertion signer
+and Service Binding request forwarder. Its Worker is intentionally not exposed
+through workers.dev or a public route.
 
 ## Trust contract
 
@@ -18,15 +19,18 @@ active gateway and intentionally exposes no route.
 4. The signer binds the internal assertion to GET and the exact canonical
    tenant-resource path. It uses a runtime secret binding, a key ID and a
    maximum 120-second lifetime.
-5. The gateway must send the assertion over a private Service Binding. The
-   private API must verify it, atomically consume its `jti`, then load D1
-   membership and exact resource grants before returning data.
+5. The gateway forwards only the signed GET request over the fixed
+   `TENANT_API` Service Binding. It drops query strings and request bodies,
+   bounds upstream response size, and returns only a safe JSON response.
+6. The private API verifies the assertion, atomically consumes its `jti`,
+   then loads D1 membership and exact resource grants before returning data.
 
-The Access JWT verifier and assertion signer are implemented and covered by
-offline tests. The gateway request handler, private Service Binding, D1 binding,
-Cloudflare Access application/policy, and runtime secret provisioning are not
-implemented or configured. The Worker entrypoint is intentionally inert and
-`workers_dev` is disabled. Do not deploy it.
+The Access JWT verifier, assertion signer and request forwarder are implemented
+and covered by offline tests. The Wrangler config declares the intended
+`TENANT_API` Service Binding, but the target Worker, D1 binding, Cloudflare
+Access application/policy, hostname route and runtime secrets are not
+provisioned in the live account. The Worker has `workers_dev` disabled and no
+public route. Do not deploy it until those external gates pass.
 
 ## Runtime secrets
 

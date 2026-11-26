@@ -1,10 +1,139 @@
-/**
- * Deliberately inert until Cloudflare Access, the private API Service Binding,
- * runtime secrets and route isolation have been provisioned and validated.
- * No public or workers.dev route is exposed by this Worker.
- */
+import {
+  createInternalAssertion,
+  verifyCloudflareAccessJwt,
+} from "./internal-assertion.mjs";
+
+const RESOURCE_PATH =
+  /^\/api\/v1\/tenants\/[A-Za-z0-9._~-]{1,120}\/(?:sites|assets|sources|observations|audit-events)\/[A-Za-z0-9._~-]{1,160}$/;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+function response(status, message, extraHeaders = {}) {
+  return new Response(message, {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      ...extraHeaders,
+    },
+  });
+}
+
+function configured(env) {
+  return (
+    typeof env.NOVA_ACCESS_TEAM_DOMAIN === "string" &&
+    env.NOVA_ACCESS_TEAM_DOMAIN.length > 0 &&
+    typeof env.NOVA_ACCESS_AUDIENCE === "string" &&
+    env.NOVA_ACCESS_AUDIENCE.length > 0 &&
+    typeof env.NOVA_INTERNAL_KEY_ID === "string" &&
+    typeof env.NOVA_INTERNAL_HMAC_KEY === "string" &&
+    typeof env.NOVA_INTERNAL_ISSUER === "string" &&
+    typeof env.NOVA_INTERNAL_AUDIENCE === "string"
+  );
+}
+
 export default {
-  async fetch() {
-    return new Response("Not Found", { status: 404 });
+  async fetch(request, env) {
+    if (request.method !== "GET") {
+      return response(405, JSON.stringify({ detail: "method not allowed" }), {
+        allow: "GET",
+      });
+    }
+
+    const url = new URL(request.url);
+    if (url.search || url.hash || !RESOURCE_PATH.test(url.pathname)) {
+      return response(404, JSON.stringify({ detail: "not found" }));
+    }
+
+    if (!configured(env)) {
+      return response(503, JSON.stringify({ detail: "gateway unavailable" }));
+    }
+
+    const accessToken = request.headers.get("cf-access-jwt-assertion");
+    if (!accessToken || accessToken.includes(",")) {
+      return response(401, JSON.stringify({ detail: "unauthorized" }));
+    }
+
+    let identity;
+    try {
+      identity = await verifyCloudflareAccessJwt(accessToken, {
+        teamDomain: env.NOVA_ACCESS_TEAM_DOMAIN,
+        audience: env.NOVA_ACCESS_AUDIENCE,
+      });
+    } catch {
+      return response(401, JSON.stringify({ detail: "unauthorized" }));
+    }
+
+    if (!env.TENANT_API || typeof env.TENANT_API.fetch !== "function") {
+      return response(503, JSON.stringify({ detail: "gateway unavailable" }));
+    }
+
+    let assertion;
+    try {
+      assertion = await createInternalAssertion({
+        verifiedAccessIdentity: identity,
+        method: "GET",
+        path: url.pathname,
+        keyId: env.NOVA_INTERNAL_KEY_ID,
+        secret: env.NOVA_INTERNAL_HMAC_KEY,
+        issuer: env.NOVA_INTERNAL_ISSUER,
+        audience: env.NOVA_INTERNAL_AUDIENCE,
+      });
+    } catch {
+      return response(503, JSON.stringify({ detail: "gateway unavailable" }));
+    }
+
+    try {
+      // The fixed internal origin and Service Binding prevent client-controlled
+      // destination selection. Query strings and request bodies are not forwarded.
+      const internalRequest = new Request(
+        `https://tenant-api.internal${url.pathname}`,
+        {
+          method: "GET",
+          headers: {
+            authorization: `Bearer ${assertion}`,
+            accept: "application/json",
+          },
+        },
+      );
+      const internalResponse = await env.TENANT_API.fetch(internalRequest);
+      if (internalResponse.status === 404) {
+        return response(404, JSON.stringify({ detail: "not found" }));
+      }
+      const upstreamContentType = internalResponse.headers
+        .get("content-type")
+        ?.split(";", 1)[0]
+        ?.trim()
+        .toLowerCase();
+      if (
+        internalResponse.status !== 200 ||
+        upstreamContentType !== "application/json"
+      ) {
+        return response(503, JSON.stringify({ detail: "gateway unavailable" }));
+      }
+
+      const body = await internalResponse.arrayBuffer();
+      if (body.byteLength > MAX_RESPONSE_BYTES) {
+        return response(502, JSON.stringify({ detail: "upstream response rejected" }));
+      }
+      try {
+        const payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+          return response(502, JSON.stringify({ detail: "upstream response rejected" }));
+        }
+      } catch {
+        return response(502, JSON.stringify({ detail: "upstream response rejected" }));
+      }
+      return new Response(body, {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+        },
+      });
+    } catch {
+      return response(503, JSON.stringify({ detail: "gateway unavailable" }));
+    }
   },
 };
