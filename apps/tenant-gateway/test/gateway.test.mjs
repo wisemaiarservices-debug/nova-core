@@ -187,9 +187,18 @@ test("does not forward non-JSON, oversized or unexpected upstream responses", as
         }),
       }),
     );
+    const invalidJson = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async () => new Response("not-json", {
+          status: 200, headers: { "content-type": "application/json" },
+        }),
+      }),
+    );
     assert.equal(nonJson.status, 503);
     assert.equal(unexpected.status, 503);
     assert.equal(oversized.status, 502);
+    assert.equal(invalidJson.status, 502);
   } finally {
     globalThis.fetch = originalFetch;
   }
