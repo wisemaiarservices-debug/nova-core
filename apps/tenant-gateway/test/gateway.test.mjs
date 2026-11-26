@@ -16,7 +16,7 @@ function b64url(bytes) {
   return Buffer.from(bytes).toString("base64url");
 }
 
-async function accessToken(overrides = {}) {
+async function accessToken(overrides = {}, rawSegments = {}) {
   const pair = await webcrypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
@@ -40,8 +40,8 @@ async function accessToken(overrides = {}) {
     exp: NOW / 1000 + 300,
     ...overrides,
   };
-  const head = b64url(Buffer.from(JSON.stringify(header)));
-  const payload = b64url(Buffer.from(JSON.stringify(claims)));
+  const head = rawSegments.header ?? b64url(Buffer.from(JSON.stringify(header)));
+  const payload = rawSegments.payload ?? b64url(Buffer.from(JSON.stringify(claims)));
   const input = `${head}.${payload}`;
   const signature = await webcrypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
@@ -124,6 +124,43 @@ test("rejects invalid Access JWTs without calling the private Service Binding", 
   const result = await gateway.fetch(request({ token: "invalid.jwt.token" }), env);
   assert.equal(result.status, 401);
   assert.equal(called, false);
+});
+
+test("rejects duplicate JSON members in Access JWT headers and claims", async () => {
+  const headerFixture = await accessToken({}, {
+    header: b64url(Buffer.from(
+      '{"alg":"RS256","alg":"none","typ":"JWT","kid":"access-key-2026-11"}',
+    )),
+  });
+  const claimsFixture = await accessToken({}, {
+    payload: b64url(Buffer.from(JSON.stringify({
+      iss: `https://${TEAM}`,
+      aud: ACCESS_AUDIENCE,
+      sub: "access-subject-123456",
+      iat: NOW / 1000 - 5,
+      exp: NOW / 1000 + 300,
+    }).replace('"aud":"cloudflare-access-app-audience"', '"aud":"cloudflare-access-app-audience","aud":"other-audience"'))),
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ keys: [headerFixture.jwk] }),
+  });
+  let called = false;
+  const env = environment(headerFixture.jwk, { fetch: async () => { called = true; } });
+  try {
+    const duplicateHeader = await gateway.fetch(
+      request({ token: headerFixture.token }), env,
+    );
+    const duplicateClaims = await gateway.fetch(
+      request({ token: claimsFixture.token }), env,
+    );
+    assert.equal(duplicateHeader.status, 401);
+    assert.equal(duplicateClaims.status, 401);
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("rejects non-GET methods and query strings before authentication or forwarding", async () => {
