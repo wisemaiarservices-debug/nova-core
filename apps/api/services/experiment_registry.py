@@ -176,10 +176,16 @@ def _regression_summary(
     errors = [prediction - observed for observed, prediction in zip(actual, predicted)]
     if not all(math.isfinite(error) for error in errors):
         raise ValueError("regression metrics exceed supported numeric range")
+    scale = max(abs(error) for error in errors)
+    if scale == 0:
+        return 0.0, 0.0, 0.0
     try:
-        mae = math.fsum(abs(error) for error in errors) / len(errors)
-        rmse = math.hypot(*errors) / math.sqrt(len(errors))
-        mean_error = math.fsum(errors) / len(errors)
+        normalized = [error / scale for error in errors]
+        mae = scale * (math.fsum(abs(error) for error in normalized) / len(errors))
+        rmse = scale * math.sqrt(
+            math.fsum(error * error for error in normalized) / len(errors)
+        )
+        mean_error = scale * (math.fsum(normalized) / len(errors))
     except (OverflowError, ValueError) as exc:
         raise ValueError("regression metrics exceed supported numeric range") from exc
     if not all(math.isfinite(value) for value in (mae, rmse, mean_error)):

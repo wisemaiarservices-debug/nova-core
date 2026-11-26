@@ -396,3 +396,17 @@ def test_resolver_rejects_dataset_id_mismatch():
             _satellite_experiment(),
             [_raster_manifest_payload(dataset_id="another-dataset")],
         )
+
+
+
+def test_regression_metrics_remain_stable_for_large_finite_errors():
+    metrics = evaluate_regression(
+        [0.0, 0.0, 0.0, 0.0],
+        [1e308, 1e308, 1e308, 1e308],
+        [0.0, 0.0, 0.0, 0.0],
+        test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
+        test_period_end=datetime(2024, 1, 31, tzinfo=UTC),
+    )
+    assert metrics.mae == pytest.approx(1e308)
+    assert metrics.rmse == pytest.approx(1e308)
+    assert metrics.mean_error == pytest.approx(1e308)
