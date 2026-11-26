@@ -56,7 +56,7 @@ def verify(value=None, **overrides):
         "now": NOW,
     }
     args.update(overrides)
-    return verify_internal_assertion(value or token(), **args)
+    return verify_internal_assertion(token() if value is None else value, **args)
 
 
 def test_valid_assertion_returns_only_verified_stable_identity_and_request_binding():
