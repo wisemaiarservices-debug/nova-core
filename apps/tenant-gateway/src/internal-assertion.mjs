@@ -4,6 +4,8 @@ const verifiedAccessIdentities = new WeakSet();
 const MAX_ASSERTION_TTL_SECONDS = 120;
 const CLOCK_SKEW_SECONDS = 15;
 const MAX_ACCESS_TOKEN_LENGTH = 8192;
+const MAX_JWKS_RESPONSE_BYTES = 64 * 1024;
+const JWKS_FETCH_TIMEOUT_MS = 3000;
 const KEY_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 const SUBJECT_PATTERN = /^[^\x00-\x20\x7f]{1,200}$/;
 const JTI_PATTERN = /^[A-Za-z0-9._~-]{16,128}$/;
@@ -123,6 +125,56 @@ function encodeJson(value) {
   return encodeBase64Url(encoder.encode(JSON.stringify(value)));
 }
 
+async function readBoundedJwksResponse(response) {
+  if (!response || response.ok !== true || !response.headers || !response.body) {
+    throw new TypeError("Cloudflare Access signing keys are unavailable");
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (!/^application\/(?:json|jwk-set\+json)(?:\s*;|$)/i.test(contentType)) {
+    throw new TypeError("Cloudflare Access signing keys have an invalid content type");
+  }
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null) {
+    if (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_JWKS_RESPONSE_BYTES) {
+      throw new TypeError("Cloudflare Access signing-key response is too large");
+    }
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_JWKS_RESPONSE_BYTES) {
+        await reader.cancel("JWKS response exceeds size limit");
+        throw new TypeError("Cloudflare Access signing-key response is too large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  assertNoDuplicateJsonMembers(source);
+  let jwks;
+  try {
+    jwks = JSON.parse(source);
+  } catch {
+    throw new TypeError("Cloudflare Access signing keys contain invalid JSON");
+  }
+  return jwks;
+}
+
 function isInteger(value) {
   return Number.isSafeInteger(value);
 }
@@ -188,15 +240,16 @@ export async function verifyCloudflareAccessJwt(
 
   const issuer = `https://${teamDomain}`;
   const jwksUrl = `${issuer}/cdn-cgi/access/certs`;
+  if (typeof AbortSignal === "undefined" || typeof AbortSignal.timeout !== "function") {
+    throw new TypeError("Cloudflare Access signing-key timeout is unavailable");
+  }
   const response = await fetchImpl(jwksUrl, {
     method: "GET",
     headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(JWKS_FETCH_TIMEOUT_MS),
     cf: { cacheTtl: 300 },
   });
-  if (!response || response.ok !== true) {
-    throw new TypeError("Cloudflare Access signing keys are unavailable");
-  }
-  const jwks = await response.json();
+  const jwks = await readBoundedJwksResponse(response);
   if (
     !jwks ||
     !Array.isArray(jwks.keys) ||

@@ -19,6 +19,13 @@ const SIGNING_KEY_ID = "gateway-key-2026-11";
 const SIGNING_ISSUER = "nova-core-tenant-gateway";
 const SIGNING_AUDIENCE = "nova-core-private-tenant-api";
 
+function jsonResponse(value, init = {}) {
+  return new Response(JSON.stringify(value), {
+    ...init,
+    headers: { "content-type": "application/json", ...(init.headers || {}) },
+  });
+}
+
 function b64url(bytes) {
   return Buffer.from(bytes).toString("base64url");
 }
@@ -71,7 +78,7 @@ async function verifiedIdentity(overrides = {}) {
     fetchImpl: async (url, options) => {
       assert.equal(url, `${ACCESS_ISSUER}/cdn-cgi/access/certs`);
       assert.equal(options.method, "GET");
-      return { ok: true, json: async () => fixture.jwks };
+      return jsonResponse(fixture.jwks);
     },
   });
   return identity;
@@ -104,7 +111,7 @@ test("verifies Cloudflare Access RS256 signature and exact issuer/audience befor
 test("rejects invalid Access signature and mismatched identity claims", async () => {
   const fixture = await fixtureAccessToken();
   const tampered = fixture.token.slice(0, -1) + (fixture.token.endsWith("A") ? "B" : "A");
-  const fetchImpl = async () => ({ ok: true, json: async () => fixture.jwks });
+  const fetchImpl = async () => jsonResponse(fixture.jwks);
   await assert.rejects(
     verifyCloudflareAccessJwt(tampered, {
       teamDomain: TEAM, audience: ACCESS_AUDIENCE, now: NOW, fetchImpl,
@@ -127,7 +134,7 @@ test("rejects invalid Access signature and mismatched identity claims", async ()
         teamDomain: TEAM,
         audience: ACCESS_AUDIENCE,
         now: NOW,
-        fetchImpl: async () => ({ ok: true, json: async () => invalid.jwks }),
+        fetchImpl: async () => jsonResponse(invalid.jwks),
       }),
     );
   }
@@ -138,14 +145,14 @@ test("fails closed for unavailable, ambiguous or unknown Access signing keys", a
   await assert.rejects(
     verifyCloudflareAccessJwt(fixture.token, {
       teamDomain: TEAM, audience: ACCESS_AUDIENCE, now: NOW,
-      fetchImpl: async () => ({ ok: false }),
+      fetchImpl: async () => new Response("unavailable", { status: 503 }),
     }),
     /signing keys are unavailable/,
   );
   await assert.rejects(
     verifyCloudflareAccessJwt(fixture.token, {
       teamDomain: TEAM, audience: ACCESS_AUDIENCE, now: NOW,
-      fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [] }) }),
+      fetchImpl: async () => jsonResponse({ keys: [] }),
     }),
     /signing keys are invalid/,
   );
@@ -153,7 +160,7 @@ test("fails closed for unavailable, ambiguous or unknown Access signing keys", a
   await assert.rejects(
     verifyCloudflareAccessJwt(fixture.token, {
       teamDomain: TEAM, audience: ACCESS_AUDIENCE, now: NOW,
-      fetchImpl: async () => ({ ok: true, json: async () => ambiguous }),
+      fetchImpl: async () => jsonResponse(ambiguous),
     }),
     /unknown or ambiguous/,
   );
@@ -249,8 +256,130 @@ test("rejects malformed Cloudflare Access token and team-domain configuration", 
       teamDomain: "attacker.example",
       audience: ACCESS_AUDIENCE,
       now: NOW,
-      fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [] }) }),
+      fetchImpl: async () => jsonResponse({ keys: [] }),
     }),
     /configuration is invalid/,
   );
+});
+
+
+test("bounds JWKS fetch time with an AbortSignal", async () => {
+  const fixture = await fixtureAccessToken();
+  let receivedOptions;
+  await verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async (_url, options) => {
+      receivedOptions = options;
+      return jsonResponse(fixture.jwks);
+    },
+  });
+  assert.ok(receivedOptions.signal instanceof AbortSignal);
+  assert.equal(receivedOptions.signal.aborted, false);
+});
+
+test("rejects oversized JWKS from Content-Length and streamed bodies", async () => {
+  const fixture = await fixtureAccessToken();
+  const verifyWith = (response) => verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async () => response,
+  });
+  await assert.rejects(
+    verifyWith(new Response("{}", {
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(64 * 1024 + 1),
+      },
+    })),
+    /response is too large/,
+  );
+  await assert.rejects(
+    verifyWith(new Response("x".repeat(64 * 1024 + 1), {
+      headers: { "content-type": "application/json" },
+    })),
+    /response is too large/,
+  );
+});
+
+test("accepts a valid numeric JWKS Content-Length", async () => {
+  const fixture = await fixtureAccessToken();
+  const payload = JSON.stringify(fixture.jwks);
+  const identity = await verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async () => new Response(payload, {
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(new TextEncoder().encode(payload).byteLength),
+      },
+    }),
+  });
+  assert.deepEqual(identity, { subject: "access-subject-123456" });
+});
+
+test("rejects invalid JWKS content type and malformed JSON", async () => {
+  const fixture = await fixtureAccessToken();
+  const verifyWith = (response) => verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async () => response,
+  });
+  await assert.rejects(
+    verifyWith(new Response("{}", {
+      headers: { "content-type": "text/html" },
+    })),
+    /invalid content type/,
+  );
+  await assert.rejects(
+    verifyWith(new Response("{", {
+      headers: { "content-type": "application/json" },
+    })),
+  );
+});
+
+
+test("uses a fixed three-second timeout for JWKS retrieval", async () => {
+  const fixture = await fixtureAccessToken();
+  const originalTimeout = AbortSignal.timeout;
+  let timeoutMs;
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutMs = milliseconds;
+    return new AbortController().signal;
+  };
+  try {
+    await verifyCloudflareAccessJwt(fixture.token, {
+      teamDomain: TEAM,
+      audience: ACCESS_AUDIENCE,
+      now: NOW,
+      fetchImpl: async (_url, options) => {
+        assert.ok(options.signal instanceof AbortSignal);
+        return jsonResponse(fixture.jwks);
+      },
+    });
+    assert.equal(timeoutMs, 3000);
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+  }
+});
+
+test("accepts the matching signing key during a multi-key rotation overlap", async () => {
+  const fixture = await fixtureAccessToken();
+  const overlappingJwks = {
+    keys: [
+      { ...fixture.jwks.keys[0] },
+      { ...fixture.jwks.keys[0], kid: "previous-access-key" },
+    ],
+  };
+  const identity = await verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async () => jsonResponse(overlappingJwks),
+  });
+  assert.equal(identity.subject, "access-subject-123456");
 });
