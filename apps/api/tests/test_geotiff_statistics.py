@@ -253,3 +253,33 @@ def test_mean_accumulation_is_stable_for_large_finite_float_samples():
     assert result["raw_min"] == 1e308
     assert result["raw_max"] == 1e308
     assert result["raw_mean"] == pytest.approx(1e308)
+
+
+
+def _mutate_external_pointer(payload, tag, target_tag):
+    data = bytearray(payload)
+    ifd_offset = struct.unpack("<I", data[4:8])[0]
+    count = struct.unpack("<H", data[ifd_offset:ifd_offset + 2])[0]
+    pointers = {}
+    for index in range(count):
+        pos = ifd_offset + 2 + index * 12
+        current = struct.unpack("<H", data[pos:pos + 2])[0]
+        if current in (tag, target_tag):
+            pointers[current] = struct.unpack("<I", data[pos + 8:pos + 12])[0]
+    if tag not in pointers or target_tag not in pointers:
+        raise AssertionError((tag, target_tag))
+    for index in range(count):
+        pos = ifd_offset + 2 + index * 12
+        current = struct.unpack("<H", data[pos:pos + 2])[0]
+        if current == tag:
+            struct.pack_into("<I", data, pos + 8, pointers[target_tag])
+            return bytes(data)
+    raise AssertionError(tag)
+
+
+def test_rejects_overlapping_external_metadata_value_blocks():
+    xml = '<GDALMetadata><Item name="scale">0.1</Item><Item name="offset">2</Item></GDALMetadata>'
+    payload = _float64_strip_tiff([1.0, 2.0, 3.0, 4.0], scale_xml=xml)
+    payload = _mutate_external_pointer(payload, 42113, 42112)
+    with pytest.raises(GeoTiffError, match="external metadata values overlap"):
+        calculate_geotiff_statistics(payload)

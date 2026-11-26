@@ -68,6 +68,8 @@ def _entries(
             value_range = (value_offset, value_offset + total)
             if _overlaps(value_range, protected[0]) or _overlaps(value_range, protected[1]):
                 raise GeoTiffError("TIFF external metadata overlaps its header or IFD")
+            if any(_overlaps(value_range, existing) for existing in protected[2:]):
+                raise GeoTiffError("TIFF external metadata values overlap")
             protected.append(value_range)
         if tag not in _RELEVANT_TYPES:
             continue

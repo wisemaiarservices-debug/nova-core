@@ -22,7 +22,7 @@ Outputs remain `satellite_derived`; they are not field measurements. Statistics 
 
 ## Strip integrity
 
-The service validates the first IFD and strip/sample field types, rejects duplicate tags, bounds strip arrays to 4,096 entries, requires exact per-strip byte counts, checks each range against the input buffer, and rejects strip overlap with the TIFF header, IFD, external metadata values or another strip. Multi-image TIFFs are rejected. These checks prevent a malicious or malformed strip index from repeatedly counting the same bytes or interpreting metadata as pixel samples.
+The service validates the first IFD and strip/sample field types, rejects duplicate tags, bounds strip arrays to 4,096 entries, requires exact per-strip byte counts, checks each range against the input buffer, and rejects overlapping external metadata blocks plus strip overlap with the TIFF header, IFD, external metadata values or another strip. Multi-image TIFFs are rejected. These checks prevent a malicious or malformed strip index from repeatedly counting the same bytes or interpreting metadata as pixel samples.
 
 ## Integration boundary
 
