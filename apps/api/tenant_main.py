@@ -101,8 +101,6 @@ async def resolve_private_tenant_read(
     issuer = _binding(env, "NOVA_INTERNAL_ISSUER")
     audience = _binding(env, "NOVA_INTERNAL_AUDIENCE")
     database = _binding(env, "DB")
-    if database is None:
-        raise RequestReplayStorageError("request replay storage is unavailable")
     if not isinstance(key_id, str) or not isinstance(secret, str):
         raise InternalAssertionError("internal assertion rejected")
 
@@ -116,6 +114,9 @@ async def resolve_private_tenant_read(
         request_path=raw_path,
         now=current_time,
     )
+
+    if database is None:
+        raise RequestReplayStorageError("request replay storage is unavailable")
 
     # Consume the jti before any tenant membership/grant/resource lookup.
     # A denied or missing resource still consumes the assertion, preventing
