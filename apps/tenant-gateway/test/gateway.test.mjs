@@ -327,3 +327,25 @@ test("rejects oversized declared private API response before streaming", async (
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("rejects duplicate JSON members in private API response payloads", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const result = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async () => new Response(
+          '{"id":"site-a","nested":{"tenant_id":"tenant-a","tenant_id":"tenant-b"}}',
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      }),
+    );
+    assert.equal(result.status, 502);
+    assert.equal(await result.text(), '{"detail":"upstream response rejected"}');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
