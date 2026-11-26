@@ -30,9 +30,89 @@ function decodeBase64Url(segment) {
   return bytes;
 }
 
+function assertNoDuplicateJsonMembers(source) {
+  let index = 0;
+  const whitespace = () => {
+    while (index < source.length && /[\\t\\n\\r ]/.test(source[index])) index += 1;
+  };
+  const string = () => {
+    const start = index;
+    if (source[index] !== '"') throw new TypeError("JSON string required");
+    index += 1;
+    while (index < source.length) {
+      const character = source[index++];
+      if (character === '"') {
+        return JSON.parse(source.slice(start, index));
+      }
+      if (character === "\\\\") {
+        if (index >= source.length) throw new TypeError("invalid JSON escape");
+        index += 1;
+      } else if (character.charCodeAt(0) < 0x20) {
+        throw new TypeError("invalid JSON string");
+      }
+    }
+    throw new TypeError("unterminated JSON string");
+  };
+  const value = () => {
+    whitespace();
+    if (source[index] === '"') {
+      string();
+      return;
+    }
+    if (source[index] === "{") {
+      index += 1;
+      whitespace();
+      const keys = new Set();
+      if (source[index] === "}") {
+        index += 1;
+        return;
+      }
+      while (index < source.length) {
+        whitespace();
+        const key = string();
+        if (keys.has(key)) throw new TypeError("duplicate JSON member");
+        keys.add(key);
+        whitespace();
+        if (source[index++] !== ":") throw new TypeError("invalid JSON object");
+        value();
+        whitespace();
+        const delimiter = source[index++];
+        if (delimiter === "}") return;
+        if (delimiter !== ",") throw new TypeError("invalid JSON object");
+      }
+      throw new TypeError("unterminated JSON object");
+    }
+    if (source[index] === "[") {
+      index += 1;
+      whitespace();
+      if (source[index] === "]") {
+        index += 1;
+        return;
+      }
+      while (index < source.length) {
+        value();
+        whitespace();
+        const delimiter = source[index++];
+        if (delimiter === "]") return;
+        if (delimiter !== ",") throw new TypeError("invalid JSON array");
+      }
+      throw new TypeError("unterminated JSON array");
+    }
+    const remaining = source.slice(index);
+    const primitive = /^(?:true|false|null|-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)/.exec(remaining);
+    if (!primitive) throw new TypeError("invalid JSON value");
+    index += primitive[0].length;
+  };
+  value();
+  whitespace();
+  if (index !== source.length) throw new TypeError("trailing JSON content");
+}
+
 function decodeJsonSegment(segment) {
   const bytes = decodeBase64Url(segment);
-  const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  assertNoDuplicateJsonMembers(source);
+  const value = JSON.parse(source);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("JWT object required");
   }
