@@ -43,8 +43,8 @@ def _result_rows(result: Any, *, maximum: int) -> list[dict[str, Any]]:
     success = getattr(result, "success", None)
     if success is None and isinstance(result, dict):
         success = result.get("success")
-    if success is False:
-        raise TenantAuthorizationStorageError("authorization storage returned an unsuccessful result")
+    if success is not True:
+        raise TenantAuthorizationStorageError("authorization storage returned an unsuccessful or incomplete result")
     rows = getattr(result, "results", None)
     if rows is None and isinstance(result, dict):
         rows = result.get("results")

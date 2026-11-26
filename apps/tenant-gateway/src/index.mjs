@@ -1,4 +1,5 @@
 import {
+  assertNoDuplicateJsonMembers,
   createInternalAssertion,
   verifyCloudflareAccessJwt,
 } from "./internal-assertion.mjs";
@@ -30,6 +31,48 @@ function configured(env) {
     typeof env.NOVA_INTERNAL_ISSUER === "string" &&
     typeof env.NOVA_INTERNAL_AUDIENCE === "string"
   );
+}
+
+async function readBoundedUpstreamBody(upstreamResponse) {
+  if (!upstreamResponse.body) {
+    throw new TypeError("upstream response body is unavailable");
+  }
+  const contentLength = upstreamResponse.headers.get("content-length");
+  if (contentLength !== null) {
+    if (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_RESPONSE_BYTES) {
+      throw new RangeError("upstream response exceeds the size limit");
+    }
+  }
+
+  const reader = upstreamResponse.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_RESPONSE_BYTES) {
+        try {
+          await reader.cancel("upstream response exceeds size limit");
+        } catch {
+          // Preserve the bounded-size rejection if cancellation itself fails.
+        }
+        throw new RangeError("upstream response exceeds the size limit");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
 }
 
 export default {
@@ -112,12 +155,12 @@ export default {
         return response(503, JSON.stringify({ detail: "gateway unavailable" }));
       }
 
-      const body = await internalResponse.arrayBuffer();
-      if (body.byteLength > MAX_RESPONSE_BYTES) {
-        return response(502, JSON.stringify({ detail: "upstream response rejected" }));
-      }
+      let body;
       try {
-        const payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+        body = await readBoundedUpstreamBody(internalResponse);
+        const source = new TextDecoder("utf-8", { fatal: true }).decode(body);
+        assertNoDuplicateJsonMembers(source);
+        const payload = JSON.parse(source);
         if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
           return response(502, JSON.stringify({ detail: "upstream response rejected" }));
         }

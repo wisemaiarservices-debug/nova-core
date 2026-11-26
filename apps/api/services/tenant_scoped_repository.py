@@ -97,8 +97,8 @@ async def read_authorized_tenant_resource(
     success = getattr(result, "success", None)
     if success is None and isinstance(result, dict):
         success = result.get("success")
-    if success is False:
-        raise TenantAuthorizationStorageError("tenant resource storage returned an unsuccessful result")
+    if success is not True:
+        raise TenantAuthorizationStorageError("tenant resource storage returned an unsuccessful or incomplete result")
     rows = getattr(result, "results", None)
     if rows is None and isinstance(result, dict):
         rows = result.get("results")

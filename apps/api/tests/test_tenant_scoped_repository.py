@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
 
 from apps.api.services.tenant_scoped_repository import (
     RESOURCE_SELECTS,
@@ -177,14 +178,14 @@ def test_database_resource_failure_is_generic_and_fail_closed():
         ))
 
 
-def test_unsuccessful_d1_resource_result_fails_closed():
+@pytest.mark.parametrize("resource_success", [False, None])
+def test_unsuccessful_or_incomplete_d1_resource_result_fails_closed(resource_success):
     db = FakeDatabase(
         memberships=[membership()], grants=[grant()],
-        resource_success=False,
+        resource_success=resource_success,
     )
-    import pytest
     from apps.api.services.tenant_authorization_storage import TenantAuthorizationStorageError
-    with pytest.raises(TenantAuthorizationStorageError, match="unsuccessful result"):
+    with pytest.raises(TenantAuthorizationStorageError, match="unsuccessful or incomplete"):
         asyncio.run(read_authorized_tenant_resource(
             db, principal_subject="subject-a", tenant_id="tenant-a",
             resource_type="site", resource_id="site-a",

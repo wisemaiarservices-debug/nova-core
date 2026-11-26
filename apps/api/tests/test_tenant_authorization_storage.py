@@ -12,8 +12,9 @@ from apps.api.services.tenant_authorization_storage import (
 
 
 class Result:
-    def __init__(self, results):
+    def __init__(self, results, success=True):
         self.results = results
+        self.success = success
 
 
 class Statement:
@@ -35,7 +36,7 @@ class Statement:
             return Result([
                 row for row in self.database.memberships
                 if row["subject"] == subject and row["tenant_id"] == tenant_id
-            ])
+            ], success=self.database.result_success)
         if self.sql == RESOURCE_GRANTS_SQL:
             tenant_id, subject, resource_type, resource_id = self.parameters
             return Result([
@@ -44,7 +45,7 @@ class Statement:
                 and row["subject"] == subject
                 and row["resource_type"] == resource_type
                 and row["resource_id"] == resource_id
-            ])
+            ], success=self.database.result_success)
         raise AssertionError("unexpected SQL statement")
 
 
@@ -53,6 +54,7 @@ class FakeDatabase:
         self.memberships = list(memberships)
         self.grants = list(grants)
         self.error = error
+        self.result_success = True
         self.calls = []
 
     def prepare(self, sql):
@@ -272,3 +274,14 @@ def test_invalid_resource_type_action_pair_is_rejected_without_storage_reads():
     assert result.allowed is False
     assert result.reason_code == "resource_action_invalid"
     assert db.calls == []
+
+
+@pytest.mark.parametrize("result_success", [False, None])
+def test_authorization_queries_fail_closed_without_explicit_d1_success(result_success):
+    db = FakeDatabase(memberships=[member()], grants=[grant()])
+    db.result_success = result_success
+    with pytest.raises(TenantAuthorizationStorageError, match="unsuccessful or incomplete"):
+        asyncio.run(authorize_tenant_resource_action(
+            db, principal_subject="subject-a", tenant_id="tenant-a",
+            resource_type="site", resource_id="site-a", action="read",
+        ))

@@ -32,7 +32,7 @@ function decodeBase64Url(segment) {
   return bytes;
 }
 
-function assertNoDuplicateJsonMembers(source) {
+export function assertNoDuplicateJsonMembers(source) {
   let index = 0;
   const whitespace = () => {
     while (index < source.length && /[\t\n\r ]/.test(source[index])) index += 1;
