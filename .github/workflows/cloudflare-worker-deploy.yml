@@ -28,7 +28,7 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN GitHub secret" && exit 1)
           test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "Missing CLOUDFLARE_ACCOUNT_ID GitHub secret" && exit 1)
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.14 --project apps/api --all-groups
+        run: uv sync --python 3.13 --project apps/api --all-groups
       - name: Deploy NOVA Core API
         working-directory: apps/api
-        run: uv run --python 3.14 pywrangler deploy
+        run: uv run --python 3.13 pywrangler deploy
