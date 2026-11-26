@@ -22,7 +22,7 @@ npx --yes wrangler@4 dev --local --test-scheduled --ip 127.0.0.1 --port "${PORT}
 SERVER_PID="$!"
 ready=0
 for attempt in $(seq 1 180); do
-  if curl --silent --output /dev/null --write-out '%{http_code}' "${BASE_URL}/" >"${RESPONSE_FILE}" 2>/dev/null; then
+  if grep -q "\\[wrangler:info\\] Ready on" "${LOG_FILE}"; then
     ready=1
     break
   fi
@@ -34,7 +34,7 @@ for attempt in $(seq 1 180); do
   sleep 1
 done
 if [[ "${ready}" != "1" ]]; then
-  echo "Wrangler did not become ready within 180 seconds; last root response: $(cat "${RESPONSE_FILE}" 2>/dev/null || true)" >&2
+  echo "Wrangler did not report readiness within 180 seconds." >&2
   cat "${LOG_FILE}" >&2
   exit 1
 fi
