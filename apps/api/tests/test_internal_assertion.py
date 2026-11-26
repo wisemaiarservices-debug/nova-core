@@ -114,7 +114,8 @@ def test_method_and_exact_path_binding_are_enforced():
 def test_service_binding_paths_outside_the_read_only_allowlist_are_rejected():
     for path in (
         "/api/v1/tenants/tenant-a/sites/site-a/",
-        "/api/v1/tenants/tenant-a/../sites/site-a",
+        "/api/v1/tenants/../sites/site-a",
+        "/api/v1/tenants/tenant-a/sites/..",
         "/api/v1/tenants/tenant-a/sites/a%2fb",
         "/api/v1/tenants/tenant-a/memberships/member-a",
     ):
