@@ -39,7 +39,7 @@ async function readBoundedUpstreamBody(upstreamResponse) {
   }
   const contentLength = upstreamResponse.headers.get("content-length");
   if (contentLength !== null) {
-    if (!/^\\d+$/.test(contentLength) || Number(contentLength) > MAX_RESPONSE_BYTES) {
+    if (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_RESPONSE_BYTES) {
       throw new RangeError("upstream response exceeds the size limit");
     }
   }
