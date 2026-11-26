@@ -250,7 +250,7 @@ def test_bundle_rejects_mismatched_snapshot_or_lineage():
     bundle = prepare_research_experiment(_experiment(lineage), lineage, [lineage.raster_manifest])
     payload = bundle.model_dump(mode="python")
     payload["resolved_manifest_ids"] = ("different-manifest",)
-    with pytest.raises(ValidationError, match="exact lineage raster"):
+    with pytest.raises(ValidationError, match="exactly match experiment raster references"):
         type(bundle).model_validate(payload)
 
 
