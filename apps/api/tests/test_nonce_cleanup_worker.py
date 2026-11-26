@@ -58,3 +58,69 @@ def test_scheduled_entrypoint_uses_only_tenant_db_binding_and_platform_time():
     env = SimpleNamespace(TENANT_DB=database)
     asyncio.run(worker.scheduled(controller, env, None))
     assert database.calls == [(NONCE_CLEANUP_SQL, (1_800_000_000, MAX_CLEANUP_BATCH))]
+
+
+def test_scheduled_worker_cleans_sqlite_migrated_replay_store_across_repeated_invocations(tmp_path):
+    import sqlite3
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    connection = sqlite3.connect(tmp_path / "scheduled-cleanup.sqlite")
+    connection.executescript((root / "migrations/0001_initial.sql").read_text(encoding="utf-8"))
+    connection.executescript((root / "migrations/0002_tenant_isolation.sql").read_text(encoding="utf-8"))
+    connection.executescript((root / "migrations/0003_internal_request_nonces.sql").read_text(encoding="utf-8"))
+
+    class SQLiteStatement:
+        def __init__(self, sql):
+            self.sql = sql
+            self.parameters = ()
+
+        def bind(self, *parameters):
+            self.parameters = parameters
+            return self
+
+        async def run(self):
+            cursor = connection.execute(self.sql, self.parameters)
+            rows = [{"jti": row[0]} for row in cursor.fetchall()]
+            connection.commit()
+            return SimpleNamespace(success=True, results=rows)
+
+    class SQLiteD1:
+        def prepare(self, sql):
+            return SQLiteStatement(sql)
+
+    now = 1_800_000_000
+    # One expired retention record, one still retained, and a second expired
+    # record to prove repeat invocations converge without deleting early.
+    connection.executemany(
+        "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) VALUES (?, ?, ?, ?)",
+        [
+            ("expired-retained-000001", now - 86_500, now - 1, now - 86_560),
+            ("still-retained-00000001", now - 10, now + 10, now - 70),
+            ("expired-retained-000002", now - 86_600, now - 2, now - 86_660),
+        ],
+    )
+    database = SQLiteD1()
+    worker = object.__new__(Default)
+    env = SimpleNamespace(TENANT_DB=database)
+
+    asyncio.run(worker.scheduled(
+        SimpleNamespace(scheduledTime=(now * 1000) + 999), env, None,
+    ))
+    remaining = {
+        row[0] for row in connection.execute(
+            "SELECT jti FROM internal_request_nonces ORDER BY jti"
+        ).fetchall()
+    }
+    assert remaining == {"still-retained-00000001", "expired-retained-000002"}
+
+    asyncio.run(worker.scheduled(
+        SimpleNamespace(scheduledTime=((now + 1) * 1000)), env, None,
+    ))
+    remaining = {
+        row[0] for row in connection.execute(
+            "SELECT jti FROM internal_request_nonces ORDER BY jti"
+        ).fetchall()
+    }
+    assert remaining == {"still-retained-00000001"}
+    connection.close()
