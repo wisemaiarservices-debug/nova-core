@@ -73,9 +73,11 @@ async def consume_request_nonce(
     its signature or claims. The caller must do that first. Expired IDs remain
     reserved for one day after assertion expiry.
     """
+    if database is None:
+        raise RequestReplayStorageError("request replay storage is unavailable")
+
     if (
-        database is None
-        or not isinstance(jti, str)
+        not isinstance(jti, str)
         or not 16 <= len(jti) <= 128
         or jti != jti.strip()
         or re.fullmatch(r"[A-Za-z0-9._~-]{16,128}", jti) is None
