@@ -278,6 +278,32 @@ def _crs_identifier(crs) -> str:
     return identifier
 
 
+def _require_discovered_record(
+    discovery: dict[str, Any],
+    records_key: str,
+    record_code: str,
+    *,
+    resource_label: str,
+) -> dict[str, Any]:
+    """Only report absence when provider enumeration is known to be complete."""
+    records = discovery.get(records_key)
+    if not isinstance(records, list):
+        raise ResearchProcessingError(f"WaPOR {resource_label} discovery returned an invalid record collection")
+    record = next(
+        (item for item in records if isinstance(item, dict) and item.get("code") == record_code),
+        None,
+    )
+    if record is not None:
+        return record
+    if discovery.get("truncated") is True:
+        raise ResearchProcessingError(
+            f"WaPOR {resource_label} discovery was truncated; absence of {record_code} cannot be established"
+        )
+    raise ResearchProcessingError(
+        f"Requested {resource_label} {record_code} is not present in the complete FAO WaPOR v3 discovery result"
+    )
+
+
 def process_wapor_aoi(
     mapset_code: str,
     raster_code: str,
@@ -297,19 +323,19 @@ def process_wapor_aoi(
 
     try:
         catalogue = list_mapsets()
-        mapset_record = next(
-            (item for item in catalogue["mapsets"] if item.get("code") == mapset),
-            None,
+        mapset_record = _require_discovered_record(
+            catalogue,
+            "mapsets",
+            mapset,
+            resource_label="mapset catalogue",
         )
-        if mapset_record is None:
-            raise ResearchProcessingError("Requested mapset is not present in the current FAO WaPOR v3 catalogue")
         raster_index = list_rasters(mapset)
-        raster_record = next(
-            (item for item in raster_index["rasters"] if item.get("code") == raster_code),
-            None,
+        raster_record = _require_discovered_record(
+            raster_index,
+            "rasters",
+            raster_code,
+            resource_label="raster index",
         )
-        if raster_record is None:
-            raise ResearchProcessingError("Requested raster code is not present in the selected WaPOR mapset index")
     except ResearchProcessingError:
         raise
     except Exception as exc:

@@ -252,3 +252,28 @@ def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
     }
     with pytest.raises(ResearchProcessingError, match="1 MiB"):
         _canonical_aoi_hash(geometry)
+
+
+@pytest.mark.parametrize(
+    "discovery,key,code,label,expected",
+    [
+        ({"mapsets": [{"code": "L2-T-D"}], "truncated": False}, "mapsets", "L2-T-D", "mapset catalogue", None),
+        ({"mapsets": [], "truncated": False}, "mapsets", "L2-T-D", "mapset catalogue", "not present in the complete"),
+        ({"mapsets": [], "truncated": True}, "mapsets", "L2-T-D", "mapset catalogue", "truncated"),
+        ({"rasters": [{"code": "WAPOR-3.L2-T-D.2022-01-D1"}], "truncated": False}, "rasters", "WAPOR-3.L2-T-D.2022-01-D1", "raster index", None),
+        ({"rasters": [], "truncated": False}, "rasters", "WAPOR-3.L2-T-D.2022-01-D1", "raster index", "not present in the complete"),
+        ({"rasters": [], "truncated": True}, "rasters", "WAPOR-3.L2-T-D.2022-01-D1", "raster index", "truncated"),
+    ],
+)
+def test_discovery_absence_is_only_authoritative_when_enumeration_is_complete(
+    discovery, key, code, label, expected
+):
+    from scripts.wapor_cog_aoi import _require_discovered_record
+
+    if expected is None:
+        assert _require_discovered_record(
+            discovery, key, code, resource_label=label
+        ) == discovery[key][0]
+    else:
+        with pytest.raises(ResearchProcessingError, match=expected):
+            _require_discovered_record(discovery, key, code, resource_label=label)
