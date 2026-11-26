@@ -126,10 +126,10 @@ def _request_json(url: str, *, deadline: float | None = None) -> dict[str, Any]:
     return _validate_payload(payload)
 
 
-async _DEFAULT_REQUEST_JSON = _request_json
+_DEFAULT_REQUEST_JSON = _request_json
 
 
-def _read_worker_response_bytes(response: Any) -> bytes:
+async def _read_worker_response_bytes(response: Any) -> bytes:
     body = getattr(response, "body", None)
     if body is None:
         raise RuntimeError("WaPOR response did not include a readable body")
