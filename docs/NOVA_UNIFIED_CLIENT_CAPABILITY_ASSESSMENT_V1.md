@@ -9,7 +9,7 @@ NOVA Core behaviour across NeoAgro, NeoGrid, NeoCell and NOVA OS.
 ## Data flow
 1. Caller supplies a validated `ClientConfiguration`.
 2. Caller supplies a matching `CapabilityRegistry`.
-3. The adapter verifies tenant and site identifiers match exactly.
+3. The adapter verifies tenant and site identifiers match exactly and requires the client domain as an explicit input (never copied from the model).
 4. It derives land area in square metres from the declared unit.
 5. It derives a crop species only when all configured crop profiles agree.
    Mixed-crop sites remain ambiguous rather than selecting the first crop.
@@ -18,7 +18,7 @@ NOVA Core behaviour across NeoAgro, NeoGrid, NeoCell and NOVA OS.
    observed model features.
 8. Only separately supplied `AvailableFeature` records with explicit
    tenant/site scope, evidence reference and evidence class are passed to
-   model applicability assessment.
+   model applicability assessment. Each feature must include matching tenant/site scope and an evidence reference; the reference is not independently verified by this adapter.
 9. The existing applicability gate returns abstain, research-only, or
    human-review-only. It never enables autonomous control.
 

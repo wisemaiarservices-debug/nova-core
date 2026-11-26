@@ -59,7 +59,7 @@ def model(lifecycle="research"):
 
 
 def test_assessment_composes_config_and_registry_without_treating_sensor_as_observation():
-    result = assess_client_capabilities(configuration(), registry(), model())
+    result = assess_client_capabilities(configuration(), registry(), model(), domain="agriculture")
     assert result.assessment.status == "insufficient_data"
     assert result.assessment.missing_features == ("soil.moisture",)
     assert result.declared_metrics == ("soil.moisture",)
@@ -68,7 +68,7 @@ def test_assessment_composes_config_and_registry_without_treating_sensor_as_obse
 
 def test_explicit_evidence_feature_can_only_reach_research_only_without_validation():
     result = assess_client_capabilities(
-        configuration(), registry(), model(),
+        configuration(), registry(), model(), domain="agriculture",
         available_features=(AvailableFeature(
             tenant_id="tenant-a", site_id="site-a",
             metric="soil.moisture", unit="%", evidence_class="field_observation",
@@ -86,7 +86,7 @@ def test_mixed_crop_site_does_not_arbitrarily_select_one_crop():
     ])
     context = build_applicability_context(config, registry(), "agriculture")
     assert context.crop_species is None
-    result = assess_client_capabilities(config, registry(), model())
+    result = assess_client_capabilities(config, registry(), model(), domain="agriculture")
     assert result.assessment.status == "needs_configuration"
 
 
@@ -108,5 +108,32 @@ def test_independently_validated_still_requires_explicit_features():
             "validation_record_reference": "validation-record-1",
         }
     )
-    result = assess_client_capabilities(configuration(), registry(), validated)
+    result = assess_client_capabilities(configuration(), registry(), validated, domain="agriculture")
     assert result.assessment.recommendation == "abstain"
+
+
+def test_unified_assessment_uses_explicit_client_domain_not_model_domain():
+    result = assess_client_capabilities(
+        configuration(), registry(), model(), domain="energy"
+    )
+    assert result.domain == "energy"
+    assert result.assessment.status == "not_applicable"
+    assert result.assessment.recommendation == "abstain"
+
+
+def test_unified_assessment_rejects_cross_tenant_feature_evidence():
+    with pytest.raises(ValueError, match="tenant/site"):
+        assess_client_capabilities(
+            configuration(),
+            registry(),
+            model(),
+            domain="agriculture",
+            available_features=(AvailableFeature(
+                tenant_id="tenant-other",
+                site_id="site-a",
+                metric="soil.moisture",
+                unit="%",
+                evidence_class="field_observation",
+                evidence_reference="foreign-evidence-001",
+            ),),
+        )

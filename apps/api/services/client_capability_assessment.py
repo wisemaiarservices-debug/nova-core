@@ -85,6 +85,7 @@ def assess_client_capabilities(
     configuration: ClientConfiguration,
     registry: CapabilityRegistry,
     model: ModelApplicabilityContract,
+    domain: Domain,
     *,
     climate_zone: str | None = None,
     available_features: tuple[AvailableFeature, ...] = (),
@@ -93,7 +94,7 @@ def assess_client_capabilities(
     context = build_applicability_context(
         configuration,
         registry,
-        model.domain,
+        domain,
         climate_zone=climate_zone,
         available_features=available_features,
     )
@@ -103,7 +104,7 @@ def assess_client_capabilities(
         site_id=context.site_id,
         configuration_version=configuration.site.configuration_version,
         registry_version=registry.registry_version,
-        domain=model.domain,
+        domain=context.domain,
         crop_species_context=context.crop_species,
         equipment_count=len(registry.equipment),
         sensor_count=len(registry.sensors),
