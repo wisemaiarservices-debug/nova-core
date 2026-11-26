@@ -33,7 +33,7 @@ function decodeBase64Url(segment) {
 function assertNoDuplicateJsonMembers(source) {
   let index = 0;
   const whitespace = () => {
-    while (index < source.length && /[\\t\\n\\r ]/.test(source[index])) index += 1;
+    while (index < source.length && /[\t\n\r ]/.test(source[index])) index += 1;
   };
   const string = () => {
     const start = index;
@@ -44,7 +44,7 @@ function assertNoDuplicateJsonMembers(source) {
       if (character === '"') {
         return JSON.parse(source.slice(start, index));
       }
-      if (character === "\\\\") {
+      if (character === "\\") {
         if (index >= source.length) throw new TypeError("invalid JSON escape");
         index += 1;
       } else if (character.charCodeAt(0) < 0x20) {
@@ -99,7 +99,7 @@ function assertNoDuplicateJsonMembers(source) {
       throw new TypeError("unterminated JSON array");
     }
     const remaining = source.slice(index);
-    const primitive = /^(?:true|false|null|-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)/.exec(remaining);
+    const primitive = /^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(remaining);
     if (!primitive) throw new TypeError("invalid JSON value");
     index += primitive[0].length;
   };
