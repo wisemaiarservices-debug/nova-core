@@ -227,3 +227,11 @@ def test_canonical_json_hash_rejects_nan_and_is_key_order_stable():
     assert canonical_json_sha256({"b": 2, "a": 1}) == canonical_json_sha256({"a": 1, "b": 2})
     with pytest.raises(ValueError, match="JSON-compatible"):
         canonical_json_sha256({"bad": float("nan")})
+
+
+def test_lineage_rejects_run_id_that_does_not_match_its_identity():
+    lineage = _lineage()
+    payload = lineage.model_dump(mode="python")
+    payload["run_id"] = "nova-research-" + ("f" * 20)
+    with pytest.raises(ValidationError, match="canonical research lineage identity"):
+        type(lineage).model_validate(payload)

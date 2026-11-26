@@ -74,6 +74,23 @@ class ResearchRunLineage(BaseModel):
             raise ValueError("AOI bounds must be finite")
         if not (-180 <= west <= east <= 180 and -90 <= south <= north <= 90):
             raise ValueError("AOI bounds must be ordered WGS84 longitude/latitude")
+        identity = {
+            "experiment_id": self.experiment_id,
+            "dataset_id": manifest.dataset_id,
+            "dataset_version": manifest.dataset_version,
+            "provider_period_start": manifest.provider_period_start.isoformat(),
+            "provider_period_end": manifest.provider_period_end.isoformat(),
+            "aoi_sha256": self.aoi_sha256,
+            "manifest_id": manifest.manifest_id,
+            "provider_metadata_sha256": manifest.provider_metadata_sha256,
+            "processed_window_sha256": manifest.processed_window_sha256,
+            "source_object_sha256": manifest.source_object_sha256,
+            "processing_code_commit": manifest.processing_code_commit,
+            "processing_method": manifest.processing_method,
+        }
+        expected_run_id = "nova-research-" + canonical_json_sha256(identity)[:20]
+        if self.run_id != expected_run_id:
+            raise ValueError("run_id does not match the canonical research lineage identity")
         return self
 
     @property
