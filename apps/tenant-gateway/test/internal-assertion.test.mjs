@@ -304,6 +304,23 @@ test("rejects oversized JWKS from Content-Length and streamed bodies", async () 
   );
 });
 
+test("accepts a valid numeric JWKS Content-Length", async () => {
+  const fixture = await fixtureAccessToken();
+  const payload = JSON.stringify(fixture.jwks);
+  const identity = await verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async () => new Response(payload, {
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(new TextEncoder().encode(payload).byteLength),
+      },
+    }),
+  });
+  assert.deepEqual(identity, { subject: "access-subject-123456" });
+});
+
 test("rejects invalid JWKS content type and malformed JSON", async () => {
   const fixture = await fixtureAccessToken();
   const verifyWith = (response) => verifyCloudflareAccessJwt(fixture.token, {
