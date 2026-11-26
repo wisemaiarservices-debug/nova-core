@@ -43,6 +43,12 @@ jobs:
       - name: Bundle private tenant API Worker without deployment
         working-directory: apps/api
         run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.tenant.jsonc
+      - name: Bundle local tenant API D1 test Worker without deployment
+        working-directory: apps/api
+        run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.tenant-local-test.jsonc
+      - name: Exercise concurrent tenant replay protection with local D1 in workerd
+        working-directory: apps/api
+        run: bash scripts/test_tenant_replay_local_d1_concurrency.sh
       - name: Bundle tenant nonce cleanup Worker without deployment
         working-directory: apps/api
         run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.nonce-cleanup.jsonc
