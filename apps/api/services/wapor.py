@@ -130,7 +130,10 @@ async def _read_worker_response_bytes(response: Any) -> bytes:
                 raise RuntimeError("WaPOR response exceeded the 1 MiB page limit")
             total += chunk_size
             # Check the JavaScript TypedArray byteLength before copying it into Python.
-            chunks.append(bytes(chunk.to_py()))
+            converted = bytes(chunk.to_py())
+            if len(converted) != chunk_size:
+                raise RuntimeError("WaPOR response chunk length changed during conversion")
+            chunks.append(converted)
     except BaseException:
         try:
             await reader.cancel()

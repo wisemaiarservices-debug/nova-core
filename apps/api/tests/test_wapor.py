@@ -81,12 +81,14 @@ def test_wapor_raster_listing_filters_periods_and_sanitizes_download_references(
         raise AssertionError(url)
 
     result = wapor.list_rasters(
-        "l2-aeti-d", date(2024, 1, 11), date(2024, 1, 31), fake
+        "l2-aeti-d", date(2024, 1, 1), date(2024, 1, 31), fake
     )
-    assert [item["period_start"] for item in result["rasters"]] == ["2024-01-11"]
-    assert result["rasters"][0]["code"].endswith("2024-01-D2")
-    assert result["rasters"][0]["download_url"] is None
-    assert result["rasters"][0]["gsutil_uri"] is None
+    assert [item["period_start"] for item in result["rasters"]] == ["2024-01-01", "2024-01-11"]
+    assert result["rasters"][0]["download_url"] == "https://storage.googleapis.com/sample.tif"
+    assert result["rasters"][0]["gsutil_uri"] == "gs://wapor-bucket/sample.tif"
+    assert result["rasters"][1]["code"].endswith("2024-01-D2")
+    assert result["rasters"][1]["download_url"] is None
+    assert result["rasters"][1]["gsutil_uri"] is None
     assert result["unparsed_date_count"] == 1
     assert result["evidence_class"] == "satellite_derived"
     assert "GeoTIFF pixel data is not downloaded" in result["limitations"][0]
