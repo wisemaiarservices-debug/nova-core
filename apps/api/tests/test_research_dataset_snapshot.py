@@ -119,11 +119,14 @@ def test_snapshot_rejects_customer_site_identity_invalid_hashes_and_bad_pixel_ac
 
 
 def test_snapshot_rejects_inconsistent_calibration():
-    with pytest.raises(ValidationError, match="do not match"):
-        _snapshot(
-            scale=2.0,
-            offset=1.0,
-            scaled_min=3.0,
-            scaled_max=11.0,
-            scaled_mean=6.5,
-        )
+    snapshot = _snapshot()
+    payload = snapshot.model_dump()
+    payload.update(
+        scale=2.0,
+        offset=1.0,
+        scaled_min=3.0,
+        scaled_max=11.0,
+        scaled_mean=6.5,
+    )
+    with pytest.raises(ValidationError, match="snapshot scaled statistics"):
+        ResearchDatasetSnapshot.model_validate(payload)
