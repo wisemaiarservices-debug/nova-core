@@ -36,7 +36,7 @@ function isValidCalendarTimestamp(value) {
   const hour = Number(value.slice(11, 13));
   const minute = Number(value.slice(14, 16));
   const second = Number(value.slice(17, 19));
-  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  if (year < 1 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
   const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const monthDays = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   if (day < 1 || day > monthDays[month - 1]) return false;
@@ -57,9 +57,12 @@ export function validateObservationPayload(payload, nowMs = Date.now()) {
   if (payload.asset_id !== undefined && payload.asset_id !== null) requiredString(payload.asset_id, 120, "asset_id");
   requiredString(payload.source_id, 120, "source_id");
   if (!MODULES.has(payload.module)) throw new Error("invalid_module");
-  if (typeof payload.metric !== "string" || !METRIC_PATTERN.test(payload.metric)) throw new Error("invalid_metric");
-  if (typeof payload.value !== "number" || !Number.isFinite(payload.value)) throw new Error("invalid_value");
-  if (typeof payload.unit !== "string" || !UNIT_PATTERN.test(payload.unit)) throw new Error("invalid_unit");
+  if (typeof payload.metric !== "string" || METRIC_PATTERN.exec(payload.metric)?.[0] !== payload.metric) throw new Error("invalid_metric");
+  if (typeof payload.value !== "number" || !Number.isFinite(payload.value) ||
+      (Number.isInteger(payload.value) && !Number.isSafeInteger(payload.value))) {
+    throw new Error("invalid_value");
+  }
+  if (typeof payload.unit !== "string" || UNIT_PATTERN.exec(payload.unit)?.[0] !== payload.unit) throw new Error("invalid_unit");
   requiredString(payload.idempotency_key, 200, "idempotency_key");
 
   if (typeof payload.observed_at !== "string" || !isValidCalendarTimestamp(payload.observed_at)) {

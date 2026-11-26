@@ -1,0 +1,15 @@
+name = "nova-core-ingestion-local-d1-test"
+main = "src/local-d1-test-entry.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+
+# CI-only disposable local D1. Never use --remote with this configuration.
+[[d1_databases]]
+binding = "DB"
+database_name = "nova-core-tenant-api-contract-test"
+database_id = "00000000-0000-4000-8000-000000000001"
+migrations_dir = "../api/migrations"
+
+[vars]
+CI_TEST_INGESTION = "true"

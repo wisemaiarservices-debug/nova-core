@@ -61,6 +61,9 @@ jobs:
       - name: Exercise gateway and private Worker over local Service Bindings + D1
         working-directory: apps/tenant-api
         run: node ./scripts/d1-http-integration.mjs
+      - name: Exercise ingestion persistence and ownership against the same disposable local D1
+        working-directory: apps/ingestion-worker
+        run: node ./scripts/local-d1-integration.mjs
 
   research-raster-tests:
     runs-on: ubuntu-latest
