@@ -19,7 +19,7 @@ const SIGNING_KEY_ID = "gateway-key-2026-11";
 const SIGNING_ISSUER = "nova-core-tenant-gateway";
 const SIGNING_AUDIENCE = "nova-core-private-tenant-api";
 
-function b64url(bytes) {
+function jsonResponse(value, init = {}) {\n  return new Response(JSON.stringify(value), {\n    ...init,\n    headers: { "content-type": "application/json", ...(init.headers || {}) },\n  });\n}\n\nfunction b64url(bytes) {
   return Buffer.from(bytes).toString("base64url");
 }
 
@@ -71,7 +71,7 @@ async function verifiedIdentity(overrides = {}) {
     fetchImpl: async (url, options) => {
       assert.equal(url, `${ACCESS_ISSUER}/cdn-cgi/access/certs`);
       assert.equal(options.method, "GET");
-      return { ok: true, json: async () => fixture.jwks };
+      return jsonResponse(fixture.jwks);
     },
   });
   return identity;
@@ -104,7 +104,7 @@ test("verifies Cloudflare Access RS256 signature and exact issuer/audience befor
 test("rejects invalid Access signature and mismatched identity claims", async () => {
   const fixture = await fixtureAccessToken();
   const tampered = fixture.token.slice(0, -1) + (fixture.token.endsWith("A") ? "B" : "A");
-  const fetchImpl = async () => ({ ok: true, json: async () => fixture.jwks });
+  const fetchImpl = async () => jsonResponse(fixture.jwks);
   await assert.rejects(
     verifyCloudflareAccessJwt(tampered, {
       teamDomain: TEAM, audience: ACCESS_AUDIENCE, now: NOW, fetchImpl,
@@ -127,7 +127,7 @@ test("rejects invalid Access signature and mismatched identity claims", async ()
         teamDomain: TEAM,
         audience: ACCESS_AUDIENCE,
         now: NOW,
-        fetchImpl: async () => ({ ok: true, json: async () => invalid.jwks }),
+        fetchImpl: async () => jsonResponse(invalid.jwks),
       }),
     );
   }
@@ -138,14 +138,14 @@ test("fails closed for unavailable, ambiguous or unknown Access signing keys", a
   await assert.rejects(
     verifyCloudflareAccessJwt(fixture.token, {
       teamDomain: TEAM, audience: ACCESS_AUDIENCE, now: NOW,
-      fetchImpl: async () => ({ ok: false }),
+      fetchImpl: async () => new Response("unavailable", { status: 503 }),
     }),
     /signing keys are unavailable/,
   );
   await assert.rejects(
     verifyCloudflareAccessJwt(fixture.token, {
       teamDomain: TEAM, audience: ACCESS_AUDIENCE, now: NOW,
-      fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [] }) }),
+      fetchImpl: async () => jsonResponse({ keys: [] }),
     }),
     /signing keys are invalid/,
   );
@@ -153,7 +153,7 @@ test("fails closed for unavailable, ambiguous or unknown Access signing keys", a
   await assert.rejects(
     verifyCloudflareAccessJwt(fixture.token, {
       teamDomain: TEAM, audience: ACCESS_AUDIENCE, now: NOW,
-      fetchImpl: async () => ({ ok: true, json: async () => ambiguous }),
+      fetchImpl: async () => jsonResponse(ambiguous),
     }),
     /unknown or ambiguous/,
   );
@@ -249,7 +249,7 @@ test("rejects malformed Cloudflare Access token and team-domain configuration", 
       teamDomain: "attacker.example",
       audience: ACCESS_AUDIENCE,
       now: NOW,
-      fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [] }) }),
+      fetchImpl: async () => jsonResponse({ keys: [] }),
     }),
     /configuration is invalid/,
   );
