@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 MAX_EVALUATION_SAMPLES = 1_000_000
+MAX_RASTER_PROCESSING_MANIFESTS = 200
 
 
 EvidenceClass = Literal[
@@ -156,7 +157,7 @@ def _validated_values(values: Sequence[float], name: str) -> list[float]:
     except TypeError as exc:
         raise ValueError(f"{name} must be a numeric sequence") from exc
     if len(raw_values) > MAX_EVALUATION_SAMPLES:
-        raise ValueError(f"{name} exceeds the {MAX_EVALUATION_SAMPLES} sample limit")
+        raise ValueError(f"{name} exceeds the evaluation limit of {MAX_EVALUATION_SAMPLES} samples")
     if any(isinstance(value, (bool, str, bytes)) for value in raw_values):
         raise ValueError(f"{name} must contain numeric values, not booleans or strings")
     try:
@@ -172,13 +173,20 @@ def _validated_values(values: Sequence[float], name: str) -> list[float]:
 
 def _regression_summary(actual: list[float], predicted: list[float]) -> tuple[float, float, float]:
     errors = [prediction - observed for observed, prediction in zip(actual, predicted)]
+    if not all(math.isfinite(error) for error in errors):
+        raise ValueError("regression metrics exceed supported numeric range")
     try:
-        mae = math.fsum(abs(error) for error in errors) / len(errors)
-        norm = 0.0
-        for error in errors:
-            norm = math.hypot(norm, error)
-        rmse = norm / math.sqrt(len(errors))
-        mean_error = math.fsum(errors) / len(errors)
+        scale = max(abs(error) for error in errors)
+        if scale == 0:
+            mae = rmse = mean_error = 0.0
+        else:
+            normalized = [error / scale for error in errors]
+            mae = scale * (math.fsum(abs(error) for error in normalized) / len(errors))
+            norm = 0.0
+            for error in normalized:
+                norm = math.hypot(norm, error)
+            rmse = scale * (norm / math.sqrt(len(errors)))
+            mean_error = scale * (math.fsum(normalized) / len(errors))
     except (OverflowError, ValueError) as exc:
         raise ValueError("regression metrics exceed supported numeric range") from exc
     if not all(math.isfinite(value) for value in (mae, rmse, mean_error)):
@@ -236,8 +244,10 @@ def resolve_raster_input_manifests(
     """
     if not experiment.raster_inputs:
         return ()
-    if len(processing_manifests) > 200:
-        raise ValueError("at most 200 processing manifests may be resolved in one experiment")
+    if isinstance(processing_manifests, (str, bytes)) or not isinstance(processing_manifests, Sequence):
+        raise ValueError("processing manifests must be supplied as a bounded sequence")
+    if len(processing_manifests) > MAX_RASTER_PROCESSING_MANIFESTS:
+        raise ValueError(f"at most {MAX_RASTER_PROCESSING_MANIFESTS} processing manifests may be resolved in one experiment")
 
     by_id: dict[str, Mapping[str, Any]] = {}
     for manifest in processing_manifests:
@@ -248,7 +258,7 @@ def resolve_raster_input_manifests(
             raise ValueError("processing manifest is missing a stable manifest_id")
         if manifest_id in by_id:
             raise ValueError("processing manifest IDs must be unique")
-        by_id[manifest_id] = manifest
+        by_id[manifest_id] = dict(manifest)
 
     resolved: list[Mapping[str, Any]] = []
     for reference in experiment.raster_inputs:
