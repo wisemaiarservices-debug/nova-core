@@ -13,7 +13,16 @@ async def inspect_d1_binding(database: Any) -> dict[str, Any]:
     result = await database.prepare(
         "SELECT name FROM sqlite_master WHERE type = ? ORDER BY name"
     ).bind("table").run()
-    rows = list(result.results)
+    success = getattr(result, "success", None)
+    if success is None and isinstance(result, dict):
+        success = result.get("success")
+    if success is not True:
+        raise RuntimeError("D1 returned an unsuccessful or incomplete result")
+    rows = getattr(result, "results", None)
+    if rows is None and isinstance(result, dict):
+        rows = result.get("results")
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise RuntimeError("D1 returned an invalid result set")
     present = sorted(
         str(row["name"]) for row in rows
         if isinstance(row, dict) and row.get("name") in EXPECTED_TABLES
