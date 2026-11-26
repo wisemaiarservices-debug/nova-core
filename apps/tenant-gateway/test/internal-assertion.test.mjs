@@ -44,6 +44,7 @@ async function fixtureAccessToken(overrides = {}) {
     aud: [ACCESS_AUDIENCE],
     sub: "access-subject-123456",
     iat: NOW / 1000 - 5,
+    nbf: NOW / 1000 - 5,
     exp: NOW / 1000 + 300,
     ...overrides,
   };
@@ -114,6 +115,10 @@ test("rejects invalid Access signature and mismatched identity claims", async ()
     { aud: ["different-application"] },
     { exp: NOW / 1000 },
     { nbf: NOW / 1000 + 30 },
+    { iat: undefined },
+    { nbf: undefined },
+    { iat: NOW / 1000 + 30 },
+    { nbf: "not-a-number" },
     { sub: "subject with spaces" },
   ]) {
     const invalid = await fixtureAccessToken(claims);
