@@ -6,7 +6,7 @@ import gateway from "../src/index.mjs";
 
 globalThis.crypto ??= webcrypto;
 
-const NOW = Date.now();
+const NOW = Math.floor(Date.now() / 1000) * 1000;
 const TEAM = "example.cloudflareaccess.com";
 const ACCESS_AUDIENCE = "cloudflare-access-app-audience";
 const SIGNING_SECRET = "test-only-secret-material-that-is-at-least-32-bytes";
