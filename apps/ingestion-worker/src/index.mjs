@@ -12,32 +12,48 @@ function json(data, status = 200) {
   });
 }
 
-async function readBoundedBody(request) {
+export async function readBoundedBody(request, timeoutMs = 10_000) {
+  const declared = request.headers.get("content-length");
+  if (declared !== null) {
+    if (!/^(0|[1-9][0-9]*)$/.test(declared)) throw new Error("invalid_content_length");
+    const length = Number(declared);
+    if (!Number.isSafeInteger(length) || length > MAX_BODY_BYTES) {
+      throw new Error("payload_too_large");
+    }
+  }
   if (!request.body) return new Uint8Array();
   const reader = request.body.getReader();
   const chunks = [];
   let total = 0;
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("request_body_timeout")), timeoutMs);
+  });
   try {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_BODY_BYTES) {
-        await reader.cancel();
+      const result = await Promise.race([reader.read(), deadline]);
+      if (result.done) break;
+      const chunk = result.value;
+      if (!(chunk instanceof Uint8Array) || chunk.byteLength > MAX_BODY_BYTES - total) {
         throw new Error("payload_too_large");
       }
-      chunks.push(value);
+      chunks.push(chunk);
+      total += chunk.byteLength;
     }
+    const result = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return result;
+  } catch (cause) {
+    try { void reader.cancel(cause).catch(() => {}); } catch { /* Preserve the original read failure. */ }
+    throw cause;
   } finally {
-    reader.releaseLock();
+    clearTimeout(timer);
+    try { reader.releaseLock(); } catch { /* Cancellation may still be settling. */ }
   }
-  const result = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return result;
 }
 
 export default {
@@ -50,9 +66,15 @@ export default {
       return json({ error: "not_found" }, 404);
     }
 
-    const declaredLength = Number(request.headers.get("content-length") || "0");
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-      return json({ error: "payload_too_large" }, 413);
+    const declaredLength = request.headers.get("content-length");
+    if (declaredLength !== null) {
+      if (!/^(0|[1-9][0-9]*)$/.test(declaredLength) ||
+          !Number.isSafeInteger(Number(declaredLength))) {
+        return json({ error: "invalid_content_length" }, 400);
+      }
+      if (Number(declaredLength) > MAX_BODY_BYTES) {
+        return json({ error: "payload_too_large" }, 413);
+      }
     }
     const issuer = env.ACCESS_ISSUER;
     const audience = env.ACCESS_AUDIENCE;
@@ -96,6 +118,12 @@ export default {
     } catch (error) {
       if (error instanceof Error && error.message === "payload_too_large") {
         return json({ error: "payload_too_large" }, 413);
+      }
+      if (error instanceof Error && error.message === "request_body_timeout") {
+        return json({ error: "request_body_timeout" }, 408);
+      }
+      if (error instanceof Error && error.message === "invalid_content_length") {
+        return json({ error: "invalid_content_length" }, 400);
       }
       return json({ error: "invalid_request_body" }, 400);
     }
