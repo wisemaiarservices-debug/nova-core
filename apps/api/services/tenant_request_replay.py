@@ -148,4 +148,4 @@ async def cleanup_expired_request_nonces(
     except RequestReplayStorageError:
         raise
     except Exception as exc:
-        raise RequestReplayStorageError("request replay cleanup is unavailable") from exc
+        raise RequestReplayStorageError(f"request replay cleanup is unavailable ({type(exc).__name__})") from exc
