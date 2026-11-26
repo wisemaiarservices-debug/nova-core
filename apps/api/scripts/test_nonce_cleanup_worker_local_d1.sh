@@ -21,20 +21,20 @@ VALUES ('runtime-expired-nonce-0001', 1, 1, 1),
 npx --yes wrangler@4 dev --local --test-scheduled --log-level debug --ip 127.0.0.1 --port "${PORT}" --config "${CONFIG}" >"${LOG_FILE}" 2>&1 &
 SERVER_PID="$!"
 ready=0
-for attempt in $(seq 1 180); do
+for attempt in $(seq 1 360); do
   if grep -Fq "[wrangler:info] Ready on" "${LOG_FILE}"; then
     ready=1
     break
   fi
   if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
-    echo "Wrangler exited before readiness (attempt ${attempt}/180)." >&2
+    echo "Wrangler exited before readiness (attempt ${attempt}/360)." >&2
     cat "${LOG_FILE}" >&2
     exit 1
   fi
   sleep 1
 done
 if [[ "${ready}" != "1" ]]; then
-  echo "Wrangler did not report readiness within 180 seconds." >&2
+  echo "Wrangler did not report readiness within 360 seconds." >&2
   cat "${LOG_FILE}" >&2
   exit 1
 fi
