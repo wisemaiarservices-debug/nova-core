@@ -150,7 +150,7 @@ def test_rejects_duplicate_metadata_tags_and_wrong_known_field_types():
     with pytest.raises(GeoTiffError, match="duplicate"):
         inspect_geotiff(_tiff(_basic_tags() + [(256, 4, [10])]))
     tags = _basic_tags()
-    tags[0] = (256, 3, [256])
+    tags[0] = (256, 12, [256.0])
     with pytest.raises(GeoTiffError, match="unexpected field type"):
         inspect_geotiff(_tiff(tags))
 
@@ -220,7 +220,7 @@ def test_reads_gdal_scale_offset_but_rejects_entities_and_excessive_xml():
     with pytest.raises(GeoTiffError, match="declarations"):
         inspect_geotiff(_tiff(_basic_tags() + [(42112, 2, entity)]))
     too_large = "x" * (MAX_GDAL_XML_BYTES + 1)
-    with pytest.raises(GeoTiffError, match="XML exceeds"):
+    with pytest.raises(GeoTiffError, match="too many values"):
         inspect_geotiff(_tiff(_basic_tags() + [(42112, 2, too_large)]))
 
 
