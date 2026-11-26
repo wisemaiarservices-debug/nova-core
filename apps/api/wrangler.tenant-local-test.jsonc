@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nova-core-tenant-api-local-test",
+  "main": "tenant_worker.py",
+  "compatibility_date": "2026-11-10",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "nova-core-tenant-api-local-test",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "vars": {
+    "NOVA_INTERNAL_KEY_ID": "local-test-key",
+    "NOVA_INTERNAL_HMAC_KEY": "local-only-test-secret-material-32-bytes-minimum",
+    "NOVA_INTERNAL_ISSUER": "nova-core-tenant-gateway",
+    "NOVA_INTERNAL_AUDIENCE": "nova-core-private-tenant-api"
+  },
+  "python_modules": {
+    "exclude": ["**/*.pyc", "**/*.dist-info/top_level.txt", "**/*.dist-info/entry_points.txt"]
+  },
+}
