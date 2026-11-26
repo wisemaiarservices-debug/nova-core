@@ -308,3 +308,58 @@ test("valid service token with malformed JSON is rejected before storage", async
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid_json" });
 });
+
+test("streaming payload without a declared content length is capped at 32 KiB", async () => {
+  const issuer = "https://stream-limit.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const oversized = new Uint8Array(32 * 1024 + 1);
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(oversized.subarray(0, 16 * 1024));
+      controller.enqueue(oversized.subarray(16 * 1024));
+      controller.close();
+    },
+  });
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: {
+      "Cf-Access-Jwt-Assertion": fixture.token,
+      "content-type": "application/json",
+    },
+    body: stream,
+    duplex: "half",
+  }), envFor(issuer, fixture.audience));
+
+  assert.equal(response.status, 413);
+  assert.deepEqual(await response.json(), { error: "payload_too_large" });
+});
+
+test("D1 batch failures return a generic unavailable response without leaking database details", async () => {
+  const issuer = "https://d1-failure.cloudflareaccess.com";
+  const fixture = makeAccessFixture(issuer);
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [fixture.jwk] }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+  const db = ownershipDb();
+  db.batch = async () => { throw new Error("sensitive SQL binding diagnostic"); };
+  const response = await worker.fetch(new Request("https://ingest.example/api/v1/observations", {
+    method: "POST",
+    headers: {
+      "Cf-Access-Jwt-Assertion": fixture.token,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      site_id: "site-001", asset_id: "asset-001", module: "neoagro",
+      source_id: "source-weather-01", metric: "air_temperature", value: 18.5,
+      unit: "degC", observed_at: new Date().toISOString(),
+      idempotency_key: "test-observation-d1-failure",
+      provenance: { provider: "test station", acquisition_method: "sensor" },
+    }),
+  }), { ...envFor(issuer, fixture.audience), DB: db });
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "storage_unavailable", accepted: false });
+});
