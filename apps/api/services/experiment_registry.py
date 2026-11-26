@@ -6,6 +6,7 @@ It does not train models, load datasets, persist records, or certify results.
 from __future__ import annotations
 
 import math
+from numbers import Real
 from datetime import datetime
 from itertools import islice
 from typing import Any, Literal, Mapping, Sequence
@@ -132,6 +133,8 @@ class ExperimentManifest(BaseModel):
             raise ValueError("feature names must be non-empty and at most 100 characters")
         if self.status == "evaluated" and self.metrics is None:
             raise ValueError("evaluated experiments require holdout metrics")
+        if self.status == "research" and self.metrics is not None:
+            raise ValueError("research experiments cannot carry evaluation metrics; set status to evaluated")
         raster_ids = [item.manifest_id for item in self.raster_inputs]
         if len(set(raster_ids)) != len(raster_ids):
             raise ValueError("raster input manifest IDs must be unique")
@@ -149,7 +152,7 @@ class ExperimentManifest(BaseModel):
 
 
 def _validated_values(values: Sequence[float], name: str) -> list[float]:
-    if isinstance(values, (str, bytes)):
+    if isinstance(values, (str, bytes, Mapping)):
         raise ValueError(f"{name} must be a numeric sequence")
     try:
         raw_values = list(islice(iter(values), MAX_EVALUATION_SAMPLES + 1))
@@ -157,8 +160,8 @@ def _validated_values(values: Sequence[float], name: str) -> list[float]:
         raise ValueError(f"{name} must be a numeric sequence") from exc
     if len(raw_values) > MAX_EVALUATION_SAMPLES:
         raise ValueError(f"{name} exceeds the {MAX_EVALUATION_SAMPLES}-sample evaluation limit")
-    if any(isinstance(value, (bool, str, bytes)) for value in raw_values):
-        raise ValueError(f"{name} must contain numeric values, not booleans or strings")
+    if any(isinstance(value, bool) or not isinstance(value, Real) for value in raw_values):
+        raise ValueError(f"{name} must contain real numeric values, not booleans or strings")
     try:
         result = [float(value) for value in raw_values]
     except (TypeError, ValueError, OverflowError) as exc:

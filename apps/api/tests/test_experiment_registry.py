@@ -410,3 +410,27 @@ def test_regression_metrics_remain_stable_for_large_finite_errors():
     assert metrics.mae == pytest.approx(1e308)
     assert metrics.rmse == pytest.approx(1e308)
     assert metrics.mean_error == pytest.approx(1e308)
+
+
+
+def test_research_manifest_cannot_carry_evaluation_metrics():
+    metrics = evaluate_regression(
+        [1, 2],
+        [1, 2],
+        [2, 3],
+        test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
+        test_period_end=datetime(2024, 1, 31, tzinfo=UTC),
+    )
+    with pytest.raises(ValidationError, match="status to evaluated"):
+        _manifest(status="research", metrics=metrics.model_dump())
+
+
+def test_evaluation_rejects_mapping_inputs_and_non_real_boolean_scalars():
+    with pytest.raises(ValueError, match="numeric sequence"):
+        evaluate_regression(
+            {"a": 1, "b": 2},
+            [1, 2],
+            [1, 2],
+            test_period_start=datetime(2024, 1, 20, tzinfo=UTC),
+            test_period_end=datetime(2024, 1, 31, tzinfo=UTC),
+        )
