@@ -90,15 +90,15 @@ def test_scheduled_worker_cleans_sqlite_migrated_replay_store_across_repeated_in
             return SQLiteStatement(sql)
 
     now = 1_800_000_000
-    # One expired retention record, one still retained, and a second expired
-    # record to prove repeat invocations converge without deleting early.
+    # More than one batch of expired rows plus one still-retained row.
+    # A second scheduled invocation must drain the backlog, not delete early.
+    expired = [
+        (f"expired-retained-{index:06d}", now - 86_500, now - 1, now - 86_560)
+        for index in range(MAX_CLEANUP_BATCH + 1)
+    ]
     connection.executemany(
         "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) VALUES (?, ?, ?, ?)",
-        [
-            ("expired-retained-000001", now - 86_500, now - 1, now - 86_560),
-            ("still-retained-00000001", now - 10, now + 10, now - 70),
-            ("expired-retained-000002", now - 86_600, now - 2, now - 86_660),
-        ],
+        expired + [("still-retained-00000001", now - 10, now + 10, now - 70)],
     )
     database = SQLiteD1()
     worker = object.__new__(Default)
@@ -112,7 +112,7 @@ def test_scheduled_worker_cleans_sqlite_migrated_replay_store_across_repeated_in
             "SELECT jti FROM internal_request_nonces ORDER BY jti"
         ).fetchall()
     }
-    assert remaining == {"still-retained-00000001", "expired-retained-000002"}
+    assert remaining == {"still-retained-00000001", f"expired-retained-{MAX_CLEANUP_BATCH:06d}"}
 
     asyncio.run(worker.scheduled(
         SimpleNamespace(scheduledTime=((now + 1) * 1000)), env, None,
