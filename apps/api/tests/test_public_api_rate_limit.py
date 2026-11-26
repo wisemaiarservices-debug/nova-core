@@ -64,7 +64,15 @@ def test_rate_limit_binding_is_production_only_until_preview_support_exists():
     from pathlib import Path
 
     config = json.loads((Path(__file__).parents[1] / "wrangler.jsonc").read_text())
-    assert config["ratelimits"][0]["name"] == "NOVA_PUBLIC_API_LIMITER"
+    bindings = config["ratelimits"]
+    assert len(bindings) == 1
+    binding = bindings[0]
+    assert binding["name"] == "NOVA_PUBLIC_API_LIMITER"
+    namespace_id = binding["namespace_id"]
+    assert namespace_id.isdecimal() and int(namespace_id) > 0
+    assert len({item["namespace_id"] for item in bindings}) == len(bindings)
+    assert binding["simple"]["limit"] == 60
+    assert binding["simple"]["period"] in {10, 60}
     assert "ratelimits" not in config["previews"]
 
 
