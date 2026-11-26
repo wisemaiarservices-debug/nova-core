@@ -18,7 +18,7 @@ INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_a
 VALUES ('runtime-expired-nonce-0001', 1, 1, 1),
        ('runtime-retained-nonce-0001', 1, 9223372036854775807, 1);
 "
-npx --yes wrangler@4 dev --local --test-scheduled --ip 127.0.0.1 --port "${PORT}" --config "${CONFIG}" >"${LOG_FILE}" 2>&1 &
+npx --yes wrangler@4 dev --local --test-scheduled --log-level debug --ip 127.0.0.1 --port "${PORT}" --config "${CONFIG}" >"${LOG_FILE}" 2>&1 &
 SERVER_PID="$!"
 ready=0
 for attempt in $(seq 1 180); do
@@ -39,12 +39,15 @@ if [[ "${ready}" != "1" ]]; then
   exit 1
 fi
 echo "Local workerd server is ready; invoking scheduled handler."
-if ! curl --silent --show-error --fail --max-time 30 --get \
-  --data-urlencode "cron=17 * * * *" \
-  --data-urlencode "time=1800000000000" \
-  --data-urlencode "format=json" \
-  "${BASE_URL}/cdn-cgi/local/scheduled" --output "${RESPONSE_FILE}"; then
-  echo "Scheduled invocation failed; response:" >&2
+status="$(curl --silent --show-error --max-time 30 --get \\
+  --data-urlencode "cron=17 * * * *" \\
+  --data-urlencode "time=1800000000000" \\
+  --data-urlencode "format=json" \\
+  --output "${RESPONSE_FILE}" --write-out "%{http_code}" \\
+  "${BASE_URL}/cdn-cgi/local/scheduled")"
+echo "Scheduled invocation HTTP status: ${status}"
+if [[ "${status}" != 2* ]]; then
+  echo "Scheduled invocation response:" >&2
   cat "${RESPONSE_FILE}" >&2 || true
   echo "Wrangler/workerd diagnostic log:" >&2
   cat "${LOG_FILE}" >&2
