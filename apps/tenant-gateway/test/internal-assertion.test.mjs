@@ -261,3 +261,66 @@ test("rejects malformed Cloudflare Access token and team-domain configuration", 
     /configuration is invalid/,
   );
 });
+
+
+test("bounds JWKS fetch time with an AbortSignal", async () => {
+  const fixture = await fixtureAccessToken();
+  let receivedOptions;
+  await verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async (_url, options) => {
+      receivedOptions = options;
+      return jsonResponse(fixture.jwks);
+    },
+  });
+  assert.ok(receivedOptions.signal instanceof AbortSignal);
+  assert.equal(receivedOptions.signal.aborted, false);
+});
+
+test("rejects oversized JWKS from Content-Length and streamed bodies", async () => {
+  const fixture = await fixtureAccessToken();
+  const verifyWith = (response) => verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async () => response,
+  });
+  await assert.rejects(
+    verifyWith(new Response("{}", {
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(64 * 1024 + 1),
+      },
+    })),
+    /response is too large/,
+  );
+  await assert.rejects(
+    verifyWith(new Response("x".repeat(64 * 1024 + 1), {
+      headers: { "content-type": "application/json" },
+    })),
+    /response is too large/,
+  );
+});
+
+test("rejects invalid JWKS content type and malformed JSON", async () => {
+  const fixture = await fixtureAccessToken();
+  const verifyWith = (response) => verifyCloudflareAccessJwt(fixture.token, {
+    teamDomain: TEAM,
+    audience: ACCESS_AUDIENCE,
+    now: NOW,
+    fetchImpl: async () => response,
+  });
+  await assert.rejects(
+    verifyWith(new Response("{}", {
+      headers: { "content-type": "text/html" },
+    })),
+    /invalid content type/,
+  );
+  await assert.rejects(
+    verifyWith(new Response("{", {
+      headers: { "content-type": "application/json" },
+    })),
+  );
+});
