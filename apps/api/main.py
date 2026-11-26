@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import math
 import os
 from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 try:
     from .services.nasa_power import fetch_daily_point_async
@@ -23,18 +24,36 @@ except ImportError:
 
 
 class SiteState(BaseModel):
-    """Site inputs. Defaults are synthetic demo values, never live telemetry."""
+    """Caller-supplied site measurements; omitted values remain unknown."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    site_id: str = "site-solarhub-agro-001"
-    temperature_c: float = Field(default=39, ge=-80, le=65)
-    soil_moisture_pct: float = Field(default=31, ge=0, le=100)
-    solar_kw: float = Field(default=42.6, ge=0)
-    battery_soc_pct: float = Field(default=67, ge=0, le=100)
-    water_use_m3_today: float = Field(default=18.4, ge=0)
-    gateway_health_pct: float = Field(default=91, ge=0, le=100)
+    site_id: str = Field(min_length=1, max_length=128)
+    temperature_c: float | None = Field(default=None, ge=-80, le=65, allow_inf_nan=False)
+    soil_moisture_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    solar_kw: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    battery_soc_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    water_use_m3_today: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    gateway_health_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
 
+    @field_validator(
+        "temperature_c", "soil_moisture_pct", "solar_kw",
+        "battery_soc_pct", "water_use_m3_today", "gateway_health_pct",
+        mode="before",
+    )
+    @classmethod
+    def finite_numeric_measurements(cls, value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("site measurements must be finite numeric values")
+        try:
+            number = float(value)
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError("site measurements must be finite numeric values") from exc
+        if not math.isfinite(number):
+            raise ValueError("site measurements must be finite numeric values")
+        return number
 
 class Recommendation(BaseModel):
     title: str
@@ -85,25 +104,29 @@ def now_iso() -> str:
 
 
 def input_provenance(state: SiteState) -> dict[str, Any]:
-    """Distinguish request fields from synthetic defaults; caller data is unverified."""
-    provided = sorted(state.model_fields_set)
-    defaulted = sorted(set(type(state).model_fields) - set(provided))
-    if not provided:
-        mode = "synthetic_defaults"
-    elif defaulted:
-        mode = "mixed_synthetic_and_caller_supplied"
-    else:
-        mode = "caller_supplied_unverified"
+    """Report caller-declared fields without inventing values for omitted measurements."""
+    fields = set(type(state).model_fields)
+    provided = sorted(
+        field for field in state.model_fields_set
+        if getattr(state, field) is not None
+    )
+    missing = sorted(field for field in fields if getattr(state, field) is None)
+    measurement_fields = fields - {"site_id"}
+    provided_measurements = [
+        field for field in measurement_fields if getattr(state, field) is not None
+    ]
+    mode = "caller_supplied_unverified" if provided_measurements else "insufficient_inputs"
 
     return {
         "data_mode": mode,
         "provided_fields": provided,
-        "defaulted_fields": defaulted,
-        "synthetic_defaults_present": bool(defaulted),
+        "missing_fields": missing,
+        "defaulted_fields": [],
+        "synthetic_defaults_present": False,
         "caller_supplied_values_verified": False,
         "note": (
             "Caller-supplied values are not independently verified. "
-            "Default values are synthetic demonstration inputs, not sensor observations."
+            "Omitted measurements remain unknown; no synthetic demonstration values are inserted."
         ),
     }
 
@@ -132,11 +155,15 @@ def response_metadata(state: SiteState) -> dict[str, Any]:
 
 def forecast(state: SiteState) -> dict[str, Any]:
     # These are transparent screening flags, not a calibrated forecast.
-    heat_flag = state.temperature_c >= 37
-    moisture_flag = state.soil_moisture_pct < 35
+    heat_flag = state.temperature_c is not None and state.temperature_c >= 37
+    moisture_flag = state.soil_moisture_pct is not None and state.soil_moisture_pct < 35
     return {
         "site_id": state.site_id,
-        "heat_risk": "high_screening_flag" if heat_flag else "no_high_heat_flag",
+        "heat_risk": (
+            "high_screening_flag" if heat_flag
+            else "not_assessed" if state.temperature_c is None
+            else "no_high_heat_flag"
+        ),
         "water_demand_delta_pct": None,
         "solar_production_delta_pct": None,
         "yield_risk": (
@@ -166,8 +193,22 @@ def impact_score(state: SiteState) -> dict[str, Any]:
 
 
 def recommend(state: SiteState) -> Recommendation:
+    if state.temperature_c is None:
+        return Recommendation(
+            title="Insufficient inputs; no recommendation generated",
+            priority="not_assessed",
+            confidence=None,
+            explanation=(
+                "No temperature measurement was supplied. NOVA will not substitute a demo value "
+                "or infer site conditions. Provide applicable, unit-labelled evidence and verify "
+                "its source and calibration before screening."
+            ),
+            expected_impact=impact_score(state),
+            requires_operator_review=True,
+        )
+
     heat_flag = state.temperature_c >= 37
-    moisture_flag = state.soil_moisture_pct < 35
+    moisture_flag = state.soil_moisture_pct is not None and state.soil_moisture_pct < 35
     if heat_flag and moisture_flag:
         title = "Review irrigation need and verify field conditions"
         priority = "high_review"
