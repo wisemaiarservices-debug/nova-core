@@ -39,12 +39,7 @@ if [[ "${ready}" != "1" ]]; then
   exit 1
 fi
 echo "Local workerd server is ready; invoking scheduled handler."
-status="$(curl --silent --show-error --max-time 30 --get \\
-  --data-urlencode "cron=17 * * * *" \\
-  --data-urlencode "time=1800000000000" \\
-  --data-urlencode "format=json" \\
-  --output "${RESPONSE_FILE}" --write-out "%{http_code}" \\
-  "${BASE_URL}/cdn-cgi/local/scheduled")"
+status="$(curl --silent --show-error --max-time 30 --get --data-urlencode "cron=17 * * * *" --data-urlencode "time=1800000000000" --data-urlencode "format=json" --output "${RESPONSE_FILE}" --write-out "%{http_code}" "${BASE_URL}/cdn-cgi/local/scheduled")"
 echo "Scheduled invocation HTTP status: ${status}"
 if [[ "${status}" != 2* ]]; then
   echo "Scheduled invocation response:" >&2
