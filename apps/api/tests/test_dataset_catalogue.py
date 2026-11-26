@@ -71,6 +71,7 @@ def test_api_returns_filtered_catalogue_and_rejects_bad_domain():
 
 def test_catalogue_nested_collections_are_immutable():
     record = list_datasets()[0]
+    original_domains = record.domains
     assert isinstance(record.domains, tuple)
     assert isinstance(record.variables, tuple)
     assert isinstance(record.limitations, tuple)
@@ -86,7 +87,8 @@ def test_catalogue_nested_collections_are_immutable():
         pass
     else:
         raise AssertionError("nested catalogue variables must be immutable")
-    assert "water" not in list_datasets()[0].domains or record.dataset_id != "nasa-power-daily"
+    assert record.domains == original_domains
+    assert list_datasets()[0].domains == original_domains
 
 
 def test_blank_domain_is_normalized_to_no_filter():
