@@ -43,6 +43,9 @@ jobs:
       - name: Bundle private tenant API Worker without deployment
         working-directory: apps/api
         run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.tenant.jsonc
+      - name: Bundle tenant nonce cleanup Worker without deployment
+        working-directory: apps/api
+        run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.nonce-cleanup.jsonc
       - name: Run ingestion Worker security tests
         working-directory: apps/ingestion-worker
         run: npm test
