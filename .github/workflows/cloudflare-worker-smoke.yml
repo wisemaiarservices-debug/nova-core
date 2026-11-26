@@ -2,7 +2,6 @@ name: NOVA Core Cloudflare Worker smoke test
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - "apps/api/**"
       - ".github/workflows/cloudflare-worker-smoke.yml"
@@ -10,6 +9,8 @@ on:
     branches:
       - main
       - feat/nova-core-v1-provenance-and-honest-impact
+      - feat/observation-capability-ingestion-enforcement-v1
+      - fix/pvgis-worker-streaming-response-cap
     paths:
       - "apps/api/**"
       - ".github/workflows/cloudflare-worker-smoke.yml"
@@ -27,13 +28,13 @@ jobs:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.14 --project apps/api --all-groups
+        run: uv sync --python 3.13 --project apps/api --all-groups
       - name: Run Worker locally and smoke-test FastAPI routes
         shell: bash
         run: |
           set -euo pipefail
           cd apps/api
-          uv run --python 3.14 pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nova-worker.log 2>&1 &
+          uv run --python 3.13 pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nova-worker.log 2>&1 &
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
@@ -66,3 +67,200 @@ jobs:
           grep -q '"status":"review_required"' /tmp/nova-recommendation.json
           curl --max-time 5 --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
           grep -q 'nasa-power/daily' /tmp/nova-openapi.json
+
+  pvgis-runtime-transport:
+    name: PVGIS deterministic Pyodide runtime transport
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - name: Install Python Worker dependencies
+        run: uv sync --python 3.13 --project apps/api --all-groups
+      - name: Run isolated Python Worker with a native Response stream fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/api
+          uv run --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8788 > /tmp/nova-pvgis-runtime.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 45); do
+            if curl --max-time 3 --silent --show-error --fail http://127.0.0.1:8788/pvgis-runtime > /tmp/nova-pvgis-runtime.json; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+              cat /tmp/nova-pvgis-runtime.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/nova-pvgis-runtime.log
+            exit 1
+          fi
+          jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .native_response_stream == true and .abort_signal_attached == true and .payload_verified == true' /tmp/nova-pvgis-runtime.json
+
+  pvgis-global-fetch-binding:
+    name: PVGIS global js.fetch binding in Pyodide runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - name: Install Python Worker dependencies
+        run: uv sync --python 3.13 --project apps/api --all-groups
+      - name: Run isolated Worker through global js.fetch against reserved .invalid domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/api
+          uv run --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8791 > /tmp/nova-pvgis-global-binding.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 45); do
+            if curl --max-time 3 --silent --show-error --fail http://127.0.0.1:8791/health > /tmp/nova-pvgis-global-binding-health.json; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+              cat /tmp/nova-pvgis-global-binding.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/nova-pvgis-global-binding.log
+            exit 1
+          fi
+          STATUS=$(curl --max-time 15 --silent --show-error -o /tmp/nova-pvgis-global-binding.json -w '%{http_code}' http://127.0.0.1:8791/pvgis-global-fetch-binding) || STATUS=000
+          echo "PVGIS_GLOBAL_FETCH_BINDING_HTTP_STATUS=$STATUS"
+          cat /tmp/nova-pvgis-global-binding.json
+          if [ "$STATUS" != "200" ]; then
+            cat /tmp/nova-pvgis-global-binding.log
+            exit 1
+          fi
+          jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .transport == "global-js-fetch" and .fetch_callable == true and .expected_network_rejection == true and .abort_signal_attached == true' /tmp/nova-pvgis-global-binding.json
+
+  pvgis-network-preflight:
+    if: github.event_name == 'push'
+    name: PVGIS provider network reachability preflight
+    runs-on: ubuntu-latest
+    outputs:
+      reachable: ${{ steps.probe.outputs.reachable }}
+    steps:
+      - name: Check provider DNS and HTTPS reachability from runner
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          STATUS=$(curl --connect-timeout 10 --max-time 45 --silent --show-error -o /dev/null -w '%{http_code}' 'https://photovoltaic-geographical-information-system.ec.europa.eu/api/v6/performance/broadband?latitude=36.8&longitude=10.2&start_time=2024-01-01%2000%3A00%3A00&end_time=2024-01-07%2023%3A59%3A59') || STATUS=000
+          echo "PVGIS_RUNNER_HTTP_STATUS=$STATUS"
+          if [ "$STATUS" = "000" ]; then
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::PVGIS live probe skipped: runner cannot establish provider HTTPS connectivity (DNS/network/TLS). This is inconclusive, not a provider pass."
+          else
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  pvgis-global-fetch-runtime:
+    name: PVGIS real global js.fetch in Pyodide runtime
+    needs: pvgis-network-preflight
+    if: needs.pvgis-network-preflight.outputs.reachable == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - name: Install Python Worker dependencies
+        run: uv sync --python 3.13 --project apps/api --all-groups
+      - name: Run isolated Worker through its real global js.fetch path
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/api
+          uv run --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8790 > /tmp/nova-pvgis-global-fetch.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 45); do
+            if curl --max-time 3 --silent --show-error --fail http://127.0.0.1:8790/health > /tmp/nova-pvgis-global-fetch-health.json; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+              cat /tmp/nova-pvgis-global-fetch.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/nova-pvgis-global-fetch.log
+            exit 1
+          fi
+          STATUS=$(curl --max-time 60 --silent --show-error -o /tmp/nova-pvgis-global-fetch.json -w '%{http_code}' http://127.0.0.1:8790/pvgis-global-fetch) || STATUS=000
+          echo "PVGIS_GLOBAL_JS_FETCH_HTTP_STATUS=$STATUS"
+          if [ "$STATUS" != "200" ]; then
+            cat /tmp/nova-pvgis-global-fetch.json || true
+            cat /tmp/nova-pvgis-global-fetch.log
+            exit 1
+          fi
+          jq -e '.status == "ok" and .runtime == "cloudflare-python-worker-pyodide" and .transport == "global-js-fetch" and .payload_verified == true' /tmp/nova-pvgis-global-fetch.json
+
+  pvgis-live-provider-probe:
+    name: PVGIS live provider integration probe
+    needs: pvgis-network-preflight
+    if: needs.pvgis-network-preflight.outputs.reachable == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - name: Install Python Worker dependencies
+        run: uv sync --python 3.13 --project apps/api --all-groups
+      - name: Run API Worker and probe live PVGIS provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/api
+          uv run --python 3.13 pywrangler dev --ip 127.0.0.1 --port 8789 > /tmp/nova-pvgis-live.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 45); do
+            if curl --max-time 3 --silent --show-error --fail http://127.0.0.1:8789/health > /tmp/nova-pvgis-health.json; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$WORKER_PID" 2>/dev/null; then
+              cat /tmp/nova-pvgis-live.log
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/nova-pvgis-live.log
+            exit 1
+          fi
+          PVGIS_STATUS=$(curl --retry 1 --retry-delay 2 --max-time 45 --silent --show-error \
+            -o /tmp/nova-pvgis-performance.json -w '%{http_code}' \
+            'http://127.0.0.1:8789/api/v1/data/solar/pvgis/performance?latitude=36.8&longitude=10.2&start_date=2024-01-01&end_date=2024-01-07') || PVGIS_STATUS=000
+          echo "PVGIS_LIVE_PROVIDER_HTTP_STATUS=$PVGIS_STATUS"
+          cat /tmp/nova-pvgis-performance.json || true
+          if [ "$PVGIS_STATUS" != "200" ]; then
+            echo "Live PVGIS provider probe failed; Worker diagnostics follow."
+            cat /tmp/nova-pvgis-live.log
+            exit 1
+          fi
+          jq -e '.status == "retrieved" and .dataset_id == "jrc-pvgis-6" and (.data | type == "object")' /tmp/nova-pvgis-performance.json
