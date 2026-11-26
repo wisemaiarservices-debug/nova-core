@@ -138,4 +138,5 @@ def test_wapor_catalogue_metadata_matches_fao_v3_access_guidance():
     }
     assert any("without an api key" in item.lower() for item in record.limitations)
     assert any("corrections" in item.lower() for item in record.limitations)
-    assert "no NOVA WaPOR connector" in record.implementation_note
+    assert "read-only mapset/raster-index discovery is implemented" in record.implementation_note
+    assert "GeoTIFF retrieval" in record.implementation_note
