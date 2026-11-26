@@ -27,7 +27,7 @@ Only dekadal mapsets and raster codes are supported in this first version. Month
 - AOI input JSON is capped at 1 MiB; the geometry validator enforces polygon/ring/position caps; Shapely rejects invalid polygon topology.
 - The full AOI must fit inside the raster footprint; partial coverage is rejected rather than silently clipped. The crop is capped at 10 million pixels and a single band. Only a bounded set of 8/16/32-bit integer and 32/64-bit float dtypes is supported.
 - The full remote COG is not downloaded. `source_object_sha256` remains null; `processed_window_sha256` hashes exact crop samples, inside/valid masks, dtype, CRS, transform and pixel window.
-- The source object's size is bounded, but this version does not meter cumulative HTTP range bytes independently of GDAL. Do not raise the object-size cap without a separate transfer-budget implementation.
+- The source object's size is bounded, but this version does not meter cumulative HTTP range bytes independently of GDAL. The provider metadata fingerprint uses stable mapset fields and raster code/period only; mutable download and gsutil URLs are excluded. Do not raise the object-size cap without a separate transfer-budget implementation.
 
 ## Scientific provenance
 

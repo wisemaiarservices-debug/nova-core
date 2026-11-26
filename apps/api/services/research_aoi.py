@@ -5,12 +5,15 @@ bounds, but does not prove polygon self-intersection or hole containment.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from typing import Any
 
 MAX_POLYGONS = 20
 MAX_RINGS_PER_POLYGON = 100
 MAX_POSITIONS = 10_000
+MAX_AOI_GEOJSON_BYTES = 1 * 1024 * 1024
 
 
 class AOIValidationError(ValueError):
@@ -139,3 +142,22 @@ def validate_research_aoi(geometry: dict[str, Any]) -> dict[str, Any]:
             "Antimeridian-crossing geometries must be normalized before submission.",
         ],
     }
+
+
+
+def canonical_research_aoi_sha256(geometry: dict[str, Any]) -> str:
+    """Return a bounded, canonical hash for validated caller-supplied AOI GeoJSON."""
+    validate_research_aoi(geometry)
+    try:
+        encoded = json.dumps(
+            geometry,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise AOIValidationError("AOI must be finite, JSON-serializable GeoJSON") from exc
+    if len(encoded) > MAX_AOI_GEOJSON_BYTES:
+        raise AOIValidationError("AOI GeoJSON exceeds the 1 MiB input limit")
+    return hashlib.sha256(encoded).hexdigest()

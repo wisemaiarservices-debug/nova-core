@@ -2,10 +2,13 @@ from datetime import date
 
 import pytest
 
+from apps.api.services.research_aoi import canonical_research_aoi_sha256
+
 from scripts.wapor_cog_aoi import (
     MAX_COG_OBJECT_BYTES,
     ResearchProcessingError,
     _masked_statistics,
+    _provider_metadata_hash,
     _validate_initial_range,
     _validate_provider_period,
     dekadal_period,
@@ -241,8 +244,6 @@ def test_preflight_rejects_range_size_mismatch(monkeypatch):
 
 
 def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
-    from scripts.wapor_cog_aoi import _canonical_aoi_hash
-
     geometry = {
         "type": "Polygon",
         "coordinates": [[
@@ -251,4 +252,28 @@ def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
         "unused_metadata": "x" * (1024 * 1024 + 1),
     }
     with pytest.raises(ResearchProcessingError, match="1 MiB"):
-        _canonical_aoi_hash(geometry)
+        canonical_research_aoi_sha256(geometry)
+
+
+
+def test_provider_metadata_fingerprint_excludes_mutable_download_urls():
+    mapset = {
+        "code": "L2-AETI-D",
+        "caption": "Actual Evapotranspiration",
+        "unit": "mm/day",
+        "description": "Daily AETI",
+    }
+    raster_a = {
+        "code": "WAPOR-3.L2-AETI-D.2024-01-D1",
+        "period_start": "2024-01-01",
+        "download_url": "https://storage.googleapis.com/bucket/object-a.tif",
+        "gsutil_uri": "gs://bucket/object-a.tif",
+    }
+    raster_b = {
+        **raster_a,
+        "download_url": "https://storage.googleapis.com/bucket/object-b.tif",
+        "gsutil_uri": "gs://bucket/object-b.tif",
+    }
+    assert _provider_metadata_hash(mapset, raster_a) == _provider_metadata_hash(mapset, raster_b)
+    changed_unit = {**mapset, "unit": "m3/m3"}
+    assert _provider_metadata_hash(mapset, raster_a) != _provider_metadata_hash(changed_unit, raster_a)

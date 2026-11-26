@@ -19,12 +19,15 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from typing import Any
 
 from apps.api.services.raster_provenance import RasterProcessingManifest
-from apps.api.services.research_aoi import validate_research_aoi
+from apps.api.services.research_aoi import (
+    MAX_AOI_GEOJSON_BYTES,
+    canonical_research_aoi_sha256,
+    validate_research_aoi,
+)
 from apps.api.services.wapor import list_mapsets, list_rasters, validate_mapset_code
 
 MAX_COG_OBJECT_BYTES = 256 * 1024 * 1024
 MAX_AOI_WINDOW_PIXELS = 10_000_000
-MAX_AOI_GEOJSON_BYTES = 1 * 1024 * 1024
 COG_HOST = "storage.googleapis.com"
 COG_BUCKET = "fao-gismgr-wapor-3-data"
 COG_BUCKET_PREFIX = f"/{COG_BUCKET}/DATA/WAPOR-3/MAPSET/"
@@ -169,11 +172,20 @@ def _canonical_hash(payload: Any) -> str:
     return hashlib.sha256(_canonical_bytes(payload)).hexdigest()
 
 
-def _canonical_aoi_hash(geometry: dict[str, Any]) -> str:
-    encoded = _canonical_bytes(geometry)
-    if len(encoded) > MAX_AOI_GEOJSON_BYTES:
-        raise ResearchProcessingError("AOI GeoJSON exceeds the 1 MiB input limit")
-    return hashlib.sha256(encoded).hexdigest()
+def _provider_metadata_hash(mapset_record: dict[str, Any], raster_record: dict[str, Any]) -> str:
+    """Fingerprint stable catalogue metadata, excluding mutable object URLs."""
+    return _canonical_hash({
+        "mapset": {
+            "code": mapset_record.get("code"),
+            "caption": mapset_record.get("caption"),
+            "unit": mapset_record.get("unit"),
+            "description": mapset_record.get("description"),
+        },
+        "raster": {
+            "code": raster_record.get("code"),
+            "period_start": raster_record.get("period_start"),
+        },
+    })
 
 
 def _window_digest(
@@ -292,7 +304,7 @@ def process_wapor_aoi(
         raise ResearchProcessingError("mapset_code is invalid") from exc
     if not isinstance(processing_code_commit, str) or not re.fullmatch(r"[a-f0-9]{40}", processing_code_commit):
         raise ResearchProcessingError("processing_code_commit must be a 40-character lowercase Git SHA")
-    aoi_hash = _canonical_aoi_hash(aoi_geometry)
+    aoi_hash = canonical_research_aoi_sha256(aoi_geometry)
     aoi_summary = validate_research_aoi(aoi_geometry)
 
     try:
@@ -424,15 +436,7 @@ def process_wapor_aoi(
     except Exception as exc:
         raise ResearchProcessingError("WaPOR COG could not be safely read or AOI statistics could not be calculated") from exc
 
-    metadata_hash = _canonical_hash({
-        "mapset": mapset_record,
-        "raster": {
-            "code": raster_record.get("code"),
-            "period_start": raster_record.get("period_start"),
-            "download_url": download_url,
-            "gsutil_uri": raster_record.get("gsutil_uri"),
-        },
-    })
+    metadata_hash = _provider_metadata_hash(mapset_record, raster_record)
     unit = mapset_record.get("unit")
     manifest = RasterProcessingManifest(
         manifest_id=f"wapor.{mapset.lower()}.{period_start.isoformat()}.d{(period_start.day - 1) // 10 + 1}",

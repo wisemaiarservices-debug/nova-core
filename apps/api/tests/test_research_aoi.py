@@ -2,9 +2,11 @@ import pytest
 
 from apps.api.services.research_aoi import (
     AOIValidationError,
+    MAX_AOI_GEOJSON_BYTES,
     MAX_POLYGONS,
     MAX_POSITIONS,
     MAX_RINGS_PER_POLYGON,
+    canonical_research_aoi_sha256,
     validate_research_aoi,
 )
 
@@ -124,3 +126,24 @@ def test_rejects_collinear_and_consecutive_duplicate_ring_positions():
     }
     with pytest.raises(AOIValidationError, match="zero planar area"):
         validate_research_aoi(collinear)
+
+
+
+def test_canonical_aoi_hash_is_stable_across_object_key_order():
+    first = _polygon()
+    second = {"coordinates": first["coordinates"], "type": first["type"]}
+    assert canonical_research_aoi_sha256(first) == canonical_research_aoi_sha256(second)
+
+
+def test_canonical_aoi_hash_rejects_oversized_extra_metadata():
+    geometry = _polygon()
+    geometry["metadata"] = "x" * (MAX_AOI_GEOJSON_BYTES + 1)
+    with pytest.raises(AOIValidationError, match="1 MiB"):
+        canonical_research_aoi_sha256(geometry)
+
+
+def test_canonical_aoi_hash_rejects_non_json_finite_values():
+    geometry = _polygon()
+    geometry["metadata"] = float("nan")
+    with pytest.raises(AOIValidationError, match="finite"):
+        canonical_research_aoi_sha256(geometry)
