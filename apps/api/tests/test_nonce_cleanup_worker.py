@@ -22,13 +22,14 @@ class Statement:
         return Result(self.database.rows)
 
 class FakeD1:
-    def __init__(self, rows=(), error=False): self.rows, self.error, self.calls = list(rows), error, []
+    def __init__(self, rows=(), error=False): self.rows, self.error, self.calls = list(rows), error, [] 
     def prepare(self, sql): return Statement(self, sql)
 
 
-def test_scheduled_time_is_converted_from_milliseconds_without_bool_coercion():
+def test_scheduled_time_accepts_integral_python_and_javascript_number_representations():
     assert _scheduled_epoch_seconds(1_800_000_000_999) == 1_800_000_000
-    for invalid in (None, 0, -1, True, 1.5, "1800000000000"):
+    assert _scheduled_epoch_seconds(1_800_000_000_999.0) == 1_800_000_000
+    for invalid in (None, 0, -1, True, 1.5, float("nan"), float("inf"), "1800000000000"):
         with pytest.raises(ValueError): _scheduled_epoch_seconds(invalid)
 
 
@@ -54,7 +55,7 @@ def test_cleanup_worker_propagates_storage_failure_without_exposing_details():
 def test_scheduled_entrypoint_uses_only_tenant_db_binding_and_platform_time():
     database = FakeD1()
     worker = object.__new__(Default)
-    controller = SimpleNamespace(scheduledTime=1_800_000_000_000)
+    controller = SimpleNamespace(scheduledTime=1_800_000_000_000.0)
     env = SimpleNamespace(TENANT_DB=database)
     asyncio.run(worker.scheduled(controller, env, None))
     assert database.calls == [(NONCE_CLEANUP_SQL, (1_800_000_000, MAX_CLEANUP_BATCH))]
@@ -86,12 +87,9 @@ def test_scheduled_worker_cleans_sqlite_migrated_replay_store_across_repeated_in
             return SimpleNamespace(success=True, results=rows)
 
     class SQLiteD1:
-        def prepare(self, sql):
-            return SQLiteStatement(sql)
+        def prepare(self, sql): return SQLiteStatement(sql)
 
     now = 1_800_000_000
-    # More than one batch of expired rows plus one still-retained row.
-    # A second scheduled invocation must drain the backlog, not delete early.
     expired = [
         (f"expired-retained-{index:06d}", now - 86_500, now - 1, now - 86_560)
         for index in range(MAX_CLEANUP_BATCH + 1)
@@ -104,9 +102,7 @@ def test_scheduled_worker_cleans_sqlite_migrated_replay_store_across_repeated_in
     worker = object.__new__(Default)
     env = SimpleNamespace(TENANT_DB=database)
 
-    asyncio.run(worker.scheduled(
-        SimpleNamespace(scheduledTime=(now * 1000) + 999), env, None,
-    ))
+    asyncio.run(worker.scheduled(SimpleNamespace(scheduledTime=(now * 1000) + 999.0), env, None))
     remaining = {
         row[0] for row in connection.execute(
             "SELECT jti FROM internal_request_nonces ORDER BY jti"
@@ -114,9 +110,7 @@ def test_scheduled_worker_cleans_sqlite_migrated_replay_store_across_repeated_in
     }
     assert remaining == {"still-retained-00000001", f"expired-retained-{MAX_CLEANUP_BATCH:06d}"}
 
-    asyncio.run(worker.scheduled(
-        SimpleNamespace(scheduledTime=((now + 1) * 1000)), env, None,
-    ))
+    asyncio.run(worker.scheduled(SimpleNamespace(scheduledTime=((now + 1) * 1000.0)), env, None))
     remaining = {
         row[0] for row in connection.execute(
             "SELECT jti FROM internal_request_nonces ORDER BY jti"

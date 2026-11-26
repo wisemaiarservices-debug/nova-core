@@ -5,6 +5,7 @@ Its only intended binding is the D1 database containing internal_request_nonces.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 try:
@@ -26,10 +27,20 @@ except ImportError:
 
 
 def _scheduled_epoch_seconds(scheduled_time_ms: Any) -> int:
-    """Convert platform scheduled epoch milliseconds to safe Unix seconds."""
-    if not isinstance(scheduled_time_ms, int) or isinstance(scheduled_time_ms, bool) or scheduled_time_ms <= 0:
+    """Convert platform scheduled epoch milliseconds to safe Unix seconds.
+
+    JavaScript numbers can arrive through the Python Workers bridge as floats.
+    Accept only finite integral values so this representation does not weaken
+    timestamp validation or silently truncate fractional milliseconds.
+    """
+    if isinstance(scheduled_time_ms, bool) or not isinstance(scheduled_time_ms, (int, float)):
         raise ValueError("invalid scheduled invocation time")
-    return scheduled_time_ms // 1000
+    if isinstance(scheduled_time_ms, float):
+        if not math.isfinite(scheduled_time_ms) or not scheduled_time_ms.is_integer():
+            raise ValueError("invalid scheduled invocation time")
+    if scheduled_time_ms <= 0:
+        raise ValueError("invalid scheduled invocation time")
+    return int(scheduled_time_ms) // 1000
 
 
 async def run_nonce_cleanup(database: Any, *, scheduled_time_ms: Any) -> int:
@@ -44,5 +55,21 @@ class Default(WorkerEntrypoint):
     """Cloudflare Python Worker scheduled entrypoint."""
 
     async def scheduled(self, controller, env, ctx):
-        database = getattr(env, "TENANT_DB", None)
-        await run_nonce_cleanup(database, scheduled_time_ms=getattr(controller, "scheduledTime", None))
+        # Python WorkerEntrypoint exposes configured bindings on self.env,
+        # matching Cloudflare's documented D1 access pattern. Keep the
+        # scheduled env argument as a compatibility fallback for runtimes
+        # that expose the module-style handler environment there.
+        try:
+            database = self.env.TENANT_DB
+        except AttributeError:
+            try:
+                database = env.TENANT_DB
+            except AttributeError:
+                database = None
+        try:
+            await run_nonce_cleanup(database, scheduled_time_ms=controller.scheduledTime)
+        except Exception as exc:
+            # Keep diagnostics useful without emitting assertion or tenant data.
+            detail = str(exc) if isinstance(exc, RequestReplayStorageError) else type(exc).__name__
+            print(f"nonce cleanup scheduled handler failed: {detail}")
+            raise
