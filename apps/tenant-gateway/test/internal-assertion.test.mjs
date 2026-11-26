@@ -326,23 +326,28 @@ test("rejects invalid JWKS content type and malformed JSON", async () => {
 });
 
 
-test("fails closed when the JWKS fetch exceeds its timeout", async () => {
+test("uses a fixed three-second timeout for JWKS retrieval", async () => {
   const fixture = await fixtureAccessToken();
-  await assert.rejects(
-    verifyCloudflareAccessJwt(fixture.token, {
+  const originalTimeout = AbortSignal.timeout;
+  let timeoutMs;
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutMs = milliseconds;
+    return new AbortController().signal;
+  };
+  try {
+    await verifyCloudflareAccessJwt(fixture.token, {
       teamDomain: TEAM,
       audience: ACCESS_AUDIENCE,
       now: NOW,
-      fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
-        options.signal.addEventListener(
-          "abort",
-          () => reject(new Error("request aborted")),
-          { once: true },
-        );
-      }),
-    }),
-    /request aborted/,
-  );
+      fetchImpl: async (_url, options) => {
+        assert.ok(options.signal instanceof AbortSignal);
+        return jsonResponse(fixture.jwks);
+      },
+    });
+    assert.equal(timeoutMs, 3000);
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+  }
 });
 
 test("accepts the matching signing key during a multi-key rotation overlap", async () => {
