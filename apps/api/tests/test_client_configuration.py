@@ -59,7 +59,7 @@ def test_land_area_rejects_conversion_overflow_and_unreasonable_area():
     with pytest.raises(ValidationError, match="site-area limit"):
         LandArea(value=1e308, unit="ha")
     with pytest.raises(ValidationError, match="site-area limit"):
-        LandArea(value=10_000_000_000_001, unit="m2")
+        LandArea(value=100_000_000_000_001, unit="m2")
 
 
 def test_site_requires_valid_timezone_and_structurally_valid_boundary():

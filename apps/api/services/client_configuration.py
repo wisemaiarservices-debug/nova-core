@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import math
 from datetime import date
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from apps.api.services.research_aoi import validate_research_aoi
+from apps.api.services.research_aoi import AOIValidationError, validate_research_aoi
 
 MAX_SITE_AREA_M2 = 100_000_000_000_000.0
 MAX_SITE_CROPS = 200
@@ -176,13 +176,24 @@ class SiteProfile(BaseModel):
     configuration_version: str = Field(pattern=r"^v[1-9][0-9]*$")
     timezone: str = Field(min_length=1, max_length=80)
     land_area: LandArea | None = None
-    boundary_geojson: GeoJSONPolygon | GeoJSONMultiPolygon | None = None
+    boundary_geojson: Annotated[GeoJSONPolygon | GeoJSONMultiPolygon, Field(discriminator="type")] | None = None
     country_code: str | None = Field(default=None, pattern=r"^[A-Z]{2}$")
     region_label: str | None = Field(default=None, max_length=160)
     crops: tuple[CropProfile, ...] = Field(default=(), max_length=MAX_SITE_CROPS)
     irrigation: IrrigationProfile | None = None
     energy: EnergySystemProfile | None = None
     metadata: tuple[SiteMetadataEntry, ...] = Field(default=(), max_length=MAX_SITE_METADATA_ENTRIES)
+
+    @field_validator("boundary_geojson", mode="before")
+    @classmethod
+    def validate_boundary_structure(cls, value: Any) -> Any:
+        if value is None or not isinstance(value, dict):
+            return value
+        try:
+            validate_research_aoi(value)
+        except AOIValidationError as exc:
+            raise ValueError(f"boundary GeoJSON is structurally invalid: {exc}") from exc
+        return value
 
     @field_validator("timezone")
     @classmethod
