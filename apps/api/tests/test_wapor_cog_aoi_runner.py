@@ -277,3 +277,29 @@ def test_discovery_absence_is_only_authoritative_when_enumeration_is_complete(
     else:
         with pytest.raises(ResearchProcessingError, match=expected):
             _require_discovered_record(discovery, key, code, resource_label=label)
+
+
+
+def test_provider_metadata_fingerprint_excludes_mutable_download_urls():
+    from scripts.wapor_cog_aoi import _provider_metadata_hash
+
+    mapset = {
+        "code": "L2-AETI-D",
+        "caption": "Actual Evapotranspiration",
+        "unit": "mm/day",
+        "description": "Daily AETI",
+    }
+    raster_a = {
+        "code": "WAPOR-3.L2-AETI-D.2024-01-D1",
+        "period_start": "2024-01-01",
+        "download_url": "https://storage.googleapis.com/bucket/object-a.tif",
+        "gsutil_uri": "gs://bucket/object-a.tif",
+    }
+    raster_b = {
+        **raster_a,
+        "download_url": "https://storage.googleapis.com/bucket/object-b.tif",
+        "gsutil_uri": "gs://bucket/object-b.tif",
+    }
+    assert _provider_metadata_hash(mapset, raster_a) == _provider_metadata_hash(mapset, raster_b)
+    changed_unit = {**mapset, "unit": "m3/m3"}
+    assert _provider_metadata_hash(mapset, raster_a) != _provider_metadata_hash(changed_unit, raster_a)
