@@ -144,7 +144,7 @@ test("rejects duplicate JSON members in Access JWT headers and claims", async ()
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: true,
-    json: async () => ({ keys: [headerFixture.jwk] }),
+    json: async () => ({ keys: [headerFixture.jwk, claimsFixture.jwk] }),
   });
   let called = false;
   const env = environment(headerFixture.jwk, { fetch: async () => { called = true; } });
