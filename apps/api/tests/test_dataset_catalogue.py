@@ -120,3 +120,22 @@ def test_catalogue_http_route_serializes_immutable_collections_as_json_arrays():
     assert payload["returned"] == 2
     assert isinstance(payload["records"][0]["domains"], list)
     assert isinstance(payload["records"][0]["variables"], list)
+
+
+
+def test_wapor_catalogue_metadata_matches_fao_v3_access_guidance():
+    record = next(item for item in list_datasets() if item.dataset_id == "fao-wapor-v3")
+    assert record.status == "candidate"
+    assert record.authentication_required is False
+    assert "global" in record.spatial_coverage.lower()
+    assert "300 m" in record.spatial_resolution
+    assert "100 m" in record.spatial_resolution
+    assert "20 m" in record.spatial_resolution
+    assert "2018" in record.temporal_coverage
+    assert "dekadal" in record.temporal_cadence.lower()
+    assert {item.code for item in record.variables} >= {
+        "AETI", "RET", "NPP", "E", "T", "I"
+    }
+    assert any("no api key" in item.lower() for item in record.limitations)
+    assert any("corrections" in item.lower() for item in record.limitations)
+    assert "no NOVA WaPOR connector" in record.implementation_note
