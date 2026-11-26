@@ -19,7 +19,14 @@ const SIGNING_KEY_ID = "gateway-key-2026-11";
 const SIGNING_ISSUER = "nova-core-tenant-gateway";
 const SIGNING_AUDIENCE = "nova-core-private-tenant-api";
 
-function jsonResponse(value, init = {}) {\n  return new Response(JSON.stringify(value), {\n    ...init,\n    headers: { "content-type": "application/json", ...(init.headers || {}) },\n  });\n}\n\nfunction b64url(bytes) {
+function jsonResponse(value, init = {}) {
+  return new Response(JSON.stringify(value), {
+    ...init,
+    headers: { "content-type": "application/json", ...(init.headers || {}) },
+  });
+}
+
+function b64url(bytes) {
   return Buffer.from(bytes).toString("base64url");
 }
 
