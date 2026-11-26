@@ -49,7 +49,9 @@ class PublicApiRateLimitMiddleware:
 
         # The ASGI Workers adapter supplies env in Cloudflare. Native pytest
         # and local ASGI tools have no Workers env and remain usable.
-        runtime_env = scope.get("env") or self.fallback_env
+        runtime_env = scope.get("env")
+        if runtime_env is None:
+            runtime_env = self.fallback_env
         if runtime_env is None:
             # Native ASGI (pytest/uvicorn) has no Workers environment. In the
             # deployed Worker, main.py also supplies workers.env as a fallback.
