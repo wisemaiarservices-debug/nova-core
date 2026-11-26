@@ -340,7 +340,10 @@ def simulate(state: SiteState) -> dict[str, Any]:
     return {
         "site_id": state.site_id,
         "comparison_status": "optimized_case_not_estimable",
-        "baseline": {"water_use_m3": state.water_use_m3_today, "source": "caller_supplied_or_synthetic_default"},
+        "baseline": {
+            "water_use_m3": state.water_use_m3_today,
+            "source": "caller_supplied_unverified" if state.water_use_m3_today is not None else "not_supplied",
+        },
         "optimized": None,
         "impact": impact_score(state),
         "generated_at": now_iso(),
