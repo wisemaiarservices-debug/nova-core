@@ -40,6 +40,9 @@ jobs:
         run: |
           uv sync --python 3.13 --group dev
           uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.jsonc
+      - name: Bundle private tenant API Worker without deployment
+        working-directory: apps/api
+        run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.tenant.jsonc
       - name: Run ingestion Worker security tests
         working-directory: apps/ingestion-worker
         run: npm test
