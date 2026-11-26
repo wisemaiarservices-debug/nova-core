@@ -151,7 +151,7 @@ _DATASETS: tuple[DatasetRecord, ...] = (
             "Capture layer metadata, methodology, licence terms and attribution with every retrieval; catalogue presence does not prove site coverage.",
             "FAO has issued corrections and re-releases affecting historical Level 3 production layers; check provider notifications and preserve retrieval/version provenance.",
         ),
-        implementation_note="Candidate; public v3 API access is documented, but no NOVA WaPOR connector or retrieval job is implemented.",
+        implementation_note="Candidate; read-only mapset/raster-index discovery is implemented. GeoTIFF retrieval, pixel processing, persistence and site linkage are not implemented.",
     ),
     DatasetRecord(
         dataset_id="copernicus-era5-land",
