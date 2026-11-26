@@ -66,9 +66,15 @@ export default {
       return json({ error: "not_found" }, 404);
     }
 
-    const declaredLength = Number(request.headers.get("content-length") || "0");
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-      return json({ error: "payload_too_large" }, 413);
+    const declaredLength = request.headers.get("content-length");
+    if (declaredLength !== null) {
+      if (!/^(0|[1-9][0-9]*)$/.test(declaredLength) ||
+          !Number.isSafeInteger(Number(declaredLength))) {
+        return json({ error: "invalid_content_length" }, 400);
+      }
+      if (Number(declaredLength) > MAX_BODY_BYTES) {
+        return json({ error: "payload_too_large" }, 413);
+      }
     }
     const issuer = env.ACCESS_ISSUER;
     const audience = env.ACCESS_AUDIENCE;
