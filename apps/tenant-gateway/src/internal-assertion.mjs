@@ -245,10 +245,10 @@ export async function verifyCloudflareAccessJwt(
     !SUBJECT_PATTERN.test(claims.sub) ||
     !isInteger(claims.exp) ||
     claims.exp <= nowSeconds ||
-    (claims.nbf !== undefined &&
-      (!isInteger(claims.nbf) || claims.nbf > nowSeconds + CLOCK_SKEW_SECONDS)) ||
-    (claims.iat !== undefined &&
-      (!isInteger(claims.iat) || claims.iat > nowSeconds + CLOCK_SKEW_SECONDS))
+    !isInteger(claims.nbf) ||
+    claims.nbf > nowSeconds + CLOCK_SKEW_SECONDS ||
+    !isInteger(claims.iat) ||
+    claims.iat > nowSeconds + CLOCK_SKEW_SECONDS
   ) {
     throw new TypeError("Cloudflare Access identity claims are invalid");
   }
