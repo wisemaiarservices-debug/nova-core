@@ -474,7 +474,7 @@ def process_wapor_aoi(
             "object_sha256": None,
             "dtype": source_dtype,
             "nodata_value": source_nodata,
-            "download_mode": "allowlisted COG byte-range reads; full source object was not downloaded",
+            "download_mode": "allowlisted COG byte-range reads; no unconditional full-object GET was requested",
         },
         "window": {
             "column_offset": window_tuple[0],
