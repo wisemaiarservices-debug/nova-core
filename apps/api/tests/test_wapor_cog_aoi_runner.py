@@ -200,7 +200,7 @@ def test_preflight_requires_matching_head_and_range_metadata(monkeypatch):
 
     responses = [
         FakeResponse(200, {"Content-Length": "1024", "Content-Type": "image/tiff"}),
-        FakeResponse(206, {"Content-Length": "4", "Content-Range": "bytes 0-3/1024"}, b"II*\\x00"),
+        FakeResponse(206, {"Content-Length": "4", "Content-Range": "bytes 0-3/1024"}, b"II*\x00"),
     ]
     monkeypatch.setattr(runner, "build_opener", lambda *args: FakeOpener(responses))
     assert runner._preflight_cog(URL) == 1024
@@ -228,7 +228,7 @@ def test_preflight_rejects_range_size_mismatch(monkeypatch):
         def __init__(self):
             self.responses = iter([
                 FakeResponse(200, {"Content-Length": "1024", "Content-Type": "image/tiff"}),
-                FakeResponse(206, {"Content-Length": "4", "Content-Range": "bytes 0-3/2048"}, b"II*\\x00"),
+                FakeResponse(206, {"Content-Length": "4", "Content-Range": "bytes 0-3/2048"}, b"II*\x00"),
             ])
 
         def open(self, request, timeout):
