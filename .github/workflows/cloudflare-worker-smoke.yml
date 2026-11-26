@@ -61,9 +61,13 @@ jobs:
             -H 'Access-Control-Request-Headers: content-type' \
             http://127.0.0.1:8787/api/v1/recommendations/run > /tmp/nova-cors.txt
           grep -qi 'access-control-allow-origin: https://nova-os-pied.vercel.app' /tmp/nova-cors.txt
+          MISSING_SITE_STATUS=$(curl --max-time 5 --silent --show-error -o /tmp/nova-missing-site.json -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' \
+            -d '{}' http://127.0.0.1:8787/api/v1/recommendations/run) || MISSING_SITE_STATUS=000
+          test "$MISSING_SITE_STATUS" = "422"
           curl --max-time 5 --silent --show-error --fail \
             -X POST -H 'Content-Type: application/json' \
-            -d '{}' http://127.0.0.1:8787/api/v1/recommendations/run > /tmp/nova-recommendation.json
+            -d '{"site_id":"ci-smoke-test"}' http://127.0.0.1:8787/api/v1/recommendations/run > /tmp/nova-recommendation.json
           grep -q '"status":"review_required"' /tmp/nova-recommendation.json
           curl --max-time 5 --silent --show-error --fail http://127.0.0.1:8787/openapi.json > /tmp/nova-openapi.json
           grep -q 'nasa-power/daily' /tmp/nova-openapi.json
