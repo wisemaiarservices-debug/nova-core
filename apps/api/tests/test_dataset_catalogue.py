@@ -1,4 +1,6 @@
-from fastapi.testclient import TestClient
+import asyncio
+
+import httpx
 
 from apps.api.main import app, read_dataset_catalogue
 from apps.api.services.dataset_catalogue import (
@@ -102,7 +104,16 @@ def test_blank_domain_is_normalized_to_no_filter():
 
 
 def test_catalogue_http_route_serializes_immutable_collections_as_json_arrays():
-    response = TestClient(app).get("/api/v1/data/catalogue", params={"domain": "solar"})
+    async def request_catalogue():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            return await client.get(
+                "/api/v1/data/catalogue", params={"domain": "solar"}
+            )
+
+    response = asyncio.run(request_catalogue())
     assert response.status_code == 200
     payload = response.json()
     assert payload["domain_filter"] == "solar"
