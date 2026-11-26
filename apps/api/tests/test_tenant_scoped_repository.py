@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
 
 from apps.api.services.tenant_scoped_repository import (
     RESOURCE_SELECTS,
@@ -176,8 +177,6 @@ def test_database_resource_failure_is_generic_and_fail_closed():
             resource_type="site", resource_id="site-a",
         ))
 
-
-import pytest
 
 @pytest.mark.parametrize("resource_success", [False, None])
 def test_unsuccessful_or_incomplete_d1_resource_result_fails_closed(resource_success):
