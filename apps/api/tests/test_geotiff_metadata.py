@@ -225,7 +225,9 @@ def test_reads_gdal_scale_offset_but_rejects_entities_and_excessive_xml():
 
 
 def test_rejects_excessive_nodata_metadata_and_non_bytes_input():
+    tags = _basic_tags()
+    tags[-1] = (42113, 2, "x" * 129)
     with pytest.raises(GeoTiffError, match="NoData"):
-        inspect_geotiff(_tiff(_basic_tags() + [(42113, 2, "x" * 129)]))
+        inspect_geotiff(_tiff(tags))
     with pytest.raises(GeoTiffError, match="byte string"):
         inspect_geotiff(bytearray(_tiff(_basic_tags())))

@@ -206,7 +206,11 @@ def inspect_geotiff(data: bytes) -> dict[str, Any]:
         if item is None:
             return default
         value = item[1]
-        return value[0] if isinstance(value, list) and value else value
+        if isinstance(value, list):
+            if len(value) != 1:
+                raise GeoTiffError("TIFF scalar metadata tag must contain exactly one value")
+            return value[0]
+        return value
 
     width = scalar(256)
     height = scalar(257)
