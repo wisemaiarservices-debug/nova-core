@@ -272,3 +272,58 @@ test("does not disclose upstream response details on Service Binding failure", a
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("stops reading chunked private API responses at the gateway size limit", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  let cancelled = false;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const oversizedStream = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024 + 1));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const result = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async () => new Response(oversizedStream, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      }),
+    );
+    assert.equal(result.status, 502);
+    assert.equal(await result.text(), '{"detail":"upstream response rejected"}');
+    assert.equal(cancelled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects oversized declared private API response before streaming", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const result = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async () => new Response("{}", {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "content-length": String(1024 * 1024 + 1),
+          },
+        }),
+      }),
+    );
+    assert.equal(result.status, 502);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
