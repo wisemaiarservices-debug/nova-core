@@ -173,7 +173,11 @@ def verify_internal_assertion(
             raise ValueError("invalid request identifier")
         if method != "GET" or request_method != "GET":
             raise ValueError("unsupported request method")
-        if not isinstance(path, str) or _PATH_RE.fullmatch(path) is None:
+        if (
+            not isinstance(path, str)
+            or _PATH_RE.fullmatch(path) is None
+            or any(segment in {".", ".."} for segment in path.split("/"))
+        ):
             raise ValueError("invalid canonical request path")
         if request_path != path:
             raise ValueError("request path binding mismatch")
