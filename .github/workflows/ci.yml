@@ -43,3 +43,9 @@ jobs:
       - name: Run ingestion Worker security tests
         working-directory: apps/ingestion-worker
         run: npm test
+      - name: Run private tenant gateway security tests
+        working-directory: apps/tenant-gateway
+        run: npm test
+      - name: Validate inert tenant gateway Worker bundle without deployment
+        working-directory: apps/tenant-gateway
+        run: npx --yes wrangler@4 deploy --dry-run --config wrangler.jsonc
