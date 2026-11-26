@@ -12,7 +12,7 @@ The runner uses the existing bounded FAO WaPOR v3 catalogue reader:
 4. Perform a no-redirect HTTPS HEAD and exact four-byte TIFF signature range preflight; require the range's total size to match HEAD.
 5. Open only a GDAL-identified Cloud Optimized GeoTIFF with redirect following disabled and bounded timeout/cache settings.
 6. Validate caller-supplied WGS84 geometry structurally and with Shapely topology checks, transform it into the raster CRS, and calculate a boundless AOI window; reject the request if any part of the AOI falls outside the raster footprint.
-7. Enforce a 10-million-pixel window limit and single-band supported sample dtypes; apply the provider mask, NoData sentinel and finite-value mask.
+7. Enforce a 10-million-pixel window limit and single-band supported sample dtypes; apply the provider mask, NoData sentinel and finite-value mask. Pixel inclusion uses the pixel-center rule (`all_touched=False`).
 8. Count valid, NoData/invalid and outside-AOI pixels separately; compute raw statistics and emit an immutable checksum-bound processing manifest.
 
 Only dekadal mapsets and raster codes are supported in this first version. Monthly/annual rasters, multi-band assets, non-COG GeoTIFFs and unsupported dtypes are rejected rather than guessed.
@@ -36,7 +36,7 @@ Only dekadal mapsets and raster codes are supported in this first version. Month
 - Source dtype and NoData sentinel are recorded separately from raw statistics.
 - No scale/offset calibration is applied until authoritative per-raster calibration metadata is verified.
 - Units are used only when present in FAO mapset metadata; no units are inferred from layer codes.
-- Pixels inside the crop but outside the polygon are counted separately from provider NoData/invalid pixels.
+- Pixels inside the crop whose centers fall outside the polygon are counted separately from provider NoData/invalid pixels; this is not fractional pixel-area accounting.
 - The manifest `site_id` is fixed to null. AOI is caller-supplied research geometry only.
 - No raster file, database record, D1 write, artifact, site/source identity or telemetry is persisted.
 
