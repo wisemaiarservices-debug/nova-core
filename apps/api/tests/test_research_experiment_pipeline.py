@@ -252,3 +252,12 @@ def test_bundle_rejects_mismatched_snapshot_or_lineage():
     payload["resolved_manifest_ids"] = ("different-manifest",)
     with pytest.raises(ValidationError, match="exact lineage raster"):
         type(bundle).model_validate(payload)
+
+
+def test_bundle_rejects_resolved_manifest_ids_that_do_not_match_experiment_references():
+    lineage = _lineage()
+    bundle = prepare_research_experiment(_experiment(lineage), lineage, [lineage.raster_manifest])
+    payload = bundle.model_dump(mode="python")
+    payload["resolved_manifest_ids"] = ("wapor.other.manifest",)
+    with pytest.raises(ValidationError, match="exactly match experiment raster references"):
+        type(bundle).model_validate(payload)

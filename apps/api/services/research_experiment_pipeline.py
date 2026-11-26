@@ -48,6 +48,19 @@ class ResearchExperimentBundle(BaseModel):
             raise ValueError("bundle experiment dataset_id does not match its raster lineage")
         if len(set(self.resolved_manifest_ids)) != len(self.resolved_manifest_ids):
             raise ValueError("resolved raster manifest IDs must be unique")
+        expected_ids = tuple(reference.manifest_id for reference in self.experiment.raster_inputs)
+        if self.resolved_manifest_ids != expected_ids:
+            raise ValueError("resolved raster manifest IDs must exactly match experiment raster references")
+        expected_reference = self.lineage.raster_input_reference
+        if not any(
+            reference.manifest_id == expected_reference["manifest_id"]
+            and reference.dataset_id == expected_reference["dataset_id"]
+            and reference.processed_window_sha256 == expected_reference["processed_window_sha256"]
+            and reference.source_object_sha256 == expected_reference.get("source_object_sha256")
+            and reference.evidence_class == expected_reference["evidence_class"]
+            for reference in self.experiment.raster_inputs
+        ):
+            raise ValueError("experiment raster references do not contain the exact research lineage reference")
         if self.resolved_manifest_ids.count(self.lineage.raster_manifest.manifest_id) != 1:
             raise ValueError("bundle must resolve its exact lineage raster manifest exactly once")
         if (self.evaluation_metrics is None) != (self.experiment.status == "research"):
