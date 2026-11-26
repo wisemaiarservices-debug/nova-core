@@ -152,14 +152,27 @@ def _preflight_cog(url: str) -> int:
         raise ResearchProcessingError("WaPOR COG preflight failed or timed out") from exc
 
 
+def _canonical_bytes(payload: Any) -> bytes:
+    try:
+        return json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ResearchProcessingError("Research metadata must be finite, JSON-serializable data") from exc
+
+
 def _canonical_hash(payload: Any) -> str:
-    encoded = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-        allow_nan=False,
-    ).encode("utf-8")
+    return hashlib.sha256(_canonical_bytes(payload)).hexdigest()
+
+
+def _canonical_aoi_hash(geometry: dict[str, Any]) -> str:
+    encoded = _canonical_bytes(geometry)
+    if len(encoded) > MAX_AOI_GEOJSON_BYTES:
+        raise ResearchProcessingError("AOI GeoJSON exceeds the 1 MiB input limit")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -279,6 +292,7 @@ def process_wapor_aoi(
         raise ResearchProcessingError("mapset_code is invalid") from exc
     if not isinstance(processing_code_commit, str) or not re.fullmatch(r"[a-f0-9]{40}", processing_code_commit):
         raise ResearchProcessingError("processing_code_commit must be a 40-character lowercase Git SHA")
+    aoi_hash = _canonical_aoi_hash(aoi_geometry)
     aoi_summary = validate_research_aoi(aoi_geometry)
 
     try:
@@ -410,7 +424,6 @@ def process_wapor_aoi(
     except Exception as exc:
         raise ResearchProcessingError("WaPOR COG could not be safely read or AOI statistics could not be calculated") from exc
 
-    aoi_hash = _canonical_hash(aoi_geometry)
     metadata_hash = _canonical_hash({
         "mapset": mapset_record,
         "raster": {

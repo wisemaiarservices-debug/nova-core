@@ -237,3 +237,18 @@ def test_preflight_rejects_range_size_mismatch(monkeypatch):
     monkeypatch.setattr(runner, "build_opener", lambda *args: FakeOpener())
     with pytest.raises(ResearchProcessingError, match="inconsistent"):
         runner._preflight_cog(URL)
+
+
+
+def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
+    from scripts.wapor_cog_aoi import _canonical_aoi_hash
+
+    geometry = {
+        "type": "Polygon",
+        "coordinates": [[
+            [10, 36], [11, 36], [11, 37], [10, 37], [10, 36],
+        ]],
+        "unused_metadata": "x" * (1024 * 1024 + 1),
+    }
+    with pytest.raises(ResearchProcessingError, match="1 MiB"):
+        _canonical_aoi_hash(geometry)
