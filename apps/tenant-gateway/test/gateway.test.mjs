@@ -141,10 +141,17 @@ test("rejects duplicate JSON members in Access JWT headers and claims", async ()
       exp: NOW / 1000 + 300,
     }).replace('"aud":"cloudflare-access-app-audience"', '"aud":"cloudflare-access-app-audience","aud":"other-audience"'))),
   });
+  const unsupportedHeaderFixture = await accessToken({}, {
+    header: b64url(Buffer.from(
+      '{"alg":"RS256","typ":"JWT","kid":"access-key-2026-11","crit":["custom"]}',
+    )),
+  });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: true,
-    json: async () => ({ keys: [headerFixture.jwk, claimsFixture.jwk] }),
+    json: async () => ({
+      keys: [headerFixture.jwk, claimsFixture.jwk, unsupportedHeaderFixture.jwk],
+    }),
   });
   let called = false;
   const env = environment(headerFixture.jwk, { fetch: async () => { called = true; } });
@@ -155,8 +162,12 @@ test("rejects duplicate JSON members in Access JWT headers and claims", async ()
     const duplicateClaims = await gateway.fetch(
       request({ token: claimsFixture.token }), env,
     );
+    const unsupportedHeader = await gateway.fetch(
+      request({ token: unsupportedHeaderFixture.token }), env,
+    );
     assert.equal(duplicateHeader.status, 401);
     assert.equal(duplicateClaims.status, 401);
+    assert.equal(unsupportedHeader.status, 401);
     assert.equal(called, false);
   } finally {
     globalThis.fetch = originalFetch;
