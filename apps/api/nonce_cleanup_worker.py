@@ -55,13 +55,17 @@ class Default(WorkerEntrypoint):
     """Cloudflare Python Worker scheduled entrypoint."""
 
     async def scheduled(self, controller, env, ctx):
-        # Workers runtime bindings are exposed as JavaScript object properties.
-        # Resolve the D1 binding directly so the Pyodide bridge performs its
-        # normal property access instead of Python's generic getattr fallback.
+        # Python WorkerEntrypoint exposes configured bindings on self.env,
+        # matching Cloudflare's documented D1 access pattern. Keep the
+        # scheduled env argument as a compatibility fallback for runtimes
+        # that expose the module-style handler environment there.
         try:
-            database = env.TENANT_DB
+            database = self.env.TENANT_DB
         except AttributeError:
-            database = None
+            try:
+                database = env.TENANT_DB
+            except AttributeError:
+                database = None
         try:
             await run_nonce_cleanup(database, scheduled_time_ms=controller.scheduledTime)
         except Exception as exc:
