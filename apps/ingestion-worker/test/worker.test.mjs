@@ -311,3 +311,54 @@ test("valid service token with malformed JSON is rejected before storage", async
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid_json" });
 });
+
+
+import { readBoundedBody } from "../src/index.mjs";
+
+test("bounded reader accepts a body exactly at the byte limit", async () => {
+  const bytes = new Uint8Array(32 * 1024);
+  const body = await readBoundedBody({
+    headers: new Headers(),
+    body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }),
+  });
+  assert.equal(body.byteLength, 32 * 1024);
+});
+
+test("bounded reader rejects cumulative streamed overflow and cancels the stream", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(20 * 1024));
+      controller.enqueue(new Uint8Array(12 * 1024 + 1));
+    },
+    cancel() { cancelled = true; },
+  });
+  await assert.rejects(
+    () => readBoundedBody({ headers: new Headers(), body: stream }),
+    /payload_too_large/,
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(cancelled, true);
+});
+
+test("bounded reader rejects malformed, unsafe, and over-limit content lengths", async () => {
+  for (const value of ["-1", "+1", "01", "1e3", "9007199254740992", String(32 * 1024 + 1)]) {
+    await assert.rejects(
+      () => readBoundedBody({ headers: new Headers({ "content-length": value }), body: null }),
+    );
+  }
+});
+
+test("bounded reader times out and cancels a stalled body stream", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream({
+    pull() { return new Promise(() => {}); },
+    cancel() { cancelled = true; },
+  });
+  await assert.rejects(
+    () => readBoundedBody({ headers: new Headers(), body: stream }, 20),
+    /request_body_timeout/,
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(cancelled, true);
+});
