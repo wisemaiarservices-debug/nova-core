@@ -1,8 +1,0 @@
-{
-  "name": "nova-core-tenant-gateway-security",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test"
-  }
-}

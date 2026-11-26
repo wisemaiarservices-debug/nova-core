@@ -46,6 +46,9 @@ jobs:
       - name: Bundle tenant nonce cleanup Worker without deployment
         working-directory: apps/api
         run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.nonce-cleanup.jsonc
+      - name: Exercise scheduled cleanup Worker with local D1 in workerd
+        working-directory: apps/api
+        run: bash scripts/test_nonce_cleanup_worker_local_d1.sh
       - name: Run ingestion Worker security tests
         working-directory: apps/ingestion-worker
         run: npm test
