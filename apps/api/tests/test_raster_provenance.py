@@ -181,3 +181,15 @@ def test_calibration_overflow_is_rejected():
             scaled_max=1e308,
             scaled_mean=1e308,
         )
+
+
+def test_manifest_preserves_source_dtype_and_nodata_without_implying_calibration():
+    result = _manifest(
+        processing_method="nova-wapor-cog-aoi-v1",
+        source_dtype="int16",
+        source_nodata="-9999.0",
+    )
+    assert result.source_dtype == "int16"
+    assert result.source_nodata == "-9999.0"
+    assert result.scale is None
+    assert result.units is None
