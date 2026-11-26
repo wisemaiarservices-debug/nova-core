@@ -1,4 +1,5 @@
 import {
+  assertNoDuplicateJsonMembers,
   createInternalAssertion,
   verifyCloudflareAccessJwt,
 } from "./internal-assertion.mjs";
@@ -157,7 +158,9 @@ export default {
       let body;
       try {
         body = await readBoundedUpstreamBody(internalResponse);
-        const payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+        const source = new TextDecoder("utf-8", { fatal: true }).decode(body);
+        assertNoDuplicateJsonMembers(source);
+        const payload = JSON.parse(source);
         if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
           return response(502, JSON.stringify({ detail: "upstream response rejected" }));
         }
