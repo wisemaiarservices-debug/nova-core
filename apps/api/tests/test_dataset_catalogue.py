@@ -1,4 +1,6 @@
-from apps.api.main import read_dataset_catalogue
+from fastapi.testclient import TestClient
+
+from apps.api.main import app, read_dataset_catalogue
 from apps.api.services.dataset_catalogue import (
     DatasetRecord,
     catalogue_summary,
@@ -96,3 +98,14 @@ def test_blank_domain_is_normalized_to_no_filter():
     response = read_dataset_catalogue("   ")
     assert response["returned"] == catalogue_summary()["total"]
     assert response["domain_filter"] is None
+
+
+
+def test_catalogue_http_route_serializes_immutable_collections_as_json_arrays():
+    response = TestClient(app).get("/api/v1/data/catalogue", params={"domain": "solar"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["domain_filter"] == "solar"
+    assert payload["returned"] == 2
+    assert isinstance(payload["records"][0]["domains"], list)
+    assert isinstance(payload["records"][0]["variables"], list)
