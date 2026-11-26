@@ -29,6 +29,10 @@ jobs:
       - name: Run Python API tests
         working-directory: apps/api
         run: pytest
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
         with:
@@ -39,10 +43,6 @@ jobs:
         run: |
           uv sync --group dev
           uv run pywrangler deploy --dry-run --config wrangler.jsonc
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - name: Run ingestion Worker security tests
         working-directory: apps/ingestion-worker
         run: npm test
