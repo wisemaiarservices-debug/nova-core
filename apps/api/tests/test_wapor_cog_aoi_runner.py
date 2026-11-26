@@ -241,7 +241,13 @@ def test_preflight_rejects_range_size_mismatch(monkeypatch):
 
 
 def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
-    from scripts.wapor_cog_aoi import _canonical_aoi_hash
+    try:
+        from services.research_aoi import AOIValidationError, canonical_research_aoi_sha256
+    except ModuleNotFoundError:
+        from apps.api.services.research_aoi import (
+            AOIValidationError,
+            canonical_research_aoi_sha256,
+        )
 
     geometry = {
         "type": "Polygon",
@@ -250,8 +256,8 @@ def test_canonical_aoi_hash_enforces_size_even_for_direct_call():
         ]],
         "unused_metadata": "x" * (1024 * 1024 + 1),
     }
-    with pytest.raises(ResearchProcessingError, match="1 MiB"):
-        _canonical_aoi_hash(geometry)
+    with pytest.raises(AOIValidationError, match="1 MiB"):
+        canonical_research_aoi_sha256(geometry)
 
 
 @pytest.mark.parametrize(
@@ -277,3 +283,29 @@ def test_discovery_absence_is_only_authoritative_when_enumeration_is_complete(
     else:
         with pytest.raises(ResearchProcessingError, match=expected):
             _require_discovered_record(discovery, key, code, resource_label=label)
+
+
+
+def test_provider_metadata_fingerprint_excludes_mutable_download_urls():
+    from scripts.wapor_cog_aoi import _provider_metadata_hash
+
+    mapset = {
+        "code": "L2-AETI-D",
+        "caption": "Actual Evapotranspiration",
+        "unit": "mm/day",
+        "description": "Daily AETI",
+    }
+    raster_a = {
+        "code": "WAPOR-3.L2-AETI-D.2024-01-D1",
+        "period_start": "2024-01-01",
+        "download_url": "https://storage.googleapis.com/bucket/object-a.tif",
+        "gsutil_uri": "gs://bucket/object-a.tif",
+    }
+    raster_b = {
+        **raster_a,
+        "download_url": "https://storage.googleapis.com/bucket/object-b.tif",
+        "gsutil_uri": "gs://bucket/object-b.tif",
+    }
+    assert _provider_metadata_hash(mapset, raster_a) == _provider_metadata_hash(mapset, raster_b)
+    changed_unit = {**mapset, "unit": "m3/m3"}
+    assert _provider_metadata_hash(mapset, raster_a) != _provider_metadata_hash(changed_unit, raster_a)
