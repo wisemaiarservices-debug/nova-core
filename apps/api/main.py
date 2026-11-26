@@ -12,7 +12,6 @@ try:
     from .services.nasa_power import fetch_daily_point_async
     from .services.d1_storage import storage_status
     from .services.dataset_catalogue import catalogue_summary, list_datasets
-    from .services.dataset_catalogue import catalogue_summary, list_datasets
 except ImportError:
     from services.nasa_power import fetch_daily_point_async
     from services.d1_storage import storage_status
@@ -202,27 +201,6 @@ def recommend(state: SiteState) -> Recommendation:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "nova-core-api", "time": now_iso()}
-
-
-@app.get("/api/v1/data/catalogue")
-def read_dataset_catalogue(domain: str | None = None) -> dict[str, Any]:
-    """Expose dataset metadata without implying retrieval, validation, or site linkage."""
-    try:
-        records = list_datasets(domain)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {
-        "status": "catalogue_available",
-        "summary": catalogue_summary(),
-        "returned": len(records),
-        "domain_filter": domain.strip().lower() if domain else None,
-        "records": [record.model_dump(mode="json") for record in records],
-        "limitations": [
-            "Catalogue presence does not mean data has been retrieved or persisted.",
-            "Candidate sources are not connected to a pilot site or field device.",
-            "Dataset terms, endpoint schemas, coverage and versions must be verified at retrieval time.",
-        ],
-    }
 
 
 @app.get("/api/v1/data/catalogue")
