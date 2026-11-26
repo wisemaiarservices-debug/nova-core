@@ -133,6 +133,9 @@ test("rejects duplicate JSON members in Access JWT headers and claims", async ()
     )),
   });
   const claimsFixture = await accessToken({}, {
+    header: b64url(Buffer.from(
+      '{"alg":"RS256","typ":"JWT","kid":"access-key-claims"}',
+    )),
     payload: b64url(Buffer.from(JSON.stringify({
       iss: `https://${TEAM}`,
       aud: ACCESS_AUDIENCE,
@@ -141,11 +144,13 @@ test("rejects duplicate JSON members in Access JWT headers and claims", async ()
       exp: NOW / 1000 + 300,
     }).replace('"aud":"cloudflare-access-app-audience"', '"aud":"cloudflare-access-app-audience","aud":"other-audience"'))),
   });
+  claimsFixture.jwk.kid = "access-key-claims";
   const unsupportedHeaderFixture = await accessToken({}, {
     header: b64url(Buffer.from(
-      '{"alg":"RS256","typ":"JWT","kid":"access-key-2026-11","crit":["custom"]}',
+      '{"alg":"RS256","typ":"JWT","kid":"access-key-crit","crit":["custom"]}',
     )),
   });
+  unsupportedHeaderFixture.jwk.kid = "access-key-crit";
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: true,
