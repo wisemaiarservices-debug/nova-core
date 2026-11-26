@@ -22,7 +22,7 @@ npx --yes wrangler@4 dev --local --test-scheduled --log-level debug --ip 127.0.0
 SERVER_PID="$!"
 ready=0
 for attempt in $(seq 1 360); do
-  if grep -Fq "[wrangler:info] Ready on" "${LOG_FILE}"; then
+  if grep -Fq "Ready on ${BASE_URL}" "${LOG_FILE}"; then
     ready=1
     break
   fi
