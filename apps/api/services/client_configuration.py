@@ -12,7 +12,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from apps.api.services.research_aoi import AOIValidationError, validate_research_aoi
+from apps.api.services.research_aoi import validate_research_aoi
+
+MAX_SITE_AREA_M2 = 100_000_000_000_000.0
+MAX_SITE_CROPS = 200
+MAX_SITE_METADATA_ENTRIES = 100
 
 
 class LandArea(BaseModel):
@@ -38,6 +42,13 @@ class LandArea(BaseModel):
     def square_metres(self) -> float:
         factors = {"m2": 1.0, "ha": 10_000.0, "km2": 1_000_000.0, "acre": 4046.8564224}
         return self.value * factors[self.unit]
+
+    @model_validator(mode="after")
+    def validate_converted_area(self) -> "LandArea":
+        converted = self.square_metres
+        if not math.isfinite(converted) or converted > MAX_SITE_AREA_M2:
+            raise ValueError("land area exceeds the supported finite site-area limit")
+        return self
 
 
 class TenantProfile(BaseModel):
@@ -96,7 +107,6 @@ class IrrigationProfile(BaseModel):
         return value
 
 
-
 class EnergySystemProfile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
@@ -124,6 +134,38 @@ class EnergySystemProfile(BaseModel):
         return value
 
 
+class SiteMetadataEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    key: str = Field(min_length=1, max_length=80)
+    value: str = Field(max_length=500)
+
+
+class GeoJSONPolygon(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["Polygon"]
+    coordinates: tuple[tuple[tuple[float, float], ...], ...]
+
+    @field_validator("coordinates", mode="before")
+    @classmethod
+    def validate_polygon_coordinates(cls, value: Any) -> Any:
+        validate_research_aoi({"type": "Polygon", "coordinates": value})
+        return value
+
+
+class GeoJSONMultiPolygon(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["MultiPolygon"]
+    coordinates: tuple[tuple[tuple[tuple[float, float], ...], ...], ...]
+
+    @field_validator("coordinates", mode="before")
+    @classmethod
+    def validate_multipolygon_coordinates(cls, value: Any) -> Any:
+        validate_research_aoi({"type": "MultiPolygon", "coordinates": value})
+        return value
+
 
 class SiteProfile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
@@ -134,13 +176,13 @@ class SiteProfile(BaseModel):
     configuration_version: str = Field(pattern=r"^v[1-9][0-9]*$")
     timezone: str = Field(min_length=1, max_length=80)
     land_area: LandArea | None = None
-    boundary_geojson: dict[str, Any] | None = None
+    boundary_geojson: GeoJSONPolygon | GeoJSONMultiPolygon | None = None
     country_code: str | None = Field(default=None, pattern=r"^[A-Z]{2}$")
     region_label: str | None = Field(default=None, max_length=160)
-    crops: tuple[CropProfile, ...] = ()
+    crops: tuple[CropProfile, ...] = Field(default=(), max_length=MAX_SITE_CROPS)
     irrigation: IrrigationProfile | None = None
     energy: EnergySystemProfile | None = None
-    metadata: dict[str, str] = Field(default_factory=dict)
+    metadata: tuple[SiteMetadataEntry, ...] = Field(default=(), max_length=MAX_SITE_METADATA_ENTRIES)
 
     @field_validator("timezone")
     @classmethod
@@ -151,21 +193,16 @@ class SiteProfile(BaseModel):
             raise ValueError("timezone must be a valid IANA timezone identifier") from exc
         return value
 
-    @field_validator("boundary_geojson")
-    @classmethod
-    def validate_boundary_structure(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
-        if value is None:
-            return None
-        try:
-            validate_research_aoi(value)
-        except AOIValidationError as exc:
-            raise ValueError(f"boundary GeoJSON is structurally invalid: {exc}") from exc
-        return value
-
     @model_validator(mode="after")
-    def validate_tenant_linkage(self) -> "SiteProfile":
-        if self.tenant_id.strip() == "":
+    def validate_site_profile(self) -> "SiteProfile":
+        if not self.tenant_id.strip():
             raise ValueError("site must reference a tenant")
+        crop_ids = [crop.crop_id for crop in self.crops]
+        if len(crop_ids) != len(set(crop_ids)):
+            raise ValueError("crop IDs must be unique within a site")
+        metadata_keys = [entry.key for entry in self.metadata]
+        if len(metadata_keys) != len(set(metadata_keys)):
+            raise ValueError("site metadata keys must be unique")
         return self
 
 
@@ -182,4 +219,6 @@ class ClientConfiguration(BaseModel):
     def validate_tenant_site_match(self) -> "ClientConfiguration":
         if self.tenant.tenant_id != self.site.tenant_id:
             raise ValueError("site tenant_id must match the enclosing tenant profile")
+        if self.tenant.configuration_version != self.site.configuration_version:
+            raise ValueError("site configuration_version must match the enclosing tenant profile")
         return self
