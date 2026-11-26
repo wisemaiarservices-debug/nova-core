@@ -20,7 +20,7 @@ def _model(**overrides):
         "climate_scope": "restricted",
         "supported_climate_zones": ("arid", "semi_arid"),
         "equipment_scope": "restricted",
-        "supported_equipment_classes": ("soil_moisture_sensor", "weather_station"),
+        "supported_equipment_classes": ("sensor", "weather_station"),
         "minimum_land_area_m2": 1000,
         "maximum_land_area_m2": 500_000,
         "required_features": (
@@ -45,7 +45,7 @@ def _context(**overrides):
         "crop_species": "tomato",
         "climate_zone": "arid",
         "land_area_m2": 10_000,
-        "equipment_classes": ("soil_moisture_sensor", "weather_station"),
+        "equipment_classes": ("sensor", "weather_station"),
         "available_features": (
             AvailableFeature(
                 tenant_id="tenant-1",
