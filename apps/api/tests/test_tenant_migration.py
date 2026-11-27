@@ -481,3 +481,14 @@ def test_site_audit_event_tenant_must_match_existing_site_owner():
     assert db.execute(
         "SELECT COUNT(*) FROM audit_events WHERE id='event-site-wrong'"
     ).fetchone() == (0,)
+
+    # A deletion/tombstone event may be appended after the site row is gone.
+    db.execute("DELETE FROM sites WHERE id='site-a'")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('event-site-deleted', 'operator', 'site.delete', 'site', 'site-a', 'tenant-a')"
+    )
+    assert db.execute(
+        "SELECT tenant_id FROM audit_events WHERE id='event-site-deleted'"
+    ).fetchone() == ("tenant-a",)
