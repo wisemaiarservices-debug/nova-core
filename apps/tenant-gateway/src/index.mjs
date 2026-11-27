@@ -168,7 +168,7 @@ export default {
         internalResponse.status !== 200 ||
         upstreamContentType !== "application/json"
       ) {
-        await cancelUpstreamBody(internalResponse);
+        cancelUpstreamBody(internalResponse);
         return response(503, JSON.stringify({ detail: "gateway unavailable" }));
       }
 
