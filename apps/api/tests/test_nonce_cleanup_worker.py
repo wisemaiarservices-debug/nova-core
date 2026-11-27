@@ -32,7 +32,7 @@ def test_nonce_cleanup_worker_observability_redacts_query_strings():
 
     config = json.loads((Path(__file__).parents[1] / "wrangler.nonce-cleanup.jsonc").read_text())
     assert config["observability"]["enabled"] is True
-    assert config["observability"]["redactQueryString"] is True
+    assert "redactQueryString" not in config["observability"]
     assert config["observability"]["head_sampling_rate"] == 0
     assert config["observability"]["logs"]["enabled"] is True
     assert config["observability"]["logs"]["invocation_logs"] is False
