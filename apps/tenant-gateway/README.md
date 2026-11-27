@@ -45,3 +45,54 @@ rotation overlap.
 Run `npm test` in this directory. Tests validate token structure, HMAC
 compatibility, unique request IDs, identity input gating, request method/path
 allowlisting, time bounds and configuration failures.
+
+
+## Runtime configuration contract
+
+The following non-secret Worker variables are required before activation:
+
+| Variable | Gateway | Private API | Purpose |
+|---|---:|---:|---|
+| `NOVA_ACCESS_TEAM_DOMAIN` | Yes | No | Fixed Cloudflare Access team hostname used to construct the JWKS URL |
+| `NOVA_ACCESS_AUDIENCE` | Yes | No | Exact Access application AUD tag |
+| `NOVA_INTERNAL_KEY_ID` | Yes | Yes | Active HMAC key identifier; must match on both Workers |
+| `NOVA_INTERNAL_ISSUER` | Yes | Yes | Exact internal assertion issuer; must match on both Workers |
+| `NOVA_INTERNAL_AUDIENCE` | Yes | Yes | Exact private API assertion audience; must match on both Workers |
+
+`NOVA_INTERNAL_HMAC_KEY` is a secret, not a plain-text Wrangler variable.
+The identical key bytes and key ID must be available to the gateway signer and
+private API verifier. Use a high-entropy key of at least 32 bytes. Never put
+the value in source, checked-in configuration, CI output, logs or chat.
+
+The gateway's Access team domain and audience are not interchangeable with the
+internal assertion issuer and audience. Keep the two trust domains distinct.
+The Access application must protect the gateway hostname; the private API must
+remain reachable only through the fixed Service Binding.
+
+## Activation gates and order
+
+1. Create and verify the D1 database `nova-core-tenant-db`; replace the
+   zero UUID in both `wrangler.tenant.jsonc` and
+   `wrangler.nonce-cleanup.jsonc` with the same real database ID.
+2. Review and apply the checked-in migrations to that database. Verify the
+   nonce table, tenant isolation constraints and indexes before enabling reads.
+3. Provision the same active HMAC key ID and secret in both Workers. Confirm
+   issuer/audience values match exactly and establish an overlap/revocation
+   procedure before any key rotation.
+4. Create the Cloudflare Access application and policy for the gateway
+   hostname. Confirm the expected audience tag and stable subject claim.
+5. Deploy the private API with `workers_dev` disabled, then deploy the gateway
+   with its fixed `TENANT_API` Service Binding. Keep the private API without
+   a public route and do not expose the D1 binding to the gateway.
+6. Deploy the scheduled cleanup Worker only after verifying it references the
+   same D1 database and its cron schedule is acceptable.
+7. Validate from the actual Cloudflare edge: unauthenticated denial, valid
+   Access identity, invalid/expired JWT denial, HMAC tampering denial, replay
+   denial, cross-tenant denial, D1 failure closed, response-size bounds and
+   absence of public access to the private API.
+8. Keep production activation blocked until all edge checks, observability
+   redaction and rollback evidence are recorded.
+
+The repository currently contains placeholder D1 IDs and no live Access
+application, private API Worker, gateway Worker or HMAC secrets. These are
+explicit external provisioning blockers, not completed deployment steps.
