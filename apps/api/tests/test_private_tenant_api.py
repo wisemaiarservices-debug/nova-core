@@ -218,12 +218,16 @@ def test_previous_hmac_key_is_accepted_during_rotation_overlap():
     previous_secret = "previous-private-tenant-test-secret-32-bytes"
     previous_key_id = "gateway-key-2026-10"
     token = signed_assertion()
-    header, payload, _signature = token.split(".")
-    signing_input = f"{header}.{payload}".encode("ascii")
+    _header, payload, _signature = token.split(".")
+    previous_header = b64url(json.dumps(
+        {"alg": "HS256", "typ": "NOVA-Internal-Request", "kid": previous_key_id},
+        separators=(",", ":"),
+    ).encode("utf-8"))
+    signing_input = f"{previous_header}.{payload}".encode("ascii")
     signature = hmac.new(
         previous_secret.encode("utf-8"), signing_input, hashlib.sha256
     ).digest()
-    previous_token = f"{header}.{payload}.{b64url(signature)}"
+    previous_token = f"{previous_header}.{payload}.{b64url(signature)}"
     runtime = env(db)
     runtime["NOVA_INTERNAL_PREVIOUS_KEY_ID"] = previous_key_id
     runtime["NOVA_INTERNAL_PREVIOUS_HMAC_KEY"] = previous_secret
