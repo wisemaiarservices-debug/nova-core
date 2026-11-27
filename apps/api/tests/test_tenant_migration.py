@@ -14,6 +14,8 @@ def database():
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(INITIAL.read_text(encoding="utf-8"))
     db.executescript(TENANT.read_text(encoding="utf-8"))
+    ownership = ROOT / "migrations" / "0004_site_tenant_transfer_guard.sql"
+    db.executescript(ownership.read_text(encoding="utf-8"))
     return db
 
 
@@ -350,3 +352,48 @@ def test_resource_grants_require_an_active_membership():
             "(id, tenant_id, subject, resource_type, resource_id, action) "
             "VALUES ('g-inactive', 'tenant-a', 'sub-inactive', 'site', 'site-a', 'read')"
         )
+
+
+
+def test_site_tenant_transfer_is_blocked_when_dependent_records_exist():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_site(db, "tenant-a", "site-a")
+    db.execute(
+        "INSERT INTO assets (id, site_id, name, asset_type, tenant_id) "
+        "VALUES ('asset-a', 'site-a', 'Pump', 'pump', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, tenant_id) "
+        "VALUES ('source-a', 'site-a', 'neoagro', 'operator', 'manual', 'Manual', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO observations "
+        "(id, site_id, source_id, module, metric, unit, observed_at, idempotency_key, provenance_json, tenant_id) "
+        "VALUES ('obs-a', 'site-a', 'source-a', 'neoagro', 'temperature', 'degC', "
+        "'2026-11-27T00:00:00Z', 'key-a', '{}', 'tenant-a')"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="dependent records"):
+        db.execute("UPDATE sites SET tenant_id='tenant-b' WHERE id='site-a'")
+
+    assert db.execute(
+        "SELECT tenant_id FROM sites WHERE id='site-a'"
+    ).fetchone() == ("tenant-a",)
+
+
+def test_legacy_site_without_dependent_records_can_receive_approved_tenant():
+    db = sqlite3.connect(":memory:")
+    db.execute("PRAGMA foreign_keys = ON")
+    db.executescript(INITIAL.read_text(encoding="utf-8"))
+    db.execute("INSERT INTO sites (id, name) VALUES ('legacy-site', 'Legacy')")
+    db.executescript(TENANT.read_text(encoding="utf-8"))
+    ownership = ROOT / "migrations" / "0004_site_tenant_transfer_guard.sql"
+    db.executescript(ownership.read_text(encoding="utf-8"))
+    seed_tenant(db, "tenant-a")
+
+    db.execute("UPDATE sites SET tenant_id='tenant-a' WHERE id='legacy-site'")
+    assert db.execute(
+        "SELECT tenant_id FROM sites WHERE id='legacy-site'"
+    ).fetchone() == ("tenant-a",)
