@@ -30,8 +30,8 @@ def database(path=":memory:"):
     db.execute("PRAGMA busy_timeout = 10000")
     db.executescript(INITIAL.read_text(encoding="utf-8"))
     db.executescript(TENANT.read_text(encoding="utf-8"))
-    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
     db.executescript(REPLAY.read_text(encoding="utf-8"))
+    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
     db.executescript(REPLAY_HARDENING.read_text(encoding="utf-8"))
     return db
 
@@ -53,10 +53,16 @@ def test_replay_migration_creates_unique_durable_store_and_retention_index():
         "PRAGMA index_list(internal_request_nonces)"
     ).fetchall()}
     assert {"jti", "expires_at", "retained_until", "consumed_at"} <= columns
-    jti_column = next(row for row in db.execute("PRAGMA table_info(internal_request_nonces)") if row[1] == "jti")
+    jti_column = next(
+        row for row in db.execute("PRAGMA table_info(internal_request_nonces)")
+        if row[1] == "jti"
+    )
     assert jti_column[3] == 1
     with pytest.raises(sqlite3.IntegrityError):
-        db.execute("INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) VALUES (NULL, 1, 1, 1)")
+        db.execute(
+            "INSERT INTO internal_request_nonces "
+            "(jti, expires_at, retained_until, consumed_at) VALUES (NULL, 1, 1, 1)"
+        )
     assert "idx_internal_request_nonces_retention" in indexes
 
 
@@ -66,8 +72,8 @@ def test_nonce_hardening_migration_discards_unaddressable_null_rows_and_preserve
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(INITIAL.read_text(encoding="utf-8"))
     db.executescript(TENANT.read_text(encoding="utf-8"))
-    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
     db.executescript(REPLAY.read_text(encoding="utf-8"))
+    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
     # SQLite permits NULL in a TEXT PRIMARY KEY unless NOT NULL is explicit.
     db.execute(
         "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) VALUES (NULL, 100, 200, 50)"
