@@ -53,6 +53,22 @@ def test_every_public_api_route_has_a_dedicated_rate_limit_bucket():
             assert path in PUBLIC_API_RATE_LIMIT_ROUTES
 
 
+def test_rate_limit_binding_is_declared_for_worker_and_not_preview():
+    import json
+    from pathlib import Path
+
+    config = json.loads((Path(__file__).parents[1] / "wrangler.jsonc").read_text())
+    bindings = config["ratelimits"]
+    assert len(bindings) == 1
+    binding = bindings[0]
+    assert binding["name"] == "NOVA_PUBLIC_API_LIMITER"
+    namespace_id = binding["namespace_id"]
+    assert namespace_id.isdecimal() and int(namespace_id) > 0
+    assert binding["simple"] == {"limit": 60, "period": 60}
+    assert "ratelimits" not in config["previews"]
+    assert config["observability"]["redactQueryString"] is True
+
+
 def test_cors_wraps_rate_limiter_for_throttled_browser_responses():
     assert app.user_middleware[0].cls is CORSMiddleware
     assert app.user_middleware[1].cls is PublicApiRateLimitMiddleware
