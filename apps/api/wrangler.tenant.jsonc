@@ -18,6 +18,5 @@
   },
   "observability": {
     "enabled": true,
-    "redactQueryString": true
   }
 }
