@@ -10,10 +10,20 @@ from apps.api.services.tenant_scoped_repository import (
 from apps.api.services.tenant_authorization_storage import MEMBERSHIP_SQL, RESOURCE_GRANTS_SQL
 
 
+class JsProxy:
+    def __init__(self, value):
+        self.value = value
+
+    def to_py(self):
+        if isinstance(self.value, list):
+            return [JsProxy(item) if isinstance(item, dict) else item for item in self.value]
+        return dict(self.value) if isinstance(self.value, dict) else self.value
+
+
 class Result:
-    def __init__(self, results, success=True):
-        self.results = results
-        self.success = success
+    def __init__(self, results, success=True, proxy=False):
+        self.results = JsProxy(results) if proxy else results
+        self.success = JsProxy(success) if proxy else success
 
 
 class Statement:
@@ -31,33 +41,35 @@ class Statement:
         if self.sql == MEMBERSHIP_SQL:
             subject, tenant = self.parameters
             return Result([row for row in self.database.memberships
-                           if row["subject"] == subject and row["tenant_id"] == tenant])
+                           if row["subject"] == subject and row["tenant_id"] == tenant],
+                          proxy=self.database.pyodide_results)
         if self.sql == RESOURCE_GRANTS_SQL:
             tenant, subject, resource_type, resource_id = self.parameters
             return Result([row for row in self.database.grants
                            if row["tenant_id"] == tenant and row["subject"] == subject
-                           and row["resource_type"] == resource_type and row["resource_id"] == resource_id])
+                           and row["resource_type"] == resource_type and row["resource_id"] == resource_id], proxy=self.database.pyodide_results)
         if self.sql in RESOURCE_SELECTS.values():
             if self.database.resource_error:
                 raise RuntimeError("private resource database details")
             tenant, resource_id = self.parameters
             if self.database.resource_override is not None:
-                return Result(self.database.resource_override, success=self.database.resource_success)
+                return Result(self.database.resource_override, success=self.database.resource_success, proxy=self.database.pyodide_results)
             return Result([row for row in self.database.resources.get(self.sql, [])
                            if row["tenant_id"] == tenant and row["id"] == resource_id],
-                          success=self.database.resource_success)
+                          success=self.database.resource_success, proxy=self.database.pyodide_results)
         raise AssertionError("unexpected query")
 
 
 class FakeDatabase:
     def __init__(self, memberships=(), grants=(), resources=None,
-                 resource_success=True, resource_error=False, resource_override=None):
+                 resource_success=True, resource_error=False, resource_override=None, pyodide_results=False):
         self.memberships = list(memberships)
         self.grants = list(grants)
         self.resources = resources or {}
         self.resource_success = resource_success
         self.resource_error = resource_error
         self.resource_override = resource_override
+        self.pyodide_results = pyodide_results
         self.calls = []
 
     def prepare(self, sql):
@@ -72,6 +84,22 @@ def membership():
 def grant():
     return {"subject": "subject-a", "tenant_id": "tenant-a", "resource_type": "site",
             "resource_id": "site-a", "action": "read"}
+
+
+
+def test_repository_normalizes_pyodide_d1_result_proxies():
+    resource = {"id": "site-a", "tenant_id": "tenant-a", "name": "Research site"}
+    db = FakeDatabase(
+        memberships=[membership()],
+        grants=[grant()],
+        resources={RESOURCE_SELECTS["site"]: [resource]},
+        pyodide_results=True,
+    )
+    result = asyncio.run(read_authorized_tenant_resource(
+        db, principal_subject="subject-a", tenant_id="tenant-a",
+        resource_type="site", resource_id="site-a",
+    ))
+    assert result == resource
 
 
 def test_read_requires_membership_and_exact_grant_before_scoped_query():
