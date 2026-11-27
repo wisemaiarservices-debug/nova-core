@@ -396,13 +396,18 @@ test("bounds private Service Binding requests with a five-second abort signal", 
         fetch: async (internalRequest) => {
           capturedSignal = internalRequest.signal;
           assert.equal(capturedSignal.aborted, false);
-          throw new DOMException("request timed out", "AbortError");
+          return new Promise((resolve, reject) => {
+            capturedSignal.addEventListener(
+              "abort",
+              () => reject(new DOMException("request timed out", "AbortError")),
+              { once: true },
+            );
+            controller.abort();
+          });
         },
       }),
     );
     assert.equal(timeoutMs, 5000);
-    assert.equal(capturedSignal.aborted, false);
-    controller.abort();
     assert.equal(capturedSignal.aborted, true);
     assert.equal(result.status, 503);
     assert.equal(await result.text(), '{"detail":"gateway unavailable"}');
