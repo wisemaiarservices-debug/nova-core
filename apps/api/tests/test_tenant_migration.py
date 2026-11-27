@@ -22,6 +22,8 @@ def database():
     db.executescript(site_audit_tenant_guard.read_text(encoding="utf-8"))
     site_audit_id_guard = ROOT / "migrations" / "0008_site_id_reuse_guard.sql"
     db.executescript(site_audit_id_guard.read_text(encoding="utf-8"))
+    related_audit_guard = ROOT / "migrations" / "0009_related_entity_audit_guards.sql"
+    db.executescript(related_audit_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -518,3 +520,88 @@ def test_site_audit_event_tenant_must_match_existing_site_owner():
     assert db.execute(
         "SELECT tenant_id FROM audit_events WHERE id='event-site-deleted'"
     ).fetchone() == ("tenant-a",)
+
+def test_asset_source_and_observation_audit_tenant_must_match_owner():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_site(db, "tenant-a", "site-a")
+    db.execute(
+        "INSERT INTO assets (id, site_id, name, asset_type, tenant_id) "
+        "VALUES ('asset-a', 'site-a', 'Pump', 'pump', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, tenant_id) "
+        "VALUES ('source-a', 'site-a', 'neoagro', 'operator', 'manual', 'Manual', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO observations "
+        "(id, site_id, source_id, module, metric, unit, observed_at, idempotency_key, provenance_json, tenant_id) "
+        "VALUES ('obs-a', 'site-a', 'source-a', 'neoagro', 'temperature', 'degC', "
+        "'2026-01-01T00:00:00Z', 'obs-key-a', '{}', 'tenant-a')"
+    )
+
+    for entity_type, entity_id in (
+        ("asset", "asset-a"),
+        ("source", "source-a"),
+        ("observation", "obs-a"),
+    ):
+        with pytest.raises(sqlite3.IntegrityError, match="audit event tenant must match entity"):
+            db.execute(
+                "INSERT INTO audit_events "
+                "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+                "VALUES (?, 'operator', 'entity.update', ?, ?, 'tenant-b')",
+                (f"wrong-{entity_type}", entity_type, entity_id),
+            )
+
+
+def test_asset_source_and_observation_ids_cannot_be_reused_after_audit_history():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_site(db, "tenant-a", "site-a")
+    db.execute(
+        "INSERT INTO assets (id, site_id, name, asset_type, tenant_id) "
+        "VALUES ('asset-a', 'site-a', 'Pump', 'pump', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, tenant_id) "
+        "VALUES ('source-a', 'site-a', 'neoagro', 'operator', 'manual', 'Manual', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO observations "
+        "(id, site_id, source_id, module, metric, unit, observed_at, idempotency_key, provenance_json, tenant_id) "
+        "VALUES ('obs-a', 'site-a', 'source-a', 'neoagro', 'temperature', 'degC', "
+        "'2026-01-01T00:00:00Z', 'obs-key-a', '{}', 'tenant-a')"
+    )
+
+    # Delete in FK dependency order: observations, then sources, then assets.
+    for table, entity_type, entity_id in (
+        ("observations", "observation", "obs-a"),
+        ("sources", "source", "source-a"),
+        ("assets", "asset", "asset-a"),
+    ):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES (?, 'operator', 'entity.created', ?, ?, 'tenant-a')",
+            (f"history-{entity_type}", entity_type, entity_id),
+        )
+        db.execute(f"DELETE FROM {table} WHERE id=?", (entity_id,))
+
+    with pytest.raises(sqlite3.IntegrityError, match="asset ID cannot be reused"):
+        db.execute(
+            "INSERT INTO assets (id, site_id, name, asset_type, tenant_id) "
+            "VALUES ('asset-a', 'site-a', 'Replacement', 'pump', 'tenant-a')"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="source ID cannot be reused"):
+        db.execute(
+            "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, tenant_id) "
+            "VALUES ('source-a', 'site-a', 'neoagro', 'operator', 'manual', 'Replacement', 'tenant-a')"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="observation ID cannot be reused"):
+        db.execute(
+            "INSERT INTO observations "
+            "(id, site_id, source_id, module, metric, unit, observed_at, idempotency_key, provenance_json, tenant_id) "
+            "VALUES ('obs-a', 'site-a', 'source-a', 'neoagro', 'temperature', 'degC', "
+            "'2026-01-02T00:00:00Z', 'obs-key-b', '{}', 'tenant-a')"
+        )
