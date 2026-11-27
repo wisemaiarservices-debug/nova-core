@@ -1012,6 +1012,12 @@ def test_revoked_membership_cannot_be_reactivated_with_stale_grants():
         "VALUES ('grant-revoked', 'tenant-a', 'subject-revoked', 'site', 'site-a', 'read')"
     )
     db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('membership-revocation-audit', 'operator', 'membership.revoked', "
+        "'membership', 'membership-revoked', 'tenant-a')"
+    )
+    db.execute(
         "UPDATE tenant_memberships SET status='revoked' WHERE id='membership-revoked'"
     )
 
@@ -1042,6 +1048,10 @@ def test_revoked_membership_cannot_be_reactivated_with_stale_grants():
     assert db.execute(
         "SELECT COUNT(*) FROM tenant_resource_grants WHERE id='grant-replacement'"
     ).fetchone() == (1,)
+    assert db.execute(
+        "SELECT entity_id, tenant_id FROM audit_events "
+        "WHERE id='membership-revocation-audit'"
+    ).fetchone() == ("membership-revoked", "tenant-a")
 
 
 def test_inactive_membership_can_be_reactivated_before_revocation():
