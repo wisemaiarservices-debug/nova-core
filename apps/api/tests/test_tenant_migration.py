@@ -26,6 +26,8 @@ def database():
     db.executescript(related_audit_guard.read_text(encoding="utf-8"))
     tenant_identity_guard = ROOT / "migrations" / "0010_tenant_membership_audit_guards.sql"
     db.executescript(tenant_identity_guard.read_text(encoding="utf-8"))
+    tombstone_guard = ROOT / "migrations" / "0011_deleted_entity_audit_tenant_continuity.sql"
+    db.executescript(tombstone_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -589,7 +591,15 @@ def test_asset_source_and_observation_ids_cannot_be_reused_after_audit_history()
             (f"history-{entity_type}", entity_type, entity_id),
         )
         db.execute(f"DELETE FROM {table} WHERE id=?", (entity_id,))
-        # Tombstone events remain valid after the resource row is absent.
+        # A deleted resource's history cannot be reassigned to another tenant.
+        with pytest.raises(sqlite3.IntegrityError, match="tombstone audit tenant must match history"):
+            db.execute(
+                "INSERT INTO audit_events "
+                "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+                "VALUES (?, 'operator', 'entity.deleted', ?, ?, 'tenant-b')",
+                (f"wrong-tombstone-{entity_type}", entity_type, entity_id),
+            )
+        # Correctly attributed tombstones remain valid after deletion.
         db.execute(
             "INSERT INTO audit_events "
             "(id, actor_type, action, entity_type, entity_id, tenant_id) "
@@ -696,3 +706,121 @@ def test_tenant_id_cannot_be_reused_after_legacy_audit_history():
         db.execute(
             "INSERT INTO tenants (id, display_name) VALUES ('tenant-a', 'Recreated tenant A')"
         )
+
+
+@pytest.mark.parametrize("entity_type", ["experiment", "dataset_snapshot"])
+def test_reserved_deleted_entity_tombstones_preserve_prior_tenant_history(entity_type):
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES (?, 'operator', 'entity.created', ?, 'reserved-id', 'tenant-a')",
+        (f"prior-{entity_type}", entity_type),
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="tombstone audit tenant must match history"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES (?, 'operator', 'entity.deleted', ?, 'reserved-id', 'tenant-b')",
+            (f"wrong-tombstone-{entity_type}", entity_type),
+        )
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES (?, 'operator', 'entity.deleted', ?, 'reserved-id', 'tenant-a')",
+        (f"correct-tombstone-{entity_type}", entity_type),
+    )
+
+
+def test_deleted_site_tombstone_cannot_change_prior_tenant_attribution():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_site(db, "tenant-a", "site-tombstone")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('site-prior', 'operator', 'site.created', 'site', 'site-tombstone', 'tenant-a')"
+    )
+    db.execute("DELETE FROM sites WHERE id='site-tombstone'")
+
+    with pytest.raises(sqlite3.IntegrityError, match="tombstone audit tenant must match history"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES ('site-wrong-tombstone', 'operator', 'site.deleted', 'site', 'site-tombstone', 'tenant-b')"
+        )
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('site-correct-tombstone', 'operator', 'site.deleted', 'site', 'site-tombstone', 'tenant-a')"
+    )
+
+
+def test_deleted_membership_tombstone_preserves_prior_tenant_attribution():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-tombstone', 'tenant-a', 'subject-a', 'viewer')"
+    )
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('membership-prior', 'operator', 'membership.created', 'membership', 'membership-tombstone', 'tenant-a')"
+    )
+    db.execute("DELETE FROM tenant_memberships WHERE id='membership-tombstone'")
+
+    with pytest.raises(sqlite3.IntegrityError, match="tombstone audit tenant must match history"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES ('membership-wrong-tombstone', 'operator', 'membership.deleted', 'membership', 'membership-tombstone', 'tenant-b')"
+        )
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('membership-correct-tombstone', 'operator', 'membership.deleted', 'membership', 'membership-tombstone', 'tenant-a')"
+    )
+
+
+def test_deleted_tenant_tombstone_preserves_legacy_history_attribution():
+    db = sqlite3.connect(":memory:")
+    db.execute("PRAGMA foreign_keys = ON")
+    db.executescript(INITIAL.read_text(encoding="utf-8"))
+    db.executescript(TENANT.read_text(encoding="utf-8"))
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_tenant(db, "tenant-c")
+    # Legacy misattributed history can outlive the referenced tenant because
+    # audit_events.tenant_id references tenant-b, not the deleted tenant-a.
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('tenant-prior', 'operator', 'tenant.updated', 'tenant', 'tenant-a', 'tenant-b')"
+    )
+    tenant_identity_guard = ROOT / "migrations" / "0010_tenant_membership_audit_guards.sql"
+    db.executescript(tenant_identity_guard.read_text(encoding="utf-8"))
+    db.execute("DELETE FROM tenants WHERE id='tenant-a'")
+    tombstone_guard = ROOT / "migrations" / "0011_deleted_entity_audit_tenant_continuity.sql"
+    db.executescript(tombstone_guard.read_text(encoding="utf-8"))
+
+    with pytest.raises(sqlite3.IntegrityError, match="tombstone audit tenant must match history"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES ('tenant-wrong-tombstone', 'operator', 'tenant.deleted', 'tenant', 'tenant-a', 'tenant-c')"
+        )
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('tenant-correct-tombstone', 'operator', 'tenant.deleted', 'tenant', 'tenant-a', 'tenant-b')"
+    )
