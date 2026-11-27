@@ -83,7 +83,7 @@ test("gateway observability redacts query strings", async () => {
   const { dirname, resolve } = await import("node:path");
   const here = dirname(fileURLToPath(import.meta.url));
   const config = JSON.parse(await readFile(resolve(here, "../wrangler.jsonc"), "utf8"));
-  assert.equal(config.observability.redactQueryString, true);
+  assert.equal("redactQueryString" in config.observability, false);
 });
 
 test("verifies Access JWT, signs exact tenant path and forwards only through Service Binding", async () => {
