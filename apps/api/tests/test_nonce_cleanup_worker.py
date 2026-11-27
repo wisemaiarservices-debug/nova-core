@@ -26,6 +26,18 @@ class FakeD1:
     def prepare(self, sql): return Statement(self, sql)
 
 
+def test_nonce_cleanup_worker_observability_redacts_query_strings():
+    import json
+    from pathlib import Path
+
+    config = json.loads((Path(__file__).parents[1] / "wrangler.nonce-cleanup.jsonc").read_text())
+    assert config["observability"]["enabled"] is True
+    assert config["observability"]["redactQueryString"] is True
+    assert config["observability"]["head_sampling_rate"] == 0
+    assert config["observability"]["logs"]["enabled"] is True
+    assert config["observability"]["logs"]["invocation_logs"] is False
+
+
 def test_scheduled_time_accepts_integral_python_and_javascript_number_representations():
     assert _scheduled_epoch_seconds(1_800_000_000_999) == 1_800_000_000
     assert _scheduled_epoch_seconds(1_800_000_000_999.0) == 1_800_000_000
