@@ -151,6 +151,7 @@ def test_storage_status_reports_complete_schema_from_read_only_binding():
 
         async def run(self):
             return SimpleNamespace(
+                success=True,
                 results=[{"name": name} for name in sorted(EXPECTED_TABLES)]
             )
 
@@ -174,7 +175,7 @@ def test_storage_status_reports_incomplete_schema():
             return self
 
         async def run(self):
-            return type("Result", (), {"results": [{"name": "sites"}]})()
+            return type("Result", (), {"success": True, "results": [{"name": "sites"}]})()
 
     class FakeDatabase:
         def prepare(self, query):

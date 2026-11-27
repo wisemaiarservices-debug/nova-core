@@ -8,12 +8,35 @@ from typing import Any
 EXPECTED_TABLES = {"sites", "assets", "sources", "observations", "audit_events"}
 
 
+def _python_value(value: Any) -> Any:
+    """Normalize Pyodide JavaScript proxies before validating D1 results."""
+    to_python = getattr(value, "to_py", None)
+    if callable(to_python):
+        try:
+            return to_python()
+        except Exception:
+            return value
+    return value
+
+
 async def inspect_d1_binding(database: Any) -> dict[str, Any]:
     """Inspect required schema tables through the documented D1 binding API."""
     result = await database.prepare(
         "SELECT name FROM sqlite_master WHERE type = ? ORDER BY name"
     ).bind("table").run()
-    rows = list(result.results)
+    success = _python_value(getattr(result, "success", None))
+    if success is None and isinstance(result, dict):
+        success = result.get("success")
+    if success is not True:
+        raise RuntimeError("D1 returned an unsuccessful or incomplete result")
+    rows = _python_value(getattr(result, "results", None))
+    if rows is None and isinstance(result, dict):
+        rows = result.get("results")
+    if not isinstance(rows, list):
+        raise RuntimeError("D1 returned an invalid result set")
+    rows = [_python_value(row) for row in rows]
+    if any(not isinstance(row, dict) for row in rows):
+        raise RuntimeError("D1 returned an invalid result set")
     present = sorted(
         str(row["name"]) for row in rows
         if isinstance(row, dict) and row.get("name") in EXPECTED_TABLES
