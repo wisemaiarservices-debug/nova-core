@@ -98,16 +98,38 @@ async def resolve_private_tenant_read(
     token = _one_bearer_token(authorization_values)
     key_id = _binding(env, "NOVA_INTERNAL_KEY_ID")
     secret = _binding(env, "NOVA_INTERNAL_HMAC_KEY")
+    previous_key_id = _binding(env, "NOVA_INTERNAL_PREVIOUS_KEY_ID")
+    previous_secret = _binding(env, "NOVA_INTERNAL_PREVIOUS_HMAC_KEY")
     issuer = _binding(env, "NOVA_INTERNAL_ISSUER")
     audience = _binding(env, "NOVA_INTERNAL_AUDIENCE")
     database = _binding(env, "DB")
-    if not isinstance(key_id, str) or not isinstance(secret, str):
+    if (
+        not isinstance(key_id, str)
+        or not key_id
+        or not isinstance(secret, str)
+        or len(secret.encode("utf-8")) < 32
+    ):
         raise InternalAssertionError("internal assertion rejected")
+
+    # Optional previous key permits a bounded rotation overlap: deploy the
+    # verifier with both keys first, switch the gateway signer, then retire
+    # the previous key after all old assertions have expired.
+    key_ring = {key_id: secret.encode("utf-8")}
+    if previous_key_id is not None or previous_secret is not None:
+        if (
+            not isinstance(previous_key_id, str)
+            or not previous_key_id
+            or previous_key_id == key_id
+            or not isinstance(previous_secret, str)
+            or len(previous_secret.encode("utf-8")) < 32
+        ):
+            raise InternalAssertionError("internal assertion rejected")
+        key_ring[previous_key_id] = previous_secret.encode("utf-8")
 
     current_time = int(time.time()) if now is None else now
     principal = verify_internal_assertion(
         token,
-        key_ring={key_id: secret.encode("utf-8")},
+        key_ring=key_ring,
         expected_issuer=issuer,
         expected_audience=audience,
         request_method=method,

@@ -96,3 +96,27 @@ remain reachable only through the fixed Service Binding.
 The repository currently contains placeholder D1 IDs and no live Access
 application, private API Worker, gateway Worker or HMAC secrets. These are
 explicit external provisioning blockers, not completed deployment steps.
+
+
+### HMAC key rotation overlap
+
+The private API accepts the active key from `NOVA_INTERNAL_KEY_ID` and
+`NOVA_INTERNAL_HMAC_KEY`. During a rotation only, it may also accept one
+previous key from `NOVA_INTERNAL_PREVIOUS_KEY_ID` and
+`NOVA_INTERNAL_PREVIOUS_HMAC_KEY`. Both previous values must be present,
+the previous ID must differ from the active ID, and each secret must contain
+at least 32 UTF-8 bytes. A partial, duplicate-ID or undersized previous-key
+configuration fails closed before D1 access.
+
+Rotation sequence:
+
+1. Keep the gateway signing with the current key.
+2. Provision the new active key in the gateway and configure the private API
+   to accept the new key as active and the old key as previous (deploy API
+   verifier first; it must accept both).
+3. Switch the gateway signer to the new key ID and secret.
+4. Wait longer than the maximum assertion lifetime plus clock skew, then
+   remove the previous-key bindings from the private API.
+
+Do not configure a previous key indefinitely. Never put either secret in
+plain-text Wrangler vars, repository files, CI output or chat.
