@@ -255,6 +255,69 @@ test("does not forward non-JSON, oversized or unexpected upstream responses", as
   }
 });
 
+test("cancels rejected upstream response bodies before returning", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  const cases = [
+    { status: 404, contentType: "application/json", expected: 404 },
+    { status: 502, contentType: "application/json", expected: 503 },
+    { status: 200, contentType: "text/plain", expected: 503 },
+  ];
+  const cancelled = [];
+  try {
+    for (const item of cases) {
+      const body = new ReadableStream({
+        cancel() {
+          cancelled.push(item.status);
+        },
+      });
+      const result = await gateway.fetch(
+        request({ token: fixture.token }),
+        environment(fixture.jwk, {
+          fetch: async () => new Response(body, {
+            status: item.status,
+            headers: { "content-type": item.contentType },
+          }),
+        }),
+      );
+      assert.equal(result.status, item.expected);
+    }
+    assert.deepEqual(cancelled, [404, 502, 200]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("does not wait for rejected upstream body cancellation to settle", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const body = new ReadableStream({
+      cancel() {
+        return new Promise(() => {});
+      },
+    });
+    const outcome = await Promise.race([
+      gateway.fetch(
+        request({ token: fixture.token }),
+        environment(fixture.jwk, {
+          fetch: async () => new Response(body, {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          }),
+        }),
+      ).then((result) => ({ result })),
+      new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 100)),
+    ]);
+    assert.equal(outcome.timedOut, undefined);
+    assert.equal(outcome.result.status, 404);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("does not disclose upstream response details on Service Binding failure", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;
@@ -299,6 +362,34 @@ test("stops reading chunked private API responses at the gateway size limit", as
     );
     assert.equal(result.status, 502);
     assert.equal(await result.text(), '{"detail":"upstream response rejected"}');
+    assert.equal(cancelled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("cancels upstream body when declared Content-Length is malformed", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  let cancelled = false;
+  try {
+    const body = new ReadableStream({
+      cancel() { cancelled = true; },
+    });
+    const result = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async () => new Response(body, {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "content-length": "invalid",
+          },
+        }),
+      }),
+    );
+    assert.equal(result.status, 502);
     assert.equal(cancelled, true);
   } finally {
     globalThis.fetch = originalFetch;

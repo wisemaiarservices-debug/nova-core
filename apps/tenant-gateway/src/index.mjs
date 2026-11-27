@@ -33,6 +33,17 @@ function configured(env) {
   );
 }
 
+function cancelUpstreamBody(upstreamResponse) {
+  try {
+    const cancellation = upstreamResponse.body?.cancel();
+    if (cancellation && typeof cancellation.catch === "function") {
+      void cancellation.catch(() => {});
+    }
+  } catch {
+    // Cancellation is best-effort; preserve the generic upstream response.
+  }
+}
+
 async function readBoundedUpstreamBody(upstreamResponse) {
   if (!upstreamResponse.body) {
     throw new TypeError("upstream response body is unavailable");
@@ -145,6 +156,7 @@ export default {
       );
       const internalResponse = await env.TENANT_API.fetch(internalRequest);
       if (internalResponse.status === 404) {
+        cancelUpstreamBody(internalResponse);
         return response(404, JSON.stringify({ detail: "not found" }));
       }
       const upstreamContentType = internalResponse.headers
@@ -156,6 +168,7 @@ export default {
         internalResponse.status !== 200 ||
         upstreamContentType !== "application/json"
       ) {
+        cancelUpstreamBody(internalResponse);
         return response(503, JSON.stringify({ detail: "gateway unavailable" }));
       }
 
@@ -169,6 +182,7 @@ export default {
           return response(502, JSON.stringify({ detail: "upstream response rejected" }));
         }
       } catch {
+        cancelUpstreamBody(internalResponse);
         return response(502, JSON.stringify({ detail: "upstream response rejected" }));
       }
       return new Response(body, {
