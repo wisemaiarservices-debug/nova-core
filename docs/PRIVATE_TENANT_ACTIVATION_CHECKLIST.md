@@ -39,6 +39,16 @@ This checklist is the release record for the private tenant API, Cloudflare Acce
 
 **Pass evidence:** database identifier, migration list and successful migration output, schema/constraint inspection, and integration-test results. Do not apply migrations to production until isolated verification passes and a production backup/restore strategy is documented.
 
+**Migration execution and recovery controls (Cloudflare D1):**
+
+- Wrangler applies numbered migrations in order and records applied migration names in the D1 migration-history table. Review the exact pending list against the immutable commit before applying; use the database name, not only a mutable binding alias, to reduce wrong-target risk.
+- D1 migration execution captures a backup after the apply operation. Cloudflare documents that if an individual migration fails, that migration is rolled back while earlier successful migrations remain applied. Treat the migration sequence as a series of separately committed steps, not one all-or-nothing release.
+- Before any remote apply, verify that the target database supports D1 Time Travel and record a usable pre-change recovery point/time. Time Travel is automatic; the documented recovery window is plan-dependent (7 days on Workers Free and 30 days on Workers Paid). Do not upgrade a plan to obtain a longer window.
+- A Time Travel restore overwrites the database in place and cancels in-flight queries. It can discard writes made after the selected recovery point. Treat restore as an incident/change-controlled operation: stop or isolate traffic, identify the exact recovery point, preserve sanitized evidence, confirm data-loss scope, restore, then verify schema, migration history and application behavior before reopening traffic.
+- A failed migration rollback is not a substitute for a tested recovery plan, and a successful SQL apply is not proof that the private API and cleanup Worker use the same database or that replay behavior is correct.
+
+**Additional pass evidence:** exact Wrangler version and target database identity; pre-apply migration list; documented recovery-window eligibility and pre-change recovery point; per-migration apply output; post-apply migration list; schema/index/constraint checks; and a tested isolated restore procedure. Never perform a destructive Time Travel restore against production as part of routine validation.
+
 ## 3. Runtime identity and secret provisioning
 
 - [ ] Set gateway-only `NOVA_ACCESS_TEAM_DOMAIN` and `NOVA_ACCESS_AUDIENCE` to the exact Access team and application values.
