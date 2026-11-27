@@ -153,11 +153,13 @@ async function readBoundedJwksResponse(response) {
   }
   const contentType = response.headers.get("content-type") || "";
   if (!/^application\/(?:json|jwk-set\+json)(?:\s*;|$)/i.test(contentType)) {
+    cancelResponseBody(response);
     throw new TypeError("Cloudflare Access signing keys have an invalid content type");
   }
   const contentLength = response.headers.get("content-length");
   if (contentLength !== null) {
     if (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_JWKS_RESPONSE_BYTES) {
+      cancelResponseBody(response);
       throw new TypeError("Cloudflare Access signing-key response is too large");
     }
   }
