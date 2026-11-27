@@ -93,6 +93,23 @@ remain reachable only through the fixed Service Binding.
 8. Keep production activation blocked until all edge checks, observability
    redaction and rollback evidence are recorded.
 
+## Observability query-string redaction
+
+The pinned Wrangler CLI used by CI (4.168.0) warns that
+`observability.redactQueryString` is an unsupported configuration field and
+ignores it during packaging. Do not treat a value in `wrangler.jsonc` or a
+passing source-level assertion as proof that platform redaction is enabled.
+
+For each deployed Worker, configure query-string redaction through the
+Cloudflare Workers Script Settings API at
+`observability.redact_query_string: true`, then read the setting back
+and record the result. Re-check this after each deployment because Wrangler
+configuration is the source of truth for supported fields, while this setting
+is not currently accepted by the pinned Wrangler schema. Until the setting is
+confirmed on the live Worker, the observability-redaction release gate remains
+open. Never place sensitive values in query strings regardless.
+
+
 The repository currently contains placeholder D1 IDs and no live Access
 application, private API Worker, gateway Worker or HMAC secrets. These are
 explicit external provisioning blockers, not completed deployment steps.

@@ -66,7 +66,7 @@ def test_rate_limit_binding_is_declared_for_worker_and_not_preview():
     assert namespace_id.isdecimal() and int(namespace_id) > 0
     assert binding["simple"] == {"limit": 60, "period": 60}
     assert "ratelimits" not in config["previews"]
-    assert config["observability"]["redactQueryString"] is True
+    assert "redactQueryString" not in config["observability"]
 
 
 def test_cors_wraps_rate_limiter_for_throttled_browser_responses():

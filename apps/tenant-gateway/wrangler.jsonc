@@ -13,7 +13,6 @@
   "observability": {
     "enabled": true,
     "head_sampling_rate": 0,
-    "redactQueryString": true,
     "logs": {
       "enabled": true,
       "invocation_logs": false
