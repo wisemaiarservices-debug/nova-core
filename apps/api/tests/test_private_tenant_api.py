@@ -213,6 +213,62 @@ def test_missing_or_duplicate_authorization_is_rejected_before_database_access()
     db.close()
 
 
+def test_previous_hmac_key_is_accepted_during_rotation_overlap():
+    db = SQLiteD1()
+    previous_secret = "previous-private-tenant-test-secret-32-bytes"
+    previous_key_id = "gateway-key-2026-10"
+    token = signed_assertion()
+    _header, payload, _signature = token.split(".")
+    previous_header = b64url(json.dumps(
+        {"alg": "HS256", "typ": "NOVA-Internal-Request", "kid": previous_key_id},
+        separators=(",", ":"),
+    ).encode("utf-8"))
+    signing_input = f"{previous_header}.{payload}".encode("ascii")
+    signature = hmac.new(
+        previous_secret.encode("utf-8"), signing_input, hashlib.sha256
+    ).digest()
+    previous_token = f"{previous_header}.{payload}.{b64url(signature)}"
+    runtime = env(db)
+    runtime["NOVA_INTERNAL_PREVIOUS_KEY_ID"] = previous_key_id
+    runtime["NOVA_INTERNAL_PREVIOUS_HMAC_KEY"] = previous_secret
+
+    result = __import__("asyncio").run(resolve_private_tenant_read(
+        method="GET", raw_path=PATH,
+        authorization_values=[f"Bearer {previous_token}".encode("ascii")],
+        env=runtime, tenant_id="tenant-a", resource_collection="sites",
+        resource_id="site-a", now=NOW,
+    ))
+    assert result["id"] == "site-a"
+    db.close()
+
+
+@pytest.mark.parametrize(
+    ("previous_key_id", "previous_secret"),
+    [
+        ("gateway-key-2026-10", None),
+        (None, "previous-private-tenant-test-secret-32-bytes"),
+        (KEY_ID, "previous-private-tenant-test-secret-32-bytes"),
+        ("gateway-key-2026-10", "too-short"),
+    ],
+)
+def test_invalid_previous_hmac_key_configuration_fails_closed(
+    previous_key_id, previous_secret
+):
+    db = SQLiteD1()
+    runtime = env(db)
+    runtime["NOVA_INTERNAL_PREVIOUS_KEY_ID"] = previous_key_id
+    runtime["NOVA_INTERNAL_PREVIOUS_HMAC_KEY"] = previous_secret
+    with pytest.raises(Exception, match="internal assertion rejected"):
+        __import__("asyncio").run(resolve_private_tenant_read(
+            method="GET", raw_path=PATH,
+            authorization_values=[f"Bearer {signed_assertion()}".encode("ascii")],
+            env=runtime, tenant_id="tenant-a", resource_collection="sites",
+            resource_id="site-a", now=NOW,
+        ))
+    assert db.calls == []
+    db.close()
+
+
 def test_missing_database_binding_fails_closed():
     with pytest.raises(Exception, match="storage is unavailable"):
         __import__("asyncio").run(resolve_private_tenant_read(
