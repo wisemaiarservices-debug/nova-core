@@ -1025,6 +1025,22 @@ def test_revoked_membership_cannot_be_reactivated_with_stale_grants():
     ).fetchone() == ("revoked",)
     assert db.execute(
         "SELECT COUNT(*) FROM tenant_resource_grants WHERE id='grant-revoked'"
+    ).fetchone() == (0,)
+
+    # Revocation releases the principal's unique (tenant_id, subject) slot.
+    # A replacement must use a new membership ID and receive fresh grants.
+    db.execute("DELETE FROM tenant_memberships WHERE id='membership-revoked'")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-replacement', 'tenant-a', 'subject-revoked', 'viewer')"
+    )
+    db.execute(
+        "INSERT INTO tenant_resource_grants "
+        "(id, tenant_id, subject, resource_type, resource_id, action) "
+        "VALUES ('grant-replacement', 'tenant-a', 'subject-revoked', 'site', 'site-a', 'read')"
+    )
+    assert db.execute(
+        "SELECT COUNT(*) FROM tenant_resource_grants WHERE id='grant-replacement'"
     ).fetchone() == (1,)
 
 
