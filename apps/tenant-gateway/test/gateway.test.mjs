@@ -368,6 +368,34 @@ test("stops reading chunked private API responses at the gateway size limit", as
   }
 });
 
+test("cancels upstream body when declared Content-Length is malformed", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  let cancelled = false;
+  try {
+    const body = new ReadableStream({
+      cancel() { cancelled = true; },
+    });
+    const result = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async () => new Response(body, {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "content-length": "invalid",
+          },
+        }),
+      }),
+    );
+    assert.equal(result.status, 502);
+    assert.equal(cancelled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects oversized declared private API response before streaming", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;
