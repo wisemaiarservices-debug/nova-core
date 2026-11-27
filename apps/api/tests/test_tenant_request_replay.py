@@ -19,6 +19,7 @@ from apps.api.services.tenant_request_replay import (
 ROOT = Path(__file__).resolve().parents[1]
 INITIAL = ROOT / "migrations" / "0001_initial.sql"
 TENANT = ROOT / "migrations" / "0002_tenant_isolation.sql"
+SITE_GUARD = ROOT / "migrations" / "0004_site_tenant_transfer_guard.sql"
 REPLAY = ROOT / "migrations" / "0003_internal_request_nonces.sql"
 REPLAY_HARDENING = ROOT / "migrations" / "0005_nonce_jti_not_null.sql"
 
@@ -29,6 +30,7 @@ def database(path=":memory:"):
     db.execute("PRAGMA busy_timeout = 10000")
     db.executescript(INITIAL.read_text(encoding="utf-8"))
     db.executescript(TENANT.read_text(encoding="utf-8"))
+    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
     db.executescript(REPLAY.read_text(encoding="utf-8"))
     db.executescript(REPLAY_HARDENING.read_text(encoding="utf-8"))
     return db
@@ -64,6 +66,7 @@ def test_nonce_hardening_migration_discards_unaddressable_null_rows_and_preserve
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(INITIAL.read_text(encoding="utf-8"))
     db.executescript(TENANT.read_text(encoding="utf-8"))
+    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
     db.executescript(REPLAY.read_text(encoding="utf-8"))
     # SQLite permits NULL in a TEXT PRIMARY KEY unless NOT NULL is explicit.
     db.execute(
