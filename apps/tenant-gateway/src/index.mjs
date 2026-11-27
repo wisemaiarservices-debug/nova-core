@@ -129,6 +129,9 @@ export default {
     try {
       // The fixed internal origin and Service Binding prevent client-controlled
       // destination selection. Query strings and request bodies are not forwarded.
+      if (typeof AbortSignal === "undefined" || typeof AbortSignal.timeout !== "function") {
+        throw new TypeError("private tenant request timeout is unavailable");
+      }
       const internalRequest = new Request(
         `https://tenant-api.internal${url.pathname}`,
         {
@@ -137,6 +140,7 @@ export default {
             authorization: `Bearer ${assertion}`,
             accept: "application/json",
           },
+          signal: AbortSignal.timeout(5000),
         },
       );
       const internalResponse = await env.TENANT_API.fetch(internalRequest);

@@ -374,3 +374,38 @@ test("accepts a valid numeric Content-Length on bounded private API responses", 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+
+test("bounds private Service Binding requests with a five-second abort signal", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  const originalTimeout = AbortSignal.timeout;
+  const controller = new AbortController();
+  let timeoutMs;
+  let capturedSignal;
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutMs = milliseconds;
+    return controller.signal;
+  };
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const result = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async (internalRequest) => {
+          capturedSignal = internalRequest.signal;
+          assert.equal(capturedSignal, controller.signal);
+          throw new DOMException("request timed out", "AbortError");
+        },
+      }),
+    );
+    assert.equal(timeoutMs, 5000);
+    assert.equal(capturedSignal, controller.signal);
+    assert.equal(result.status, 503);
+    assert.equal(await result.text(), '{"detail":"gateway unavailable"}');
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+    globalThis.fetch = originalFetch;
+  }
+});
