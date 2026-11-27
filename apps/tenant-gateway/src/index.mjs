@@ -182,6 +182,7 @@ export default {
           return response(502, JSON.stringify({ detail: "upstream response rejected" }));
         }
       } catch {
+        cancelUpstreamBody(internalResponse);
         return response(502, JSON.stringify({ detail: "upstream response rejected" }));
       }
       return new Response(body, {
