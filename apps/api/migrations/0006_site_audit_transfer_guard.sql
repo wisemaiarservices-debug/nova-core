@@ -12,7 +12,6 @@ WHEN NEW.tenant_id IS NOT OLD.tenant_id
     FROM audit_events e
     WHERE e.entity_type = 'site'
       AND e.entity_id = OLD.id
-      AND e.tenant_id = OLD.tenant_id
   )
 BEGIN
   SELECT RAISE(ABORT, 'site tenant cannot change while audit history exists');
