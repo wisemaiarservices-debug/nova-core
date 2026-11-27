@@ -28,6 +28,8 @@ def database():
     db.executescript(tenant_identity_guard.read_text(encoding="utf-8"))
     tombstone_guard = ROOT / "migrations" / "0011_deleted_entity_audit_tenant_continuity.sql"
     db.executescript(tombstone_guard.read_text(encoding="utf-8"))
+    related_transfer_guard = ROOT / "migrations" / "0012_related_entity_audit_tenant_transfer_guards.sql"
+    db.executescript(related_transfer_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -824,3 +826,60 @@ def test_deleted_tenant_tombstone_preserves_legacy_history_attribution():
         "(id, actor_type, action, entity_type, entity_id, tenant_id) "
         "VALUES ('tenant-correct-tombstone', 'operator', 'tenant.deleted', 'tenant', 'tenant-a', 'tenant-b')"
     )
+
+
+@pytest.mark.parametrize("entity_type", ["asset", "source", "observation"])
+def test_related_entity_tenant_transfer_is_blocked_after_audit_history(entity_type):
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_site(db, "tenant-a", "site-a")
+    seed_site(db, "tenant-b", "site-b")
+    db.execute(
+        "INSERT INTO assets (id, site_id, name, asset_type, tenant_id) "
+        "VALUES ('asset-a', 'site-a', 'Asset A', 'meter', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, tenant_id) "
+        "VALUES ('source-a', 'site-a', 'nova-core', 'operator', 'manual', 'Source A', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO observations "
+        "(id, site_id, source_id, module, metric, unit, observed_at, idempotency_key, provenance_json, tenant_id) "
+        "VALUES ('observation-a', 'site-a', 'source-a', 'nova-core', 'temperature', 'degC', "
+        "'2026-01-01T00:00:00Z', 'observation-key', '{}', 'tenant-a')"
+    )
+    entity_id = {
+        "asset": "asset-a",
+        "source": "source-a",
+        "observation": "observation-a",
+    }[entity_type]
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES (?, 'operator', 'entity.updated', ?, ?, 'tenant-a')",
+        (f"audit-{entity_type}", entity_type, entity_id),
+    )
+
+    if entity_type == "asset":
+        statement = "UPDATE assets SET tenant_id='tenant-b', site_id='site-b' WHERE id='asset-a'"
+    elif entity_type == "source":
+        statement = "UPDATE sources SET tenant_id='tenant-b', site_id='site-b' WHERE id='source-a'"
+    else:
+        statement = (
+            "UPDATE observations SET tenant_id='tenant-b', site_id='site-b', source_id='source-b' "
+            "WHERE id='observation-a'"
+        )
+        db.execute(
+            "INSERT INTO sources (id, site_id, module, provider, source_type, display_name, tenant_id) "
+            "VALUES ('source-b', 'site-b', 'nova-core', 'operator', 'manual', 'Source B', 'tenant-b')"
+        )
+
+    with pytest.raises(sqlite3.IntegrityError, match=f"{entity_type} tenant cannot change while audit history exists"):
+        db.execute(statement)
+
+    owner = db.execute(
+        f"SELECT tenant_id FROM { {'asset':'assets','source':'sources','observation':'observations'}[entity_type] } WHERE id=?",
+        (entity_id,),
+    ).fetchone()
+    assert owner == ("tenant-a",)
