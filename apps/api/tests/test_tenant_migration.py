@@ -20,6 +20,8 @@ def database():
     db.executescript(audit_guard.read_text(encoding="utf-8"))
     site_audit_tenant_guard = ROOT / "migrations" / "0007_site_audit_tenant_match_guard.sql"
     db.executescript(site_audit_tenant_guard.read_text(encoding="utf-8"))
+    site_audit_id_guard = ROOT / "migrations" / "0008_site_id_reuse_guard.sql"
+    db.executescript(site_audit_id_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -455,6 +457,30 @@ def test_legacy_unassigned_site_audit_history_blocks_tenant_assignment():
     assert db.execute(
         "SELECT tenant_id FROM audit_events WHERE id='legacy-site-event'"
     ).fetchone() == (None,)
+
+def test_site_id_cannot_be_reused_after_audit_history_exists():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_site(db, "tenant-a", "site-reused")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('event-before-delete', 'operator', 'site.update', 'site', 'site-reused', 'tenant-a')"
+    )
+
+    db.execute("DELETE FROM sites WHERE id='site-reused'")
+
+    with pytest.raises(sqlite3.IntegrityError, match="site ID cannot be reused while audit history exists"):
+        seed_site(db, "tenant-b", "site-reused")
+
+    assert db.execute(
+        "SELECT COUNT(*) FROM sites WHERE id='site-reused'"
+    ).fetchone() == (0,)
+    assert db.execute(
+        "SELECT tenant_id FROM audit_events WHERE id='event-before-delete'"
+    ).fetchone() == ("tenant-a",)
+
 
 def test_site_audit_event_tenant_must_match_existing_site_owner():
     db = database()
