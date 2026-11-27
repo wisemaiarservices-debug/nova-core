@@ -27,6 +27,6 @@
     "exclude": ["**/*.pyc", "**/*.dist-info/top_level.txt", "**/*.dist-info/entry_points.txt"]
   },
   "observability": {
-    "enabled": true,
+    "enabled": true
   }
 }
