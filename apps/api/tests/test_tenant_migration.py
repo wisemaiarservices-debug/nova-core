@@ -16,6 +16,8 @@ def database():
     db.executescript(TENANT.read_text(encoding="utf-8"))
     ownership = ROOT / "migrations" / "0004_site_tenant_transfer_guard.sql"
     db.executescript(ownership.read_text(encoding="utf-8"))
+    audit_guard = ROOT / "migrations" / "0006_site_audit_transfer_guard.sql"
+    db.executescript(audit_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -391,9 +393,61 @@ def test_legacy_site_without_dependent_records_can_receive_approved_tenant():
     db.executescript(TENANT.read_text(encoding="utf-8"))
     ownership = ROOT / "migrations" / "0004_site_tenant_transfer_guard.sql"
     db.executescript(ownership.read_text(encoding="utf-8"))
+    audit_guard = ROOT / "migrations" / "0006_site_audit_transfer_guard.sql"
+    db.executescript(audit_guard.read_text(encoding="utf-8"))
     seed_tenant(db, "tenant-a")
 
     db.execute("UPDATE sites SET tenant_id='tenant-a' WHERE id='legacy-site'")
     assert db.execute(
         "SELECT tenant_id FROM sites WHERE id='legacy-site'"
     ).fetchone() == ("tenant-a",)
+
+ 
+def test_site_tenant_transfer_is_blocked_when_site_audit_history_exists():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_site(db, "tenant-a", "site-a")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('event-site-a', 'operator', 'site.update', 'site', 'site-a', 'tenant-a')"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="audit history"):
+        db.execute("UPDATE sites SET tenant_id='tenant-b' WHERE id='site-a'")
+
+    assert db.execute(
+        "SELECT tenant_id FROM sites WHERE id='site-a'"
+    ).fetchone() == ("tenant-a",)
+    assert db.execute(
+        "SELECT tenant_id FROM audit_events WHERE id='event-site-a'"
+    ).fetchone() == ("tenant-a",)
+
+
+def test_legacy_unassigned_site_audit_history_blocks_tenant_assignment():
+    db = sqlite3.connect(":memory:")
+    db.execute("PRAGMA foreign_keys = ON")
+    db.executescript(INITIAL.read_text(encoding="utf-8"))
+    db.execute("INSERT INTO sites (id, name) VALUES ('legacy-site', 'Legacy')")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id) "
+        "VALUES ('legacy-site-event', 'system', 'site.created', 'site', 'legacy-site')"
+    )
+    db.executescript(TENANT.read_text(encoding="utf-8"))
+    ownership = ROOT / "migrations" / "0004_site_tenant_transfer_guard.sql"
+    db.executescript(ownership.read_text(encoding="utf-8"))
+    audit_guard = ROOT / "migrations" / "0006_site_audit_transfer_guard.sql"
+    db.executescript(audit_guard.read_text(encoding="utf-8"))
+    seed_tenant(db, "tenant-a")
+
+    with pytest.raises(sqlite3.IntegrityError, match="audit history"):
+        db.execute("UPDATE sites SET tenant_id='tenant-a' WHERE id='legacy-site'")
+
+    assert db.execute(
+        "SELECT tenant_id FROM sites WHERE id='legacy-site'"
+    ).fetchone() == (None,)
+    assert db.execute(
+        "SELECT tenant_id FROM audit_events WHERE id='legacy-site-event'"
+    ).fetchone() == (None,)
