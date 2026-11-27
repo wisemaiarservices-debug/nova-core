@@ -3,16 +3,37 @@
   "name": "nova-core-tenant-nonce-cleanup",
   "main": "nonce_cleanup_worker.py",
   "compatibility_date": "2026-11-10",
-  "compatibility_flags": ["python_workers"],
+  "compatibility_flags": [
+    "python_workers"
+  ],
   "workers_dev": false,
-  "d1_databases": [{
-    "binding": "TENANT_DB",
-    "database_name": "nova-core-tenant-db",
-    "database_id": "00000000-0000-0000-0000-000000000000",
-    "migrations_dir": "migrations"
-  }],
-  "triggers": { "crons": ["17 * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "TENANT_DB",
+      "database_name": "nova-core-tenant-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "17 * * * *"
+    ]
+  },
   "python_modules": {
-    "exclude": ["**/*.pyc", "**/*.dist-info/top_level.txt", "**/*.dist-info/entry_points.txt"]
+    "exclude": [
+      "**/*.pyc",
+      "**/*.dist-info/top_level.txt",
+      "**/*.dist-info/entry_points.txt"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "redactQueryString": true,
+    "head_sampling_rate": 0,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
   }
 }
