@@ -102,7 +102,7 @@ passing source-level assertion as proof that platform redaction is enabled.
 
 For each deployed Worker, configure query-string redaction through the
 Cloudflare Workers Script Settings API at
-`observability.logs.redact_query_string: true`, then read the setting back
+`observability.redact_query_string: true`, then read the setting back
 and record the result. Re-check this after each deployment because Wrangler
 configuration is the source of truth for supported fields, while this setting
 is not currently accepted by the pinned Wrangler schema. Until the setting is

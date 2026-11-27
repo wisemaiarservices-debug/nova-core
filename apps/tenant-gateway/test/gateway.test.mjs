@@ -77,13 +77,23 @@ function request({ token, path = PATH, method = "GET" } = {}) {
   return new Request(`https://tenant-gateway.example${path}`, { method, headers });
 }
 
-test("gateway observability redacts query strings", async () => {
+test("gateway Wrangler config does not claim unsupported query-string redaction", async () => {
   const { readFile } = await import("node:fs/promises");
   const { fileURLToPath } = await import("node:url");
   const { dirname, resolve } = await import("node:path");
   const here = dirname(fileURLToPath(import.meta.url));
   const config = JSON.parse(await readFile(resolve(here, "../wrangler.jsonc"), "utf8"));
   assert.equal("redactQueryString" in config.observability, false);
+});
+
+test("gateway documentation names the actual Script Settings API redaction field", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, resolve } = await import("node:path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const readme = await readFile(resolve(here, "../README.md"), "utf8");
+  assert.match(readme, /observability\\.redact_query_string: true/);
+  assert.doesNotMatch(readme, /observability\\.logs\\.redact_query_string/);
 });
 
 test("verifies Access JWT, signs exact tenant path and forwards only through Service Binding", async () => {
