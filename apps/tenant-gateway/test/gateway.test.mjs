@@ -289,6 +289,35 @@ test("cancels rejected upstream response bodies before returning", async () => {
   }
 });
 
+test("does not wait for rejected upstream body cancellation to settle", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const body = new ReadableStream({
+      cancel() {
+        return new Promise(() => {});
+      },
+    });
+    const outcome = await Promise.race([
+      gateway.fetch(
+        request({ token: fixture.token }),
+        environment(fixture.jwk, {
+          fetch: async () => new Response(body, {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          }),
+        }),
+      ).then((result) => ({ result })),
+      new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 100)),
+    ]);
+    assert.equal(outcome.timedOut, undefined);
+    assert.equal(outcome.result.status, 404);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("does not disclose upstream response details on Service Binding failure", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;

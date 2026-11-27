@@ -33,9 +33,12 @@ function configured(env) {
   );
 }
 
-async function cancelUpstreamBody(upstreamResponse) {
+function cancelUpstreamBody(upstreamResponse) {
   try {
-    await upstreamResponse.body?.cancel();
+    const cancellation = upstreamResponse.body?.cancel();
+    if (cancellation && typeof cancellation.catch === "function") {
+      void cancellation.catch(() => {});
+    }
   } catch {
     // Cancellation is best-effort; preserve the generic upstream response.
   }
@@ -153,7 +156,7 @@ export default {
       );
       const internalResponse = await env.TENANT_API.fetch(internalRequest);
       if (internalResponse.status === 404) {
-        await cancelUpstreamBody(internalResponse);
+        cancelUpstreamBody(internalResponse);
         return response(404, JSON.stringify({ detail: "not found" }));
       }
       const upstreamContentType = internalResponse.headers
