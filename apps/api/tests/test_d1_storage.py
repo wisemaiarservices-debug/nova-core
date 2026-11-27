@@ -85,3 +85,20 @@ def test_storage_status_reports_unavailable_for_failed_d1_envelope():
     assert status["status"] == "unavailable"
     assert status["present_tables"] == []
     assert status["writes_performed"] is False
+
+
+def test_inspect_d1_binding_normalizes_pyodide_result_proxies():
+    class Proxy:
+        def __init__(self, value):
+            self.value = value
+
+        def to_py(self):
+            return self.value
+
+    class ProxyResult:
+        success = Proxy(True)
+        results = Proxy([Proxy({"name": name}) for name in EXPECTED_TABLES])
+
+    status = asyncio.run(inspect_d1_binding(Database(ProxyResult())))
+    assert status["status"] == "ready"
+    assert status["present_tables"] == sorted(EXPECTED_TABLES)
