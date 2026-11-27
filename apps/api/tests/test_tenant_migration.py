@@ -26,6 +26,8 @@ def database():
     db.executescript(related_audit_guard.read_text(encoding="utf-8"))
     tenant_identity_guard = ROOT / "migrations" / "0010_tenant_membership_audit_guards.sql"
     db.executescript(tenant_identity_guard.read_text(encoding="utf-8"))
+    tombstone_guard = ROOT / "migrations" / "0011_deleted_entity_audit_tenant_continuity.sql"
+    db.executescript(tombstone_guard.read_text(encoding="utf-8"))
     return db
 
 
