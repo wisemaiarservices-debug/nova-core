@@ -108,6 +108,33 @@ def test_missing_client_ip_fails_closed_and_does_not_trust_forwarded_for(monkeyp
     assert reached is False
 
 
+@pytest.mark.parametrize("headers", [
+    [(b"cf-connecting-ip", b"203.0.113.8"), (b"cf-connecting-ip", b"203.0.113.9")],
+    [(b"cf-connecting-ip", b" " * 46)],
+    [(b"cf-connecting-ip", b" 203.0.113.8")],
+    [(b"cf-connecting-ip", b"203.0.113.8 ")],
+    [(b"cf-connecting-ip", b"203.0.113.8\\xff")],
+])
+def test_ambiguous_or_unbounded_cloudflare_client_ip_fails_closed(headers, monkeypatch):
+    install_pyodide_bridge(monkeypatch)
+
+    class Limiter:
+        called = False
+        async def limit(self, options):
+            self.called = True
+            return SimpleNamespace(success=True)
+
+    limiter = Limiter()
+    messages, reached = asyncio.run(invoke(
+        PublicApiRateLimitMiddleware(None),
+        make_scope(headers=headers, env=SimpleNamespace(NOVA_PUBLIC_API_LIMITER=limiter)),
+    ))
+    assert messages[0]["status"] == 503
+    assert b"client_identity_unavailable" in messages[1]["body"]
+    assert limiter.called is False
+    assert reached is False
+
+
 def test_uses_cloudflare_ip_and_route_scoped_key(monkeypatch):
     install_pyodide_bridge(monkeypatch)
 

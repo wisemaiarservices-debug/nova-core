@@ -55,14 +55,30 @@ class PublicApiRateLimitMiddleware:
             await self._reject(send, 503, "rate_limiter_unavailable")
             return
 
-        headers = {
-            key.decode("latin-1").lower(): value.decode("latin-1")
+        client_ip_headers = [
+            value
             for key, value in scope.get("headers", [])
-        }
-        raw_ip = headers.get("cf-connecting-ip", "").strip()
+            if isinstance(key, bytes) and key.lower() == b"cf-connecting-ip"
+        ]
+        # Cloudflare emits one canonical address. Reject duplicates, whitespace,
+        # non-ASCII bytes, and overlong values before parsing or key construction.
+        if len(client_ip_headers) != 1:
+            await self._reject(send, 503, "client_identity_unavailable")
+            return
+        raw_ip_bytes = client_ip_headers[0]
+        if (
+            not isinstance(raw_ip_bytes, bytes)
+            or not 1 <= len(raw_ip_bytes) <= 45
+            or any(byte > 0x7F for byte in raw_ip_bytes)
+        ):
+            await self._reject(send, 503, "client_identity_unavailable")
+            return
         try:
+            raw_ip = raw_ip_bytes.decode("ascii")
+            if raw_ip != raw_ip.strip():
+                raise ValueError("non-canonical client address")
             client_ip = str(ipaddress.ip_address(raw_ip))
-        except ValueError:
+        except (UnicodeDecodeError, ValueError):
             await self._reject(send, 503, "client_identity_unavailable")
             return
 
