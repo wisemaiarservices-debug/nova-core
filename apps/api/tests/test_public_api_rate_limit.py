@@ -114,6 +114,7 @@ def test_missing_client_ip_fails_closed_and_does_not_trust_forwarded_for(monkeyp
     [(b"cf-connecting-ip", b" 203.0.113.8")],
     [(b"cf-connecting-ip", b"203.0.113.8 ")],
     [(b"cf-connecting-ip", b"203.0.113.8\\xff")],
+    [(b"cf-connecting-ip", b"203.0.113.8" + bytes([0xFF]))],
 ])
 def test_ambiguous_or_unbounded_cloudflare_client_ip_fails_closed(headers, monkeypatch):
     install_pyodide_bridge(monkeypatch)
