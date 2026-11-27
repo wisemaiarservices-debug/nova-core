@@ -24,6 +24,8 @@ def database():
     db.executescript(site_audit_id_guard.read_text(encoding="utf-8"))
     related_audit_guard = ROOT / "migrations" / "0009_related_entity_audit_guards.sql"
     db.executescript(related_audit_guard.read_text(encoding="utf-8"))
+    tenant_identity_guard = ROOT / "migrations" / "0010_tenant_membership_audit_guards.sql"
+    db.executescript(tenant_identity_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -611,4 +613,86 @@ def test_asset_source_and_observation_ids_cannot_be_reused_after_audit_history()
             "(id, site_id, source_id, module, metric, unit, observed_at, idempotency_key, provenance_json, tenant_id) "
             "VALUES ('obs-a', 'site-a', 'source-a', 'neoagro', 'temperature', 'degC', "
             "'2026-01-02T00:00:00Z', 'obs-key-b', '{}', 'tenant-a')"
+        )
+
+def test_tenant_and_membership_audit_events_must_match_entity_owner():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-a', 'tenant-a', 'subject-a', 'viewer')"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="audit event tenant must match entity"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES ('wrong-tenant', 'operator', 'tenant.update', 'tenant', 'tenant-a', 'tenant-b')"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="audit event tenant must match entity"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES ('wrong-membership', 'operator', 'membership.update', 'membership', 'membership-a', 'tenant-b')"
+        )
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('correct-tenant', 'operator', 'tenant.update', 'tenant', 'tenant-a', 'tenant-a')"
+    )
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('correct-membership', 'operator', 'membership.update', 'membership', 'membership-a', 'tenant-a')"
+    )
+
+
+def test_membership_tenant_transfer_and_id_reuse_are_blocked_after_audit_history():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-a', 'tenant-a', 'subject-a', 'viewer')"
+    )
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('membership-history', 'operator', 'membership.created', 'membership', 'membership-a', 'tenant-a')"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="membership tenant cannot change while audit history exists"):
+        db.execute(
+            "UPDATE tenant_memberships SET tenant_id='tenant-b' WHERE id='membership-a'"
+        )
+
+    db.execute("DELETE FROM tenant_memberships WHERE id='membership-a'")
+    with pytest.raises(sqlite3.IntegrityError, match="membership ID cannot be reused"):
+        db.execute(
+            "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+            "VALUES ('membership-a', 'tenant-b', 'subject-b', 'viewer')"
+        )
+
+
+def test_tenant_id_cannot_be_reused_after_legacy_audit_history():
+    db = sqlite3.connect(":memory:")
+    db.execute("PRAGMA foreign_keys = ON")
+    db.executescript(INITIAL.read_text(encoding="utf-8"))
+    db.executescript(TENANT.read_text(encoding="utf-8"))
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    # Simulate a legacy misattributed event that predates migration 0010.
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('legacy-tenant-history', 'operator', 'tenant.update', 'tenant', 'tenant-a', 'tenant-b')"
+    )
+    tenant_identity_guard = ROOT / "migrations" / "0010_tenant_membership_audit_guards.sql"
+    db.executescript(tenant_identity_guard.read_text(encoding="utf-8"))
+    db.execute("DELETE FROM tenants WHERE id='tenant-a'")
+    with pytest.raises(sqlite3.IntegrityError, match="tenant ID cannot be reused"):
+        db.execute(
+            "INSERT INTO tenants (id, display_name) VALUES ('tenant-a', 'Recreated tenant A')"
         )

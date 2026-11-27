@@ -30,6 +30,7 @@ The shared `apps/api/migrations` directory contains exactly these ordered migrat
 7. `0007_site_audit_tenant_match_guard.sql` — requires new audit events for an existing site to use that site's current tenant ID; permits events for absent sites so post-deletion history can still be recorded.
 8. `0008_site_id_reuse_guard.sql` — prevents recreating a deleted site ID when append-only site audit history already references that ID, avoiding reassignment of historical identity to another tenant.
 9. `0009_related_entity_audit_guards.sql` — extends audit-tenant attribution checks and historical-ID reuse protection to assets, sources and observations.
+10. `0010_tenant_membership_audit_guards.sql` — aligns tenant and membership audit attribution with current ownership, prevents membership tenant transfer after audit history, and blocks tenant/membership ID reuse or identity changes while history exists.
 
 Both tenant API and cleanup Worker configs point `migrations_dir` to `migrations`. The cleanup Worker must use the same database and migration history as the private API.
 
@@ -42,6 +43,7 @@ Both tenant API and cleanup Worker configs point `migrations_dir` to `migrations
 - **0007 site audit attribution:** new audit events for an existing site must carry the same tenant ID as the site. Events whose site row is already absent remain permitted to support post-deletion/tombstone history.
 - **0008 site ID reuse:** a deleted site identifier cannot be recreated while any append-only site audit event still references it. A future restore/reuse workflow must explicitly reconcile the historical identity and tenant ownership rather than silently attaching old history to a new site.
 - **0009 related entity audit integrity:** new audit events for existing assets, sources and observations must carry the same tenant ID as the referenced entity. Their identifiers cannot be reused after deletion while append-only audit history remains. Post-deletion tombstone events remain permitted when the entity row is absent.
+- **0010 tenant and membership audit integrity:** tenant audit events must use the tenant's own ID as tenant_id; membership audit events must use the membership's current tenant. Membership tenant transfers, and tenant/membership ID changes or reuse, are blocked while append-only audit history exists.
 - **0003 production prohibition:** the current migration header explicitly says it must only be applied to a disposable/staging D1 database. Therefore **0003 is not currently authorized for production**, even though both Worker configs include the shared migrations directory. Before any production private-tenant deployment, revise that migration's release contract through a reviewed source change, prove the migration on isolated D1, and obtain a separate explicit production migration gate. Do not apply 0003 to production under the current source contract.
 
 A controlled isolated-database command sequence, run from the repository root with an environment-specific config copy pointing to a verified disposable/staging database, is:
