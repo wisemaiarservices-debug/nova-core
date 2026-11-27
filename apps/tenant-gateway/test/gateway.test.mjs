@@ -539,3 +539,35 @@ test("bounds private Service Binding requests with a five-second abort signal", 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("returns promptly when oversized declared upstream body cancellation never settles", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const body = new ReadableStream({
+      cancel() {
+        return new Promise(() => {});
+      },
+    });
+    const outcome = await Promise.race([
+      gateway.fetch(
+        request({ token: fixture.token }),
+        environment(fixture.jwk, {
+          fetch: async () => new Response(body, {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "content-length": String(1024 * 1024 + 1),
+            },
+          }),
+        }),
+      ).then((result) => ({ result })),
+      new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 100)),
+    ]);
+    assert.equal(outcome.timedOut, undefined);
+    assert.equal(outcome.result.status, 502);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
