@@ -587,6 +587,13 @@ def test_asset_source_and_observation_ids_cannot_be_reused_after_audit_history()
             (f"history-{entity_type}", entity_type, entity_id),
         )
         db.execute(f"DELETE FROM {table} WHERE id=?", (entity_id,))
+        # Tombstone events remain valid after the resource row is absent.
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES (?, 'operator', 'entity.deleted', ?, ?, 'tenant-a')",
+            (f"tombstone-{entity_type}", entity_type, entity_id),
+        )
 
     with pytest.raises(sqlite3.IntegrityError, match="asset ID cannot be reused"):
         db.execute(
