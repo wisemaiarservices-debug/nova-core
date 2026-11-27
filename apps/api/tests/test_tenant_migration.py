@@ -18,6 +18,8 @@ def database():
     db.executescript(ownership.read_text(encoding="utf-8"))
     audit_guard = ROOT / "migrations" / "0006_site_audit_transfer_guard.sql"
     db.executescript(audit_guard.read_text(encoding="utf-8"))
+    site_audit_tenant_guard = ROOT / "migrations" / "0007_site_audit_tenant_match_guard.sql"
+    db.executescript(site_audit_tenant_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -395,6 +397,8 @@ def test_legacy_site_without_dependent_records_can_receive_approved_tenant():
     db.executescript(ownership.read_text(encoding="utf-8"))
     audit_guard = ROOT / "migrations" / "0006_site_audit_transfer_guard.sql"
     db.executescript(audit_guard.read_text(encoding="utf-8"))
+    site_audit_tenant_guard = ROOT / "migrations" / "0007_site_audit_tenant_match_guard.sql"
+    db.executescript(site_audit_tenant_guard.read_text(encoding="utf-8"))
     seed_tenant(db, "tenant-a")
 
     db.execute("UPDATE sites SET tenant_id='tenant-a' WHERE id='legacy-site'")
@@ -451,3 +455,40 @@ def test_legacy_unassigned_site_audit_history_blocks_tenant_assignment():
     assert db.execute(
         "SELECT tenant_id FROM audit_events WHERE id='legacy-site-event'"
     ).fetchone() == (None,)
+
+def test_site_audit_event_tenant_must_match_existing_site_owner():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_site(db, "tenant-a", "site-a")
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('event-site-correct', 'operator', 'site.update', 'site', 'site-a', 'tenant-a')"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="site audit event tenant must match site"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES ('event-site-wrong', 'operator', 'site.update', 'site', 'site-a', 'tenant-b')"
+        )
+
+    assert db.execute(
+        "SELECT tenant_id FROM audit_events WHERE id='event-site-correct'"
+    ).fetchone() == ("tenant-a",)
+    assert db.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE id='event-site-wrong'"
+    ).fetchone() == (0,)
+
+    # A deletion/tombstone event may be appended after the site row is gone.
+    db.execute("DELETE FROM sites WHERE id='site-a'")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('event-site-deleted', 'operator', 'site.delete', 'site', 'site-a', 'tenant-a')"
+    )
+    assert db.execute(
+        "SELECT tenant_id FROM audit_events WHERE id='event-site-deleted'"
+    ).fetchone() == ("tenant-a",)
