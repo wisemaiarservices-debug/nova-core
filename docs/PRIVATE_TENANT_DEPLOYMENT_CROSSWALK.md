@@ -25,11 +25,14 @@ The shared `apps/api/migrations` directory contains exactly these ordered migrat
 2. `0002_tenant_isolation.sql` — tenants, memberships, resource grants, tenant ownership columns, indexes and enforcement triggers.
 3. `0003_internal_request_nonces.sql` — durable one-time assertion replay table and retention index.
 
-Both tenant API and cleanup Worker configs point `migrations_dir` to `migrations`. Apply and verify this ordered set once against the intended isolated D1 database before deploying either Worker. The cleanup Worker must use that same database and migration history.
+Both tenant API and cleanup Worker configs point `migrations_dir` to `migrations`. The cleanup Worker must use the same database and migration history as the private API.
 
-Migration 0002 does not invent tenant ownership for existing rows. Rows without an approved `tenant_id` remain outside tenant-scoped access. Before any production migration, inventory legacy rows, approve ownership/backfill or quarantine, and verify the NULL-ownership behavior is acceptable. Do not infer ownership from names, IDs or untrusted metadata.
+### Migration-specific release gates
 
-A controlled isolated-database command sequence, run from the repository root with an environment-specific config copy pointing to the verified isolated database, is:
+- **0002 legacy ownership:** the migration header says existing rows must be reviewed and assigned to an approved tenant before applying. It does not perform a backfill. The schema allows legacy rows to remain `tenant_id IS NULL`, but those rows must remain inaccessible to tenant-scoped APIs. Before applying, inventory every legacy row and record an approved ownership/backfill or quarantine disposition. Do not infer ownership from names, IDs or untrusted metadata. If any row cannot be safely assigned, stop and revise the migration/rollout plan rather than silently proceeding.
+- **0003 production prohibition:** the current migration header explicitly says it must only be applied to a disposable/staging D1 database. Therefore **0003 is not currently authorized for production**, even though both Worker configs include the shared migrations directory. Before any production private-tenant deployment, revise that migration's release contract through a reviewed source change, prove the migration on isolated D1, and obtain a separate explicit production migration gate. Do not apply 0003 to production under the current source contract.
+
+A controlled isolated-database command sequence, run from the repository root with an environment-specific config copy pointing to a verified disposable/staging database, is:
 
 ```sh
 npx wrangler d1 migrations list nova-core-tenant-db --remote --config <isolated-tenant-api-config>
@@ -37,11 +40,11 @@ npx wrangler d1 migrations apply nova-core-tenant-db --remote --config <isolated
 npx wrangler d1 migrations list nova-core-tenant-db --remote --config <isolated-tenant-api-config>
 ```
 
-This is an execution template, not evidence that migrations have run. Capture before/after migration lists and schema checks. Do not execute against production as part of this source change.
+This is an execution template, not evidence that migrations have run. Capture before/after migration lists and schema checks. Never substitute production identifiers into this staging procedure.
 
 ## Cleanup schedule
 
-The cleanup Worker config schedules `17 * * * *` (minute 17 of every UTC hour). Its source contract bounds each invocation to one parameterized delete of at most 500 rows whose `retained_until` is at or before the scheduled event time. Verify deployed cron readback and a controlled cleanup execution; source configuration alone is not proof.
+The cleanup Worker config schedules `17 * * * *` (minute 17 of every UTC hour). Its source contract uses one parameterized delete, ordered by retention expiry, and bounds each invocation to at most 500 rows whose `retained_until` is at or before the scheduled event time. Verify deployed cron readback and a controlled cleanup execution; source configuration alone is not proof.
 
 ## Required activation readbacks
 
@@ -49,7 +52,7 @@ The cleanup Worker config schedules `17 * * * *` (minute 17 of every UTC hour). 
 - Cleanup Worker name, cron schedule, and `TENANT_DB` bound to that exact same D1 database.
 - Gateway Worker name, `workers_dev: false`, protected hostname/Access policy, and `TENANT_API` Service Binding target exactly `nova-core-tenant-api`.
 - No deployed Worker uses the all-zero D1 sentinel.
-- Migrations 0001, 0002 and 0003 are applied in order; schema integrity and legacy-row disposition are documented.
+- Migration 0002 has an approved legacy-row disposition; migration 0003's staging-only restriction has been resolved through a reviewed source change before any production use.
 - The general API Worker config has not been substituted for the private tenant API config.
 
 The activation checklist remains authoritative for secrets, Access, security tests, observability, rate limiting, rollback and final release decision. **Production remains HOLD** until every gate is evidenced.
