@@ -92,8 +92,8 @@ test("gateway documentation names the actual Script Settings API redaction field
   const { dirname, resolve } = await import("node:path");
   const here = dirname(fileURLToPath(import.meta.url));
   const readme = await readFile(resolve(here, "../README.md"), "utf8");
-  assert.match(readme, /observability\\.redact_query_string: true/);
-  assert.doesNotMatch(readme, /observability\\.logs\\.redact_query_string/);
+  assert.match(readme, /observability\.redact_query_string: true/);
+  assert.doesNotMatch(readme, /observability\.logs\.redact_query_string/);
 });
 
 test("verifies Access JWT, signs exact tenant path and forwards only through Service Binding", async () => {
