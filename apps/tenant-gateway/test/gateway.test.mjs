@@ -396,6 +396,38 @@ test("cancels upstream body when declared Content-Length is malformed", async ()
   }
 });
 
+test("returns promptly when oversized upstream stream cancellation never settles", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const body = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024 + 1));
+      },
+      cancel() {
+        return new Promise(() => {});
+      },
+    });
+    const outcome = await Promise.race([
+      gateway.fetch(
+        request({ token: fixture.token }),
+        environment(fixture.jwk, {
+          fetch: async () => new Response(body, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        }),
+      ).then((result) => ({ result })),
+      new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 100)),
+    ]);
+    assert.equal(outcome.timedOut, undefined);
+    assert.equal(outcome.result.status, 502);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects oversized declared private API response before streaming", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;
