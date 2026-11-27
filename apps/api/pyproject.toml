@@ -10,8 +10,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
+build = [
   "workers-py==1.17.8",
+]
+dev = [
+  { include-group = "build" },
   "pytest",
   "httpx",
 ]
