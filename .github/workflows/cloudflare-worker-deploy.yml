@@ -1,17 +1,16 @@
 name: Deploy NOVA Core API to Cloudflare Workers
 
 on:
+  # Production deployment is intentionally manual and main-branch-only.
+  # Feature branches and pull-request refs must never deploy this Worker.
   workflow_dispatch:
-  push:
-    branches:
-      - feat/nova-core-v1-provenance-and-honest-impact
 
 permissions:
   contents: read
 
 jobs:
   deploy:
-    if: contains(github.event.head_commit.message, 'deploy-nova-core') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: nova-core-api
     env:
@@ -23,6 +22,10 @@ jobs:
         with:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
+      - name: Verify deployment ref is the protected default branch
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
       - name: Verify deployment credentials are configured
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN GitHub secret" && exit 1)
