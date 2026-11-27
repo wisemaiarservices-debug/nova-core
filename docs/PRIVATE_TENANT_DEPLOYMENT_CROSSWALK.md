@@ -25,6 +25,7 @@ The shared `apps/api/migrations` directory contains exactly these ordered migrat
 2. `0002_tenant_isolation.sql` — tenants, memberships, resource grants, tenant ownership columns, indexes and enforcement triggers.
 3. `0003_internal_request_nonces.sql` — durable one-time assertion replay table and retention index.
 4. `0004_site_tenant_transfer_guard.sql` — prevents changing a site's tenant while assets, sources or observations depend on it; preserves legacy-site ownership assignment when no dependent rows exist.
+5. `0005_nonce_jti_not_null.sql` — rebuilds the nonce table with an explicit `NOT NULL` primary key, removes pre-existing null-key rows that cannot identify/replay-protect a request, and recreates the retention index.
 
 Both tenant API and cleanup Worker configs point `migrations_dir` to `migrations`. The cleanup Worker must use the same database and migration history as the private API.
 
@@ -32,6 +33,7 @@ Both tenant API and cleanup Worker configs point `migrations_dir` to `migrations
 
 - **0002 legacy ownership:** the migration header says existing rows must be reviewed and assigned to an approved tenant before applying. It does not perform a backfill. The schema allows legacy rows to remain `tenant_id IS NULL`, but those rows must remain inaccessible to tenant-scoped APIs. Before applying, inventory every legacy row and record an approved ownership/backfill or quarantine disposition. Do not infer ownership from names, IDs or untrusted metadata. If any row cannot be safely assigned, stop and revise the migration/rollout plan rather than silently proceeding.
 - **0004 site ownership:** a site with dependent assets, sources or observations cannot be reassigned to another tenant. A dedicated audited transfer workflow is required for that case; legacy sites with no dependent records can still receive an approved tenant assignment.
+- **0005 nonce key integrity:** SQLite permits `NULL` in a `TEXT PRIMARY KEY` unless `NOT NULL` is explicit. This migration rebuilds the nonce table with an explicit non-null key and removes any pre-existing null-key rows, which cannot represent a valid assertion ID and cannot be addressed by the cleanup query. It preserves all valid keyed rows and recreates the retention index.
 - **0003 production prohibition:** the current migration header explicitly says it must only be applied to a disposable/staging D1 database. Therefore **0003 is not currently authorized for production**, even though both Worker configs include the shared migrations directory. Before any production private-tenant deployment, revise that migration's release contract through a reviewed source change, prove the migration on isolated D1, and obtain a separate explicit production migration gate. Do not apply 0003 to production under the current source contract.
 
 A controlled isolated-database command sequence, run from the repository root with an environment-specific config copy pointing to a verified disposable/staging database, is:

@@ -19,7 +19,9 @@ from apps.api.services.tenant_request_replay import (
 ROOT = Path(__file__).resolve().parents[1]
 INITIAL = ROOT / "migrations" / "0001_initial.sql"
 TENANT = ROOT / "migrations" / "0002_tenant_isolation.sql"
+SITE_GUARD = ROOT / "migrations" / "0004_site_tenant_transfer_guard.sql"
 REPLAY = ROOT / "migrations" / "0003_internal_request_nonces.sql"
+REPLAY_HARDENING = ROOT / "migrations" / "0005_nonce_jti_not_null.sql"
 
 
 def database(path=":memory:"):
@@ -29,6 +31,8 @@ def database(path=":memory:"):
     db.executescript(INITIAL.read_text(encoding="utf-8"))
     db.executescript(TENANT.read_text(encoding="utf-8"))
     db.executescript(REPLAY.read_text(encoding="utf-8"))
+    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
+    db.executescript(REPLAY_HARDENING.read_text(encoding="utf-8"))
     return db
 
 
@@ -49,7 +53,48 @@ def test_replay_migration_creates_unique_durable_store_and_retention_index():
         "PRAGMA index_list(internal_request_nonces)"
     ).fetchall()}
     assert {"jti", "expires_at", "retained_until", "consumed_at"} <= columns
+    jti_column = next(
+        row for row in db.execute("PRAGMA table_info(internal_request_nonces)")
+        if row[1] == "jti"
+    )
+    assert jti_column[3] == 1
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO internal_request_nonces "
+            "(jti, expires_at, retained_until, consumed_at) VALUES (NULL, 1, 1, 1)"
+        )
     assert "idx_internal_request_nonces_retention" in indexes
+
+
+
+def test_nonce_hardening_migration_discards_unaddressable_null_rows_and_preserves_valid_rows():
+    db = sqlite3.connect(":memory:")
+    db.execute("PRAGMA foreign_keys = ON")
+    db.executescript(INITIAL.read_text(encoding="utf-8"))
+    db.executescript(TENANT.read_text(encoding="utf-8"))
+    db.executescript(REPLAY.read_text(encoding="utf-8"))
+    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
+    # SQLite permits NULL in a TEXT PRIMARY KEY unless NOT NULL is explicit.
+    db.execute(
+        "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) VALUES (NULL, 100, 200, 50)"
+    )
+    db.execute(
+        "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) VALUES (?, 100, 200, 50)",
+        ("valid-request-id-0001",),
+    )
+
+    db.executescript(REPLAY_HARDENING.read_text(encoding="utf-8"))
+
+    assert db.execute("SELECT jti FROM internal_request_nonces").fetchall() == [("valid-request-id-0001",)]
+    jti_column = next(
+        row for row in db.execute("PRAGMA table_info(internal_request_nonces)")
+        if row[1] == "jti"
+    )
+    assert jti_column[3] == 1
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) VALUES (NULL, 100, 200, 50)"
+        )
 
 
 def test_nonce_is_consumed_once_and_replay_returns_no_claim():
