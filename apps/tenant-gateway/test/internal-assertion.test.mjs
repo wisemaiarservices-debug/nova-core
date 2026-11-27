@@ -304,6 +304,50 @@ test("rejects oversized JWKS from Content-Length and streamed bodies", async () 
   );
 });
 
+test("cancels rejected JWKS bodies before returning", async () => {
+  const fixture = await fixtureAccessToken();
+  let cancelled = false;
+  const body = new ReadableStream({
+    cancel() { cancelled = true; },
+  });
+  await assert.rejects(
+    verifyCloudflareAccessJwt(fixture.token, {
+      teamDomain: TEAM,
+      audience: ACCESS_AUDIENCE,
+      now: NOW,
+      fetchImpl: async () => new Response(body, {
+        headers: { "content-type": "text/html" },
+      }),
+    }),
+    /invalid content type/,
+  );
+  assert.equal(cancelled, true);
+});
+
+test("returns promptly when oversized JWKS stream cancellation never settles", async () => {
+  const fixture = await fixtureAccessToken();
+  const body = new ReadableStream({
+    pull(controller) {
+      controller.enqueue(new Uint8Array(64 * 1024 + 1));
+    },
+    cancel() {
+      return new Promise(() => {});
+    },
+  });
+  const outcome = await Promise.race([
+    verifyCloudflareAccessJwt(fixture.token, {
+      teamDomain: TEAM,
+      audience: ACCESS_AUDIENCE,
+      now: NOW,
+      fetchImpl: async () => new Response(body, {
+        headers: { "content-type": "application/json" },
+      }),
+    }).then(() => ({ resolved: true }), () => ({ rejected: true })),
+    new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 100)),
+  ]);
+  assert.deepEqual(outcome, { rejected: true });
+});
+
 test("rejects invalid JWKS content type and malformed JSON", async () => {
   const fixture = await fixtureAccessToken();
   const verifyWith = (response) => verifyCloudflareAccessJwt(fixture.token, {
