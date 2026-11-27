@@ -698,3 +698,57 @@ def test_tenant_id_cannot_be_reused_after_legacy_audit_history():
         db.execute(
             "INSERT INTO tenants (id, display_name) VALUES ('tenant-a', 'Recreated tenant A')"
         )
+
+
+@pytest.mark.parametrize("entity_type", ["experiment", "dataset_snapshot"])
+def test_reserved_deleted_entity_tombstones_preserve_prior_tenant_history(entity_type):
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES (?, 'operator', 'entity.created', ?, 'reserved-id', 'tenant-a')",
+        (f"prior-{entity_type}", entity_type),
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="tombstone audit tenant must match history"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES (?, 'operator', 'entity.deleted', ?, 'reserved-id', 'tenant-b')",
+            (f"wrong-tombstone-{entity_type}", entity_type),
+        )
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES (?, 'operator', 'entity.deleted', ?, 'reserved-id', 'tenant-a')",
+        (f"correct-tombstone-{entity_type}", entity_type),
+    )
+
+
+def test_deleted_site_tombstone_cannot_change_prior_tenant_attribution():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    seed_tenant(db, "tenant-b")
+    seed_site(db, "tenant-a", "site-tombstone")
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('site-prior', 'operator', 'site.created', 'site', 'site-tombstone', 'tenant-a')"
+    )
+    db.execute("DELETE FROM sites WHERE id='site-tombstone'")
+
+    with pytest.raises(sqlite3.IntegrityError, match="tombstone audit tenant must match history"):
+        db.execute(
+            "INSERT INTO audit_events "
+            "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+            "VALUES ('site-wrong-tombstone', 'operator', 'site.deleted', 'site', 'site-tombstone', 'tenant-b')"
+        )
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('site-correct-tombstone', 'operator', 'site.deleted', 'site', 'site-tombstone', 'tenant-a')"
+    )
