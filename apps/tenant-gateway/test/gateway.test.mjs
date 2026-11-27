@@ -255,6 +255,40 @@ test("does not forward non-JSON, oversized or unexpected upstream responses", as
   }
 });
 
+test("cancels rejected upstream response bodies before returning", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  const cases = [
+    { status: 404, contentType: "application/json", expected: 404 },
+    { status: 502, contentType: "application/json", expected: 503 },
+    { status: 200, contentType: "text/plain", expected: 503 },
+  ];
+  const cancelled = [];
+  try {
+    for (const item of cases) {
+      const body = new ReadableStream({
+        cancel() {
+          cancelled.push(item.status);
+        },
+      });
+      const result = await gateway.fetch(
+        request({ token: fixture.token }),
+        environment(fixture.jwk, {
+          fetch: async () => new Response(body, {
+            status: item.status,
+            headers: { "content-type": item.contentType },
+          }),
+        }),
+      );
+      assert.equal(result.status, item.expected);
+    }
+    assert.deepEqual(cancelled, [404, 502, 200]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("does not disclose upstream response details on Service Binding failure", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;
