@@ -32,6 +32,8 @@ def database():
     db.executescript(related_transfer_guard.read_text(encoding="utf-8"))
     identity_guard = ROOT / "migrations" / "0013_audited_entity_id_immutability.sql"
     db.executescript(identity_guard.read_text(encoding="utf-8"))
+    membership_subject_guard = ROOT / "migrations" / "0014_audited_membership_subject_immutability.sql"
+    db.executescript(membership_subject_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -945,3 +947,51 @@ def test_audited_entity_primary_id_cannot_change(entity_type):
         "SELECT entity_id FROM audit_events WHERE id=?",
         (f"audit-{entity_type}",),
     ).fetchone() == (entity_id,)
+
+
+
+def test_audited_membership_subject_cannot_be_reassigned():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-a', 'tenant-a', 'subject-original', 'viewer')"
+    )
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('membership-audit', 'operator', 'membership.updated', "
+        "'membership', 'membership-a', 'tenant-a')"
+    )
+
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="membership subject cannot change while audit history exists",
+    ):
+        db.execute(
+            "UPDATE tenant_memberships SET subject='subject-reassigned' "
+            "WHERE id='membership-a'"
+        )
+
+    assert db.execute(
+        "SELECT subject FROM tenant_memberships WHERE id='membership-a'"
+    ).fetchone() == ("subject-original",)
+    assert db.execute(
+        "SELECT entity_id, tenant_id FROM audit_events WHERE id='membership-audit'"
+    ).fetchone() == ("membership-a", "tenant-a")
+
+
+def test_membership_subject_can_change_before_audit_history_exists():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-a', 'tenant-a', 'subject-original', 'viewer')"
+    )
+    db.execute(
+        "UPDATE tenant_memberships SET subject='subject-reassigned' "
+        "WHERE id='membership-a'"
+    )
+    assert db.execute(
+        "SELECT subject FROM tenant_memberships WHERE id='membership-a'"
+    ).fetchone() == ("subject-reassigned",)
