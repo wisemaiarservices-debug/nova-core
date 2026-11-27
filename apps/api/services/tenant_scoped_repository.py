@@ -15,6 +15,17 @@ from .tenant_authorization_storage import (
 
 ReadableResourceType = Literal["site", "asset", "source", "observation", "audit_event"]
 
+def _python_value(value: Any) -> Any:
+    """Normalize Pyodide JavaScript proxies into native Python values."""
+    to_python = getattr(value, "to_py", None)
+    if callable(to_python):
+        try:
+            return to_python()
+        except Exception:
+            return value
+    return value
+
+
 RESOURCE_SELECTS: dict[ReadableResourceType, str] = {
     "site": """
         SELECT id, tenant_id, name, description, latitude, longitude, timezone, status,
