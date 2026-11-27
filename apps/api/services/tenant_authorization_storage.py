@@ -22,6 +22,17 @@ class TenantAuthorizationStorageError(RuntimeError):
     """Trusted tenant authorization records could not be loaded safely."""
 
 
+def _python_value(value: Any) -> Any:
+    """Normalize Pyodide JavaScript proxies into native Python values."""
+    to_python = getattr(value, "to_py", None)
+    if callable(to_python):
+        try:
+            return to_python()
+        except Exception:
+            return value
+    return value
+
+
 MEMBERSHIP_SQL = """
 SELECT m.subject, m.tenant_id, m.role, m.status AS membership_status,
        t.status AS tenant_status
@@ -40,15 +51,18 @@ LIMIT 7
 
 
 def _result_rows(result: Any, *, maximum: int) -> list[dict[str, Any]]:
-    success = getattr(result, "success", None)
+    success = _python_value(getattr(result, "success", None))
     if success is None and isinstance(result, dict):
         success = result.get("success")
     if success is not True:
         raise TenantAuthorizationStorageError("authorization storage returned an unsuccessful or incomplete result")
-    rows = getattr(result, "results", None)
+    rows = _python_value(getattr(result, "results", None))
     if rows is None and isinstance(result, dict):
         rows = result.get("results")
-    if not isinstance(rows, list) or len(rows) > maximum or any(not isinstance(row, dict) for row in rows):
+    if not isinstance(rows, list) or len(rows) > maximum:
+        raise TenantAuthorizationStorageError("authorization storage returned an invalid result")
+    rows = [_python_value(row) for row in rows]
+    if any(not isinstance(row, dict) for row in rows):
         raise TenantAuthorizationStorageError("authorization storage returned an invalid result")
     return rows
 
