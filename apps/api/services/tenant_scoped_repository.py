@@ -15,6 +15,17 @@ from .tenant_authorization_storage import (
 
 ReadableResourceType = Literal["site", "asset", "source", "observation", "audit_event"]
 
+def _python_value(value: Any) -> Any:
+    """Normalize Pyodide JavaScript proxies into native Python values."""
+    to_python = getattr(value, "to_py", None)
+    if callable(to_python):
+        try:
+            return to_python()
+        except Exception:
+            return value
+    return value
+
+
 RESOURCE_SELECTS: dict[ReadableResourceType, str] = {
     "site": """
         SELECT id, tenant_id, name, description, latitude, longitude, timezone, status,
@@ -94,15 +105,18 @@ async def read_authorized_tenant_resource(
             "tenant resource storage is unavailable"
         ) from exc
 
-    success = getattr(result, "success", None)
+    success = _python_value(getattr(result, "success", None))
     if success is None and isinstance(result, dict):
         success = result.get("success")
     if success is not True:
         raise TenantAuthorizationStorageError("tenant resource storage returned an unsuccessful or incomplete result")
-    rows = getattr(result, "results", None)
+    rows = _python_value(getattr(result, "results", None))
     if rows is None and isinstance(result, dict):
         rows = result.get("results")
-    if not isinstance(rows, list) or len(rows) > 1 or any(not isinstance(row, dict) for row in rows):
+    if not isinstance(rows, list) or len(rows) > 1:
+        raise TenantAuthorizationStorageError("tenant resource storage returned an invalid result")
+    rows = [_python_value(row) for row in rows]
+    if any(not isinstance(row, dict) for row in rows):
         raise TenantAuthorizationStorageError("tenant resource storage returned an invalid result")
     if not rows:
         return None

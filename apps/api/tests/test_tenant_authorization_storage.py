@@ -8,6 +8,7 @@ from apps.api.services.tenant_authorization_storage import (
     RESOURCE_GRANTS_SQL,
     TenantAuthorizationStorageError,
     authorize_tenant_resource_action,
+    _result_rows,
 )
 
 
@@ -15,6 +16,27 @@ class Result:
     def __init__(self, results, success=True):
         self.results = results
         self.success = success
+
+
+
+class JsProxy:
+    def __init__(self, value):
+        self.value = value
+
+    def to_py(self):
+        if isinstance(self.value, list):
+            return [JsProxy(item) if isinstance(item, dict) else item for item in self.value]
+        return dict(self.value) if isinstance(self.value, dict) else self.value
+
+
+def test_authorization_result_envelope_normalizes_pyodide_proxies():
+    result = type("ProxyResult", (), {
+        "success": JsProxy(True),
+        "results": JsProxy([{"subject": "subject-a", "tenant_id": "tenant-a"}]),
+    })()
+    assert _result_rows(result, maximum=2) == [
+        {"subject": "subject-a", "tenant_id": "tenant-a"}
+    ]
 
 
 class Statement:

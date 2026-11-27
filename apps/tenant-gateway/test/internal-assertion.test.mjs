@@ -126,6 +126,8 @@ test("rejects invalid Access signature and mismatched identity claims", async ()
     { nbf: undefined },
     { iat: NOW / 1000 + 30 },
     { nbf: "not-a-number" },
+    { iat: NOW / 1000 + 5, exp: NOW / 1000 + 2 },
+    { nbf: NOW / 1000 + 10, exp: NOW / 1000 + 5 },
     { sub: "subject with spaces" },
   ]) {
     const invalid = await fixtureAccessToken(claims);
