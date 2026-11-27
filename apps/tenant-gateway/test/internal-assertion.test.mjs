@@ -304,6 +304,34 @@ test("rejects oversized JWKS from Content-Length and streamed bodies", async () 
   );
 });
 
+test("does not wait for oversized JWKS body cancellation to settle", async () => {
+  const fixture = await fixtureAccessToken();
+  let cancellationStarted = false;
+  const oversizedStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(64 * 1024 + 1));
+    },
+    cancel() {
+      cancellationStarted = true;
+      return new Promise(() => {});
+    },
+  });
+  const outcome = await Promise.race([
+    verifyCloudflareAccessJwt(fixture.token, {
+      teamDomain: TEAM,
+      audience: ACCESS_AUDIENCE,
+      now: NOW,
+      fetchImpl: async () => new Response(oversizedStream, {
+        headers: { "content-type": "application/json" },
+      }),
+    }).then((identity) => ({ identity }), (error) => ({ error })),
+    new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 100)),
+  ]);
+  assert.equal(outcome.timedOut, undefined);
+  assert.match(outcome.error?.message || "", /response is too large/);
+  assert.equal(cancellationStarted, true);
+});
+
 test("rejects invalid JWKS content type and malformed JSON", async () => {
   const fixture = await fixtureAccessToken();
   const verifyWith = (response) => verifyCloudflareAccessJwt(fixture.token, {

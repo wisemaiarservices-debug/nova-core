@@ -368,6 +368,41 @@ test("stops reading chunked private API responses at the gateway size limit", as
   }
 });
 
+test("does not wait for oversized private API body cancellation to settle", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  let cancellationStarted = false;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const oversizedStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024 + 1));
+      },
+      cancel() {
+        cancellationStarted = true;
+        return new Promise(() => {});
+      },
+    });
+    const outcome = await Promise.race([
+      gateway.fetch(
+        request({ token: fixture.token }),
+        environment(fixture.jwk, {
+          fetch: async () => new Response(oversizedStream, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        }),
+      ).then((result) => ({ result })),
+      new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 100)),
+    ]);
+    assert.equal(outcome.timedOut, undefined);
+    assert.equal(outcome.result.status, 502);
+    assert.equal(cancellationStarted, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects oversized declared private API response before streaming", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;

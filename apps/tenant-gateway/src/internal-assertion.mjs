@@ -125,6 +125,17 @@ function encodeJson(value) {
   return encodeBase64Url(encoder.encode(JSON.stringify(value)));
 }
 
+function cancelReaderWithoutWaiting(reader, reason) {
+  try {
+    const cancellation = reader.cancel(reason);
+    if (cancellation && typeof cancellation.catch === "function") {
+      void cancellation.catch(() => {});
+    }
+  } catch {
+    // Cancellation is best-effort; preserve the JWKS size rejection.
+  }
+}
+
 async function readBoundedJwksResponse(response) {
   if (!response || response.ok !== true || !response.headers || !response.body) {
     throw new TypeError("Cloudflare Access signing keys are unavailable");
@@ -149,7 +160,7 @@ async function readBoundedJwksResponse(response) {
       if (done) break;
       totalBytes += value.byteLength;
       if (totalBytes > MAX_JWKS_RESPONSE_BYTES) {
-        await reader.cancel("JWKS response exceeds size limit");
+        cancelReaderWithoutWaiting(reader, "JWKS response exceeds size limit");
         throw new TypeError("Cloudflare Access signing-key response is too large");
       }
       chunks.push(value);

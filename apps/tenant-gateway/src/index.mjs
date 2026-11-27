@@ -44,6 +44,17 @@ function cancelUpstreamBody(upstreamResponse) {
   }
 }
 
+function cancelReaderWithoutWaiting(reader, reason) {
+  try {
+    const cancellation = reader.cancel(reason);
+    if (cancellation && typeof cancellation.catch === "function") {
+      void cancellation.catch(() => {});
+    }
+  } catch {
+    // Cancellation is best-effort; preserve the bounded-size rejection.
+  }
+}
+
 async function readBoundedUpstreamBody(upstreamResponse) {
   if (!upstreamResponse.body) {
     throw new TypeError("upstream response body is unavailable");
@@ -64,11 +75,7 @@ async function readBoundedUpstreamBody(upstreamResponse) {
       if (done) break;
       totalBytes += value.byteLength;
       if (totalBytes > MAX_RESPONSE_BYTES) {
-        try {
-          await reader.cancel("upstream response exceeds size limit");
-        } catch {
-          // Preserve the bounded-size rejection if cancellation itself fails.
-        }
+        cancelReaderWithoutWaiting(reader, "upstream response exceeds size limit");
         throw new RangeError("upstream response exceeds the size limit");
       }
       chunks.push(value);
@@ -168,7 +175,7 @@ export default {
         internalResponse.status !== 200 ||
         upstreamContentType !== "application/json"
       ) {
-        await cancelUpstreamBody(internalResponse);
+        cancelUpstreamBody(internalResponse);
         return response(503, JSON.stringify({ detail: "gateway unavailable" }));
       }
 
