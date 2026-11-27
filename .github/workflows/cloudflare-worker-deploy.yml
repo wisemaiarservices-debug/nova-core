@@ -5,6 +5,12 @@ on:
   # Feature branches and pull-request refs must never deploy this Worker.
   workflow_dispatch:
 
+# Prevent concurrent uploads of different revisions to the same production Worker.
+# GitHub retains only the newest pending run for a concurrency group.
+concurrency:
+  group: nova-core-api-production-deploy
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
