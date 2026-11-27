@@ -403,6 +403,37 @@ test("does not wait for oversized private API body cancellation to settle", asyn
   }
 });
 
+test("cancels oversized declared private API response bodies without waiting", async () => {
+  const fixture = await accessToken();
+  const originalFetch = globalThis.fetch;
+  let cancellationStarted = false;
+  globalThis.fetch = async () => jsonResponse({ keys: [fixture.jwk] });
+  try {
+    const body = new ReadableStream({
+      cancel() {
+        cancellationStarted = true;
+        return new Promise(() => {});
+      },
+    });
+    const result = await gateway.fetch(
+      request({ token: fixture.token }),
+      environment(fixture.jwk, {
+        fetch: async () => new Response(body, {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "content-length": String(1024 * 1024 + 1),
+          },
+        }),
+      }),
+    );
+    assert.equal(result.status, 502);
+    assert.equal(cancellationStarted, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects oversized declared private API response before streaming", async () => {
   const fixture = await accessToken();
   const originalFetch = globalThis.fetch;
