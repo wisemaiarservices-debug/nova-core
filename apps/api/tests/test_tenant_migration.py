@@ -34,6 +34,8 @@ def database():
     db.executescript(identity_guard.read_text(encoding="utf-8"))
     membership_subject_guard = ROOT / "migrations" / "0014_audited_membership_subject_immutability.sql"
     db.executescript(membership_subject_guard.read_text(encoding="utf-8"))
+    revoked_membership_guard = ROOT / "migrations" / "0015_revoked_membership_terminal.sql"
+    db.executescript(revoked_membership_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -995,3 +997,47 @@ def test_membership_subject_can_change_before_audit_history_exists():
     assert db.execute(
         "SELECT subject FROM tenant_memberships WHERE id='membership-a'"
     ).fetchone() == ("subject-reassigned",)
+
+
+def test_revoked_membership_cannot_be_reactivated_with_stale_grants():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-revoked', 'tenant-a', 'subject-revoked', 'viewer')"
+    )
+    db.execute(
+        "INSERT INTO tenant_resource_grants "
+        "(id, tenant_id, subject, resource_type, resource_id, action) "
+        "VALUES ('grant-revoked', 'tenant-a', 'subject-revoked', 'site', 'site-a', 'read')"
+    )
+    db.execute(
+        "UPDATE tenant_memberships SET status='revoked' WHERE id='membership-revoked'"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="revoked membership status is terminal"):
+        db.execute(
+            "UPDATE tenant_memberships SET status='active' WHERE id='membership-revoked'"
+        )
+
+    assert db.execute(
+        "SELECT status FROM tenant_memberships WHERE id='membership-revoked'"
+    ).fetchone() == ("revoked",)
+    assert db.execute(
+        "SELECT COUNT(*) FROM tenant_resource_grants WHERE id='grant-revoked'"
+    ).fetchone() == (1,)
+
+
+def test_inactive_membership_can_be_reactivated_before_revocation():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) "
+        "VALUES ('membership-inactive', 'tenant-a', 'subject-inactive', 'viewer', 'inactive')"
+    )
+    db.execute(
+        "UPDATE tenant_memberships SET status='active' WHERE id='membership-inactive'"
+    )
+    assert db.execute(
+        "SELECT status FROM tenant_memberships WHERE id='membership-inactive'"
+    ).fetchone() == ("active",)
