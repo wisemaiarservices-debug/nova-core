@@ -36,6 +36,7 @@ The shared `apps/api/migrations` directory contains exactly these ordered migrat
 13. `0013_audited_entity_id_immutability.sql` — blocks primary-ID changes for sites, assets, sources and observations while append-only audit history references their IDs.
 14. `0014_audited_membership_subject_immutability.sql` — blocks membership principal-subject reassignment while append-only audit history references the membership ID.
 15. `0015_revoked_membership_terminal.sql` — makes revocation terminal and atomically deletes that principal's old resource grants, freeing the tenant/subject uniqueness slot for a separately identified membership with freshly provisioned grants.
+16. `0016_membership_delete_audit_guard.sql` — permits membership-row deletion only after terminal revocation has a matching append-only `membership.revoked` audit event and all grants have been cleared.
 
 Both tenant API and cleanup Worker configs point `migrations_dir` to `migrations`. The cleanup Worker must use the same database and migration history as the private API.
 
@@ -54,6 +55,7 @@ Both tenant API and cleanup Worker configs point `migrations_dir` to `migrations
 - **0013 audited entity identity:** the primary IDs of sites, assets, sources and observations cannot change while append-only audit history references the current ID. Use a separately designed audited migration/identity workflow rather than renaming an audited row.
 - **0014 membership principal identity:** a membership subject cannot be reassigned after audit history references that membership ID. A separately designed audited principal-transfer workflow is required for historical memberships.
 - **0015 revoked membership lifecycle:** `revoked` is terminal and atomically removes all resource grants for that tenant/principal. This prevents stale grants from reviving and frees the unique tenant/subject slot; a later re-admission must use a new membership ID and freshly provisioned grants. An `inactive` membership may still be reactivated while the tenant is active.
+- **0016 membership deletion audit:** membership rows cannot be deleted while active or inactive, and a revoked row cannot be deleted without a matching append-only `membership.revoked` event for the same membership ID and tenant and with no remaining grants. The event remains after deletion, so the old membership identity is not silently reused.
 - **0003 production prohibition:** the current migration header explicitly says it must only be applied to a disposable/staging D1 database. Therefore **0003 is not currently authorized for production**, even though both Worker configs include the shared migrations directory. Before any production private-tenant deployment, revise that migration's release contract through a reviewed source change, prove the migration on isolated D1, and obtain a separate explicit production migration gate. Do not apply 0003 to production under the current source contract.
 
 A controlled isolated-database command sequence, run from the repository root with an environment-specific config copy pointing to a verified disposable/staging database, is:
