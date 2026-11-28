@@ -38,20 +38,20 @@ jobs:
       - name: Bundle Python API Worker without deployment
         working-directory: apps/api
         run: |
-          uv sync --python 3.13 --group dev
-          uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.jsonc
+          uv sync --locked --python 3.13 --group dev
+          uv run --locked --python 3.13 pywrangler deploy --dry-run --config wrangler.jsonc
       - name: Bundle private tenant API Worker without deployment
         working-directory: apps/api
-        run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.tenant.jsonc
+        run: uv run --locked --python 3.13 pywrangler deploy --dry-run --config wrangler.tenant.jsonc
       - name: Bundle local tenant API D1 test Worker without deployment
         working-directory: apps/api
-        run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.tenant-local-test.jsonc
+        run: uv run --locked --python 3.13 pywrangler deploy --dry-run --config wrangler.tenant-local-test.jsonc
       - name: Exercise concurrent tenant replay protection with local D1 in workerd
         working-directory: apps/api
         run: bash scripts/test_tenant_replay_local_d1_concurrency.sh
       - name: Bundle tenant nonce cleanup Worker without deployment
         working-directory: apps/api
-        run: uv run --python 3.13 pywrangler deploy --dry-run --config wrangler.nonce-cleanup.jsonc
+        run: uv run --locked --python 3.13 pywrangler deploy --dry-run --config wrangler.nonce-cleanup.jsonc
       - name: Exercise scheduled cleanup Worker with local D1 in workerd
         working-directory: apps/api
         run: bash scripts/test_nonce_cleanup_worker_local_d1.sh
