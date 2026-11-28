@@ -12,32 +12,11 @@ TENANT = ROOT / "migrations" / "0002_tenant_isolation.sql"
 def database():
     db = sqlite3.connect(":memory:")
     db.execute("PRAGMA foreign_keys = ON")
-    db.executescript(INITIAL.read_text(encoding="utf-8"))
-    db.executescript(TENANT.read_text(encoding="utf-8"))
-    ownership = ROOT / "migrations" / "0004_site_tenant_transfer_guard.sql"
-    db.executescript(ownership.read_text(encoding="utf-8"))
-    audit_guard = ROOT / "migrations" / "0006_site_audit_transfer_guard.sql"
-    db.executescript(audit_guard.read_text(encoding="utf-8"))
-    site_audit_tenant_guard = ROOT / "migrations" / "0007_site_audit_tenant_match_guard.sql"
-    db.executescript(site_audit_tenant_guard.read_text(encoding="utf-8"))
-    site_audit_id_guard = ROOT / "migrations" / "0008_site_id_reuse_guard.sql"
-    db.executescript(site_audit_id_guard.read_text(encoding="utf-8"))
-    related_audit_guard = ROOT / "migrations" / "0009_related_entity_audit_guards.sql"
-    db.executescript(related_audit_guard.read_text(encoding="utf-8"))
-    tenant_identity_guard = ROOT / "migrations" / "0010_tenant_membership_audit_guards.sql"
-    db.executescript(tenant_identity_guard.read_text(encoding="utf-8"))
-    tombstone_guard = ROOT / "migrations" / "0011_deleted_entity_audit_tenant_continuity.sql"
-    db.executescript(tombstone_guard.read_text(encoding="utf-8"))
-    related_transfer_guard = ROOT / "migrations" / "0012_related_entity_audit_tenant_transfer_guards.sql"
-    db.executescript(related_transfer_guard.read_text(encoding="utf-8"))
-    identity_guard = ROOT / "migrations" / "0013_audited_entity_id_immutability.sql"
-    db.executescript(identity_guard.read_text(encoding="utf-8"))
-    membership_subject_guard = ROOT / "migrations" / "0014_audited_membership_subject_immutability.sql"
-    db.executescript(membership_subject_guard.read_text(encoding="utf-8"))
-    revoked_membership_guard = ROOT / "migrations" / "0015_revoked_membership_terminal.sql"
-    db.executescript(revoked_membership_guard.read_text(encoding="utf-8"))
+    migrations = sorted((ROOT / "migrations").glob("*.sql"))
+    assert migrations, "expected tenant migration files"
+    for migration in migrations:
+        db.executescript(migration.read_text(encoding="utf-8"))
     return db
-
 
 def seed_tenant(db, tenant_id):
     db.execute(
