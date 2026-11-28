@@ -44,6 +44,44 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: uv run --locked --python 3.13 --no-default-groups --group build pywrangler deploy
+      - name: Verify deployed public API rate-limit binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          settings_file="$(mktemp)"
+          trap 'rm -f "$settings_file"' EXIT
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/nova-core-api/settings" \
+            --output "$settings_file"
+          jq -e '
+            .success == true and
+            ([.result.bindings[]? | select(.name == "NOVA_PUBLIC_API_LIMITER")] as $bindings |
+              ($bindings | length) == 1 and
+              $bindings[0].type == "ratelimit" and
+              ($bindings[0].namespace_id | tostring) == "33226001" and
+              $bindings[0].simple.limit == 60 and
+              $bindings[0].simple.period == 60
+            )
+          ' "$settings_file" >/dev/null
+          echo "Deployed NOVA_PUBLIC_API_LIMITER binding matches the reviewed 60/60 configuration."
+      - name: Smoke-test a rate-limited public API route
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 20 \
+            -H "Content-Type: application/json" \
+            --data '{}' \
+            "https://nova-core-api.neohaven.workers.dev/api/v1/recommendations/run" \
+            --output "$response_file"
+          jq -e '.status == "review_required"' "$response_file" >/dev/null
+          echo "Deployed public API route smoke check passed."
       - name: Verify deployed Worker health endpoint
         env:
           NOVA_HEALTH_URL: https://nova-core-api.neohaven.workers.dev/health
