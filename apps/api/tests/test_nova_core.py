@@ -112,6 +112,12 @@ def test_cors_is_configurable_and_disallows_credentials():
     assert "https://neoagro-git-fix-neoagro-provenance-56a89b-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
     assert "https://neocell-git-fix-neocell-api-health-52be8d-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
     assert "https://neogrid-git-fix-neogrid-provenance-43da6f-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://neohaven-nova-os-website-git-feat-c-f4587f-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://nova-os-git-feat-connect-nova-core-0d3bea-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://nova-os-v1-staging-git-feat-nova-co-a61f66-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://neoagro-git-fix-use-real-core-inputs-only-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://neogrid-git-feat-connect-neogrid-to-462dc6-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
+    assert "https://neocell-git-feat-connect-neocell-to-c12771-neo-haven-urban-labs.vercel.app" in config["allow_origins"]
     assert config["allow_credentials"] is False
     assert "OPTIONS" in config["allow_methods"]
 
