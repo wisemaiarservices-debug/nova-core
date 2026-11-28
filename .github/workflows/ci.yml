@@ -35,6 +35,17 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: apps/api/pyproject.toml
+      - name: Bootstrap lockfile and emit transfer-safe chunks
+        working-directory: apps/api
+        run: |
+          uv lock --python 3.13
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          encoded = base64.b64encode(Path('uv.lock').read_bytes()).decode('ascii')
+          for offset in range(0, len(encoded), 3000):
+              print(f'UV_LOCK_CHUNK_{offset // 3000:04d}={encoded[offset:offset + 3000]}')
+          PY
       - name: Bundle Python API Worker without deployment
         working-directory: apps/api
         run: |
