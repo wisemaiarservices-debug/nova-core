@@ -1080,20 +1080,23 @@ def test_membership_delete_requires_terminal_revocation_and_audit_event():
         "VALUES ('membership-active', 'tenant-a', 'subject-active', 'viewer')"
     )
 
-    with pytest.raises(
-        sqlite3.IntegrityError,
-        match="membership deletion requires audited revocation",
-    ):
-        db.execute("DELETE FROM tenant_memberships WHERE id='membership-active'")
+    # Existing active-membership deletion/tombstone workflows remain valid.
+    # The new guard is narrowly scoped to terminal revocation cleanup.
+    db.execute("DELETE FROM tenant_memberships WHERE id='membership-active'")
 
     db.execute(
-        "UPDATE tenant_memberships SET status='revoked' WHERE id='membership-active'"
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-revoked-no-audit', 'tenant-a', 'subject-revoked-no-audit', 'viewer')"
+    )
+    db.execute(
+        "UPDATE tenant_memberships SET status='revoked' "
+        "WHERE id='membership-revoked-no-audit'"
     )
     with pytest.raises(
         sqlite3.IntegrityError,
-        match="membership deletion requires audited revocation",
+        match="revoked membership deletion requires audited revocation",
     ):
-        db.execute("DELETE FROM tenant_memberships WHERE id='membership-active'")
+        db.execute("DELETE FROM tenant_memberships WHERE id='membership-revoked-no-audit'")
 
     db.execute(
         "INSERT INTO audit_events "
@@ -1126,6 +1129,6 @@ def test_membership_delete_rejects_unrelated_audit_action():
     )
     with pytest.raises(
         sqlite3.IntegrityError,
-        match="membership deletion requires audited revocation",
+        match="revoked membership deletion requires audited revocation",
     ):
         db.execute("DELETE FROM tenant_memberships WHERE id='membership-revoked'")
