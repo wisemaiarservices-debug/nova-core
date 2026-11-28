@@ -28,11 +28,10 @@ def database(path=":memory:"):
     db = sqlite3.connect(path, timeout=10)
     db.execute("PRAGMA foreign_keys = ON")
     db.execute("PRAGMA busy_timeout = 10000")
-    db.executescript(INITIAL.read_text(encoding="utf-8"))
-    db.executescript(TENANT.read_text(encoding="utf-8"))
-    db.executescript(REPLAY.read_text(encoding="utf-8"))
-    db.executescript(SITE_GUARD.read_text(encoding="utf-8"))
-    db.executescript(REPLAY_HARDENING.read_text(encoding="utf-8"))
+    # Exercise replay and concurrency behavior against the complete schema,
+    # while the dedicated migration tests below keep individual upgrades isolated.
+    for migration in sorted((ROOT / "migrations").glob("*.sql")):
+        db.executescript(migration.read_text(encoding="utf-8"))
     return db
 
 
