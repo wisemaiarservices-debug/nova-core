@@ -79,9 +79,10 @@ def test_scheduled_worker_cleans_sqlite_migrated_replay_store_across_repeated_in
 
     root = Path(__file__).resolve().parents[1]
     connection = sqlite3.connect(tmp_path / "scheduled-cleanup.sqlite")
-    connection.executescript((root / "migrations/0001_initial.sql").read_text(encoding="utf-8"))
-    connection.executescript((root / "migrations/0002_tenant_isolation.sql").read_text(encoding="utf-8"))
-    connection.executescript((root / "migrations/0003_internal_request_nonces.sql").read_text(encoding="utf-8"))
+    # Exercise the scheduled cleanup against the complete production schema,
+    # including nonce hardening and all later tenant integrity migrations.
+    for migration in sorted((root / "migrations").glob("*.sql")):
+        connection.executescript(migration.read_text(encoding="utf-8"))
 
     class SQLiteStatement:
         def __init__(self, sql):
