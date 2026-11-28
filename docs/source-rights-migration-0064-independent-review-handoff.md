@@ -1,9 +1,9 @@
-# Source rights migration 0064 — independent review handoff
+# Source rights migration 0064 — internal technical review handoff
 
 **Current PR:** [NOVA Core #311](https://github.com/wisemaiarservices-debug/nova-core/pull/311)  
 **Implementation head:** See the live PR head; this handoff is a historical review snapshot and does not certify the current commit.  
 **Historical CI reference:** Run 45056756186 validated an earlier commit only; check the live PR for current exact-head CI.  
-**Human review status:** Prior continuation approvals apply to earlier commits. Independent technical review of this exact head remains pending.
+**Review model:** The project owner has waived the external/independent reviewer requirement. Technical review is performed internally by the owner and assistant; no independent review is claimed.
 
 This handoff records the review scope and known limitations. It is not production certification or deployment authorization.
 
@@ -63,17 +63,17 @@ The human reviewer authorization is limited to this read-only aggregate inventor
 
 ## 5. Review outcome and next stage
 
-**Current review decision:** Exact-head CI passed (4/4 jobs). Continue controlled non-production engineering only; independent technical review of current head remains pending.
+**Current review decision:** External review has been waived by the project owner. Continue controlled non-production engineering only; internal exact-head review and operational staging gates remain in force.
 
 **Completed:** implementation, exact-head CI (4/4 jobs), disposable local D1 inventory/test coverage. Earlier reviewer continuation approvals apply to earlier commits only.
 
-**Pending:** genuine independent review of exact current head, staging D1 identity verification, secure read-only access, remote staging aggregate inventory, disposition of lifecycle policy and boundary/write-path findings, and final merge acceptance.
+**Pending:** internal exact-head review and disposition of lifecycle policy, boundary and write-path findings; staging D1 identity verification; secure read-only access; remote staging aggregate inventory; and final merge acceptance.
 
 ## 6. Operational boundary
 
 No production database access, remote D1 migration, Worker deployment, PR merge, customer-data export, secret change or paid-resource change is authorized by this handoff.
 
-A future merge decision requires the remaining review and staging gates to be satisfied. Any staging migration or deployment requires separate explicit operational authorization and a reviewed rollback/forward-recovery plan.
+A future merge decision requires internal technical review and the remaining staging/operational gates to be satisfied. Any staging migration or deployment requires separate explicit operational authorization and a reviewed rollback/forward-recovery plan.
 
 
 ## Current-head validation refresh — 22 November 2026
@@ -82,4 +82,4 @@ An earlier PR head passed workflow run [45056756186](https://github.com/wisemaia
 
 The latest implementation also resolves exact accepted observation retries before current insert guards and rechecks for a concurrently committed matching observation after a failed insert batch. A deterministic mocked regression covers the concurrent retry case; live concurrent D1 stress testing is not claimed.
 
-Prior independent review and continuation records target earlier commits and must not be treated as approval of the current head. A genuine independent reviewer must inspect the live PR head before final technical approval. PR #311 remains open and Draft; merge, deployment and remote migrations remain blocked pending the review and staging gates above.
+Prior review and continuation records target earlier commits and must not be treated as approval of the current head. The owner has waived external review; the live PR head must still pass internal technical review before final technical approval. PR #311 remains open and Draft; merge, deployment and remote migrations remain blocked pending the review and staging gates above.
