@@ -77,7 +77,7 @@ jobs:
           curl --fail --silent --show-error \
             --connect-timeout 10 --max-time 20 \
             -H "Content-Type: application/json" \
-            --data '{}' \
+            --data '{"site_id":"post-deploy-smoke"}' \
             "https://nova-core-api.neohaven.workers.dev/api/v1/recommendations/run" \
             --output "$response_file"
           jq -e '.status == "review_required"' "$response_file" >/dev/null
