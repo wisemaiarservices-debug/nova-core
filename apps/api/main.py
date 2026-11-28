@@ -9,6 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 try:
+    from .rate_limit import PublicApiRateLimitMiddleware
+except ImportError:
+    from rate_limit import PublicApiRateLimitMiddleware
+
+try:
     from .services.nasa_power import fetch_daily_point_async
     from .services.d1_storage import storage_status
     from .services.dataset_catalogue import catalogue_summary, list_datasets
@@ -71,6 +76,8 @@ configured_origins = (
 ALLOWED_ORIGINS = [
     origin.strip() for origin in configured_origins.split(",") if origin.strip()
 ]
+# CORS is outermost so browser clients receive CORS headers on 429/503 responses.
+app.add_middleware(PublicApiRateLimitMiddleware, fallback_env=worker_env)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
