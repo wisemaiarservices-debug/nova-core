@@ -1067,3 +1067,47 @@ def test_inactive_membership_can_be_reactivated_before_revocation():
     assert db.execute(
         "SELECT status FROM tenant_memberships WHERE id='membership-inactive'"
     ).fetchone() == ("active",)
+
+
+def test_nonce_hardening_migration_discards_only_null_keys_and_preserves_valid_records():
+    db = sqlite3.connect(":memory:")
+    db.executescript((ROOT / "migrations" / "0003_internal_request_nonces.sql").read_text(encoding="utf-8"))
+    db.execute(
+        "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) "
+        "VALUES (NULL, 100, 200, 50)"
+    )
+    db.execute(
+        "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) "
+        "VALUES ('valid-assertion-jti-0001', 100, 200, 50)"
+    )
+    db.execute(
+        "INSERT INTO internal_request_nonces (jti, expires_at, retained_until, consumed_at) "
+        "VALUES ('valid-assertion-jti-0002', 150, 250, 75)"
+    )
+
+    migration = ROOT / "migrations" / "0005_nonce_jti_not_null.sql"
+    db.executescript(migration.read_text(encoding="utf-8"))
+
+    rows = db.execute(
+        "SELECT jti, expires_at, retained_until, consumed_at "
+        "FROM internal_request_nonces ORDER BY jti"
+    ).fetchall()
+    assert rows == [
+        ("valid-assertion-jti-0001", 100, 200, 50),
+        ("valid-assertion-jti-0002", 150, 250, 75),
+    ]
+    jti_column = next(
+        row for row in db.execute("PRAGMA table_info(internal_request_nonces)").fetchall()
+        if row[1] == "jti"
+    )
+    assert jti_column[3] == 1  # NOT NULL
+    indexes = {
+        row[1] for row in db.execute("PRAGMA index_list(internal_request_nonces)").fetchall()
+    }
+    assert "idx_internal_request_nonces_retention" in indexes
+
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO internal_request_nonces "
+            "(jti, expires_at, retained_until, consumed_at) VALUES (NULL, 300, 400, 250)"
+        )
