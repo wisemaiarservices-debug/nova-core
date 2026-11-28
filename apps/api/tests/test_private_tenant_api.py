@@ -76,13 +76,12 @@ class SQLiteD1:
         self.connection = sqlite3.connect(":memory:")
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
-        for migration in (
-            "0001_initial.sql",
-            "0002_tenant_isolation.sql",
-            "0003_internal_request_nonces.sql",
-        ):
+        # Keep this end-to-end D1 fixture aligned with the complete ordered
+        # migration chain, including nonce hardening and all tenant integrity
+        # guards. A partial fixture can silently test an obsolete schema.
+        for migration in sorted((ROOT / "migrations").glob("*.sql")):
             self.connection.executescript(
-                (ROOT / "migrations" / migration).read_text(encoding="utf-8")
+                migration.read_text(encoding="utf-8")
             )
         self.connection.executescript("""
             INSERT INTO tenants (id, display_name, status)
