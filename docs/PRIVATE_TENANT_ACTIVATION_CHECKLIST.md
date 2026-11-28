@@ -32,6 +32,7 @@ This checklist is the release record for the private tenant API, Cloudflare Acce
 - [ ] Replace every placeholder D1 database ID in the private API and cleanup Worker configs with the same verified database ID.
 - [ ] Enumerate the checked-in migration files in repository order; review their SQL and migration history before applying.
 - [ ] Apply migrations first to an isolated non-production database and capture migration results.
+- [ ] **Production migration 0003 gate:** the current `0003_internal_request_nonces.sql` header restricts it to disposable/staging D1. Do not apply it to production under that contract. Production remains blocked until a separately reviewed source change explicitly revises the restriction, isolated D1 validation passes, and a distinct production migration approval is recorded. The fact that Worker configs include the shared migrations directory does not authorize applying 0003.
 - [ ] Verify required tenant, membership, grant, resource and nonce structures; unique constraints, foreign keys/triggers, indexes and nonce expiry/retention behavior against the actual migration SQL.
 - [ ] Verify the private API and cleanup Worker point to the same intended database and no other environment.
 - [ ] Run repository D1 integration tests against the migrated isolated database, including concurrent duplicate nonce consumption: exactly one request may consume a given nonce.
