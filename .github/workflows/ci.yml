@@ -34,7 +34,9 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-          cache-dependency-glob: apps/api/pyproject.toml
+          cache-dependency-glob: |
+            apps/api/pyproject.toml
+            apps/api/uv.lock
       - name: Bundle Python API Worker without deployment
         working-directory: apps/api
         run: |

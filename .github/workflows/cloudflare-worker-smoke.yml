@@ -28,13 +28,13 @@ jobs:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.13 --project apps/api --all-groups
+        run: uv sync --locked --python 3.13 --project apps/api --all-groups
       - name: Run Worker locally and smoke-test FastAPI routes
         shell: bash
         run: |
           set -euo pipefail
           cd apps/api
-          uv run --python 3.13 pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nova-worker.log 2>&1 &
+          uv run --locked --python 3.13 pywrangler dev --ip 127.0.0.1 --port 8787 > /tmp/nova-worker.log 2>&1 &
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
@@ -80,13 +80,13 @@ jobs:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.13 --project apps/api --all-groups
+        run: uv sync --locked --python 3.13 --project apps/api --all-groups
       - name: Run isolated Python Worker with a native Response stream fixture
         shell: bash
         run: |
           set -euo pipefail
           cd apps/api
-          uv run --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8788 > /tmp/nova-pvgis-runtime.log 2>&1 &
+          uv run --locked --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8788 > /tmp/nova-pvgis-runtime.log 2>&1 &
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
@@ -119,13 +119,13 @@ jobs:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.13 --project apps/api --all-groups
+        run: uv sync --locked --python 3.13 --project apps/api --all-groups
       - name: Run isolated Worker through global js.fetch against reserved .invalid domain
         shell: bash
         run: |
           set -euo pipefail
           cd apps/api
-          uv run --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8791 > /tmp/nova-pvgis-global-binding.log 2>&1 &
+          uv run --locked --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8791 > /tmp/nova-pvgis-global-binding.log 2>&1 &
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
@@ -190,13 +190,13 @@ jobs:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.13 --project apps/api --all-groups
+        run: uv sync --locked --python 3.13 --project apps/api --all-groups
       - name: Run isolated Worker through its real global js.fetch path
         shell: bash
         run: |
           set -euo pipefail
           cd apps/api
-          uv run --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8790 > /tmp/nova-pvgis-global-fetch.log 2>&1 &
+          uv run --locked --python 3.13 pywrangler dev --config wrangler.pvgis-test.jsonc --ip 127.0.0.1 --port 8790 > /tmp/nova-pvgis-global-fetch.log 2>&1 &
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
@@ -236,13 +236,13 @@ jobs:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.13 --project apps/api --all-groups
+        run: uv sync --locked --python 3.13 --project apps/api --all-groups
       - name: Run API Worker and probe live PVGIS provider
         shell: bash
         run: |
           set -euo pipefail
           cd apps/api
-          uv run --python 3.13 pywrangler dev --ip 127.0.0.1 --port 8789 > /tmp/nova-pvgis-live.log 2>&1 &
+          uv run --locked --python 3.13 pywrangler dev --ip 127.0.0.1 --port 8789 > /tmp/nova-pvgis-live.log 2>&1 &
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
@@ -283,13 +283,13 @@ jobs:
           node-version: 22
       - uses: astral-sh/setup-uv@v5
       - name: Install Python Worker dependencies
-        run: uv sync --python 3.13 --project apps/api --all-groups
+        run: uv sync --locked --python 3.13 --project apps/api --all-groups
       - name: Run isolated private Worker and verify unauthenticated denial
         shell: bash
         run: |
           set -euo pipefail
           cd apps/api
-          uv run --python 3.13 pywrangler dev --config wrangler.tenant.jsonc --ip 127.0.0.1 --port 8792 > /tmp/nova-private-tenant-worker.log 2>&1 &
+          uv run --locked --python 3.13 pywrangler dev --config wrangler.tenant.jsonc --ip 127.0.0.1 --port 8792 > /tmp/nova-private-tenant-worker.log 2>&1 &
           WORKER_PID=$!
           trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
           READY=0
