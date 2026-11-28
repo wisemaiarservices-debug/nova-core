@@ -36,6 +36,8 @@ def database():
     db.executescript(membership_subject_guard.read_text(encoding="utf-8"))
     revoked_membership_guard = ROOT / "migrations" / "0015_revoked_membership_terminal.sql"
     db.executescript(revoked_membership_guard.read_text(encoding="utf-8"))
+    membership_delete_guard = ROOT / "migrations" / "0016_membership_delete_audit_guard.sql"
+    db.executescript(membership_delete_guard.read_text(encoding="utf-8"))
     return db
 
 
@@ -1067,3 +1069,63 @@ def test_inactive_membership_can_be_reactivated_before_revocation():
     assert db.execute(
         "SELECT status FROM tenant_memberships WHERE id='membership-inactive'"
     ).fetchone() == ("active",)
+
+
+
+def test_membership_delete_requires_terminal_revocation_and_audit_event():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role) "
+        "VALUES ('membership-active', 'tenant-a', 'subject-active', 'viewer')"
+    )
+
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="membership deletion requires audited revocation",
+    ):
+        db.execute("DELETE FROM tenant_memberships WHERE id='membership-active'")
+
+    db.execute(
+        "UPDATE tenant_memberships SET status='revoked' WHERE id='membership-active'"
+    )
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="membership deletion requires audited revocation",
+    ):
+        db.execute("DELETE FROM tenant_memberships WHERE id='membership-active'")
+
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('membership-revocation-audit', 'operator', 'membership.revoked', "
+        "'membership', 'membership-active', 'tenant-a')"
+    )
+    db.execute("DELETE FROM tenant_memberships WHERE id='membership-active'")
+    assert db.execute(
+        "SELECT COUNT(*) FROM tenant_memberships WHERE id='membership-active'"
+    ).fetchone() == (0,)
+    assert db.execute(
+        "SELECT entity_id, tenant_id FROM audit_events "
+        "WHERE id='membership-revocation-audit'"
+    ).fetchone() == ("membership-active", "tenant-a")
+
+
+def test_membership_delete_rejects_unrelated_audit_action():
+    db = database()
+    seed_tenant(db, "tenant-a")
+    db.execute(
+        "INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) "
+        "VALUES ('membership-revoked', 'tenant-a', 'subject-revoked', 'viewer', 'revoked')"
+    )
+    db.execute(
+        "INSERT INTO audit_events "
+        "(id, actor_type, action, entity_type, entity_id, tenant_id) "
+        "VALUES ('membership-updated-audit', 'operator', 'membership.updated', "
+        "'membership', 'membership-revoked', 'tenant-a')"
+    )
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="membership deletion requires audited revocation",
+    ):
+        db.execute("DELETE FROM tenant_memberships WHERE id='membership-revoked'")
