@@ -44,11 +44,11 @@ jobs:
           set -euo pipefail
           settings_file="$(mktemp)"
           trap 'rm -f "$settings_file"' EXIT
-          curl --fail --silent --show-error \\
-            --connect-timeout 10 --max-time 30 \\
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \\
-            -H "Content-Type: application/json" \\
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/nova-core-api/settings" \\
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/nova-core-api/settings" \
             --output "$settings_file"
           jq -e '
             .success == true and
