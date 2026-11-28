@@ -96,3 +96,46 @@ def test_asset_cannot_be_attached_to_observation_from_another_site():
         assert False, "cross-site asset reference should be rejected"
     except sqlite3.IntegrityError:
         pass
+
+
+
+def test_nonce_hardening_migration_preserves_valid_rows_and_discards_null_keys():
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    db = _database()
+    db.executescript(
+        (migrations / "0003_internal_request_nonces.sql").read_text(encoding="utf-8")
+    )
+    db.execute(
+        "INSERT INTO internal_request_nonces "
+        "(jti, expires_at, retained_until, consumed_at) VALUES (?, ?, ?, ?)",
+        ("valid-assertion-id-0001", 1_800_000_000, 1_800_000_300, 1_799_999_900),
+    )
+    # SQLite permits NULL in a TEXT PRIMARY KEY unless NOT NULL is explicit.
+    db.execute(
+        "INSERT INTO internal_request_nonces "
+        "(jti, expires_at, retained_until, consumed_at) VALUES (NULL, ?, ?, ?)",
+        (1_800_000_000, 1_800_000_300, 1_799_999_900),
+    )
+
+    db.executescript(
+        (migrations / "0005_nonce_jti_not_null.sql").read_text(encoding="utf-8")
+    )
+
+    assert db.execute(
+        "SELECT jti, expires_at, retained_until, consumed_at "
+        "FROM internal_request_nonces"
+    ).fetchall() == [
+        ("valid-assertion-id-0001", 1_800_000_000, 1_800_000_300, 1_799_999_900)
+    ]
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO internal_request_nonces "
+            "(jti, expires_at, retained_until, consumed_at) VALUES (NULL, 1, 1, 1)"
+        )
+    indexes = {
+        row[1]
+        for row in db.execute(
+            "PRAGMA index_list(internal_request_nonces)"
+        ).fetchall()
+    }
+    assert "idx_internal_request_nonces_retention" in indexes
