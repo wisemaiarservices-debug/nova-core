@@ -47,6 +47,11 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
         self.db.executescript((ROOT / "migrations" / "0028_tenant_asset_registration.sql").read_text())
         self.db.executescript(MIGRATION.read_text())
         self.db.executescript((ROOT / "migrations" / "0033_site_grant_mutation_guards.sql").read_text())
+        self.db.executescript("""
+          CREATE TABLE source_evidence_events (id TEXT);
+          CREATE TABLE source_data_rights_events (id TEXT);
+        """)
+        self.db.executescript((ROOT / "migrations" / "0065_source_rights_event_rowid_order.sql").read_text())
         self.db.executemany(
             "INSERT INTO tenant_resource_grants VALUES (?, 'tenant-a', ?, 'site', 'site-a', 'read')",
             [('grant-owner', 'owner-sub'), ('grant-reviewer', 'reviewer-sub')],
@@ -147,9 +152,49 @@ class TenantSourceRegistryMigrationTests(unittest.TestCase):
             """, ('b'*64,))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
+    def test_source_event_order_rejects_backdated_future_invalid_and_injected_rowids(self):
+        self.db.execute("""
+          INSERT INTO tenant_source_events
+          (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id)
+          VALUES ('event-register','tenant-a','site-a','source-a','owner-sub','registered','evidence/source-a','request-register')
+        """)
+        first = self.db.execute(
+            "SELECT rowid, occurred_at FROM tenant_source_events WHERE id='event-register'"
+        ).fetchone()
+        # Equal timestamps are valid; rowid remains the deterministic tie-breaker.
+        self.db.execute("""
+          INSERT INTO tenant_source_events
+          (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id,occurred_at)
+          VALUES ('event-same-time','tenant-a','site-a','source-a','owner-sub','registered',
+                  'evidence/source-a','request-same-time',?)
+        """, (first[1],))
+        second = self.db.execute(
+            "SELECT rowid FROM tenant_source_events WHERE id='event-same-time'"
+        ).fetchone()[0]
+        self.assertEqual(second, first[0] + 1)
+
+        for event_id, request_id, occurred_at in (
+            ('event-backdated', 'request-backdated', '2000-01-01T00:00:00.000Z'),
+            ('event-future', 'request-future', '2999-01-01T00:00:00.000Z'),
+            ('event-invalid-time', 'request-invalid-time', 'not-a-timestamp'),
+        ):
+            with self.assertRaisesRegex(sqlite3.IntegrityError, 'timestamp must be valid and monotonic'):
+                self.db.execute("""
+                  INSERT INTO tenant_source_events
+                  (id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id,occurred_at)
+                  VALUES (?,'tenant-a','site-a','source-a','owner-sub','registered',
+                          'evidence/source-a',?,?)
+                """, (event_id, request_id, occurred_at))
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'rowid must be monotonic'):
+            self.db.execute("""
+              INSERT INTO tenant_source_events
+              (rowid,id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,request_id)
+              VALUES (999,'event-injected','tenant-a','site-a','source-a','owner-sub','registered',
+                      'evidence/source-a','request-injected')
+            """)
+        count = self.db.execute("SELECT COUNT(*) FROM tenant_source_events").fetchone()[0]
+        self.assertEqual(count, 2)
 
     def test_source_lifecycle_event_rechecks_site_read_grant_at_insert(self):
         self.db.execute("DELETE FROM tenant_resource_grants WHERE subject='owner-sub'")
@@ -196,3 +241,7 @@ if __name__ == "__main__":
               (id,tenant_id,site_id,asset_id,actor_subject,event_type,request_id)
               VALUES ('asset-event-no-grant','tenant-a','site-a','asset-a','owner-sub','created','asset-request-no-grant')
             """)
+
+
+if __name__ == "__main__":
+    unittest.main()

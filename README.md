@@ -32,9 +32,11 @@ NOVA Core provides the shared services, data model, AI workflow, and architectur
 
 Observe → Analyze → Forecast → Recommend → Simulate → Optimize → Measure Impact
 
+Shared multi-tenant data, governance and intelligence foundation for NOVA OS sustainable-infrastructure modules.
+
 ## SolarHub Role
 
-For the SolarHub demo, NOVA Core should provide a deterministic, reliable AI v0 layer:
+For the SolarHub demo, NOVA Core provides a deterministic, reliable AI v0 layer:
 
 - Forecast service
 - Recommendation service
@@ -42,4 +44,4 @@ For the SolarHub demo, NOVA Core should provide a deterministic, reliable AI v0 
 - Impact scoring service
 - AI assistant explanation layer
 
-Version 0 can be rules-based and deterministic. Reliability is more important than model complexity for September.
+Version 0 can be rules-based and deterministic. Prioritize reliability, reproducibility and clear provenance before increasing model complexity.

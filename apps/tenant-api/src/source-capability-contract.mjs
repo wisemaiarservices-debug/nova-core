@@ -1,6 +1,7 @@
 const MODULES = new Set(["neoagro", "neogrid", "neocell", "nova-core"]);
 const MEASUREMENT_KINDS = new Set(["measured", "derived"]);
 const SAMPLING_MODES = new Set(["interval", "event"]);
+const PROTOCOL_PATTERN = /^[a-z][a-z0-9._-]{0,79}$/;
 
 const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const text = (value, max) => typeof value === "string" && value.length > 0 &&
@@ -45,7 +46,7 @@ export function validateSourceCapabilityDraft(draft, source) {
 
   if (!exactKeys(draft, [
     "source_id", "tenant_id", "site_id", "asset_id", "module", "metric", "unit",
-    "measurement_kind", "quantity_semantics", "acquisition_protocol",
+    "measurement_kind", "quantity_semantics", "acquisition_protocol", "protocol_version",
     "sampling", "timestamp", "quality", "calibration", "data_rights_ref",
     "evidence_ref", "version",
   ])) {
@@ -72,7 +73,10 @@ export function validateSourceCapabilityDraft(draft, source) {
   if (!text(draft.quantity_semantics, 500)) {
     fail("capability.quantity_semantics_invalid", "$.quantity_semantics");
   }
-  if (!id(draft.acquisition_protocol, 80)) {
+  if (!text(draft.protocol_version, 80)) {
+    fail("capability.protocol_version_invalid", "$.protocol_version");
+  }
+  if (typeof draft.acquisition_protocol !== "string" || !PROTOCOL_PATTERN.test(draft.acquisition_protocol)) {
     fail("capability.acquisition_protocol_invalid", "$.acquisition_protocol");
   }
   if (!integer(draft.version, 1, 1000000)) {
@@ -129,11 +133,11 @@ export function validateSourceCapabilityDraft(draft, source) {
     if (typeof draft.calibration.required !== "boolean") {
       fail("capability.calibration_required_invalid", "$.calibration.required");
     }
-    if (draft.calibration.required && !reference(draft.calibration.profile_ref, 500)) {
+    if (draft.calibration.required && !reference(draft.calibration.profile_ref, 160)) {
       fail("capability.calibration_profile_required", "$.calibration.profile_ref");
     }
     if (!draft.calibration.required && draft.calibration.profile_ref !== undefined &&
-        draft.calibration.profile_ref !== null && !reference(draft.calibration.profile_ref, 500)) {
+        draft.calibration.profile_ref !== null && !reference(draft.calibration.profile_ref, 160)) {
       fail("capability.calibration_profile_invalid", "$.calibration.profile_ref");
     }
   }

@@ -2,7 +2,6 @@ name: NOVA Core Cloudflare Worker smoke test
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - "apps/api/**"
       - ".github/workflows/cloudflare-worker-smoke.yml"

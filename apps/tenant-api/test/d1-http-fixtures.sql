@@ -8,6 +8,8 @@ INSERT INTO tenant_memberships (id, tenant_id, subject, role, status) VALUES
   ('membership-http-b-owner', 'tenant-http-b', 'ci-tenant-b-owner', 'tenant_owner', 'active'),
   ('membership-http-a', 'tenant-http-a', 'ci-human-subject', 'tenant_owner', 'active'),
   ('membership-http-reviewer', 'tenant-http-a', 'ci-measurement-reviewer', 'viewer', 'active'),
+  ('membership-http-rights-revocation-reviewer', 'tenant-http-a', 'ci-rights-revocation-reviewer', 'viewer', 'active'),
+  ('membership-http-rights-inactive-reviewer', 'tenant-http-a', 'ci-rights-inactive-reviewer', 'viewer', 'active'),
   ('membership-http-lifecycle', 'tenant-http-a', 'ci-lifecycle-member', 'viewer', 'active'),
   ('membership-http-admin', 'tenant-http-a', 'ci-http-admin', 'tenant_admin', 'active'),
   ('membership-http-service-subject', 'tenant-http-a', 'neoagro-ingestion-service', 'viewer', 'active');
@@ -58,6 +60,28 @@ INSERT INTO tenant_source_reviewers
 (tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref)
 VALUES ('tenant-http-a','site-http-a','ci-measurement-reviewer','active','ci-human-subject',
  'fixture:source-reviewer-appointment');
+
+-- Dedicated reviewer identity for the rights-revocation negative test. Keep
+-- it separate from ci-measurement-reviewer, which the later HTTP happy path uses.
+INSERT INTO tenant_source_reviewers
+(tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref)
+VALUES ('tenant-http-a','site-http-a','ci-rights-revocation-reviewer','active','ci-human-subject',
+ 'fixture:rights-revocation-reviewer-appointment');
+INSERT INTO tenant_source_reviewer_events
+(id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,request_id)
+VALUES ('source-http-a-rights-reviewer-assigned','tenant-http-a','site-http-a',
+ 'ci-rights-revocation-reviewer','ci-human-subject','assigned',
+ 'fixture:rights-revocation-reviewer-appointment','ci-rights-reviewer-assigned');
+
+INSERT INTO tenant_source_reviewers
+(tenant_id,site_id,reviewer_subject,status,assigned_by_subject,evidence_ref)
+VALUES ('tenant-http-a','site-http-a','ci-rights-inactive-reviewer','active','ci-human-subject',
+ 'fixture:rights-inactive-reviewer-appointment');
+INSERT INTO tenant_source_reviewer_events
+(id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,request_id)
+VALUES ('source-http-a-rights-inactive-reviewer-assigned','tenant-http-a','site-http-a',
+ 'ci-rights-inactive-reviewer','ci-human-subject','assigned',
+ 'fixture:rights-inactive-reviewer-appointment','ci-rights-inactive-reviewer-assigned');
 INSERT INTO tenant_source_reviewer_events
 (id,tenant_id,site_id,reviewer_subject,actor_subject,event_type,evidence_ref,request_id)
 VALUES ('source-http-a-reviewer-assigned','tenant-http-a','site-http-a','ci-measurement-reviewer',
@@ -69,22 +93,38 @@ VALUES
  'ci-human-subject','registered','fixture:source-registration',NULL,'ci-source-registration','2026-01-01T00:00:00.000Z'),
 ('source-http-a-verified','tenant-http-a','site-http-a','source-http-a',
  'ci-measurement-reviewer','verified','fixture:source-verification',NULL,'ci-source-verified','2026-01-02T00:00:00.000Z');
-INSERT INTO observations
-(id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
- idempotency_key, verification_status, provenance_json, quality_flags_json)
+-- Synthetic source-capability lifecycle happy path. This proves that a capability
+-- starts pending, requires creator submission, and becomes approved only after an
+-- independently assigned active reviewer records the approval event.
+INSERT INTO source_capabilities
+(id,tenant_id,site_id,source_id,asset_id,module,metric,unit,measurement_kind,
+ quantity_semantics,acquisition_protocol,protocol_version,sampling_mode,interval_seconds,
+ max_age_seconds,max_future_skew_seconds,timezone,allowed_quality_flags_json,
+ calibration_required,calibration_profile_ref,data_rights_ref,evidence_ref,version,status,
+ created_by_subject)
 VALUES
-('obs-http-source-revocation', 'site-http-a', 'tenant-http-a', 'source-http-a', 'neoagro',
- 'ec', 1.5, 'dS/m', '2026-05-10T10:00:00Z', 'ci-source-revocation-observation',
- 'verified', '{"provider":"CI fixture provider","acquisition_method":"manual"}', '[]');
+('capability-http-a','tenant-http-a','site-http-a','source-http-a',NULL,'neoagro','ec','dS/m',
+ 'measured','Electrical conductivity of irrigation water','manual-lab','1.0','interval',3600,
+ 31536000,300,'Africa/Tunis','["estimated","suspect"]',0,NULL,
+ 'source-rights:ci-http-a','source-evidence:ci-http-a',1,'pending','ci-human-subject');
+
+INSERT INTO source_capability_events
+(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
+VALUES
+('capability-http-a-submitted','capability-http-a','tenant-http-a','site-http-a','source-http-a',
+ 'ci-human-subject','submitted','fixture:capability-submission',NULL,'ci-capability-submit');
 
 
-INSERT INTO observations
-(id, site_id, tenant_id, source_id, module, metric, value, unit, observed_at,
- idempotency_key, verification_status, provenance_json, quality_flags_json)
-VALUES
-('obs-http-verified', 'site-http-a', 'tenant-http-a', 'source-http-a', 'neoagro',
- 'ec', 1.5, 'dS/m', '2026-05-10T10:00:00Z', 'ci-observation-1', 'unverified',
- '{"provider":"CI fixture provider","acquisition_method":"manual"}', '[]');
+
+-- The approved status is applied by the event trigger; the unique event index
+-- and review guards make duplicate, out-of-order, or self-approved events fail.
+-- Keep this fixture D1-compatible: no temporary tables or test-only schema objects.
+
+
+
+
+
+
 
 INSERT INTO audit_events
 (id, tenant_id, actor_type, actor_id, action, entity_type, entity_id, request_id, details_json)
@@ -114,13 +154,27 @@ VALUES
 ('source-http-grant', 'site-http-a', 'tenant-http-a', 'neoagro', 'CI verified grant provider',
  'sensor', 'CI verified grant source', 'verified', '{}');
 
-INSERT INTO observations
-(id, site_id, tenant_id, asset_id, source_id, module, metric, value, unit, observed_at,
- idempotency_key, verification_status, provenance_json, quality_flags_json)
+
+-- Exact asset-scoped capability for the resource-grant observation fixture.
+INSERT INTO source_capabilities
+(id,tenant_id,site_id,source_id,asset_id,module,metric,unit,measurement_kind,
+ quantity_semantics,acquisition_protocol,protocol_version,sampling_mode,interval_seconds,
+ max_age_seconds,max_future_skew_seconds,timezone,allowed_quality_flags_json,
+ calibration_required,calibration_profile_ref,data_rights_ref,evidence_ref,version,status,
+ created_by_subject)
 VALUES
-('obs-http-grant', 'site-http-a', 'tenant-http-a', 'asset-http-grant', 'source-http-grant',
- 'neoagro', 'soil_moisture', 0.24, 'm3/m3', '2026-11-13T10:00:00Z',
- 'ci-resource-grant-observation', 'unverified', '{}', '[]');
+('capability-http-grant','tenant-http-a','site-http-a','source-http-grant','asset-http-grant',
+ 'neoagro','soil_moisture','m3/m3','measured','CI soil moisture fixture',
+ 'manual-lab','1.0','interval',3600,31536000,300,'Africa/Tunis','[]',
+ 0,NULL,'source-rights:ci-http-grant-asset','source-evidence:ci-http-grant-asset',1,'pending','ci-human-subject');
+INSERT INTO source_capability_events
+(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
+VALUES
+('capability-http-grant-submitted','capability-http-grant','tenant-http-a','site-http-a','source-http-grant',
+ 'ci-human-subject','submitted','fixture:capability-submission',NULL,'ci-capability-grant-submit');
+
+
+
 
 
 -- Complete, synthetic governance chain for lifecycle revocation during an active
@@ -209,17 +263,8 @@ VALUES
  'ec','dS/m','ci-v1',0,2,'2026-01-01T00:00:00Z',NULL,
  'CI deterministic comparison','fixture:policy-http-revocation','ci-human-subject');
 
-INSERT INTO observations
-(id,site_id,tenant_id,asset_id,source_id,module,metric,value,unit,observed_at,idempotency_key,
- verification_status,provenance_json,quality_flags_json)
-VALUES
-('obs-http-governance-revocation','site-http-a','tenant-http-a','asset-http-grant','source-http-a',
- 'neoagro','ec',1.5,'dS/m','2026-05-10T10:00:00Z','ci-governance-revocation-observation',
- 'verified','{"provider":"CI fixture provider","acquisition_method":"manual"}','[]');
 
--- Synthetic source-capability lifecycle happy path. This proves that a capability
--- starts pending, requires creator submission, and becomes approved only after an
--- independently assigned active reviewer records the approval event.
+-- Asset-scoped calibration-required capability for the governance assessment fixture.
 INSERT INTO source_capabilities
 (id,tenant_id,site_id,source_id,asset_id,module,metric,unit,measurement_kind,
  quantity_semantics,acquisition_protocol,protocol_version,sampling_mode,interval_seconds,
@@ -227,23 +272,111 @@ INSERT INTO source_capabilities
  calibration_required,calibration_profile_ref,data_rights_ref,evidence_ref,version,status,
  created_by_subject)
 VALUES
-('capability-http-a','tenant-http-a','site-http-a','source-http-a',NULL,'neoagro','ec','dS/m',
- 'measured','Electrical conductivity of irrigation water','manual-lab','1.0','interval',3600,
- 7200,300,'Africa/Tunis','["estimated","suspect"]',0,NULL,
- 'fixture:data-rights','fixture:capability-evidence',1,'pending','ci-human-subject');
-
+('capability-http-governance','tenant-http-a','site-http-a','source-http-a','asset-http-grant',
+ 'neoagro','ec','dS/m','measured','CI calibrated EC fixture',
+ 'manual-lab','1.0','interval',3600,31536000,300,'Africa/Tunis','[]',
+ 1,'profile-http-calibration','source-rights:ci-http-a-asset','source-evidence:ci-http-a-asset',1,'pending','ci-human-subject');
 INSERT INTO source_capability_events
 (id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
 VALUES
-('capability-http-a-submitted','capability-http-a','tenant-http-a','site-http-a','source-http-a',
- 'ci-human-subject','submitted','fixture:capability-submission',NULL,'ci-capability-submit');
+('capability-http-governance-submitted','capability-http-governance','tenant-http-a','site-http-a','source-http-a',
+ 'ci-human-subject','submitted','fixture:capability-submission',NULL,'ci-capability-governance-submit');
 
-INSERT INTO source_capability_events
-(id,capability_id,tenant_id,site_id,source_id,actor_subject,event_type,evidence_ref,reason,request_id)
+
+
+
+
+
+-- Evidence and rights fixtures for the authenticated lifecycle routes. The
+-- first document remains registered/pending review; the second is independently
+-- verified and supports the pending rights declaration.
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
 VALUES
-('capability-http-a-approved','capability-http-a','tenant-http-a','site-http-a','source-http-a',
- 'ci-measurement-reviewer','approved','fixture:capability-review',NULL,'ci-capability-approve');
+('audit-http-evidence-route-create','tenant-http-a','operator','ci-human-subject',
+ 'source_evidence.registered','source_evidence_document','source-evidence:ci-route-evidence',
+ 'req-http-evidence-route-create','{}'),
+('audit-http-rights-evidence-create','tenant-http-a','operator','ci-human-subject',
+ 'source_evidence.registered','source_evidence_document','source-evidence:ci-rights-evidence',
+ 'req-http-rights-evidence-create','{}');
 
--- The approved status is applied by the event trigger; the unique event index
--- and review guards make duplicate, out-of-order, or self-approved events fail.
--- Keep this fixture D1-compatible: no temporary tables or test-only schema objects.
+INSERT INTO source_evidence_documents
+(id,tenant_id,site_id,source_id,document_type,file_name,media_type,byte_length,sha256,
+ document_bytes,issuer_name,document_reference,issued_at,effective_from,effective_to,
+ uploaded_by_subject,request_id)
+VALUES
+('source-evidence:ci-route-evidence','tenant-http-a','site-http-a','source-http-a',
+ 'data_license','route-evidence.pdf','application/pdf',5,'2222222222222222222222222222222222222222222222222222222222222222',X'255044462D',
+ 'CI route provider','CI-ROUTE-EVIDENCE','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',
+ '2027-01-01T00:00:00Z','ci-human-subject','req-http-evidence-route-create'),
+('source-evidence:ci-rights-evidence','tenant-http-a','site-http-a','source-http-a',
+ 'data_license','rights-evidence.pdf','application/pdf',5,'1111111111111111111111111111111111111111111111111111111111111111',X'255044462D',
+ 'CI rights provider','CI-RIGHTS-EVIDENCE','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',
+ '2027-01-01T00:00:00Z','ci-human-subject','req-http-rights-evidence-create');
+
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-evidence-route-registered','tenant-http-a','operator','ci-human-subject',
+ 'source_evidence.registered','source_evidence_document','source-evidence:ci-route-evidence',
+ 'req-http-evidence-route-registered','{}'),
+('audit-http-rights-evidence-registered','tenant-http-a','operator','ci-human-subject',
+ 'source_evidence.registered','source_evidence_document','source-evidence:ci-rights-evidence',
+ 'req-http-rights-evidence-registered','{}');
+
+INSERT INTO source_evidence_events
+(id,evidence_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_sha256,request_id)
+VALUES
+('event-http-evidence-route-registered','source-evidence:ci-route-evidence','tenant-http-a',
+ 'site-http-a','source-http-a','ci-human-subject','registered','2222222222222222222222222222222222222222222222222222222222222222',
+ 'req-http-evidence-route-registered'),
+('event-http-rights-evidence-registered','source-evidence:ci-rights-evidence','tenant-http-a',
+ 'site-http-a','source-http-a','ci-human-subject','registered','1111111111111111111111111111111111111111111111111111111111111111',
+ 'req-http-rights-evidence-registered');
+
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-rights-evidence-verified','tenant-http-a','operator','ci-measurement-reviewer',
+ 'source_evidence.verified','source_evidence_document','source-evidence:ci-rights-evidence',
+ 'req-http-rights-evidence-verified','{}');
+
+INSERT INTO source_evidence_events
+(id,evidence_id,tenant_id,site_id,source_id,actor_subject,event_type,reviewed_sha256,request_id)
+VALUES
+('event-http-rights-evidence-verified','source-evidence:ci-rights-evidence','tenant-http-a',
+ 'site-http-a','source-http-a','ci-measurement-reviewer','verified','1111111111111111111111111111111111111111111111111111111111111111',
+ 'req-http-rights-evidence-verified');
+
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-rights-declared','tenant-http-a','operator','ci-human-subject',
+ 'source_data_rights.declared','source_data_rights_declaration','source-rights:ci-route-rights',
+ 'req-http-rights-declared','{}');
+
+INSERT INTO source_data_rights_declarations
+(id,tenant_id,site_id,source_id,supporting_evidence_id,supporting_evidence_sha256,
+ provider_name,controller_name,basis_type,instrument_reference,permitted_purposes_json,
+ restrictions_json,effective_from,effective_to,declaration_sha256,declared_by_subject,request_id)
+VALUES
+('source-rights:ci-route-rights','tenant-http-a','site-http-a','source-http-a',
+ 'source-evidence:ci-rights-evidence','1111111111111111111111111111111111111111111111111111111111111111',
+ 'CI rights provider','CI tenant controller','license','CI-ROUTE-RIGHTS',
+ '["measurement_ingestion","analytics"]','[]','2026-01-01T00:00:00Z','2027-01-01T00:00:00Z',
+ lower(hex(zeroblob(32))),'ci-human-subject','req-http-rights-declared');
+
+INSERT INTO audit_events
+(id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,request_id,details_json)
+VALUES
+('audit-http-rights-event-declared','tenant-http-a','operator','ci-human-subject',
+ 'source_data_rights.declared','source_data_rights_declaration','source-rights:ci-route-rights',
+ 'req-http-rights-event-declared','{}');
+
+INSERT INTO source_data_rights_events
+(id,declaration_id,tenant_id,site_id,source_id,actor_subject,event_type,
+ reviewed_declaration_sha256,reviewed_evidence_sha256,request_id)
+VALUES
+('event-http-rights-declared','source-rights:ci-route-rights','tenant-http-a','site-http-a',
+ 'source-http-a','ci-human-subject','declared',lower(hex(zeroblob(32))),
+ '1111111111111111111111111111111111111111111111111111111111111111','req-http-rights-event-declared');

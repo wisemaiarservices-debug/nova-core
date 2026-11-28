@@ -102,7 +102,7 @@ export async function registerLaboratoryReportEvidence(db, tenantId, subject, re
     status: 201 };
 }
 
-export async function readLaboratoryReportEvidence(db, tenantId, subject, siteId, evidenceId) {
+export async function readLaboratoryReportEvidence(db, tenantId, subject, siteId, evidenceId, requestId = null) {
   if (!validId(siteId) || !validId(evidenceId)) return null;
   const result = await db.prepare(
     "SELECT e.id, e.tenant_id, e.site_id, e.evidence_type, e.file_name, e.media_type, e.byte_length, e.sha256, e.document_bytes, e.laboratory_name, e.report_number, e.sample_reference, e.issued_at, e.verification_status, e.uploaded_by_subject, e.created_at FROM laboratory_report_evidence e WHERE e.tenant_id = ? AND e.site_id = ? AND e.id = ? AND EXISTS (SELECT 1 FROM tenants t JOIN tenant_memberships m ON m.tenant_id = t.id JOIN tenant_resource_grants g ON g.tenant_id = t.id AND g.subject = m.subject AND g.resource_type = 'site' AND g.resource_id = e.site_id AND g.action = 'read' WHERE t.id = e.tenant_id AND t.status = 'active' AND m.subject = ? AND m.status = 'active' AND m.role IN ('tenant_owner','tenant_admin','operator','analyst','viewer','service')) LIMIT 2"
@@ -113,6 +113,16 @@ export async function readLaboratoryReportEvidence(db, tenantId, subject, siteId
     ? row.document_bytes : new Uint8Array(row.document_bytes);
   if (bytes.byteLength !== row.byte_length || await digestHex(bytes) !== row.sha256) {
     throw new Error("laboratory_report_persisted_digest_mismatch");
+  }
+  // Record every successful document disclosure before returning the bytes.
+  // If the audit write fails, fail closed rather than serving an unaudited copy.
+  const audit = await db.prepare(
+    "INSERT INTO audit_events (id,tenant_id,actor_type,actor_id,action,entity_type,entity_id,occurred_at,request_id,details_json) VALUES (?,?,'operator',?,'laboratory_report.read','laboratory_report_evidence',?,?,?,?)"
+  ).bind(crypto.randomUUID(), tenantId, subject, row.id,
+    new Date().toISOString(), requestId,
+    JSON.stringify({ evidence_id: row.id, site_id: row.site_id, sha256: row.sha256 })).run();
+  if (!Number.isInteger(audit?.meta?.changes) || audit.meta.changes !== 1) {
+    throw new Error("laboratory_report_read_audit_failed");
   }
   return { id: row.id, evidence_ref: "lab-report:" + row.id, tenant_id: row.tenant_id,
     site_id: row.site_id, evidence_type: row.evidence_type, file_name: row.file_name,

@@ -4,6 +4,9 @@ import { persistObservation } from "../src/observation-persistence.mjs";
 
 const observation = {
   site_id: "site-001", asset_id: "asset-001", source_id: "source-001",
+  source_capability_id: "capability-001", measurement_kind: "measured",
+  acquisition_protocol: "field-gateway", protocol_version: "1.0",
+  sampling_mode: "interval", sampling_interval_seconds: 900,
   module: "neoagro", metric: "soil_moisture", value: 28.5, unit: "%",
   observed_at: "2026-11-10T10:00:00.000Z",
   idempotency_key: "neoagro-gateway-1:reading-0001",
@@ -41,20 +44,47 @@ function mockD1(existing = null) {
       assert.match(audit.sql, /INSERT OR IGNORE INTO audit_events/);
       assert.match(audit.sql, /id, tenant_id, actor_type/);
       assert.match(audit.sql, /WHERE EXISTS/);
+      assert.match(audit.sql, /source_capability_id = \?/);
+      assert.match(audit.sql, /protocol_version = \?/);
+      assert.match(audit.sql, /sampling_interval_seconds IS \?/);
       const v = insert.values;
       let inserted = false;
+      const candidate = {
+        id: v[0], site_id: v[1], tenant_id: v[2], asset_id: v[3], source_id: v[4],
+        module: v[5], metric: v[6], value: v[7], unit: v[8],
+        observed_at: v[9], idempotency_key: v[10],
+        verification_status: "unverified", provenance_json: v[11],
+        quality_flags_json: v[12], source_capability_id: v[13],
+        measurement_kind: v[14], acquisition_protocol: v[15], protocol_version: v[16],
+        sampling_mode: v[17], sampling_interval_seconds: v[18],
+      };
       if (!state.observation) {
-        state.observation = {
-          id: v[0], site_id: v[1], tenant_id: v[2], asset_id: v[3], source_id: v[4],
-          module: v[5], metric: v[6], value: v[7], unit: v[8],
-          observed_at: v[9], idempotency_key: v[10],
-          verification_status: "unverified", provenance_json: v[11],
-          quality_flags_json: v[12],
-        };
-        state.audit.push({ id: audit.values[0], tenant_id: audit.values[1], actor_id: audit.values[2] });
+        state.observation = candidate;
         inserted = true;
-      } else if (state.observation.id === v[0]) {
-        // An exact retry does not create another audit row.
+      }
+      const auditValues = audit.values;
+      const auditMatchesExisting = state.observation &&
+        state.observation.id === auditValues[6] &&
+        state.observation.tenant_id === auditValues[7] &&
+        state.observation.site_id === auditValues[8] &&
+        state.observation.asset_id === auditValues[9] &&
+        state.observation.source_id === auditValues[10] &&
+        state.observation.module === auditValues[11] &&
+        state.observation.metric === auditValues[12] &&
+        Number(state.observation.value) === auditValues[13] &&
+        state.observation.unit === auditValues[14] &&
+        state.observation.observed_at === auditValues[15] &&
+        state.observation.idempotency_key === auditValues[16] &&
+        state.observation.provenance_json === auditValues[17] &&
+        state.observation.quality_flags_json === auditValues[18] &&
+        state.observation.source_capability_id === auditValues[19] &&
+        state.observation.measurement_kind === auditValues[20] &&
+        state.observation.acquisition_protocol === auditValues[21] &&
+        state.observation.protocol_version === auditValues[22] &&
+        state.observation.sampling_mode === auditValues[23] &&
+        state.observation.sampling_interval_seconds === auditValues[24];
+      if (auditMatchesExisting && !state.audit.some(row => row.id === auditValues[0])) {
+        state.audit.push({ id: auditValues[0], tenant_id: auditValues[1], actor_id: auditValues[2] });
       }
       return [{ success: true, meta: { changes: inserted ? 1 : 0 } }, { success: true }];
     },
@@ -75,14 +105,17 @@ test("inserts observation and tenant-scoped audit atomically with unverified sta
   assert.equal(db.state.observation.tenant_id, tenantId);
 });
 
-test("retries return the original tenant-owned observation without duplicating audit", async () => {
+test("retries return the original tenant-owned observation before current insert guards run", async () => {
   const db = mockD1();
   const first = await persistObservation(db, observation, principal, null, tenantId);
+  // Simulate a later capability/rights revocation: any new INSERT would now
+  // be rejected by the database's BEFORE INSERT governance triggers.
+  db.batch = async () => { throw new Error("current_insert_guard_rejected_replay"); };
   const second = await persistObservation(db, observation, principal, null, tenantId);
   assert.equal(first.observation_id, second.observation_id);
   assert.equal(second.status, "already_accepted");
   assert.equal(second.idempotent, true);
-  assert.equal(db.state.batches, 2);
+  assert.equal(db.state.batches, 1);
   assert.equal(db.state.audit.length, 1);
 });
 
@@ -90,8 +123,12 @@ test("rejects reuse of an idempotency key for different measurement content", as
   const db = mockD1();
   await persistObservation(db, observation, principal, null, tenantId);
   const changed = { ...observation, value: 99 };
+  const metadataChanged = { ...observation, protocol_version: "2.0" };
+  const metadataResult = await persistObservation(db, metadataChanged, principal, null, tenantId);
+  assert.deepEqual(metadataResult, { status: "idempotency_conflict", accepted: false });
   const result = await persistObservation(db, changed, principal, null, tenantId);
   assert.deepEqual(result, { status: "idempotency_conflict", accepted: false });
+  assert.equal(db.state.audit.length, 1, "conflicting idempotency payloads must not create accepted audit events");
 });
 
 test("rejects a row or retry from another tenant", async () => {
@@ -119,4 +156,32 @@ test("requires both a verified service principal and server-resolved tenant", as
     () => persistObservation(mockD1(), observation, principal),
     /verified_service_principal_and_tenant_required/,
   );
+});
+
+
+test("resolves a concurrent accepted retry when a later insert guard rejects this request", async () => {
+  const db = mockD1();
+  db.batch = async (statements) => {
+    // Model another identical request committing its observation and audit
+    // after our preflight lookup, followed by this request's guard rejection.
+    const v = statements[0].values;
+    db.state.observation = {
+      id: v[0], site_id: v[1], tenant_id: v[2], asset_id: v[3], source_id: v[4],
+      module: v[5], metric: v[6], value: v[7], unit: v[8],
+      observed_at: v[9], idempotency_key: v[10], verification_status: "unverified",
+      provenance_json: v[11], quality_flags_json: v[12], source_capability_id: v[13],
+      measurement_kind: v[14], acquisition_protocol: v[15], protocol_version: v[16],
+      sampling_mode: v[17], sampling_interval_seconds: v[18],
+    };
+    const a = statements[1].values;
+    db.state.audit.push({ id: a[0], tenant_id: a[1], actor_id: a[2] });
+    throw new Error("current_insert_guard_rejected_after_concurrent_commit");
+  };
+
+  const result = await persistObservation(db, observation, principal, null, tenantId);
+  assert.equal(result.status, "already_accepted");
+  assert.equal(result.accepted, true);
+  assert.equal(result.idempotent, true);
+  assert.equal(result.observation_id, db.state.observation.id);
+  assert.equal(db.state.audit.length, 1);
 });

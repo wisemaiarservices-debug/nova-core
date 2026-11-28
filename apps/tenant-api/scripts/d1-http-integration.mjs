@@ -49,6 +49,129 @@ try {
   assert.equal(allowed.body.data.id, "site-http-a");
   assert.equal(allowed.body.data.tenant_id, "tenant-http-a");
 
+  const capabilityPath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/source-capabilities";
+  const capabilityDraft = {
+    source_id: "source-http-a",
+    module: "neoagro",
+    metric: "api_created_ec",
+    unit: "dS/m",
+    measurement_kind: "measured",
+    quantity_semantics: "EC measured by a field acquisition protocol",
+    acquisition_protocol: "manual-lab",
+    protocol_version: "1.0",
+    sampling: { mode: "interval", interval_seconds: 3600, max_age_seconds: 86400 },
+    timestamp: { max_future_skew_seconds: 300, timezone: "Africa/Tunis" },
+    quality: { allowed_flags: ["suspect"] },
+    calibration: { required: false, profile_ref: null },
+    data_rights_ref: "source-rights:ci-http-a",
+    evidence_ref: "source-evidence:ci-http-a",
+    version: 1,
+  };
+  const capabilityBody = JSON.stringify(capabilityDraft);
+  const capabilityHeaders = {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-capability-create-route",
+    "x-nova-body-sha256": createHash("sha256").update(capabilityBody).digest("hex"),
+  };
+  const capabilityCreated = await throughGateway(capabilityPath, accessToken("ci-human-subject"),
+    capabilityHeaders, "POST", capabilityBody);
+  assert.equal(capabilityCreated.response.status, 201, JSON.stringify(capabilityCreated.body));
+  assert.equal(capabilityCreated.body.data.status, "pending");
+  assert.equal(capabilityCreated.body.data.created_by_subject, "ci-human-subject");
+  assert.equal(capabilityCreated.body.replayed, false);
+
+  const capabilityId = capabilityCreated.body.data.capability_id;
+  const submitPath = capabilityPath + "/" + capabilityId + "/submit";
+  const submitBody = JSON.stringify({ evidence_ref: "fixture:capability-submission-route" });
+  const submitHeaders = {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-capability-submit-route",
+    "x-nova-body-sha256": createHash("sha256").update(submitBody).digest("hex"),
+  };
+  const capabilitySubmitted = await throughGateway(submitPath, accessToken("ci-human-subject"),
+    submitHeaders, "POST", submitBody);
+  assert.equal(capabilitySubmitted.response.status, 201, JSON.stringify(capabilitySubmitted.body));
+  assert.equal(capabilitySubmitted.body.data.event_type, "submitted");
+  assert.equal(capabilitySubmitted.body.data.status, "pending");
+
+  const submitReplay = await throughGateway(submitPath, accessToken("ci-human-subject"),
+    submitHeaders, "POST", submitBody);
+  assert.equal(submitReplay.response.status, 200, JSON.stringify(submitReplay.body));
+  assert.equal(submitReplay.body.replayed, true);
+  assert.equal(submitReplay.body.data.event_id, capabilitySubmitted.body.data.event_id);
+
+  const changedSubmitBody = JSON.stringify({ evidence_ref: "fixture:changed-submission" });
+  const changedSubmit = await throughGateway(submitPath, accessToken("ci-human-subject"), {
+    ...submitHeaders,
+    "x-nova-body-sha256": createHash("sha256").update(changedSubmitBody).digest("hex"),
+  }, "POST", changedSubmitBody);
+  assert.equal(changedSubmit.response.status, 409, JSON.stringify(changedSubmit.body));
+
+  const reviewPath = capabilityPath + "/" + capabilityId + "/review";
+  const reviewBody = JSON.stringify({
+    decision: "approve", evidence_ref: "fixture:capability-independent-review",
+  });
+  const reviewed = await throughGateway(reviewPath, accessToken("ci-measurement-reviewer"), {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-capability-approve-route-" + capabilityId,
+    "x-nova-body-sha256": createHash("sha256").update(reviewBody).digest("hex"),
+  }, "POST", reviewBody);
+  assert.equal(reviewed.response.status, 201, JSON.stringify(reviewed.body));
+  assert.equal(reviewed.body.data.event_type, "approved");
+  assert.equal(reviewed.body.data.status, "approved");
+
+  const capabilityList = await throughGateway(capabilityPath, accessToken("ci-human-subject"));
+  assert.equal(capabilityList.response.status, 200, JSON.stringify(capabilityList.body));
+  assert.ok(capabilityList.body.data.length >= 1);
+  const listedCapability = capabilityList.body.data.find(row => row.id === capabilityId);
+  assert.ok(listedCapability, "site capability list must include the newly created capability");
+  assert.equal(listedCapability.status, "approved");
+  assert.deepEqual(listedCapability.allowed_quality_flags, ["suspect"]);
+  assert.equal("allowed_quality_flags_json" in listedCapability, false);
+
+  const capabilityDetail = await throughGateway(capabilityPath + "/" + capabilityId,
+    accessToken("ci-human-subject"));
+  assert.equal(capabilityDetail.response.status, 200, JSON.stringify(capabilityDetail.body));
+  assert.equal(capabilityDetail.body.data.capability.id, capabilityId);
+  assert.deepEqual(capabilityDetail.body.data.events.map(event => event.event_type),
+    ["submitted", "approved"]);
+  assert.equal(capabilityDetail.body.data.events[1].actor_subject, "ci-measurement-reviewer");
+
+  const crossTenantCapabilityDetail = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b/source-capabilities/" + capabilityId,
+    accessToken("ci-tenant-b-owner"));
+  assert.equal(crossTenantCapabilityDetail.response.status, 404);
+
+  const capabilityReplay = await throughGateway(capabilityPath, accessToken("ci-human-subject"),
+    capabilityHeaders, "POST", capabilityBody);
+  assert.equal(capabilityReplay.response.status, 200, JSON.stringify(capabilityReplay.body));
+  assert.equal(capabilityReplay.body.replayed, true);
+  assert.equal(capabilityReplay.body.data.capability_id, capabilityCreated.body.data.capability_id);
+
+  const conflictingCapabilityDraft = {
+    ...capabilityDraft,
+    quantity_semantics: "Different meaning must conflict under the same idempotency key",
+  };
+  const conflictingCapabilityBody = JSON.stringify(conflictingCapabilityDraft);
+  const conflictingCapability = await throughGateway(capabilityPath, accessToken("ci-human-subject"), {
+    ...capabilityHeaders,
+    "x-nova-body-sha256": createHash("sha256").update(conflictingCapabilityBody).digest("hex"),
+  }, "POST", conflictingCapabilityBody);
+  assert.equal(conflictingCapability.response.status, 409, JSON.stringify(conflictingCapability.body));
+
+  const crossTenantCapability = await throughGateway(
+    "/api/v1/tenants/tenant-http-b/sites/site-http-b/source-capabilities",
+    accessToken("ci-tenant-b-owner"), {
+      "content-type": "application/json",
+      "Idempotency-Key": "ci-cross-tenant-capability",
+      "x-nova-body-sha256": createHash("sha256").update(capabilityBody).digest("hex"),
+    }, "POST", capabilityBody);
+  assert.equal(crossTenantCapability.response.status, 404);
+
+  const deniedReviewerCapability = await throughGateway(capabilityPath,
+    accessToken("ci-measurement-reviewer"), capabilityHeaders, "POST", capabilityBody);
+  assert.equal(deniedReviewerCapability.response.status, 404);
+
   const deniedGrant = await throughGateway("/api/v1/tenants/tenant-http-a/sites/site-http-b");
   assert.equal(deniedGrant.response.status, 404);
 
@@ -1047,6 +1170,80 @@ try {
     JSON.stringify(mappingDeniedAssessment.body));
   assert.equal(mappingDeniedAssessment.body.data.status, "not_assessed");
   assert.equal(mappingDeniedAssessment.body.data.reason_code, "verified_sensor_mapping_missing");
+
+  // Run evidence and rights review while the fixture source is still verified;
+  // the later assessment-operation case deliberately revokes that source.
+  // Exercise the new source evidence and data-rights review commands through
+  // the real signed Access gateway, private Tenant API Worker and local D1.
+  const evidenceRoutePath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/" +
+    "source-evidence/source-evidence:ci-route-evidence/verify";
+  const evidenceReviewBody = JSON.stringify({});
+  const evidenceReviewHeaders = {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-source-evidence-verify-route",
+    "x-nova-body-sha256": createHash("sha256").update(evidenceReviewBody).digest("hex"),
+  };
+  const evidenceVerified = await throughGateway(evidenceRoutePath,
+    accessToken("ci-measurement-reviewer"), evidenceReviewHeaders, "POST", evidenceReviewBody);
+  assert.equal(evidenceVerified.response.status, 201, JSON.stringify(evidenceVerified.body));
+  assert.equal(evidenceVerified.body.data.status, "verified");
+  assert.equal(evidenceVerified.body.replayed, false);
+  const evidenceVerifyReplay = await throughGateway(evidenceRoutePath,
+    accessToken("ci-measurement-reviewer"), evidenceReviewHeaders, "POST", evidenceReviewBody);
+  assert.equal(evidenceVerifyReplay.response.status, 200, JSON.stringify(evidenceVerifyReplay.body));
+  assert.equal(evidenceVerifyReplay.body.replayed, true);
+  assert.equal(evidenceVerifyReplay.body.data.event_id, evidenceVerified.body.data.event_id);
+
+  const evidenceConflictBody = JSON.stringify({ reason: "Changed intent must conflict" });
+  const evidenceConflictPath = evidenceRoutePath.replace("/verify", "/reject");
+  const evidenceConflict = await throughGateway(evidenceConflictPath,
+    accessToken("ci-measurement-reviewer"), {
+      ...evidenceReviewHeaders,
+      "x-nova-body-sha256": createHash("sha256").update(evidenceConflictBody).digest("hex"),
+    }, "POST", evidenceConflictBody);
+  assert.equal(evidenceConflict.response.status, 409, JSON.stringify(evidenceConflict.body));
+
+  const rightsRoutePath = "/api/v1/tenants/tenant-http-a/sites/site-http-a/" +
+    "source-data-rights/source-rights:ci-route-rights/approve";
+  const rightsReviewBody = JSON.stringify({});
+  const rightsReviewHeaders = {
+    "content-type": "application/json",
+    "Idempotency-Key": "ci-source-rights-approve-route",
+    "x-nova-body-sha256": createHash("sha256").update(rightsReviewBody).digest("hex"),
+  };
+  const rightsApproved = await throughGateway(rightsRoutePath,
+    accessToken("ci-measurement-reviewer"), rightsReviewHeaders, "POST", rightsReviewBody);
+  assert.equal(rightsApproved.response.status, 201, JSON.stringify(rightsApproved.body));
+  assert.equal(rightsApproved.body.data.status, "approved");
+  const rightsApproveReplay = await throughGateway(rightsRoutePath,
+    accessToken("ci-measurement-reviewer"), rightsReviewHeaders, "POST", rightsReviewBody);
+  assert.equal(rightsApproveReplay.response.status, 200, JSON.stringify(rightsApproveReplay.body));
+  assert.equal(rightsApproveReplay.body.replayed, true);
+  assert.equal(rightsApproveReplay.body.data.event_id, rightsApproved.body.data.event_id);
+
+  // Evidence withdrawal must not strand an already-approved rights record:
+  // the independent reviewer must still be able to append a rights revocation.
+  const evidenceRevokePath = evidenceRoutePath.replace("/verify", "/revoke");
+  const evidenceRevokeBody = JSON.stringify({ reason: "CI supporting evidence withdrawal" });
+  const evidenceRevoked = await throughGateway(evidenceRevokePath,
+    accessToken("ci-measurement-reviewer"), {
+      "content-type": "application/json",
+      "Idempotency-Key": "ci-source-evidence-revoke-route",
+      "x-nova-body-sha256": createHash("sha256").update(evidenceRevokeBody).digest("hex"),
+    }, "POST", evidenceRevokeBody);
+  assert.equal(evidenceRevoked.response.status, 201, JSON.stringify(evidenceRevoked.body));
+  assert.equal(evidenceRevoked.body.data.status, "revoked");
+
+  const rightsRevokePath = rightsRoutePath.replace("/approve", "/revoke");
+  const rightsRevokeBody = JSON.stringify({ reason: "CI-only rights withdrawal test" });
+  const rightsRevoked = await throughGateway(rightsRevokePath,
+    accessToken("ci-measurement-reviewer"), {
+      "content-type": "application/json",
+      "Idempotency-Key": "ci-source-rights-revoke-route",
+      "x-nova-body-sha256": createHash("sha256").update(rightsRevokeBody).digest("hex"),
+    }, "POST", rightsRevokeBody);
+  assert.equal(rightsRevoked.response.status, 201, JSON.stringify(rightsRevoked.body));
+  assert.equal(rightsRevoked.body.data.status, "revoked");
 
   // Source lifecycle revocation after claim must produce a durable
   // not_assessed result, even though the observation and lease were valid.
