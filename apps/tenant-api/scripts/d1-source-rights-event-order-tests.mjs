@@ -77,4 +77,62 @@ const rightsCheck = execute("confirm rejected rights rowid writes left approval 
 ]);
 assert.match(rightsCheck, /ok/, "rejected rights rowid inserts must not persist");
 
-console.log("Source evidence and rights lifecycle rowid ordering tests passed");
+
+
+// Migration 0065 also protects the tenant source registry's chronological
+// lifecycle stream. The shared CI fixture has an already-verified source and
+// an independently assigned reviewer; rejected inserts must not disable it.
+const tenantSourceId = "source-http-a";
+const tenantId = "tenant-http-a";
+const siteId = "site-http-a";
+const tenantReviewer = "ci-measurement-reviewer";
+function tenantSourceEvent(id, requestId, occurredAt, rowid = null) {
+  return `INSERT INTO tenant_source_events
+    (${rowid === null ? "" : "rowid,"}id,tenant_id,site_id,source_id,actor_subject,
+     event_type,evidence_ref,reason,request_id,occurred_at)
+    VALUES (${rowid === null ? "" : rowid + ","}${q(id)},${q(tenantId)},${q(siteId)},
+      ${q(tenantSourceId)},${q(tenantReviewer)},'revoked',
+      'fixture:ci-rowid-ordering','CI lifecycle ordering regression',${q(requestId)},${occurredAt})`;
+}
+
+for (const [kind, timestamp] of [
+  ["backdated", "'2025-01-01T00:00:00.000Z'"],
+  ["future-dated", "'2099-01-01T00:00:00.000Z'"],
+]) {
+  const requestId = "req-ci-tenant-source-time-" + kind;
+  execute("audit attempted tenant source revocation " + kind, [
+    audit("audit-ci-tenant-source-time-" + kind, tenantReviewer,
+      "source.revoked", "source", tenantSourceId, requestId),
+  ]);
+  execute("reject " + kind + " tenant source lifecycle timestamp", [
+    tenantSourceEvent("event-ci-tenant-source-time-" + kind, requestId, timestamp),
+  ], "tenant source event timestamp must be valid and monotonic");
+}
+
+for (const [kind, rowid] of [["backdated", 0], ["forward-injected", 999]]) {
+  const requestId = "req-ci-tenant-source-rowid-" + kind;
+  execute("audit attempted tenant source revocation rowid " + kind, [
+    audit("audit-ci-tenant-source-rowid-" + kind, tenantReviewer,
+      "source.revoked", "source", tenantSourceId, requestId),
+  ]);
+  execute("reject " + kind + " tenant source lifecycle rowid", [
+    tenantSourceEvent("event-ci-tenant-source-rowid-" + kind, requestId,
+      "strftime('%Y-%m-%dT%H:%M:%fZ','now')", rowid),
+  ], "tenant source event rowid must be monotonic");
+}
+
+const tenantSourceCheck = execute("confirm rejected tenant source events preserve verified lifecycle state", [
+  `SELECT CASE WHEN
+    (SELECT verification_status FROM sources WHERE id=${q(tenantSourceId)})='verified'
+    AND (SELECT event_type FROM tenant_source_events
+      WHERE tenant_id=${q(tenantId)} AND source_id=${q(tenantSourceId)}
+      ORDER BY occurred_at DESC,rowid DESC LIMIT 1)='verified'
+    AND (SELECT COUNT(*) FROM tenant_source_events
+      WHERE tenant_id=${q(tenantId)} AND source_id=${q(tenantSourceId)}
+        AND event_type='revoked')=0
+    THEN 'ok' ELSE 'bad' END AS result`,
+]);
+assert.match(tenantSourceCheck, /ok/,
+  "rejected timestamp/rowid writes must not persist or revoke the verified source");
+
+console.log("Source evidence, rights, and tenant source lifecycle ordering tests passed");
